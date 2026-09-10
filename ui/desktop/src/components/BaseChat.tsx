@@ -39,6 +39,7 @@ import { useAcpChatSessionSnapshot } from '../acp/chatSessionStore';
 import { useArtifactRouter } from '../contexts/ArtifactRouterContext';
 import ThreadNavigator, { THREAD_TURN_ATTRIBUTE } from './conversation/ThreadNavigator';
 import type { SessionExperience } from '../types/sessionExperience';
+import { SwitchModelModal } from './settings/models/subcomponents/SwitchModelModal';
 
 const i18n = defineMessages({
   failedToLoadSession: {
@@ -91,6 +92,10 @@ const i18n = defineMessages({
     id: 'baseChat.taskFailed',
     defaultMessage: 'Task failed',
   },
+  continueWithCheckpoint: {
+    id: 'baseChat.continueWithCheckpoint',
+    defaultMessage: 'Continue with another model using session checkpoint',
+  },
   researchBadge: {
     id: 'baseChat.researchBadge',
     defaultMessage: 'Deep Research',
@@ -142,6 +147,7 @@ export default function BaseChat({
   const isNavCollapsed = !navContext?.isNavExpanded;
   const contentClassName = cn('pr-1 pb-10 pt-12', (isMobile || isNavCollapsed) && 'pt-16');
   const { droppedFiles, setDroppedFiles, handleDrop, handleDragOver } = useFileDrop();
+  const [isRecoveryModelPickerOpen, setIsRecoveryModelPickerOpen] = useState(false);
   const onStreamFinish = useCallback(() => {}, []);
 
   const {
@@ -730,6 +736,14 @@ export default function BaseChat({
               >
                 {intl.formatMessage(i18n.reconnect)}
               </button>
+            ) : promptError && !promptError.awaitingReply ? (
+              <button
+                type="button"
+                onClick={() => setIsRecoveryModelPickerOpen(true)}
+                className="max-w-64 shrink-0 rounded-md border border-border-primary px-3 py-1.5 text-sm hover:bg-background-secondary"
+              >
+                {intl.formatMessage(i18n.continueWithCheckpoint)}
+              </button>
             ) : interruptedPrompt && !promptError && chatState === ChatState.Idle ? (
               <button
                 type="button"
@@ -797,6 +811,17 @@ export default function BaseChat({
             {...customChatInputProps}
           />
         </ChatInputCard>
+
+        {isRecoveryModelPickerOpen && (
+          <SwitchModelModal
+            sessionId={sessionId}
+            setView={setView}
+            onClose={() => setIsRecoveryModelPickerOpen(false)}
+            sessionModel={sessionModel}
+            sessionProvider={sessionProvider}
+            titleOverride={intl.formatMessage(i18n.continueWithCheckpoint)}
+          />
+        )}
       </MainPanelLayout>
     </div>
   );

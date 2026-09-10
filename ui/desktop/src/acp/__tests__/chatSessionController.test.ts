@@ -511,39 +511,21 @@ describe('handoffSession', () => {
     });
   }
 
-  it('dispatches a session-handed-off event carrying the generated summary', async () => {
+  it('starts the new session with a continuation prompt, not a duplicate checkpoint', async () => {
     vi.mocked(acpHandoffSession).mockResolvedValue({
       sessionId: 'new-session',
-      handoffSummary: 'Goal: finish the thing.',
+      continuationPrompt: 'Continue from the saved session checkpoint.',
     });
 
     const eventPromise = listenOnce();
     const result = await acpChatSessionController.handoffSession(SESSION_ID);
     const event = await eventPromise;
 
-    expect(result).toEqual({ hadSummary: true });
+    expect(result).toBeUndefined();
     expect(event.detail).toEqual({
       newSessionId: 'new-session',
       shouldStartAgent: true,
-      initialMessage: 'Goal: finish the thing.',
-    });
-  });
-
-  it('does not ask the new session to auto-start when no summary was generated', async () => {
-    vi.mocked(acpHandoffSession).mockResolvedValue({
-      sessionId: 'new-session',
-      handoffSummary: undefined,
-    });
-
-    const eventPromise = listenOnce();
-    const result = await acpChatSessionController.handoffSession(SESSION_ID);
-    const event = await eventPromise;
-
-    expect(result).toEqual({ hadSummary: false });
-    expect(event.detail).toEqual({
-      newSessionId: 'new-session',
-      shouldStartAgent: false,
-      initialMessage: undefined,
+      initialMessage: 'Continue from the saved session checkpoint.',
     });
   });
 });

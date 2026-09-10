@@ -594,6 +594,7 @@ mod tests {
             last_refresh_error: None,
             model_selection_hint: None,
             manages_own_context: false,
+            capabilities: crate::providers::base::ProviderCapabilities::gosling_managed(),
         };
         build_model_state("unused", &inventory)
     }

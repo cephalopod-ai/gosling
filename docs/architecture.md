@@ -29,7 +29,7 @@ flowchart LR
     Store --> JSON[(workspaces.json)]
     Credentials --> Config[Config secure storage]
     Config --> Keyring[(OS keyring / protected fallback)]
-    Handlers --> Sessions[SessionManager v31 snapshot and turn lease]
+    Handlers --> Sessions[SessionManager v33 snapshots, handoffs, and turn lease]
     Sessions --> DB[(sessions.db)]
     Agent[Agent / provider construction] --> Service
     Agent --> Credentials
@@ -155,6 +155,28 @@ Exact-byte export uses Electron's
 `saveArtifact` bridge and the native save picker. Markdown products in configured output
 directories carry a managed history footer. Saved revisions persist independently of chat deletion;
 read-only references do not acquire authorship and external edits are not continuously watched.
+
+## Session handoff continuity
+
+Session handoff is a core-owned continuity service (ADR-0019, schema v33). The persisted ledger,
+summary/facts, artifact inventory, tool-operation ledger, and target capability contract feed a
+deterministic, redacted, size-bounded checkpoint. ACP preview and transition handlers expose that
+contract to Desktop through generated SDK types; Desktop owns presentation and confirmation, not
+classification or snapshot construction.
+
+`Agent::transition_provider` is the single live-switch owner. It prepares a generation, initializes
+the target while retaining the current provider, performs the selected delivery, and atomically
+commits provider/model metadata, snapshot activation, and an agent-context boundary. Covered rows
+remain user-visible and become agent-invisible; one hidden checkpoint replaces them for future model
+turns. Provider-owned session restore establishes the same boundary, while new-context-only delivery
+requires explicit confirmation and injects no checkpoint. Stale generations, changed message rows,
+and pre-commit failures preserve the prior provider configuration.
+
+The capability object describes context ownership, native resume/import, in-place model changes,
+forking, bootstrap, and acknowledgement support. It replaces provider-name branching while retaining
+the legacy context-ownership boolean as a derived compatibility projection. Native adapters must
+return an acknowledgement or provider session identity; otherwise the coordinator uses supported
+bootstrap fallback or fails the transition.
 
 ## Error taxonomy
 

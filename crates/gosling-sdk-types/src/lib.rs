@@ -6,5 +6,6 @@
 
 pub mod custom_notifications;
 pub mod custom_requests;
+pub mod session_handoff;
 pub mod shell;
 pub mod workspace;

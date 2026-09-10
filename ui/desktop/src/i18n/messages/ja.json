@@ -3551,9 +3551,6 @@
   "sessionActionsHeader.handoffFailed": {
     "defaultMessage": "Failed to hand off session: {error}"
   },
-  "sessionActionsHeader.handoffNoSummary": {
-    "defaultMessage": "Started a new session with the same settings. This session's context is managed by its own CLI tool, so Gosling couldn't generate a handoff summary from it."
-  },
   "sessionActionsHeader.handoffSession": {
     "defaultMessage": "Hand off to new session"
   },
@@ -3586,5 +3583,65 @@
   },
   "settings.crashRecovery.title": {
     "defaultMessage": "Crash recovery"
+  },
+  "baseChat.continueWithCheckpoint": {
+    "defaultMessage": "Continue with another model using session checkpoint"
+  },
+  "modelAndProviderContext.previousProviderRetained": {
+    "defaultMessage": "The switch was not activated. Your previous provider remains active."
+  },
+  "sessionActionsHeader.checkpointFailed": {
+    "defaultMessage": "Failed to load session checkpoint: {error}"
+  },
+  "sessionActionsHeader.checkpointMissing": {
+    "defaultMessage": "This session does not have a handoff checkpoint yet."
+  },
+  "sessionActionsHeader.checkpointTitle": {
+    "defaultMessage": "Session handoff checkpoint"
+  },
+  "sessionActionsHeader.viewCheckpoint": {
+    "defaultMessage": "View handoff checkpoint"
+  },
+  "switchModelModal.activated": {
+    "defaultMessage": "Activated"
+  },
+  "switchModelModal.checkpointCoverage": {
+    "defaultMessage": "Checkpoint covers {covered} of {total} messages through row {row} (about {tokens} tokens)."
+  },
+  "switchModelModal.checkpointDetails": {
+    "defaultMessage": "Summary: {summary}. Delivery: {delivery}. Interrupted operations: {operations}. Pending approvals: {approvals}. Redactions: {redactions}. Truncations: {truncations}."
+  },
+  "switchModelModal.confirmNewContext": {
+    "defaultMessage": "Confirm new context"
+  },
+  "switchModelModal.confirmSwitch": {
+    "defaultMessage": "Confirm switch"
+  },
+  "switchModelModal.continuity": {
+    "defaultMessage": "Continuity: {continuity}"
+  },
+  "switchModelModal.newContextOnly": {
+    "defaultMessage": "New context only"
+  },
+  "switchModelModal.newContextWarning": {
+    "defaultMessage": "This provider cannot receive the checkpoint. Continuing starts a new provider context; the previous provider and checkpoint remain available."
+  },
+  "switchModelModal.preparingPreview": {
+    "defaultMessage": "Preparing preview…"
+  },
+  "switchModelModal.reviewCheckpoint": {
+    "defaultMessage": "Review checkpoint"
+  },
+  "switchModelModal.seamlessResume": {
+    "defaultMessage": "Seamless resume"
+  },
+  "switchModelModal.summarizedHandoff": {
+    "defaultMessage": "Summarized handoff"
+  },
+  "switchModelModal.transitionInProgress": {
+    "defaultMessage": "Switching…"
+  },
+  "switchModelModal.transitionStages": {
+    "defaultMessage": "Preparing checkpoint · Initializing target · Delivering handoff · Activating"
   }
 }

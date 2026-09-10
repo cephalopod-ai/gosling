@@ -32,7 +32,11 @@ import type { GoslingMode } from '../types/session';
 import { getInitialWorkingDir } from '../utils/workingDir';
 import { getPredefinedModelsFromEnv } from './settings/models/predefinedModelsUtils';
 import { trackFileAttached, trackVoiceDictation } from '../utils/analytics';
-import { getNavigationShortcutText } from '../utils/keyboardShortcuts';
+import {
+  getChatSubmitShortcutText,
+  getNavigationShortcutText,
+  isChatSubmitShortcut,
+} from '../utils/keyboardShortcuts';
 import { UserInput, ImageData } from '../types/message';
 import { compressImageDataUrl } from '../utils/conversionUtils';
 import { fetchCanonicalModelInfo } from '../utils/canonical';
@@ -1203,7 +1207,7 @@ export default function ChatInput({
         }));
         return;
       }
-      if (evt.key === 'Enter') {
+      if (evt.key === 'Enter' && !evt.metaKey && !evt.ctrlKey) {
         evt.preventDefault();
         mentionPopoverRef.current.selectFile(mentionPopover.selectedIndex);
         return;
@@ -1217,30 +1221,19 @@ export default function ChatInput({
 
     handleHistoryNavigation(evt);
 
-    if (evt.key === 'Enter') {
-      // should not trigger submit on Enter if it's composing (IME input in progress) or shift/alt(option) is pressed
-      if (evt.shiftKey || isComposing) {
-        // Allow line break for Shift+Enter, or during IME composition
-        return;
-      }
+    if (!isChatSubmitShortcut(evt) || isComposing || evt.nativeEvent.isComposing) {
+      return;
+    }
 
-      if (evt.altKey) {
-        const newValue = displayValue + '\n';
-        setDisplayValue(newValue);
-        setValue(newValue);
-        return;
-      }
+    evt.preventDefault();
 
-      evt.preventDefault();
+    // Handle interruption and queue logic
+    if (handleInterruptionAndQueue()) {
+      return;
+    }
 
-      // Handle interruption and queue logic
-      if (handleInterruptionAndQueue()) {
-        return;
-      }
-
-      if (canSubmit) {
-        performSubmit();
-      }
+    if (canSubmit) {
+      performSubmit();
     }
   };
 
@@ -1389,7 +1382,7 @@ export default function ChatInput({
     if (isTranscribing) return intl.formatMessage(i18n.transcribing);
     if (chatState === ChatState.RestartingAgent) return intl.formatMessage(i18n.restartingSession);
     if (!hasSubmittableContent) return intl.formatMessage(i18n.typeMessage);
-    return intl.formatMessage(i18n.send);
+    return `${intl.formatMessage(i18n.send)} (${getChatSubmitShortcutText()})`;
   };
 
   // Queue management functions - no storage persistence, only in-memory
@@ -1559,6 +1552,7 @@ export default function ChatInput({
             onCompositionStart={handleCompositionStart}
             onCompositionEnd={handleCompositionEnd}
             onKeyDown={handleKeyDown}
+            aria-keyshortcuts="Control+Enter Meta+Enter"
             onPaste={handlePaste}
             onFocus={() => setIsFocused(true)}
             onBlur={() => setIsFocused(false)}

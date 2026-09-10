@@ -2,7 +2,7 @@
 compile_error!("Features `rustls-tls` and `native-tls` are mutually exclusive");
 
 pub mod acp;
-pub use gosling_sdk_types::{custom_notifications, custom_requests};
+pub use gosling_sdk_types::{custom_notifications, custom_requests, session_handoff};
 pub mod action_required_manager;
 pub mod agents;
 pub mod builtin_extension;

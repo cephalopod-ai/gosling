@@ -731,6 +731,30 @@ impl GoslingAcpAgent {
         self.on_handoff_session(req).await
     }
 
+    #[custom_method(TransitionSessionProviderRequest)]
+    async fn dispatch_transition_session_provider(
+        &self,
+        req: TransitionSessionProviderRequest,
+    ) -> Result<TransitionSessionProviderResponse, agent_client_protocol::Error> {
+        self.on_transition_session_provider(req).await
+    }
+
+    #[custom_method(PreviewSessionHandoffRequest)]
+    async fn dispatch_preview_session_handoff(
+        &self,
+        req: PreviewSessionHandoffRequest,
+    ) -> Result<PreviewSessionHandoffResponse, agent_client_protocol::Error> {
+        self.on_preview_session_handoff(req).await
+    }
+
+    #[custom_method(ReadSessionHandoffCheckpointRequest)]
+    async fn dispatch_read_session_handoff_checkpoint(
+        &self,
+        req: ReadSessionHandoffCheckpointRequest,
+    ) -> Result<ReadSessionHandoffCheckpointResponse, agent_client_protocol::Error> {
+        self.on_read_session_handoff_checkpoint(req).await
+    }
+
     #[custom_method(ArchiveSessionRequest)]
     async fn dispatch_archive_session(
         &self,

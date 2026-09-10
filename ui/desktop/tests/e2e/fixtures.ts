@@ -7,6 +7,8 @@ import { tmpdir } from 'os';
 
 const execAsync = promisify(exec);
 
+export const CHAT_SUBMIT_SHORTCUT = process.platform === 'darwin' ? 'Meta+Enter' : 'Control+Enter';
+
 type GoslingTestFixtures = {
   goslingPage: Page;
 };

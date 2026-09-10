@@ -1,3 +1,8 @@
+import type {
+  ProviderCapabilitiesDto,
+  SessionContinuityClassDto,
+} from '@repo-makeover/gosling-sdk';
+
 export type ProviderType = 'Preferred' | 'Builtin' | 'Declarative' | 'Custom';
 
 export type ThinkingEffort = 'off' | 'low' | 'medium' | 'high' | 'max' | 'ultra';
@@ -37,6 +42,7 @@ export type ProviderMetadata = {
 };
 
 export type ProviderDetails = {
+  capabilities?: ProviderCapabilitiesDto;
   is_configured: boolean;
   manages_own_context: boolean;
   metadata: ProviderMetadata;
@@ -44,6 +50,22 @@ export type ProviderDetails = {
   provider_type: ProviderType;
   saved_model?: string | null;
 };
+
+export function continuityClassForProvider(
+  capabilities: ProviderCapabilitiesDto | undefined
+): SessionContinuityClassDto {
+  if (!capabilities) return 'new_context_only';
+  if (capabilities.nativeResume !== 'unsupported' || capabilities.historyImport !== 'unsupported') {
+    return 'seamless_resume';
+  }
+  if (
+    capabilities.contextOwnership === 'gosling' ||
+    capabilities.bootstrapHandoff !== 'unsupported'
+  ) {
+    return 'summarized_handoff';
+  }
+  return 'new_context_only';
+}
 
 export type UpdateCustomProviderRequest = {
   api_key: string;

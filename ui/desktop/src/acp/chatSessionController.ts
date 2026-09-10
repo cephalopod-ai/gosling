@@ -76,7 +76,7 @@ export interface AcpChatSessionController {
     editType: 'fork' | 'edit' | undefined,
     options: AcpSubmitMessageOptions
   ): Promise<void>;
-  handoffSession(sessionId: string): Promise<{ hadSummary: boolean }>;
+  handoffSession(sessionId: string): Promise<void>;
 }
 
 function createAcpCreditsExhaustedMessage(error: AcpCreditsExhaustedError): Message {
@@ -130,18 +130,17 @@ async function forkSessionWithEditedMessage(
   window.dispatchEvent(event);
 }
 
-async function handoffSession(sessionId: string): Promise<{ hadSummary: boolean }> {
-  const { sessionId: newSessionId, handoffSummary } = await acpHandoffSession(sessionId);
+async function handoffSession(sessionId: string): Promise<void> {
+  const { sessionId: newSessionId, continuationPrompt } = await acpHandoffSession(sessionId);
 
   const event = new CustomEvent(AppEvents.SESSION_HANDED_OFF, {
     detail: {
       newSessionId,
-      shouldStartAgent: Boolean(handoffSummary),
-      initialMessage: handoffSummary,
+      shouldStartAgent: true,
+      initialMessage: continuationPrompt,
     },
   });
   window.dispatchEvent(event);
-  return { hadSummary: Boolean(handoffSummary) };
 }
 
 async function createSession(

@@ -578,8 +578,7 @@ export async function acpForkSession(
 
 export interface HandoffSessionResult {
   sessionId: string;
-  /** Absent when the source session's provider manages its own context. */
-  handoffSummary?: string;
+  continuationPrompt: string;
 }
 
 export async function acpHandoffSession(sessionId: string): Promise<HandoffSessionResult> {
@@ -587,7 +586,7 @@ export async function acpHandoffSession(sessionId: string): Promise<HandoffSessi
   const response = await client.gosling.sessionHandoff_unstable({ sessionId });
   return {
     sessionId: response.sessionId,
-    handoffSummary: response.handoffSummary ?? undefined,
+    continuationPrompt: response.continuationPrompt,
   };
 }
 

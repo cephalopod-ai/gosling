@@ -13,6 +13,7 @@ import { toast } from 'react-toastify';
 import { AppEvents } from '../constants/events';
 import { defineMessages, useIntl } from '../i18n';
 import { acpChatSessionController } from '../acp/chatSessionController';
+import { acpReadSessionHandoffCheckpoint } from '../acp/providers';
 import { acpExportSession, acpForkSession, acpRenameSession } from '../acp/sessions';
 import { getSessionDisplayName } from '../sessions';
 import type { Session } from '../types/session';
@@ -90,10 +91,21 @@ const i18n = defineMessages({
     id: 'sessionActionsHeader.handoffFailed',
     defaultMessage: 'Failed to hand off session: {error}',
   },
-  handoffNoSummary: {
-    id: 'sessionActionsHeader.handoffNoSummary',
-    defaultMessage:
-      "Started a new session with the same settings. This session's context is managed by its own CLI tool, so Gosling couldn't generate a handoff summary from it.",
+  viewCheckpoint: {
+    id: 'sessionActionsHeader.viewCheckpoint',
+    defaultMessage: 'View handoff checkpoint',
+  },
+  checkpointTitle: {
+    id: 'sessionActionsHeader.checkpointTitle',
+    defaultMessage: 'Session handoff checkpoint',
+  },
+  checkpointMissing: {
+    id: 'sessionActionsHeader.checkpointMissing',
+    defaultMessage: 'This session does not have a handoff checkpoint yet.',
+  },
+  checkpointFailed: {
+    id: 'sessionActionsHeader.checkpointFailed',
+    defaultMessage: 'Failed to load session checkpoint: {error}',
   },
   jsonTitle: {
     id: 'sessionActionsHeader.jsonTitle',
@@ -351,6 +363,7 @@ export default function SessionActionsHeader({
   const [jsonValue, setJsonValue] = useState<unknown>(null);
   const [jsonText, setJsonText] = useState('');
   const [isJsonLoading, setIsJsonLoading] = useState(false);
+  const [jsonDialogTitle, setJsonDialogTitle] = useState('');
   const [isDuplicating, setIsDuplicating] = useState(false);
   const [isHandingOff, setIsHandingOff] = useState(false);
   const [fullTextSelection, setFullTextSelection] = useState<FullTextSelection | null>(null);
@@ -424,10 +437,7 @@ export default function SessionActionsHeader({
 
     setIsHandingOff(true);
     try {
-      const { hadSummary } = await acpChatSessionController.handoffSession(session.id);
-      if (!hadSummary) {
-        toast.info(intl.formatMessage(i18n.handoffNoSummary));
-      }
+      await acpChatSessionController.handoffSession(session.id);
     } catch (error) {
       toast.error(
         intl.formatMessage(i18n.handoffFailed, {
@@ -443,6 +453,7 @@ export default function SessionActionsHeader({
     if (!session) return;
 
     setIsJsonOpen(true);
+    setJsonDialogTitle(intl.formatMessage(i18n.jsonTitle));
     setJsonValue(null);
     setJsonText('');
     setIsJsonLoading(true);
@@ -455,6 +466,35 @@ export default function SessionActionsHeader({
       setIsJsonOpen(false);
       toast.error(
         intl.formatMessage(i18n.jsonFailed, {
+          error: errorMessage(error, 'Unknown error'),
+        })
+      );
+    } finally {
+      setIsJsonLoading(false);
+    }
+  }, [intl, session]);
+
+  const handleViewCheckpoint = useCallback(async () => {
+    if (!session) return;
+
+    setIsJsonOpen(true);
+    setJsonDialogTitle(intl.formatMessage(i18n.checkpointTitle));
+    setJsonValue(null);
+    setJsonText('');
+    setIsJsonLoading(true);
+    try {
+      const snapshot = await acpReadSessionHandoffCheckpoint(session.id);
+      if (!snapshot) {
+        setIsJsonOpen(false);
+        toast.info(intl.formatMessage(i18n.checkpointMissing));
+        return;
+      }
+      setJsonValue(snapshot);
+      setJsonText(JSON.stringify(snapshot, null, 2));
+    } catch (error) {
+      setIsJsonOpen(false);
+      toast.error(
+        intl.formatMessage(i18n.checkpointFailed, {
           error: errorMessage(error, 'Unknown error'),
         })
       );
@@ -573,6 +613,10 @@ export default function SessionActionsHeader({
               )}
               {intl.formatMessage(i18n.handoffSession)}
             </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => void handleViewCheckpoint()}>
+              <FileJson className="size-4" />
+              {intl.formatMessage(i18n.viewCheckpoint)}
+            </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => void handleViewJson()}>
               {isJsonLoading ? (
                 <LoaderCircle className="size-4 animate-spin" />
@@ -618,7 +662,7 @@ export default function SessionActionsHeader({
       <Dialog open={isJsonOpen} onOpenChange={handleJsonOpenChange}>
         <DialogContent className="grid max-h-[85vh] grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-4xl">
           <DialogHeader>
-            <DialogTitle>{intl.formatMessage(i18n.jsonTitle)}</DialogTitle>
+            <DialogTitle>{jsonDialogTitle || intl.formatMessage(i18n.jsonTitle)}</DialogTitle>
           </DialogHeader>
           <div className="min-h-0 overflow-hidden rounded-lg border border-border-primary bg-background-secondary">
             {isJsonLoading ? (

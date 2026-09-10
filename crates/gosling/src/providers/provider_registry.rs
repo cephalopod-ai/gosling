@@ -1,5 +1,8 @@
 use super::api_client::TlsConfig;
-use super::base::{ConfigKey, ModelInfo, Provider, ProviderDef, ProviderMetadata, ProviderType};
+use super::base::{
+    ConfigKey, ModelInfo, Provider, ProviderCapabilities, ProviderDef, ProviderMetadata,
+    ProviderType,
+};
 use super::inventory::{InventoryIdentityInput, InventoryRegistration, InventoryResolvers};
 use crate::config::{DeclarativeProviderConfig, ExtensionConfig};
 use anyhow::Result;
@@ -34,7 +37,7 @@ pub struct ProviderEntry {
     pub(crate) cleanup: Option<ProviderCleanup>,
     provider_type: ProviderType,
     supports_inventory_refresh: bool,
-    manages_own_context: bool,
+    capabilities: ProviderCapabilities,
     executes_tools_outside_gosling: bool,
     tls_config: Option<TlsConfig>,
 }
@@ -53,11 +56,15 @@ impl ProviderEntry {
     }
 
     /// Whether this provider's live instances manage their own conversation
-    /// context (see `Provider::MANAGES_OWN_CONTEXT`) — read from the
+    /// context — read from the
     /// registered type's associated const, so it's available without
     /// constructing a provider instance.
     pub fn manages_own_context(&self) -> bool {
-        self.manages_own_context
+        self.capabilities.context_ownership != gosling_providers::base::ContextOwnership::Gosling
+    }
+
+    pub fn capabilities(&self) -> ProviderCapabilities {
+        self.capabilities
     }
 
     pub fn executes_tools_outside_gosling(&self) -> bool {
@@ -193,7 +200,7 @@ impl ProviderRegistry {
                     ProviderType::Builtin
                 },
                 supports_inventory_refresh: inventory.supports_refresh,
-                manages_own_context: F::MANAGES_OWN_CONTEXT,
+                capabilities: F::CAPABILITIES,
                 executes_tools_outside_gosling: F::EXECUTES_TOOLS_OUTSIDE_GOSLING,
                 tls_config: self.tls_config.clone(),
             },
@@ -365,7 +372,7 @@ impl ProviderRegistry {
                 cleanup: None,
                 provider_type,
                 supports_inventory_refresh,
-                manages_own_context: P::MANAGES_OWN_CONTEXT,
+                capabilities: P::CAPABILITIES,
                 executes_tools_outside_gosling: P::EXECUTES_TOOLS_OUTSIDE_GOSLING,
                 tls_config: self.tls_config.clone(),
             },

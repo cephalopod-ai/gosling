@@ -3097,6 +3097,19 @@
           "type": "boolean",
           "description": "Whether this provider manages its own conversation context (e.g. a persistent\nCLI/ACP session like Claude Code) rather than relying on Gosling to resend\nhistory each turn. Clients use this to decide whether Gosling-side\ncontext/compaction UI applies to a session using this provider.",
           "default": false
+        },
+        "capabilities": {
+          "$ref": "#/$defs/ProviderCapabilitiesDto",
+          "description": "Structured continuity behavior used to plan provider/model handoffs.",
+          "default": {
+            "contextOwnership": "gosling",
+            "nativeResume": "unsupported",
+            "historyImport": "unsupported",
+            "inPlaceModelChange": "unsupported",
+            "sessionFork": "unsupported",
+            "bootstrapHandoff": "unsupported",
+            "bootstrapAcknowledgement": "unsupported"
+          }
         }
       },
       "required": [
@@ -3233,6 +3246,57 @@
         "high",
         "max",
         "ultra"
+      ]
+    },
+    "ProviderCapabilitiesDto": {
+      "type": "object",
+      "properties": {
+        "contextOwnership": {
+          "$ref": "#/$defs/ContextOwnershipDto"
+        },
+        "nativeResume": {
+          "$ref": "#/$defs/CapabilitySupportDto"
+        },
+        "historyImport": {
+          "$ref": "#/$defs/CapabilitySupportDto"
+        },
+        "inPlaceModelChange": {
+          "$ref": "#/$defs/CapabilitySupportDto"
+        },
+        "sessionFork": {
+          "$ref": "#/$defs/CapabilitySupportDto"
+        },
+        "bootstrapHandoff": {
+          "$ref": "#/$defs/CapabilitySupportDto"
+        },
+        "bootstrapAcknowledgement": {
+          "$ref": "#/$defs/CapabilitySupportDto"
+        }
+      },
+      "required": [
+        "contextOwnership",
+        "nativeResume",
+        "historyImport",
+        "inPlaceModelChange",
+        "sessionFork",
+        "bootstrapHandoff",
+        "bootstrapAcknowledgement"
+      ]
+    },
+    "ContextOwnershipDto": {
+      "type": "string",
+      "enum": [
+        "gosling",
+        "provider",
+        "hybrid"
+      ]
+    },
+    "CapabilitySupportDto": {
+      "type": "string",
+      "enum": [
+        "unsupported",
+        "supported",
+        "required"
       ]
     },
     "ProviderSupportedModelsListRequest_unstable": {
@@ -5753,12 +5817,28 @@
       "properties": {
         "sessionId": {
           "type": "string"
+        },
+        "targetProvider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "targetModel": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "confirmNewContext": {
+          "type": "boolean",
+          "default": false
         }
       },
       "required": [
         "sessionId"
       ],
-      "description": "Hand a session off to a brand-new one: generates a human-readable\ncontinuation briefing from the source session's conversation, then creates\na fresh session carrying over the same working directory, workspace,\nprovider/model, and extension configuration (but none of the source\nconversation itself).",
+      "description": "Hand a session off to a brand-new one using a bounded, redacted checkpoint.",
       "x-side": "agent",
       "x-method": "_gosling/unstable/session/handoff"
     },
@@ -5768,19 +5848,679 @@
         "sessionId": {
           "type": "string"
         },
+        "snapshot": {
+          "$ref": "#/$defs/SessionHandoffSnapshotV1Dto"
+        },
+        "continuationPrompt": {
+          "type": "string"
+        },
         "handoffSummary": {
           "type": [
             "string",
             "null"
           ],
-          "description": "Absent when the source session's provider manages its own context (its\nhistory isn't visible to Gosling to summarize) — the new session still\ncarries over the same settings, just without a generated briefing."
+          "description": "Compatibility projection of the bounded checkpoint. New clients should\nuse `snapshot` and `continuationPrompt`."
+        }
+      },
+      "required": [
+        "sessionId",
+        "snapshot",
+        "continuationPrompt"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/session/handoff"
+    },
+    "SessionHandoffSnapshotV1Dto": {
+      "type": "object",
+      "properties": {
+        "snapshotId": {
+          "type": "string"
+        },
+        "schemaVersion": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "sourceSessionId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "trigger": {
+          "$ref": "#/$defs/SessionHandoffTriggerDto"
+        },
+        "status": {
+          "$ref": "#/$defs/SessionHandoffStatusDto"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/HandoffEndpointDto"
+        },
+        "target": {
+          "$ref": "#/$defs/HandoffEndpointDto"
+        },
+        "continuityClass": {
+          "$ref": "#/$defs/SessionContinuityClassDto"
+        },
+        "deliveryStrategy": {
+          "$ref": "#/$defs/HandoffDeliveryStrategyDto"
+        },
+        "coverage": {
+          "$ref": "#/$defs/HandoffCoverageDto"
+        },
+        "currentObjective": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HandoffEvidenceItemDto"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "latestUserIntent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HandoffEvidenceItemDto"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "completedWork": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HandoffEvidenceItemDto"
+          },
+          "default": []
+        },
+        "decisions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HandoffEvidenceItemDto"
+          },
+          "default": []
+        },
+        "filesTouched": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HandoffFileDto"
+          },
+          "default": []
+        },
+        "workspaceState": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HandoffEvidenceItemDto"
+          },
+          "default": []
+        },
+        "commandsAndChecks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HandoffEvidenceItemDto"
+          },
+          "default": []
+        },
+        "activeOrInterruptedOperations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HandoffOperationDto"
+          },
+          "default": []
+        },
+        "currentErrors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HandoffEvidenceItemDto"
+          },
+          "default": []
+        },
+        "attemptedMitigations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HandoffEvidenceItemDto"
+          },
+          "default": []
+        },
+        "pendingApprovals": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HandoffEvidenceItemDto"
+          },
+          "default": []
+        },
+        "unresolvedQuestions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HandoffEvidenceItemDto"
+          },
+          "default": []
+        },
+        "nextActions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HandoffEvidenceItemDto"
+          },
+          "default": []
+        },
+        "recentConversationTail": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HandoffConversationItemDto"
+          },
+          "default": []
+        },
+        "redactionReport": {
+          "$ref": "#/$defs/HandoffRedactionReportDto"
+        },
+        "enrichment": {
+          "$ref": "#/$defs/HandoffEnrichmentDto"
+        },
+        "failure": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "activatedAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "acknowledgedAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "snapshotId",
+        "schemaVersion",
+        "sessionId",
+        "generation",
+        "trigger",
+        "status",
+        "createdAt",
+        "source",
+        "target",
+        "continuityClass",
+        "deliveryStrategy",
+        "coverage",
+        "redactionReport",
+        "enrichment"
+      ]
+    },
+    "SessionHandoffTriggerDto": {
+      "type": "string",
+      "enum": [
+        "user_requested_switch",
+        "provider_failure",
+        "model_change_requires_recreation",
+        "thinking_effort_change_requires_recreation",
+        "session_resume",
+        "session_fork",
+        "manual_checkpoint"
+      ]
+    },
+    "SessionHandoffStatusDto": {
+      "type": "string",
+      "enum": [
+        "prepared",
+        "activating",
+        "active",
+        "failed",
+        "rolled_back",
+        "superseded"
+      ]
+    },
+    "HandoffEndpointDto": {
+      "type": "object",
+      "properties": {
+        "providerId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "requestedModel": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "resolvedModel": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "providerSessionId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "SessionContinuityClassDto": {
+      "type": "string",
+      "enum": [
+        "seamless_resume",
+        "summarized_handoff",
+        "new_context_only"
+      ]
+    },
+    "HandoffDeliveryStrategyDto": {
+      "type": "string",
+      "enum": [
+        "native_resume",
+        "history_import",
+        "bootstrap",
+        "context_injection",
+        "new_context"
+      ]
+    },
+    "HandoffCoverageDto": {
+      "type": "object",
+      "properties": {
+        "firstRowId": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "coveredThroughRowId": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "coveredMessageCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "totalMessageCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sourceHash": {
+          "type": "string"
+        },
+        "summaryStatus": {
+          "type": "string"
+        },
+        "recentTailMessageCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "estimatedTokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "truncations": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
+      },
+      "required": [
+        "coveredMessageCount",
+        "totalMessageCount",
+        "sourceHash",
+        "summaryStatus",
+        "recentTailMessageCount",
+        "estimatedTokens"
+      ]
+    },
+    "HandoffEvidenceItemDto": {
+      "type": "object",
+      "properties": {
+        "content": {
+          "type": "string"
+        },
+        "evidence": {
+          "$ref": "#/$defs/HandoffEvidenceClassDto"
+        },
+        "sourceMessageId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sourceRowId": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "timestamp": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "content",
+        "evidence"
+      ]
+    },
+    "HandoffEvidenceClassDto": {
+      "type": "string",
+      "enum": [
+        "observed",
+        "summarized",
+        "unknown"
+      ]
+    },
+    "HandoffFileDto": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "operation": {
+          "type": "string"
+        },
+        "sourceId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "path",
+        "operation"
+      ]
+    },
+    "HandoffOperationDto": {
+      "type": "object",
+      "properties": {
+        "operationId": {
+          "type": "string"
+        },
+        "toolRequestId": {
+          "type": "string"
+        },
+        "toolName": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "retryable": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "operationId",
+        "toolRequestId",
+        "toolName",
+        "state",
+        "retryable"
+      ]
+    },
+    "HandoffConversationItemDto": {
+      "type": "object",
+      "properties": {
+        "role": {
+          "type": "string"
+        },
+        "content": {
+          "type": "string"
+        },
+        "sourceMessageId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sourceRowId": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "timestamp": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "role",
+        "content",
+        "timestamp"
+      ]
+    },
+    "HandoffRedactionReportDto": {
+      "type": "object",
+      "properties": {
+        "redactionCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "truncatedItemCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "excludedBinaryCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "categories": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
+      },
+      "required": [
+        "redactionCount",
+        "truncatedItemCount",
+        "excludedBinaryCount"
+      ]
+    },
+    "HandoffEnrichmentDto": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "source",
+        "status"
+      ]
+    },
+    "TransitionSessionProviderRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "targetProvider": {
+          "type": "string"
+        },
+        "targetModel": {
+          "type": "string"
+        },
+        "targetThinkingEffort": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "targetContextLimit": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "requestParams": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {}
+        },
+        "expectedCurrentGeneration": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "expectedSourceHash": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "confirmNewContext": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "required": [
+        "sessionId",
+        "targetProvider",
+        "targetModel"
+      ],
+      "description": "Atomically change a live session's provider, model, and thinking effort.",
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/session/provider/transition"
+    },
+    "TransitionSessionProviderResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "snapshot": {
+          "$ref": "#/$defs/SessionHandoffSnapshotV1Dto"
+        },
+        "previousProvider": {
+          "type": "string"
+        },
+        "previousModel": {
+          "type": "string"
+        },
+        "activeProvider": {
+          "type": "string"
+        },
+        "activeModel": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "snapshot",
+        "previousProvider",
+        "previousModel",
+        "activeProvider",
+        "activeModel"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/session/provider/transition"
+    },
+    "PreviewSessionHandoffRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "targetProvider": {
+          "type": "string"
+        },
+        "targetModel": {
+          "type": "string"
+        },
+        "targetContextLimit": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      },
+      "required": [
+        "sessionId",
+        "targetProvider",
+        "targetModel"
+      ],
+      "description": "Build a non-persisted checkpoint preview for a proposed provider/model transition.",
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/session/handoff/checkpoint/preview"
+    },
+    "PreviewSessionHandoffResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "snapshot": {
+          "$ref": "#/$defs/SessionHandoffSnapshotV1Dto"
+        },
+        "expectedCurrentGeneration": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "snapshot",
+        "expectedCurrentGeneration"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/session/handoff/checkpoint/preview"
+    },
+    "ReadSessionHandoffCheckpointRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
         }
       },
       "required": [
         "sessionId"
       ],
       "x-side": "agent",
-      "x-method": "_gosling/unstable/session/handoff"
+      "x-method": "_gosling/unstable/session/handoff/checkpoint/read"
+    },
+    "ReadSessionHandoffCheckpointResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "snapshot": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SessionHandoffSnapshotV1Dto"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/session/handoff/checkpoint/read"
     },
     "ArchiveSessionRequest_unstable": {
       "type": "object",
@@ -8434,6 +9174,33 @@
                 {
                   "allOf": [
                     {
+                      "$ref": "#/$defs/TransitionSessionProviderRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/session/provider/transition",
+                  "title": "TransitionSessionProviderRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/PreviewSessionHandoffRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/session/handoff/checkpoint/preview",
+                  "title": "PreviewSessionHandoffRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ReadSessionHandoffCheckpointRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/session/handoff/checkpoint/read",
+                  "title": "ReadSessionHandoffCheckpointRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
                       "$ref": "#/$defs/ArchiveSessionRequest_unstable"
                     }
                   ],
@@ -9243,6 +10010,30 @@
                         }
                       ],
                       "title": "HandoffSessionResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/TransitionSessionProviderResponse_unstable"
+                        }
+                      ],
+                      "title": "TransitionSessionProviderResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/PreviewSessionHandoffResponse_unstable"
+                        }
+                      ],
+                      "title": "PreviewSessionHandoffResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ReadSessionHandoffCheckpointResponse_unstable"
+                        }
+                      ],
+                      "title": "ReadSessionHandoffCheckpointResponse_unstable"
                     },
                     {
                       "allOf": [

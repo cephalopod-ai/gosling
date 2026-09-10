@@ -87,6 +87,36 @@ fn inventory_entry_to_dto(entry: ProviderInventoryEntry) -> ProviderInventoryEnt
         stale,
         model_selection_hint: entry.model_selection_hint,
         manages_own_context: entry.manages_own_context,
+        capabilities: provider_capabilities_to_dto(entry.capabilities),
+    }
+}
+
+fn provider_capabilities_to_dto(
+    capabilities: crate::providers::base::ProviderCapabilities,
+) -> ProviderCapabilitiesDto {
+    fn support(value: crate::providers::base::CapabilitySupport) -> CapabilitySupportDto {
+        match value {
+            crate::providers::base::CapabilitySupport::Unsupported => {
+                CapabilitySupportDto::Unsupported
+            }
+            crate::providers::base::CapabilitySupport::Supported => CapabilitySupportDto::Supported,
+            crate::providers::base::CapabilitySupport::Required => CapabilitySupportDto::Required,
+        }
+    }
+
+    let context_ownership = match capabilities.context_ownership {
+        crate::providers::base::ContextOwnership::Gosling => ContextOwnershipDto::Gosling,
+        crate::providers::base::ContextOwnership::Provider => ContextOwnershipDto::Provider,
+        crate::providers::base::ContextOwnership::Hybrid => ContextOwnershipDto::Hybrid,
+    };
+    ProviderCapabilitiesDto {
+        context_ownership,
+        native_resume: support(capabilities.native_resume),
+        history_import: support(capabilities.history_import),
+        in_place_model_change: support(capabilities.in_place_model_change),
+        session_fork: support(capabilities.session_fork),
+        bootstrap_handoff: support(capabilities.bootstrap_handoff),
+        bootstrap_acknowledgement: support(capabilities.bootstrap_acknowledgement),
     }
 }
 

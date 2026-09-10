@@ -172,6 +172,8 @@ impl SessionStorage {
 
         Self::create_session_turn_lease_schema(&mut tx).await?;
 
+        Self::create_session_handoff_schema(&mut tx).await?;
+
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS session_summaries (
@@ -440,6 +442,50 @@ impl SessionStorage {
                 updated_at INTEGER NOT NULL
             )
             "#,
+        )
+        .execute(&mut **tx)
+        .await?;
+        Ok(())
+    }
+
+    pub(super) async fn create_session_handoff_schema(
+        tx: &mut sqlx::Transaction<'_, Sqlite>,
+    ) -> Result<()> {
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS session_handoff_snapshots (
+                snapshot_id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                generation INTEGER NOT NULL CHECK(generation >= 1),
+                schema_version INTEGER NOT NULL CHECK(schema_version = 1),
+                trigger TEXT NOT NULL,
+                status TEXT NOT NULL CHECK(status IN ('prepared', 'activating', 'active', 'failed', 'rolled_back', 'superseded')),
+                from_provider TEXT,
+                from_model TEXT,
+                to_provider TEXT NOT NULL,
+                to_model TEXT NOT NULL,
+                covered_through_row_id INTEGER,
+                source_hash TEXT NOT NULL,
+                estimated_tokens INTEGER NOT NULL,
+                snapshot_json TEXT NOT NULL,
+                failure TEXT,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                activated_at TIMESTAMP,
+                acknowledged_at TIMESTAMP,
+                superseded_at TIMESTAMP,
+                UNIQUE(session_id, generation)
+            )
+            "#,
+        )
+        .execute(&mut **tx)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_session_handoff_session_generation ON session_handoff_snapshots(session_id, generation DESC)",
+        )
+        .execute(&mut **tx)
+        .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_session_handoff_status ON session_handoff_snapshots(status, created_at DESC)",
         )
         .execute(&mut **tx)
         .await?;

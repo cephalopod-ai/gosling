@@ -2,6 +2,7 @@ pub mod artifacts;
 mod chat_history_search;
 mod diagnostics;
 pub mod extension_data;
+pub mod handoff;
 pub mod import_formats;
 mod last_message_snippet;
 mod legacy;

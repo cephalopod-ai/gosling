@@ -781,6 +781,7 @@ impl SessionStorage {
                 .await?;
             }
             32 => Self::create_output_revisions_schema(tx).await?,
+            33 => Self::create_session_handoff_schema(tx).await?,
             _ => {
                 anyhow::bail!("Unknown migration version: {}", version);
             }

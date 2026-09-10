@@ -20,8 +20,8 @@ use tokio::process::Command;
 use tokio::sync::oneshot;
 
 use super::base::{
-    stream_from_single_message, ConfigKey, MessageStream, PermissionRouting, Provider, ProviderDef,
-    ProviderMetadata,
+    stream_from_single_message, ConfigKey, MessageStream, PermissionRouting, Provider,
+    ProviderCapabilities, ProviderDef, ProviderMetadata,
 };
 use super::utils::filter_extensions_from_system_prompt;
 use crate::action_required_manager::{ActionRequiredManager, ElicitationOutcome};
@@ -1003,8 +1003,8 @@ impl Provider for ClaudeCodeProvider {
         &self.name
     }
 
-    fn manages_own_context(&self) -> bool {
-        true
+    fn capabilities(&self) -> ProviderCapabilities {
+        ProviderCapabilities::provider_managed()
     }
 
     fn executes_tools_outside_gosling(&self) -> bool {

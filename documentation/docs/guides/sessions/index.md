@@ -32,5 +32,10 @@ import TabItem from '@theme/TabItem';
       description="Maintain productive sessions using features that help manage context and conversation limits."
       link="/docs/guides/sessions/smart-context-management"
     />
+    <Card
+      title="Session Handoff"
+      description="Continue safely when changing providers or models with bounded, inspectable checkpoints."
+      link="/docs/guides/sessions/session-handoff"
+    />
   </div>
 </div>

@@ -257,7 +257,9 @@ pub fn target_for_provider(
     provider: &dyn Provider,
     working_dir: &std::path::Path,
 ) -> SummarizerTarget {
-    if provider.manages_own_context() {
+    if provider.capabilities().context_ownership
+        != crate::providers::base::ContextOwnership::Gosling
+    {
         let label = durable_memory_file_for(provider.get_name());
         SummarizerTarget::DurableFile {
             path: working_dir.join(label),

@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures';
+import { CHAT_SUBMIT_SHORTCUT, test, expect } from './fixtures';
 
 test.describe('Context Management E2E Tests', () => {
   test.beforeEach(async ({ goslingPage }) => {
@@ -12,7 +12,7 @@ test.describe('Context Management E2E Tests', () => {
     await chatInput.fill('Hello, this is a test message to generate some token usage.');
     
     // Submit the message
-    await goslingPage.keyboard.press('Enter');
+    await goslingPage.keyboard.press(CHAT_SUBMIT_SHORTCUT);
     
     // Wait for response and check for context window alert
     await goslingPage.waitForSelector('[data-testid="alert-indicator"]', { timeout: 15000 });
@@ -48,7 +48,7 @@ test.describe('Context Management E2E Tests', () => {
     
     for (const message of messages) {
       await chatInput.fill(message);
-      await goslingPage.keyboard.press('Enter');
+      await goslingPage.keyboard.press(CHAT_SUBMIT_SHORTCUT);
       
       // Wait for response before sending next message
       await goslingPage.waitForSelector('[data-testid="loading-gosling"]', { state: 'hidden', timeout: 30000 });
@@ -94,7 +94,7 @@ test.describe('Context Management E2E Tests', () => {
     // Send messages and store their content for verification
     for (const message of testMessages) {
       await chatInput.fill(message);
-      await goslingPage.keyboard.press('Enter');
+      await goslingPage.keyboard.press(CHAT_SUBMIT_SHORTCUT);
       await goslingPage.waitForSelector('[data-testid="loading-gosling"]', { state: 'hidden', timeout: 30000 });
       await goslingPage.waitForTimeout(1000);
     }
@@ -140,7 +140,7 @@ test.describe('Context Management E2E Tests', () => {
     // Generate some conversation
     const chatInput = goslingPage.locator('[data-testid="chat-input"]');
     await chatInput.fill('Test message for error handling');
-    await goslingPage.keyboard.press('Enter');
+    await goslingPage.keyboard.press(CHAT_SUBMIT_SHORTCUT);
     
     await goslingPage.waitForSelector('[data-testid="loading-gosling"]', { state: 'hidden', timeout: 30000 });
     
@@ -172,11 +172,11 @@ test.describe('Context Management E2E Tests', () => {
     const chatInput = goslingPage.locator('[data-testid="chat-input"]');
     
     await chatInput.fill('What is React?');
-    await goslingPage.keyboard.press('Enter');
+    await goslingPage.keyboard.press(CHAT_SUBMIT_SHORTCUT);
     await goslingPage.waitForSelector('[data-testid="loading-gosling"]', { state: 'hidden', timeout: 30000 });
     
     await chatInput.fill('Can you give me an example?');
-    await goslingPage.keyboard.press('Enter');
+    await goslingPage.keyboard.press(CHAT_SUBMIT_SHORTCUT);
     await goslingPage.waitForSelector('[data-testid="loading-gosling"]', { state: 'hidden', timeout: 30000 });
     
     // Perform compaction
@@ -190,7 +190,7 @@ test.describe('Context Management E2E Tests', () => {
     
     // Continue conversation after compaction
     await chatInput.fill('Thank you, that was helpful. What about Vue.js?');
-    await goslingPage.keyboard.press('Enter');
+    await goslingPage.keyboard.press(CHAT_SUBMIT_SHORTCUT);
     
     // Verify that the conversation continues normally
     await goslingPage.waitForSelector('[data-testid="loading-gosling"]', { timeout: 30000 });
@@ -209,7 +209,7 @@ test.describe('Context Management E2E Tests', () => {
     // Generate conversation
     const chatInput = goslingPage.locator('[data-testid="chat-input"]');
     await chatInput.fill('Test message for loading state verification');
-    await goslingPage.keyboard.press('Enter');
+    await goslingPage.keyboard.press(CHAT_SUBMIT_SHORTCUT);
     await goslingPage.waitForSelector('[data-testid="loading-gosling"]', { state: 'hidden', timeout: 30000 });
     
     // Start compaction
@@ -237,7 +237,7 @@ test.describe('Context Management E2E Tests', () => {
     // Generate conversation
     const chatInput = goslingPage.locator('[data-testid="chat-input"]');
     await chatInput.fill('Test message for rapid compaction test');
-    await goslingPage.keyboard.press('Enter');
+    await goslingPage.keyboard.press(CHAT_SUBMIT_SHORTCUT);
     await goslingPage.waitForSelector('[data-testid="loading-gosling"]', { state: 'hidden', timeout: 30000 });
     
     // Open alert and try to click compact multiple times rapidly

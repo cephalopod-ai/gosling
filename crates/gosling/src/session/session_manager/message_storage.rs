@@ -186,6 +186,25 @@ impl SessionStorage {
         }
     }
 
+    pub(super) async fn get_session_tail_rows(
+        &self,
+        session_id: &str,
+        limit: usize,
+    ) -> Result<(Vec<(i64, Message)>, usize)> {
+        let page_limit = limit.clamp(1, MAX_SESSION_MESSAGE_PAGE_LIMIT);
+        let total_count =
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM messages WHERE session_id = ?")
+                .bind(session_id)
+                .fetch_one(self.pool().await?)
+                .await? as usize;
+        let mut rows = self
+            .get_message_page_rows(session_id, None, page_limit)
+            .await?;
+        rows.truncate(page_limit);
+        rows.reverse();
+        Ok((rows, total_count))
+    }
+
     pub(super) async fn get_session_message_rows_between(
         &self,
         session_id: &str,

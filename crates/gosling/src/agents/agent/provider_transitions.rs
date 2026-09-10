@@ -5,7 +5,375 @@
 
 use super::*;
 
+async fn deliver_bootstrap_handoff(
+    candidate: &Arc<dyn Provider>,
+    model_config: &gosling_providers::model::ModelConfig,
+    session_id: &str,
+    snapshot: &gosling_sdk_types::session_handoff::SessionHandoffSnapshotV1Dto,
+) -> Result<()> {
+    let bootstrap_messages = vec![
+        crate::session::handoff::handoff_bootstrap_message(snapshot)?,
+        Message::user()
+            .with_text("Acknowledge this checkpoint by stating only the objective, current state, and next safe action. Do not use tools or perform any action.")
+            .with_visibility(false, true),
+    ];
+    let acknowledgement = tokio::time::timeout(
+        Duration::from_secs(30),
+        crate::session_context::with_session_id(
+            Some(session_id.to_string()),
+            candidate.complete(
+                model_config,
+                "You are receiving a session handoff checkpoint. Acknowledge it without using tools or taking action.",
+                &bootstrap_messages,
+                &[],
+            ),
+        ),
+    )
+    .await;
+    let acknowledgement = match acknowledgement {
+        Ok(Ok((message, _))) => message,
+        Ok(Err(error)) => anyhow::bail!("Checkpoint acknowledgement failed: {error}"),
+        Err(_) => anyhow::bail!("Checkpoint acknowledgement timed out after 30 seconds"),
+    };
+    let acknowledgement_is_safe = acknowledgement.content.iter().all(|content| {
+        matches!(
+            content,
+            MessageContent::Text(_)
+                | MessageContent::Thinking(_)
+                | MessageContent::RedactedThinking(_)
+        )
+    }) && !acknowledgement.as_concat_text().trim().is_empty();
+    anyhow::ensure!(
+        acknowledgement_is_safe,
+        "Checkpoint acknowledgement was empty or attempted an action"
+    );
+    Ok(())
+}
+
 impl Agent {
+    pub(super) async fn persist_provider_failure_checkpoint(
+        &self,
+        session_id: &str,
+        provider: &Arc<dyn Provider>,
+        model_config: &gosling_providers::model::ModelConfig,
+        failure_message: &Message,
+    ) -> Result<()> {
+        self.config
+            .session_manager
+            .upsert_message(session_id, failure_message)
+            .await?;
+        let mut snapshot =
+            crate::session::handoff::SessionHandoffBuilder::new(&self.config.session_manager)
+                .build(
+                    session_id,
+                    provider.get_name(),
+                    &model_config.model_name,
+                    model_config.context_limit(),
+                    provider.capabilities(),
+                    gosling_sdk_types::session_handoff::SessionHandoffTriggerDto::ProviderFailure,
+                )
+                .await?;
+        if let Some(failure) = failure_message.metadata.terminal_error.as_deref() {
+            crate::session::handoff::set_redacted_failure(&mut snapshot, failure);
+        }
+        self.config
+            .session_manager
+            .prepare_handoff_snapshot(snapshot, None)
+            .await?;
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn transition_provider(
+        &self,
+        session_id: &str,
+        target_provider_name: &str,
+        target_model_config: gosling_providers::model::ModelConfig,
+        trigger: gosling_sdk_types::session_handoff::SessionHandoffTriggerDto,
+        expected_current_generation: Option<u64>,
+        expected_source_hash: Option<&str>,
+        confirm_new_context: bool,
+    ) -> Result<gosling_sdk_types::session_handoff::SessionHandoffSnapshotV1Dto> {
+        use gosling_sdk_types::session_handoff::{
+            SessionContinuityClassDto, SessionHandoffStatusDto,
+        };
+
+        let _transition = self.state_transition.lock().await;
+        let session = self
+            .config
+            .session_manager
+            .get_session(session_id, false)
+            .await?;
+        self.validate_session_provider_scope(&session, target_provider_name)?;
+        let target_entry = crate::providers::get_from_registry(target_provider_name).await?;
+        let target_model_config = target_entry.normalize_model_config(target_model_config)?;
+        let snapshot =
+            crate::session::handoff::SessionHandoffBuilder::new(&self.config.session_manager)
+                .build(
+                    session_id,
+                    target_provider_name,
+                    &target_model_config.model_name,
+                    target_model_config.context_limit(),
+                    target_entry.capabilities(),
+                    trigger,
+                )
+                .await?;
+        if let Some(expected_generation) = expected_current_generation {
+            let current_generation = self
+                .config
+                .session_manager
+                .latest_handoff_generation(session_id)
+                .await?;
+            anyhow::ensure!(
+                current_generation == expected_generation,
+                "stale handoff generation: expected {expected_generation}, current {current_generation}"
+            );
+        }
+        if let Some(expected_source_hash) = expected_source_hash {
+            anyhow::ensure!(
+                snapshot.coverage.source_hash == expected_source_hash,
+                "session changed after the handoff checkpoint was previewed"
+            );
+        }
+        anyhow::ensure!(
+            !snapshot
+                .active_or_interrupted_operations
+                .iter()
+                .any(|operation| operation.state == "started"),
+            "Cannot switch providers while a tool operation is active"
+        );
+        anyhow::ensure!(
+            snapshot.pending_approvals.is_empty(),
+            "Cannot switch providers while an approval is pending"
+        );
+        anyhow::ensure!(
+            snapshot.continuity_class != SessionContinuityClassDto::NewContextOnly
+                || confirm_new_context,
+            "The selected provider supports new context only; explicit confirmation is required"
+        );
+        let snapshot = self
+            .config
+            .session_manager
+            .prepare_handoff_snapshot(snapshot, expected_current_generation)
+            .await?;
+        let mut snapshot = self
+            .config
+            .session_manager
+            .update_handoff_status(
+                &snapshot.snapshot_id,
+                SessionHandoffStatusDto::Activating,
+                None,
+            )
+            .await?;
+
+        let extensions = EnabledExtensionsState::extensions_or_default(
+            Some(&session.extension_data),
+            Config::global(),
+        );
+        let previous_provider = self.provider().await?;
+        let reuses_provider = previous_provider.get_name() == target_provider_name
+            && target_entry.capabilities().in_place_model_change
+                != crate::providers::base::CapabilitySupport::Unsupported;
+        let candidate = if reuses_provider {
+            previous_provider
+        } else {
+            match self
+                .create_provider_with_session_scope(&session, target_provider_name, extensions)
+                .await
+            {
+                Ok(candidate) => candidate,
+                Err(error) => {
+                    let _ = self
+                        .config
+                        .session_manager
+                        .update_handoff_status(
+                            &snapshot.snapshot_id,
+                            SessionHandoffStatusDto::Failed,
+                            Some(&error.to_string()),
+                        )
+                        .await;
+                    return Err(error);
+                }
+            }
+        };
+        let mode = session.gosling_mode;
+        if !reuses_provider {
+            if let Err(error) = candidate.update_mode(session_id, mode).await {
+                let message = format!("Provider rejected mode update: {error}");
+                let _ = self
+                    .config
+                    .session_manager
+                    .update_handoff_status(
+                        &snapshot.snapshot_id,
+                        SessionHandoffStatusDto::Failed,
+                        Some(&message),
+                    )
+                    .await;
+                anyhow::bail!(message);
+            }
+        }
+
+        use gosling_sdk_types::session_handoff::{
+            HandoffDeliveryStrategyDto, HandoffEvidenceClassDto, HandoffEvidenceItemDto,
+        };
+        let native_kind = match snapshot.delivery_strategy {
+            HandoffDeliveryStrategyDto::NativeResume => {
+                Some(crate::providers::base::NativeHandoffKind::Resume)
+            }
+            HandoffDeliveryStrategyDto::HistoryImport => {
+                Some(crate::providers::base::NativeHandoffKind::HistoryImport)
+            }
+            _ => None,
+        };
+        if let Some(native_kind) = native_kind {
+            let snapshot_json = serde_json::to_string(&snapshot)?;
+            match candidate
+                .deliver_native_handoff(native_kind, session_id, &snapshot_json)
+                .await
+            {
+                Ok(receipt) => {
+                    let provider_session_id = receipt
+                        .provider_session_id
+                        .filter(|value| !value.trim().is_empty());
+                    let acknowledged = receipt
+                        .acknowledgement
+                        .is_some_and(|value| !value.trim().is_empty());
+                    if provider_session_id.is_none() && !acknowledged {
+                        let message =
+                            "Native handoff returned no provider session identity or acknowledgement";
+                        let _ = self
+                            .config
+                            .session_manager
+                            .update_handoff_status(
+                                &snapshot.snapshot_id,
+                                SessionHandoffStatusDto::Failed,
+                                Some(message),
+                            )
+                            .await;
+                        anyhow::bail!(message);
+                    }
+                    snapshot.target.provider_session_id = provider_session_id;
+                    snapshot.acknowledged_at = Some(chrono::Utc::now().to_rfc3339());
+                    self.config
+                        .session_manager
+                        .update_handoff_snapshot(&snapshot)
+                        .await?;
+                }
+                Err(error)
+                    if target_entry.capabilities().bootstrap_handoff
+                        != crate::providers::base::CapabilitySupport::Unsupported =>
+                {
+                    snapshot.continuity_class = SessionContinuityClassDto::SummarizedHandoff;
+                    snapshot.delivery_strategy = HandoffDeliveryStrategyDto::Bootstrap;
+                    snapshot.attempted_mitigations.push(HandoffEvidenceItemDto {
+                        content:
+                            "Native handoff failed; Gosling used the bounded bootstrap fallback."
+                                .to_string(),
+                        evidence: HandoffEvidenceClassDto::Observed,
+                        source_message_id: None,
+                        source_row_id: None,
+                        timestamp: Some(chrono::Utc::now().timestamp()),
+                    });
+                    self.config
+                        .session_manager
+                        .update_handoff_snapshot(&snapshot)
+                        .await?;
+                    if let Err(bootstrap_error) = deliver_bootstrap_handoff(
+                        &candidate,
+                        &target_model_config,
+                        session_id,
+                        &snapshot,
+                    )
+                    .await
+                    {
+                        let message = format!(
+                            "Native handoff failed ({error}); bootstrap fallback failed: {bootstrap_error}"
+                        );
+                        let _ = self
+                            .config
+                            .session_manager
+                            .update_handoff_status(
+                                &snapshot.snapshot_id,
+                                SessionHandoffStatusDto::Failed,
+                                Some(&message),
+                            )
+                            .await;
+                        anyhow::bail!(message);
+                    }
+                    self.config
+                        .session_manager
+                        .acknowledge_handoff_snapshot(&snapshot.snapshot_id)
+                        .await?;
+                }
+                Err(error) => {
+                    let message = format!("Native handoff failed: {error}");
+                    let _ = self
+                        .config
+                        .session_manager
+                        .update_handoff_status(
+                            &snapshot.snapshot_id,
+                            SessionHandoffStatusDto::Failed,
+                            Some(&message),
+                        )
+                        .await;
+                    anyhow::bail!(message);
+                }
+            }
+        } else if snapshot.delivery_strategy == HandoffDeliveryStrategyDto::Bootstrap {
+            if let Err(error) =
+                deliver_bootstrap_handoff(&candidate, &target_model_config, session_id, &snapshot)
+                    .await
+            {
+                let message = error.to_string();
+                let _ = self
+                    .config
+                    .session_manager
+                    .update_handoff_status(
+                        &snapshot.snapshot_id,
+                        SessionHandoffStatusDto::Failed,
+                        Some(&message),
+                    )
+                    .await;
+                return Err(error);
+            }
+            self.config
+                .session_manager
+                .acknowledge_handoff_snapshot(&snapshot.snapshot_id)
+                .await?;
+        }
+
+        let mut current_provider = self.provider.lock().await;
+        let activated = match self
+            .config
+            .session_manager
+            .commit_provider_transition(
+                &snapshot.snapshot_id,
+                target_provider_name,
+                target_model_config,
+                mode,
+            )
+            .await
+        {
+            Ok(snapshot) => snapshot,
+            Err(error) => {
+                let _ = self
+                    .config
+                    .session_manager
+                    .update_handoff_status(
+                        &snapshot.snapshot_id,
+                        SessionHandoffStatusDto::Failed,
+                        Some(&error.to_string()),
+                    )
+                    .await;
+                return Err(error);
+            }
+        };
+        *current_provider = Some(candidate);
+        *self.current_gosling_mode.lock().await = mode;
+        let _ = self.gosling_mode_changes.send(mode);
+        Ok(activated)
+    }
+
     pub async fn update_provider(
         &self,
         provider: Arc<dyn Provider>,
@@ -14,18 +382,6 @@ impl Agent {
     ) -> Result<()> {
         let _transition = self.state_transition.lock().await;
         let mode = self.gosling_mode().await;
-        self.apply_provider_transition(provider, model_config, session_id, mode)
-            .await
-    }
-
-    async fn update_provider_with_mode(
-        &self,
-        provider: Arc<dyn Provider>,
-        model_config: gosling_providers::model::ModelConfig,
-        session_id: &str,
-        mode: GoslingMode,
-    ) -> Result<()> {
-        let _transition = self.state_transition.lock().await;
         self.apply_provider_transition(provider, model_config, session_id, mode)
             .await
     }
@@ -134,28 +490,17 @@ impl Agent {
         provider_name: &str,
         model_config: gosling_providers::model::ModelConfig,
     ) -> Result<()> {
-        let session = self
-            .config
-            .session_manager
-            .get_session(session_id, false)
-            .await
-            .context("Failed to get session")?;
-
-        let extensions = EnabledExtensionsState::extensions_or_default(
-            Some(&session.extension_data),
-            Config::global(),
-        );
-
-        let provider = self
-            .create_provider_with_session_scope(&session, provider_name, extensions)
-            .await
-            .map_err(|e| anyhow!("Could not create provider: {}", e))?;
-
-        self.update_provider(provider, model_config, session_id)
-            .await?;
-
-        let mode = self.gosling_mode().await;
-        self.update_gosling_mode(mode, session_id).await
+        self.transition_provider(
+            session_id,
+            provider_name,
+            model_config,
+            gosling_sdk_types::session_handoff::SessionHandoffTriggerDto::ModelChangeRequiresRecreation,
+            None,
+            None,
+            false,
+        )
+        .await
+        .map(|_| ())
     }
 
     pub async fn update_thinking_effort(
@@ -170,14 +515,29 @@ impl Agent {
             .await?
             .with_thinking_effort(effort);
 
-        self.recreate_provider_for_session(session_id, &provider_name, model_config)
-            .await
+        self.transition_provider(
+            session_id,
+            &provider_name,
+            model_config,
+            gosling_sdk_types::session_handoff::SessionHandoffTriggerDto::ThinkingEffortChangeRequiresRecreation,
+            None,
+            None,
+            false,
+        )
+        .await
+        .map(|_| ())
     }
 
     /// Restore the provider from session data or fall back to global config
     /// This is used when resuming a session to restore the provider state
     /// Returns true if the session's provider was replaced with a fallback.
     pub async fn restore_provider_from_session(&self, session: &Session) -> Result<bool> {
+        use crate::providers::base::ContextOwnership;
+        use gosling_sdk_types::session_handoff::{
+            SessionContinuityClassDto, SessionHandoffStatusDto, SessionHandoffTriggerDto,
+        };
+
+        let _transition = self.state_transition.lock().await;
         let config = Config::global();
 
         let provider_name = session
@@ -223,95 +583,174 @@ impl Agent {
             None
         };
 
-        let (provider, active_model_config, provider_changed) = match primary_result {
-            Some(Ok(p)) => (p, model_config, false),
-            Some(Err(error)) if session.credential_profile_id.is_some() => {
-                return Err(anyhow!(
-                    "Pinned credential profile is unavailable for provider '{}': {}",
-                    provider_name,
-                    error
-                ));
-            }
-            None if session.credential_profile_id.is_some() => {
-                return Err(anyhow!(
-                    "Pinned provider '{}' is no longer available",
-                    provider_name
-                ));
-            }
-            primary_result => {
-                let primary_error = primary_result.and_then(Result::err);
+        let (provider, active_provider_name, active_model_config, provider_changed) =
+            match primary_result {
+                Some(Ok(p)) => (p, provider_name.clone(), model_config, false),
+                Some(Err(error)) if session.credential_profile_id.is_some() => {
+                    return Err(anyhow!(
+                        "Pinned credential profile is unavailable for provider '{}': {}",
+                        provider_name,
+                        error
+                    ));
+                }
+                None if session.credential_profile_id.is_some() => {
+                    return Err(anyhow!(
+                        "Pinned provider '{}' is no longer available",
+                        provider_name
+                    ));
+                }
+                primary_result => {
+                    let primary_error = primary_result.and_then(Result::err);
 
-                let fallback_provider_name = config
-                    .get_gosling_provider()
-                    .ok()
-                    .filter(|name| name != &provider_name)
-                    .ok_or_else(|| match &primary_error {
-                        Some(e) => anyhow!("Could not create provider '{}': {}", provider_name, e),
-                        None => anyhow!(
-                            "Could not create provider: provider '{}' not found",
-                            provider_name
-                        ),
+                    let fallback_provider_name = config
+                        .get_gosling_provider()
+                        .ok()
+                        .filter(|name| name != &provider_name)
+                        .ok_or_else(|| match &primary_error {
+                            Some(e) => {
+                                anyhow!("Could not create provider '{}': {}", provider_name, e)
+                            }
+                            None => anyhow!(
+                                "Could not create provider: provider '{}' not found",
+                                provider_name
+                            ),
+                        })?;
+
+                    tracing::warn!(
+                        "Session provider '{}' unavailable ({}), falling back to '{}'",
+                        provider_name,
+                        primary_error
+                            .as_ref()
+                            .map(|e| e.to_string())
+                            .unwrap_or_else(|| "not found in registry".to_string()),
+                        fallback_provider_name
+                    );
+
+                    let fallback_model_name = config.get_gosling_model().ok().ok_or_else(|| {
+                        anyhow!("Could not configure fallback provider: missing model")
+                    })?;
+                    let fallback_model_config = crate::model_config::model_config_from_user_config(
+                        &fallback_provider_name,
+                        &fallback_model_name,
+                    )
+                    .map_err(|e| {
+                        anyhow!("Could not configure fallback provider: invalid model {}", e)
                     })?;
 
-                tracing::warn!(
-                    "Session provider '{}' unavailable ({}), falling back to '{}'",
-                    provider_name,
-                    primary_error
-                        .as_ref()
-                        .map(|e| e.to_string())
-                        .unwrap_or_else(|| "not found in registry".to_string()),
-                    fallback_provider_name
-                );
-
-                let fallback_model_name = config.get_gosling_model().ok().ok_or_else(|| {
-                    anyhow!("Could not configure fallback provider: missing model")
-                })?;
-                let fallback_model_config = crate::model_config::model_config_from_user_config(
-                    &fallback_provider_name,
-                    &fallback_model_name,
-                )
-                .map_err(|e| {
-                    anyhow!("Could not configure fallback provider: invalid model {}", e)
-                })?;
-
-                let fallback_provider = crate::providers::create_with_working_dir(
-                    &fallback_provider_name,
-                    extensions,
-                    session.working_dir.clone(),
-                )
-                .await
-                .map_err(|e| {
-                    anyhow!(
-                        "Could not create provider '{}' or fallback '{}': {}",
-                        provider_name,
-                        fallback_provider_name,
-                        e
+                    let fallback_provider = crate::providers::create_with_working_dir(
+                        &fallback_provider_name,
+                        extensions,
+                        session.working_dir.clone(),
                     )
-                })?;
+                    .await
+                    .map_err(|e| {
+                        anyhow!(
+                            "Could not create provider '{}' or fallback '{}': {}",
+                            provider_name,
+                            fallback_provider_name,
+                            e
+                        )
+                    })?;
 
-                if let Err(e) = self
+                    (
+                        fallback_provider,
+                        fallback_provider_name,
+                        fallback_model_config,
+                        true,
+                    )
+                }
+            };
+
+        let target_entry = crate::providers::get_from_registry(&active_provider_name).await?;
+        let active_model_config = target_entry.normalize_model_config(active_model_config)?;
+        let capabilities = provider.capabilities();
+        let requires_handoff = session.message_count > 0
+            && (provider_changed || capabilities.context_ownership != ContextOwnership::Gosling);
+
+        if requires_handoff {
+            let snapshot =
+                crate::session::handoff::SessionHandoffBuilder::new(&self.config.session_manager)
+                    .build(
+                        &session.id,
+                        &active_provider_name,
+                        &active_model_config.model_name,
+                        active_model_config.context_limit(),
+                        capabilities,
+                        SessionHandoffTriggerDto::SessionResume,
+                    )
+                    .await?;
+            anyhow::ensure!(
+                snapshot.continuity_class != SessionContinuityClassDto::NewContextOnly,
+                "Provider '{}' cannot safely resume this session; choose a provider with handoff support",
+                active_provider_name
+            );
+            let snapshot = self
+                .config
+                .session_manager
+                .prepare_handoff_snapshot(snapshot, None)
+                .await?;
+            let snapshot = self
+                .config
+                .session_manager
+                .update_handoff_status(
+                    &snapshot.snapshot_id,
+                    SessionHandoffStatusDto::Activating,
+                    None,
+                )
+                .await?;
+
+            if let Err(error) = provider
+                .update_mode(&session.id, session.gosling_mode)
+                .await
+            {
+                let message = format!("Provider rejected mode update: {error}");
+                let _ = self
                     .config
                     .session_manager
-                    .update(&session.id)
-                    .provider_name(&fallback_provider_name)
-                    .model_config(fallback_model_config.clone())
-                    .apply()
-                    .await
-                {
-                    tracing::warn!("Failed to update session provider: {}", e);
-                }
-
-                (fallback_provider, fallback_model_config, true)
+                    .update_handoff_status(
+                        &snapshot.snapshot_id,
+                        SessionHandoffStatusDto::Failed,
+                        Some(&message),
+                    )
+                    .await;
+                anyhow::bail!(message);
             }
-        };
 
-        self.update_provider_with_mode(
-            provider,
-            active_model_config,
-            &session.id,
-            session.gosling_mode,
-        )
-        .await?;
+            if let Err(error) = self
+                .config
+                .session_manager
+                .commit_provider_transition(
+                    &snapshot.snapshot_id,
+                    &active_provider_name,
+                    active_model_config,
+                    session.gosling_mode,
+                )
+                .await
+            {
+                let _ = self
+                    .config
+                    .session_manager
+                    .update_handoff_status(
+                        &snapshot.snapshot_id,
+                        SessionHandoffStatusDto::Failed,
+                        Some(&error.to_string()),
+                    )
+                    .await;
+                return Err(error);
+            }
+
+            *self.provider.lock().await = Some(provider);
+            *self.current_gosling_mode.lock().await = session.gosling_mode;
+            let _ = self.gosling_mode_changes.send(session.gosling_mode);
+        } else {
+            self.apply_provider_transition(
+                provider,
+                active_model_config,
+                &session.id,
+                session.gosling_mode,
+            )
+            .await?;
+        }
         Ok(provider_changed)
     }
 
@@ -355,7 +794,8 @@ impl Agent {
         if session.credential_profile_id.is_some() {
             bail!("automatic failover is disabled for credential-pinned sessions");
         }
-        if primary_provider.manages_own_context()
+        if primary_provider.capabilities().context_ownership
+            != crate::providers::base::ContextOwnership::Gosling
             || primary_provider.executes_tools_outside_gosling()
             || primary_provider.permission_routing() != PermissionRouting::Noop
         {
@@ -372,7 +812,10 @@ impl Agent {
                 model_name,
             } => {
                 let entry = crate::providers::get_from_registry(&provider_name).await?;
-                if entry.manages_own_context() || entry.executes_tools_outside_gosling() {
+                if entry.capabilities().context_ownership
+                    != crate::providers::base::ContextOwnership::Gosling
+                    || entry.executes_tools_outside_gosling()
+                {
                     bail!(
                         "fallback provider '{provider_name}' does not use Gosling's host-managed API turn loop"
                     );
@@ -397,7 +840,8 @@ impl Agent {
             ProviderFailoverTarget::Invalid(message) => bail!(message),
         };
 
-        if failover.provider.manages_own_context()
+        if failover.provider.capabilities().context_ownership
+            != crate::providers::base::ContextOwnership::Gosling
             || failover.provider.executes_tools_outside_gosling()
             || failover.provider.permission_routing() != PermissionRouting::Noop
         {
@@ -435,6 +879,7 @@ impl Agent {
         provider_name: &str,
         extensions: Vec<ExtensionConfig>,
     ) -> Result<Arc<dyn Provider>> {
+        self.validate_session_provider_scope(session, provider_name)?;
         let Some(profile_id) = session.credential_profile_id.as_deref() else {
             return crate::providers::create_with_working_dir(
                 provider_name,
@@ -448,25 +893,6 @@ impl Agent {
             .workspace_service
             .as_ref()
             .ok_or_else(|| anyhow!("Workspace credential service is unavailable"))?;
-        let resolution = service.profile_resolution(profile_id)?;
-        if resolution.provider != provider_name {
-            // The pinned credential profile's scope only covers its own
-            // provider's config keys. Falling through to an unscoped
-            // provider here would silently run this session on global
-            // config instead of the isolated profile the session (and its
-            // "Pinned" UI indicator) claims to be using — defeating
-            // workspace credential isolation without telling the user.
-            // Fail closed instead: a mismatch means the workspace's
-            // default provider and its default credential binding disagree,
-            // or the caller is trying to switch a pinned session to a
-            // provider outside its pinned profile. Both need the workspace
-            // (or the session's provider selection) fixed, not a silent
-            // downgrade.
-            bail!(
-                "credential profile is pinned to provider '{}', not '{provider_name}'",
-                resolution.provider
-            );
-        }
         let scope = service.config_scope(profile_id).await?;
         Config::with_resolution_scope(scope, async {
             crate::providers::create_with_working_dir(
@@ -477,5 +903,31 @@ impl Agent {
             .await
         })
         .await
+    }
+
+    fn validate_session_provider_scope(
+        &self,
+        session: &Session,
+        provider_name: &str,
+    ) -> Result<()> {
+        let Some(profile_id) = session.credential_profile_id.as_deref() else {
+            return Ok(());
+        };
+        let service = self
+            .config
+            .workspace_service
+            .as_ref()
+            .ok_or_else(|| anyhow!("Workspace credential service is unavailable"))?;
+        let resolution = service.profile_resolution(profile_id)?;
+        if resolution.provider != provider_name {
+            // The pinned profile's scope covers only its own provider. Allowing
+            // a mismatch would silently use global credentials while the UI
+            // still claims that the session is isolated by the pinned profile.
+            bail!(
+                "credential profile is pinned to provider '{}', not '{provider_name}'",
+                resolution.provider
+            );
+        }
+        Ok(())
     }
 }

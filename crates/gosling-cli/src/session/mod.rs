@@ -829,14 +829,9 @@ impl CliSession {
             return Ok(());
         }
 
-        if current_provider_name.ends_with("-acp") {
-            output::render_error(
-                "Session model switching is not supported for ACP providers in the CLI.",
-            );
-            return Ok(());
-        }
-
-        if provider.manages_own_context() {
+        if provider.capabilities().context_ownership
+            != gosling_providers::base::ContextOwnership::Gosling
+        {
             output::render_error(&format!(
                 "Session model switching is not supported for provider '{}' because it manages its own conversation context.",
                 current_provider_name
@@ -861,18 +856,16 @@ impl CliSession {
             return Ok(());
         }
 
-        let extensions = self.agent.get_extension_configs().await;
-        let new_provider = gosling::providers::create(&current_provider_name, extensions)
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to create provider: {e}"))?;
-
         self.agent
-            .update_provider(new_provider, new_model_config, &self.session_id)
-            .await?;
-
-        let mode = self.agent.gosling_mode().await;
-        self.agent
-            .update_gosling_mode(mode, &self.session_id)
+            .transition_provider(
+                &self.session_id,
+                &current_provider_name,
+                new_model_config,
+                gosling::session_handoff::SessionHandoffTriggerDto::ModelChangeRequiresRecreation,
+                None,
+                None,
+                false,
+            )
             .await?;
         let previous_label =
             model_switch_label(&current_provider_name, &current_model_name, current_effort);

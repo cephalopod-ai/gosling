@@ -186,7 +186,9 @@ impl Agent {
         cancel_token: Option<&tokio_util::sync::CancellationToken>,
     ) -> Result<Option<Message>> {
         let provider = self.provider().await?;
-        if provider.manages_own_context() {
+        if provider.capabilities().context_ownership
+            != crate::providers::base::ContextOwnership::Gosling
+        {
             // Gosling's own message array is a display-only mirror for these providers
             // (see manages_own_context's doc comment); summarizing it wouldn't touch the
             // connected CLI tool's actual context, and the summarization request itself

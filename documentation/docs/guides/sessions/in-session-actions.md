@@ -9,6 +9,12 @@ import { PanelLeft, Paperclip, Edit2, Send, GripVertical, X, ChevronUp, ChevronD
 
 gosling provides features you can use to manage conversations and share information during sessions.
 
+## Compose and Send Messages
+
+In gosling Desktop, `Enter` inserts a new line in the prompt. Send the prompt with `Cmd+Enter` on macOS, `Ctrl+Enter` on Windows/Linux, or the `Send` button. The send button tooltip also shows the platform shortcut.
+
+While gosling is responding, the keyboard shortcut follows the [message queue](#queue-messages) behavior below. Clicking `Send` instead immediately [interrupts the current task](#interrupt-task).
+
 ## Edit Message
 
 Edit your previously sent messages to refine conversations, correct course, or try different approaches.
@@ -131,12 +137,12 @@ gosling may perform better when complex tasks are split into subtasks, a techniq
     <TabItem value="ui" label="gosling Desktop" default>
       Add a message to the queue:
       1. While gosling is processing a response, type your next message
-      2. Press `Enter` to add it to the queue (or interrupts if using [interruption keywords](#interrupt-task))
+      2. Press `Cmd+Enter` (macOS) or `Ctrl+Enter` (Windows/Linux) to add it to the queue (or interrupt if using [interruption keywords](#interrupt-task))
       
       Queued messages appear as numbered cards showing the queue order. The first message in the queue is automatically sent when gosling finishes each response.
       
       :::info Related Features
-      - In general, pressing `Enter` while gosling is processing a task queues the message, but clicking `Send` sends the task immediately and [interrupts the task](#interrupt-task)
+      - In general, using the send shortcut while gosling is processing a task queues the message, but clicking `Send` sends the task immediately and [interrupts the task](#interrupt-task)
       - When you type common interrupt keywords like "stop", "wait", or "hold on" in a queued message, gosling pauses until you enter or send the next message and then continues processing the queue
       :::
 
@@ -203,7 +209,7 @@ Interrupt gosling while it's processing a task to take control of the conversati
         gosling stops processing the current task and pivots to the new request context.
         
         :::info Related features
-        - Clicking `Send` while gosling is processing a task interrupts the task but pressing `Enter` [queues the message](#queue-messages)
+        - Clicking `Send` while gosling is processing a task interrupts the task, but the send shortcut [queues the message](#queue-messages)
         - Typing a stop or pause keyword in a queued message also stops gosling from processing the current task
         - You can also [edit a sent message](#edit-message) to provide more context and clarification or change direction during a session
         :::
@@ -267,7 +273,7 @@ Speak to gosling directly instead of typing your prompts.
         2. Click the microphone button on the right of the chat box and begin speaking
         3. To send your message, do one of the following:
            - Say "submit" to send the message and continue recording your next one. To stop recording, click the microphone button.
-           - Click the microphone button to stop recording, then click `Send` or press `Enter`. This option allows you to edit the message before sending.
+           - Click the microphone button to stop recording, then click `Send` or press `Cmd+Enter` (macOS) or `Ctrl+Enter` (Windows/Linux). This option allows you to edit the message before sending.
         
         The first time you use voice dictation, gosling will request access to your microphone. While recording, you'll see `Listening` and `Transcribing` status indicators. gosling transcribes your speech during natural pauses and adds the text to the chat box. 
 

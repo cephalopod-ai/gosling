@@ -1071,6 +1071,28 @@ export const zProviderInventoryModelDto = z.object({
     recommended: z.boolean().optional().default(false)
 });
 
+export const zContextOwnershipDto = z.enum([
+    'gosling',
+    'provider',
+    'hybrid'
+]);
+
+export const zCapabilitySupportDto = z.enum([
+    'unsupported',
+    'supported',
+    'required'
+]);
+
+export const zProviderCapabilitiesDto = z.object({
+    contextOwnership: zContextOwnershipDto,
+    nativeResume: zCapabilitySupportDto,
+    historyImport: zCapabilitySupportDto,
+    inPlaceModelChange: zCapabilitySupportDto,
+    sessionFork: zCapabilitySupportDto,
+    bootstrapHandoff: zCapabilitySupportDto,
+    bootstrapAcknowledgement: zCapabilitySupportDto
+});
+
 /**
  * Provider inventory entry.
  */
@@ -1092,7 +1114,16 @@ export const zProviderInventoryEntryDto = z.object({
     lastRefreshError: z.string().nullish(),
     stale: z.boolean(),
     modelSelectionHint: z.string().nullish(),
-    managesOwnContext: z.boolean().optional().default(false)
+    managesOwnContext: z.boolean().optional().default(false),
+    capabilities: zProviderCapabilitiesDto.optional().default({
+        contextOwnership: 'gosling',
+        nativeResume: 'unsupported',
+        historyImport: 'unsupported',
+        inPlaceModelChange: 'unsupported',
+        sessionFork: 'unsupported',
+        bootstrapHandoff: 'unsupported',
+        bootstrapAcknowledgement: 'unsupported'
+    })
 });
 
 /**
@@ -1929,19 +1960,202 @@ export const zRenameSessionRequest_unstable = z.object({
 });
 
 /**
- * Hand a session off to a brand-new one: generates a human-readable
- * continuation briefing from the source session's conversation, then creates
- * a fresh session carrying over the same working directory, workspace,
- * provider/model, and extension configuration (but none of the source
- * conversation itself).
+ * Hand a session off to a brand-new one using a bounded, redacted checkpoint.
  */
 export const zHandoffSessionRequest_unstable = z.object({
-    sessionId: z.string()
+    sessionId: z.string(),
+    targetProvider: z.string().nullish(),
+    targetModel: z.string().nullish(),
+    confirmNewContext: z.boolean().optional().default(false)
+});
+
+export const zSessionHandoffTriggerDto = z.enum([
+    'user_requested_switch',
+    'provider_failure',
+    'model_change_requires_recreation',
+    'thinking_effort_change_requires_recreation',
+    'session_resume',
+    'session_fork',
+    'manual_checkpoint'
+]);
+
+export const zSessionHandoffStatusDto = z.enum([
+    'prepared',
+    'activating',
+    'active',
+    'failed',
+    'rolled_back',
+    'superseded'
+]);
+
+export const zHandoffEndpointDto = z.object({
+    providerId: z.string().nullish(),
+    requestedModel: z.string().nullish(),
+    resolvedModel: z.string().nullish(),
+    providerSessionId: z.string().nullish()
+});
+
+export const zSessionContinuityClassDto = z.enum([
+    'seamless_resume',
+    'summarized_handoff',
+    'new_context_only'
+]);
+
+export const zHandoffDeliveryStrategyDto = z.enum([
+    'native_resume',
+    'history_import',
+    'bootstrap',
+    'context_injection',
+    'new_context'
+]);
+
+export const zHandoffCoverageDto = z.object({
+    firstRowId: z.number().int().nullish(),
+    coveredThroughRowId: z.number().int().nullish(),
+    coveredMessageCount: z.number().int().gte(0),
+    totalMessageCount: z.number().int().gte(0),
+    sourceHash: z.string(),
+    summaryStatus: z.string(),
+    recentTailMessageCount: z.number().int().gte(0),
+    estimatedTokens: z.number().int().gte(0),
+    truncations: z.array(z.string()).optional().default([])
+});
+
+export const zHandoffEvidenceClassDto = z.enum([
+    'observed',
+    'summarized',
+    'unknown'
+]);
+
+export const zHandoffEvidenceItemDto = z.object({
+    content: z.string(),
+    evidence: zHandoffEvidenceClassDto,
+    sourceMessageId: z.string().nullish(),
+    sourceRowId: z.number().int().nullish(),
+    timestamp: z.number().int().nullish()
+});
+
+export const zHandoffFileDto = z.object({
+    path: z.string(),
+    operation: z.string(),
+    sourceId: z.string().nullish()
+});
+
+export const zHandoffOperationDto = z.object({
+    operationId: z.string(),
+    toolRequestId: z.string(),
+    toolName: z.string(),
+    state: z.string(),
+    retryable: z.boolean()
+});
+
+export const zHandoffConversationItemDto = z.object({
+    role: z.string(),
+    content: z.string(),
+    sourceMessageId: z.string().nullish(),
+    sourceRowId: z.number().int().nullish(),
+    timestamp: z.number().int()
+});
+
+export const zHandoffRedactionReportDto = z.object({
+    redactionCount: z.number().int().gte(0),
+    truncatedItemCount: z.number().int().gte(0),
+    excludedBinaryCount: z.number().int().gte(0),
+    categories: z.array(z.string()).optional().default([])
+});
+
+export const zHandoffEnrichmentDto = z.object({
+    source: z.string(),
+    status: z.string(),
+    model: z.string().nullish()
+});
+
+export const zSessionHandoffSnapshotV1Dto = z.object({
+    snapshotId: z.string(),
+    schemaVersion: z.number().int().gte(0),
+    sessionId: z.string(),
+    sourceSessionId: z.string().nullish(),
+    generation: z.number().int().gte(0),
+    trigger: zSessionHandoffTriggerDto,
+    status: zSessionHandoffStatusDto,
+    createdAt: z.string(),
+    source: zHandoffEndpointDto,
+    target: zHandoffEndpointDto,
+    continuityClass: zSessionContinuityClassDto,
+    deliveryStrategy: zHandoffDeliveryStrategyDto,
+    coverage: zHandoffCoverageDto,
+    currentObjective: zHandoffEvidenceItemDto.nullish(),
+    latestUserIntent: zHandoffEvidenceItemDto.nullish(),
+    completedWork: z.array(zHandoffEvidenceItemDto).optional().default([]),
+    decisions: z.array(zHandoffEvidenceItemDto).optional().default([]),
+    filesTouched: z.array(zHandoffFileDto).optional().default([]),
+    workspaceState: z.array(zHandoffEvidenceItemDto).optional().default([]),
+    commandsAndChecks: z.array(zHandoffEvidenceItemDto).optional().default([]),
+    activeOrInterruptedOperations: z.array(zHandoffOperationDto).optional().default([]),
+    currentErrors: z.array(zHandoffEvidenceItemDto).optional().default([]),
+    attemptedMitigations: z.array(zHandoffEvidenceItemDto).optional().default([]),
+    pendingApprovals: z.array(zHandoffEvidenceItemDto).optional().default([]),
+    unresolvedQuestions: z.array(zHandoffEvidenceItemDto).optional().default([]),
+    nextActions: z.array(zHandoffEvidenceItemDto).optional().default([]),
+    recentConversationTail: z.array(zHandoffConversationItemDto).optional().default([]),
+    redactionReport: zHandoffRedactionReportDto,
+    enrichment: zHandoffEnrichmentDto,
+    failure: z.string().nullish(),
+    activatedAt: z.string().nullish(),
+    acknowledgedAt: z.string().nullish()
 });
 
 export const zHandoffSessionResponse_unstable = z.object({
     sessionId: z.string(),
+    snapshot: zSessionHandoffSnapshotV1Dto,
+    continuationPrompt: z.string(),
     handoffSummary: z.string().nullish()
+});
+
+/**
+ * Atomically change a live session's provider, model, and thinking effort.
+ */
+export const zTransitionSessionProviderRequest_unstable = z.object({
+    sessionId: z.string(),
+    targetProvider: z.string(),
+    targetModel: z.string(),
+    targetThinkingEffort: z.string().nullish(),
+    targetContextLimit: z.number().int().gte(0).nullish(),
+    requestParams: z.record(z.unknown()).nullish(),
+    expectedCurrentGeneration: z.number().int().gte(0).nullish(),
+    expectedSourceHash: z.string().nullish(),
+    confirmNewContext: z.boolean().optional().default(false)
+});
+
+export const zTransitionSessionProviderResponse_unstable = z.object({
+    snapshot: zSessionHandoffSnapshotV1Dto,
+    previousProvider: z.string(),
+    previousModel: z.string(),
+    activeProvider: z.string(),
+    activeModel: z.string()
+});
+
+/**
+ * Build a non-persisted checkpoint preview for a proposed provider/model transition.
+ */
+export const zPreviewSessionHandoffRequest_unstable = z.object({
+    sessionId: z.string(),
+    targetProvider: z.string(),
+    targetModel: z.string(),
+    targetContextLimit: z.number().int().gte(0).nullish()
+});
+
+export const zPreviewSessionHandoffResponse_unstable = z.object({
+    snapshot: zSessionHandoffSnapshotV1Dto,
+    expectedCurrentGeneration: z.number().int().gte(0)
+});
+
+export const zReadSessionHandoffCheckpointRequest_unstable = z.object({
+    sessionId: z.string()
+});
+
+export const zReadSessionHandoffCheckpointResponse_unstable = z.object({
+    snapshot: zSessionHandoffSnapshotV1Dto.nullish()
 });
 
 /**
@@ -2666,6 +2880,9 @@ export const zExtRequest = z.object({
             zUpdateSessionProjectRequest_unstable,
             zRenameSessionRequest_unstable,
             zHandoffSessionRequest_unstable,
+            zTransitionSessionProviderRequest_unstable,
+            zPreviewSessionHandoffRequest_unstable,
+            zReadSessionHandoffCheckpointRequest_unstable,
             zArchiveSessionRequest_unstable,
             zUnarchiveSessionRequest_unstable,
             zCreateSourceRequest_unstable,
@@ -2770,6 +2987,9 @@ export const zExtResponse = z.union([
                 zRestoreOutputRevisionResponse_unstable,
                 zGetSessionSummaryResponse_unstable,
                 zHandoffSessionResponse_unstable,
+                zTransitionSessionProviderResponse_unstable,
+                zPreviewSessionHandoffResponse_unstable,
+                zReadSessionHandoffCheckpointResponse_unstable,
                 zCreateSourceResponse_unstable,
                 zListSourcesResponse_unstable,
                 zListAgentMentionsResponse_unstable,

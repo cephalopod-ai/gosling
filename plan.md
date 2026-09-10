@@ -1,6 +1,6 @@
 # Gosling Continuity and Security Remediation Master Plan
 
-Status: Active; v1.0.0 documentation prepared; release version bump, validation, tag, and publication remain maintainer-owned; Session Handoff proposed; Security Phases 1–3 implemented and targeted checks complete
+Status: Active; v1.0.0 documentation prepared; release version bump, validation, tag, and publication remain maintainer-owned; Full Session Handoff continuity implemented; Security Phases 1–3 implemented and targeted checks complete
 Scope: Gosling core, session persistence, providers, ACP server, Desktop, build and test automation, dependency integrity, and repository governance  
 Primary outcomes: Switching providers or models preserves enough verified session state to continue safely without asking the replacement model to rediscover prior work, and Gosling's delivery paths do not execute mutable remote installers or unpinned provider packages.
 
@@ -9,7 +9,7 @@ Primary outcomes: Switching providers or models preserves enough verified sessio
 - Release-facing documentation targets `v1.0.0`: the README, release notes, release process, release checklist, installation/update manuals, documentation inventory, and TODO ledger are aligned.
 - At the 2026-07-20 stewardship pass, the Rust workspace and Desktop manifests still reported `0.1.0`. The release owner must update every version surface to `1.0.0`, keep lockfiles/generated metadata aligned, and review the resulting diff before tagging.
 - The historical v0.0.6 note, audit reports, scenario ledgers, and command evidence remain immutable point-in-time records. Current documents link to them without rewriting their results.
-- Documentation preparation does not claim a published release, a green release workflow, a complete post-repair 110-card replay, or closure of the proposed Session Handoff and later security phases.
+- Documentation preparation does not claim a published release, a green release workflow, a complete post-repair 110-card replay, or closure of later security phases.
 - Release execution is intentionally out of this documentation task: no branch, tag, GitHub release, package publication, updater promotion, build, test, or signing action is performed here.
 
 ## 1. Goals
@@ -33,13 +33,12 @@ Primary outcomes: Switching providers or models preserves enough verified sessio
 - Do not transfer credential values, authorization headers, secrets, or unredacted sensitive tool output.
 - Do not guarantee bit-for-bit reproduction of provider-private reasoning or proprietary provider session state.
 
-## 3. Current seams to replace or generalize
+## 3. Implemented seams
 
-- `Agent::update_provider` currently replaces the in-memory provider and then persists provider/model metadata without a transition record or rollback boundary.
-- Desktop currently applies provider, model, and thinking effort as separate ACP configuration operations.
-- `Provider::manages_own_context()` is too coarse to describe resume, import, model-switch, and handoff behavior.
-- ACP providers have a useful one-time handoff mechanism, but it serializes all visible prior history without a dedicated handoff budget.
-- `claude-code` starts a provider-owned context and sends only the latest user message.
+- `Agent::transition_provider` retains the current provider until provider/model metadata and a handoff generation commit together.
+- Desktop applies provider, model, and thinking effort through one typed ACP transition request.
+- `ProviderCapabilities` describes resume, import, model-switch, fork, bootstrap, acknowledgement, and context ownership; `manages_own_context()` remains only as a derived compatibility projection.
+- ACP and `claude-code` provider-owned contexts receive the same bounded core checkpoint, with a capped compatibility fallback for legacy construction paths.
 - Session summaries and summary facts already provide useful rollup inputs, but generation is optional and a summary may be absent, stale, or incomplete.
 - Project memory files contain durable facts and instructions, not a reliable current-task checkpoint.
 
@@ -605,26 +604,23 @@ Desktop:
 - Repository memory files are not modified by session switching.
 - Cross-provider, failure, compaction, cancellation, tool, approval, migration, and redaction tests pass.
 
-## 18. Risks and decisions to confirm during implementation
+## 18. Implementation decisions and remaining provider-specific limits
 
-- Whether bootstrap acknowledgement should consume a separate model call or be combined with the first user turn.
-- The target-context percentage and absolute handoff token cap after evaluation on 128K, 200K, and 1M models.
-- Whether snapshot storage needs application-level encryption in addition to existing local session protections.
-- Which native providers can genuinely import history rather than merely resume their own prior session ID.
-- How long rollback providers and provider subprocesses should remain alive after activation.
-- Whether active read-only tools may finish during snapshot preparation or all active operations must block switching.
-- How custom providers declare capabilities safely without claiming unsupported continuity.
+- A live provider-managed switch uses a separate, no-tool acknowledgement request before commit. A provider-owned app restart defers the bounded checkpoint to the first new user turn.
+- The handoff cap is the smaller of 16,000 estimated tokens or 10% of target context; the structured target is 4,000 tokens. Both have bounded environment overrides.
+- Snapshots use the existing protected local session database and pre-persistence redaction; application-level snapshot encryption is not added.
+- No built-in adapter currently claims native resume or history import. The hook requires a provider session identity or acknowledgement and falls back to bootstrap only when declared supported.
+- All active tool operations and pending approvals block switching. Interrupted operations recorded after failure are never automatically retryable.
+- Custom providers inherit conservative capabilities and must opt into stronger behavior explicitly.
 
 Default choices for the first implementation should favor bounded bootstrap delivery, explicit unknown state, blocked switching during active operations, and rollback safety over maximum automation.
 
-## 19. Immediate operational workaround
+## 19. Current operational behavior
 
-Until this design ships:
-
-- Prefer `claude-acp` over deprecated `claude-code` when continuing an existing Gosling session.
-- Treat the current ACP raw-history handoff as best-effort; very long sessions may still be costly or exceed useful context.
-- Avoid switching while a tool call or approval is active.
-- After switching, ask the target to restate the objective, current state, and next action before it performs new work.
+- Prefer `claude-acp` over deprecated `claude-code`; both use the bounded checkpoint contract.
+- Review checkpoint coverage and truncation before a sensitive cross-provider switch.
+- Finish or cancel active work and resolve pending approvals before switching.
+- Treat seamless resume as available only when an adapter explicitly reports and acknowledges native support.
 
 # Part II: Security Scan Remediation Program
 
@@ -1912,7 +1908,7 @@ Status: source repair complete; execution verification deferred because this cam
 - `check-acp-schema` resolves from `justfile_directory()` instead of the caller's working directory.
 - Previously deferred records ORCH-002, REC-001, REC-002, RES-002, and RES-003 are reconciled as already satisfied by current source.
 - The bounded ACP response policy remains intentional fail-closed behavior; streaming/pagination is future API work.
-- Session Handoff, Tagteam expansion, CLI usage reporting, release execution, and broad modularization are feature/maintenance backlog rather than defects.
+- Session Handoff and CLI usage reporting were classified as feature work rather than defects and were subsequently implemented. Release execution and broad modularization remain feature/maintenance backlog.
   (Tagteam was subsequently removed from Gosling in `602ae43c`, 2026-08-27; this line records the classification as it stood at the time.)
 - Giles's uniqueness-constraint crash and macOS Keychain authorization are external/manual validation constraints.
 

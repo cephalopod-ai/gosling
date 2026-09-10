@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Bot, ExternalLink } from 'lucide-react';
+import { AlertTriangle, Bot, CheckCircle2, ExternalLink, LoaderCircle } from 'lucide-react';
 import { defineMessages, useIntl } from '../../../../i18n';
 
 import {
@@ -16,6 +16,7 @@ import { Input } from '../../../ui/input';
 import { Select } from '../../../ui/Select';
 import {
   acpListProviderDetails,
+  acpPreviewSessionHandoff,
   acpReadThinkingEffort,
   acpSaveThinkingEffort,
 } from '../../../../acp/providers';
@@ -27,9 +28,20 @@ import Model, {
   getProviderMetadata,
 } from '../modelInterface';
 import { getPredefinedModelsFromEnv, shouldShowPredefinedModels } from '../predefinedModelsUtils';
-import type { ProviderDetails, ProviderType, ThinkingEffort } from '../../../../types/providers';
+import {
+  continuityClassForProvider,
+  type ProviderDetails,
+  type ProviderType,
+  type ThinkingEffort,
+} from '../../../../types/providers';
 import { trackModelChanged } from '../../../../utils/analytics';
 import { addToRecentModels } from '../../../../utils/recentModels';
+import { toast } from 'react-toastify';
+import { errorMessage } from '../../../../utils/conversionUtils';
+import type {
+  SessionContinuityClassDto,
+  SessionHandoffSnapshotV1Dto,
+} from '@repo-makeover/gosling-sdk';
 
 const i18n = defineMessages({
   thinkingEffortOff: {
@@ -172,6 +184,65 @@ const i18n = defineMessages({
     id: 'switchModelModal.selectModelButton',
     defaultMessage: 'Select model',
   },
+  reviewCheckpoint: {
+    id: 'switchModelModal.reviewCheckpoint',
+    defaultMessage: 'Review checkpoint',
+  },
+  confirmSwitch: {
+    id: 'switchModelModal.confirmSwitch',
+    defaultMessage: 'Confirm switch',
+  },
+  confirmNewContext: {
+    id: 'switchModelModal.confirmNewContext',
+    defaultMessage: 'Confirm new context',
+  },
+  preparingPreview: {
+    id: 'switchModelModal.preparingPreview',
+    defaultMessage: 'Preparing preview…',
+  },
+  transitionInProgress: {
+    id: 'switchModelModal.transitionInProgress',
+    defaultMessage: 'Switching…',
+  },
+  continuity: {
+    id: 'switchModelModal.continuity',
+    defaultMessage: 'Continuity: {continuity}',
+  },
+  seamlessResume: {
+    id: 'switchModelModal.seamlessResume',
+    defaultMessage: 'Seamless resume',
+  },
+  summarizedHandoff: {
+    id: 'switchModelModal.summarizedHandoff',
+    defaultMessage: 'Summarized handoff',
+  },
+  newContextOnly: {
+    id: 'switchModelModal.newContextOnly',
+    defaultMessage: 'New context only',
+  },
+  newContextWarning: {
+    id: 'switchModelModal.newContextWarning',
+    defaultMessage:
+      'This provider cannot receive the checkpoint. Continuing starts a new provider context; the previous provider and checkpoint remain available.',
+  },
+  checkpointCoverage: {
+    id: 'switchModelModal.checkpointCoverage',
+    defaultMessage:
+      'Checkpoint covers {covered} of {total} messages through row {row} (about {tokens} tokens).',
+  },
+  checkpointDetails: {
+    id: 'switchModelModal.checkpointDetails',
+    defaultMessage:
+      'Summary: {summary}. Delivery: {delivery}. Interrupted operations: {operations}. Pending approvals: {approvals}. Redactions: {redactions}. Truncations: {truncations}.',
+  },
+  transitionStages: {
+    id: 'switchModelModal.transitionStages',
+    defaultMessage: 'Preparing checkpoint · Initializing target · Delivering handoff · Activating',
+  },
+  activated: {
+    id: 'switchModelModal.activated',
+    defaultMessage: 'Activated',
+  },
   enterModelNotListed: {
     id: 'switchModelModal.enterModelNotListed',
     defaultMessage: 'Enter a model not listed...',
@@ -236,6 +307,7 @@ type SwitchModelModalProps = {
   setView: (view: View) => void;
   onModelSelected?: (model: string, provider: string) => void;
   initialProvider?: string | null;
+  initialModel?: string | null;
   titleOverride?: string;
   sessionModel?: string | null;
   sessionProvider?: string | null;
@@ -246,6 +318,7 @@ export const SwitchModelModal = ({
   setView,
   onModelSelected,
   initialProvider,
+  initialModel,
   titleOverride,
   sessionModel,
   sessionProvider,
@@ -282,7 +355,8 @@ export const SwitchModelModal = ({
     initialProvider || currentProvider || null
   );
   const [model, setModel] = useState<string>(
-    initialProvider && initialProvider !== currentProvider ? '' : currentModel || ''
+    initialModel ??
+      (initialProvider && initialProvider !== currentProvider ? '' : currentModel || '')
   );
   const [isCustomModel, setIsCustomModel] = useState(false);
   const [validationErrors, setValidationErrors] = useState({
@@ -303,6 +377,14 @@ export const SwitchModelModal = ({
   const reasoningRequestId = useRef(0);
   const [thinkingEffort, setThinkingEffort] = useState<ThinkingEffort | null>(null);
   const [selectedModelReasoning, setSelectedModelReasoning] = useState<boolean | null>(null);
+  const [handoffPreview, setHandoffPreview] = useState<{
+    snapshot: SessionHandoffSnapshotV1Dto;
+    expectedCurrentGeneration: number;
+    targetKey: string;
+  } | null>(null);
+  const [isPreviewing, setIsPreviewing] = useState(false);
+  const [isSwitching, setIsSwitching] = useState(false);
+  const [transitionActivated, setTransitionActivated] = useState(false);
 
   const modelReasoning = selectedModelReasoning ?? selectedPredefinedModel?.reasoning;
   const showThinkingControl = modelReasoning === true;
@@ -381,10 +463,12 @@ export const SwitchModelModal = ({
   }, [model, provider, usePredefinedModels, selectedPredefinedModel, intl]);
 
   const handleClose = () => {
+    if (isSwitching) return;
     onClose();
   };
 
   const handleSubmit = async () => {
+    if (isPreviewing || isSwitching) return;
     setAttemptedSubmit(true);
     const isFormValid = validateForm();
 
@@ -413,10 +497,39 @@ export const SwitchModelModal = ({
           ...modelObj,
           request_params: { ...modelObj.request_params, thinking_effort: effort },
         };
-        acpSaveThinkingEffort(effort).catch(console.warn);
       }
 
-      const success = await changeModel(sessionId, modelObj);
+      const targetKey = `${modelObj.provider}\u0000${modelObj.name}\u0000${modelObj.request_params?.thinking_effort ?? ''}`;
+      if (sessionId && handoffPreview?.targetKey !== targetKey) {
+        setIsPreviewing(true);
+        try {
+          const preview = await acpPreviewSessionHandoff(
+            sessionId,
+            modelObj.provider,
+            modelObj.name,
+            modelObj.context_limit
+          );
+          setHandoffPreview({ ...preview, targetKey });
+        } catch (error) {
+          toast.error(errorMessage(error, 'Failed to prepare session checkpoint preview'));
+        } finally {
+          setIsPreviewing(false);
+        }
+        return;
+      }
+
+      const effort = modelObj.request_params?.thinking_effort;
+      if (effort) {
+        acpSaveThinkingEffort(effort).catch(console.warn);
+      }
+      setIsSwitching(true);
+      setTransitionActivated(false);
+      const success = await changeModel(sessionId, modelObj, {
+        confirmNewContext: handoffPreview?.snapshot.continuityClass === 'new_context_only',
+        expectedCurrentGeneration: handoffPreview?.expectedCurrentGeneration,
+        expectedSourceHash: handoffPreview?.snapshot.coverage.sourceHash,
+        onActivated: () => setTransitionActivated(true),
+      });
       if (success) {
         trackModelChanged(modelObj.provider || '', modelObj.name);
         if (currentModel && currentProvider) {
@@ -427,10 +540,36 @@ export const SwitchModelModal = ({
           );
         }
         onModelSelected?.(modelObj.name, modelObj.provider || '');
+        onClose();
       }
-
-      onClose();
+      setIsSwitching(false);
     }
+  };
+
+  const selectedProviderId = usePredefinedModels ? selectedPredefinedModel?.provider : provider;
+  const selectedModelId = usePredefinedModels ? selectedPredefinedModel?.name : model;
+  const selectedProviderDetails = activeProvidersList.find(
+    (details) => details.name === selectedProviderId
+  );
+  const predictedContinuity = continuityClassForProvider(selectedProviderDetails?.capabilities);
+  const selectedThinkingEffort = showThinkingControl
+    ? (thinkingEffort ?? selectedPredefinedModel?.request_params?.thinking_effort ?? 'off')
+    : (selectedPredefinedModel?.request_params?.thinking_effort ?? '');
+  const selectedTargetKey = `${selectedProviderId ?? ''}\u0000${selectedModelId ?? ''}\u0000${
+    selectedThinkingEffort
+  }`;
+
+  useEffect(() => {
+    if (handoffPreview && handoffPreview.targetKey !== selectedTargetKey) {
+      setHandoffPreview(null);
+      setTransitionActivated(false);
+    }
+  }, [handoffPreview, selectedTargetKey]);
+
+  const continuityLabel = (continuity: SessionContinuityClassDto) => {
+    if (continuity === 'seamless_resume') return intl.formatMessage(i18n.seamlessResume);
+    if (continuity === 'summarized_handoff') return intl.formatMessage(i18n.summarizedHandoff);
+    return intl.formatMessage(i18n.newContextOnly);
   };
 
   // Re-validate when inputs change and after attempted submission
@@ -445,7 +584,7 @@ export const SwitchModelModal = ({
   useEffect(() => {
     if (!usePredefinedModels || !currentModel) return;
     const models = getPredefinedModelsFromEnv();
-    const matchingModel = models.find((m) => m.name === currentModel);
+    const matchingModel = models.find((m) => m.name === (initialModel ?? currentModel));
     if (matchingModel) {
       setSelectedPredefinedModel(matchingModel);
       resolveSelectedModelReasoning(
@@ -454,7 +593,7 @@ export const SwitchModelModal = ({
         matchingModel.reasoning
       );
     }
-  }, [usePredefinedModels, currentModel, resolveSelectedModelReasoning]);
+  }, [usePredefinedModels, currentModel, initialModel, resolveSelectedModelReasoning]);
 
   // For manual mode: one-time sync of provider/model when session data
   // arrives after the modal has already mounted. Uses a ref so it only
@@ -777,6 +916,15 @@ export const SwitchModelModal = ({
                           <span className="text-xs text-text-secondary">{model.subtext}</span>
                           <span className="text-xs text-text-secondary">•</span>
                           <span className="text-xs text-text-secondary">{model.provider}</span>
+                          <span className="rounded-full border border-border-primary px-1.5 py-0.5 text-[10px] text-text-secondary">
+                            {continuityLabel(
+                              continuityClassForProvider(
+                                activeProvidersList.find(
+                                  (details) => details.name === model.provider
+                                )?.capabilities
+                              )
+                            )}
+                          </span>
                         </div>
                       </div>
 
@@ -937,6 +1085,76 @@ export const SwitchModelModal = ({
               )}
             </div>
           )}
+
+          {sessionId && selectedProviderId && selectedModelId && (
+            <div className="rounded-lg border border-border-primary bg-background-secondary p-3 text-sm">
+              <div className="flex items-center justify-between gap-3">
+                <span className="font-medium text-text-primary">
+                  {intl.formatMessage(i18n.continuity, {
+                    continuity: continuityLabel(
+                      handoffPreview?.snapshot.continuityClass ?? predictedContinuity
+                    ),
+                  })}
+                </span>
+                <span className="text-xs text-text-secondary">
+                  {currentProvider ?? '—'} / {currentModel ?? '—'} → {selectedProviderId} /{' '}
+                  {selectedModelId}
+                </span>
+              </div>
+
+              {handoffPreview && (
+                <div className="mt-2 space-y-1 text-xs text-text-secondary">
+                  <p>
+                    {intl.formatMessage(i18n.checkpointCoverage, {
+                      covered: handoffPreview.snapshot.coverage.coveredMessageCount,
+                      total: handoffPreview.snapshot.coverage.totalMessageCount,
+                      row: handoffPreview.snapshot.coverage.coveredThroughRowId ?? '—',
+                      tokens: handoffPreview.snapshot.coverage.estimatedTokens,
+                    })}
+                  </p>
+                  <p>
+                    {intl.formatMessage(i18n.checkpointDetails, {
+                      summary: handoffPreview.snapshot.coverage.summaryStatus,
+                      delivery: handoffPreview.snapshot.deliveryStrategy,
+                      operations:
+                        handoffPreview.snapshot.activeOrInterruptedOperations?.length ?? 0,
+                      approvals: handoffPreview.snapshot.pendingApprovals?.length ?? 0,
+                      redactions: handoffPreview.snapshot.redactionReport.redactionCount,
+                      truncations:
+                        (handoffPreview.snapshot.coverage.truncations?.length ?? 0) +
+                        handoffPreview.snapshot.redactionReport.truncatedItemCount,
+                    })}
+                  </p>
+                </div>
+              )}
+
+              {(handoffPreview?.snapshot.continuityClass ?? predictedContinuity) ===
+                'new_context_only' && (
+                <div className="mt-2 flex gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-800 dark:text-amber-200">
+                  <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                  <span>{intl.formatMessage(i18n.newContextWarning)}</span>
+                </div>
+              )}
+
+              {isSwitching && (
+                <div
+                  className="mt-3 flex items-center gap-2 text-xs text-text-primary"
+                  role="status"
+                >
+                  {transitionActivated ? (
+                    <CheckCircle2 className="size-4 text-green-600" aria-hidden="true" />
+                  ) : (
+                    <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
+                  )}
+                  <span>
+                    {transitionActivated
+                      ? intl.formatMessage(i18n.activated)
+                      : intl.formatMessage(i18n.transitionStages)}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <DialogFooter className="pt-4 flex-col sm:flex-row gap-3">
@@ -950,11 +1168,23 @@ export const SwitchModelModal = ({
             {intl.formatMessage(i18n.quickStartGuide)}
           </a>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={handleClose} type="button">
+            <Button variant="outline" onClick={handleClose} type="button" disabled={isSwitching}>
               {intl.formatMessage(i18n.cancel)}
             </Button>
-            <Button onClick={handleSubmit} disabled={!isValid}>
-              {intl.formatMessage(i18n.selectModelButton)}
+            <Button onClick={handleSubmit} disabled={!isValid || isPreviewing || isSwitching}>
+              {isPreviewing
+                ? intl.formatMessage(i18n.preparingPreview)
+                : isSwitching
+                  ? intl.formatMessage(i18n.transitionInProgress)
+                  : !sessionId
+                    ? intl.formatMessage(i18n.selectModelButton)
+                    : handoffPreview
+                      ? intl.formatMessage(
+                          handoffPreview.snapshot.continuityClass === 'new_context_only'
+                            ? i18n.confirmNewContext
+                            : i18n.confirmSwitch
+                        )
+                      : intl.formatMessage(i18n.reviewCheckpoint)}
             </Button>
           </div>
         </DialogFooter>

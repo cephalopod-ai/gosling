@@ -557,6 +557,88 @@ pub fn stream_from_single_message(message: Message, usage: ProviderUsage) -> Mes
     Box::pin(stream)
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ContextOwnership {
+    #[default]
+    Gosling,
+    Provider,
+    Hybrid,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CapabilitySupport {
+    #[default]
+    Unsupported,
+    Supported,
+    Required,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NativeHandoffKind {
+    Resume,
+    HistoryImport,
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NativeHandoffReceipt {
+    pub provider_session_id: Option<String>,
+    pub acknowledgement: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProviderCapabilities {
+    pub context_ownership: ContextOwnership,
+    pub native_resume: CapabilitySupport,
+    pub history_import: CapabilitySupport,
+    pub in_place_model_change: CapabilitySupport,
+    pub session_fork: CapabilitySupport,
+    pub bootstrap_handoff: CapabilitySupport,
+    pub bootstrap_acknowledgement: CapabilitySupport,
+}
+
+impl ProviderCapabilities {
+    pub const fn gosling_managed() -> Self {
+        Self {
+            context_ownership: ContextOwnership::Gosling,
+            native_resume: CapabilitySupport::Unsupported,
+            history_import: CapabilitySupport::Unsupported,
+            in_place_model_change: CapabilitySupport::Supported,
+            session_fork: CapabilitySupport::Supported,
+            bootstrap_handoff: CapabilitySupport::Unsupported,
+            bootstrap_acknowledgement: CapabilitySupport::Unsupported,
+        }
+    }
+
+    pub const fn provider_managed() -> Self {
+        Self {
+            context_ownership: ContextOwnership::Provider,
+            native_resume: CapabilitySupport::Unsupported,
+            history_import: CapabilitySupport::Unsupported,
+            in_place_model_change: CapabilitySupport::Unsupported,
+            session_fork: CapabilitySupport::Unsupported,
+            bootstrap_handoff: CapabilitySupport::Required,
+            bootstrap_acknowledgement: CapabilitySupport::Required,
+        }
+    }
+
+    pub const fn from_legacy_context_ownership(manages_own_context: bool) -> Self {
+        if manages_own_context {
+            Self::provider_managed()
+        } else {
+            Self::gosling_managed()
+        }
+    }
+}
+
+impl Default for ProviderCapabilities {
+    fn default() -> Self {
+        Self::gosling_managed()
+    }
+}
+
 /// Await the stream's first item so a failure at stream start — e.g. an SSE
 /// `error` event sent instead of any content — surfaces as an `Err` from this
 /// call, where a `with_retry` wrapper can re-issue the whole request. On
@@ -570,7 +652,7 @@ pub async fn await_stream_start(mut stream: MessageStream) -> Result<MessageStre
 }
 
 /// Durable-file convention for a self-managing backend (a provider whose
-/// [`Provider::manages_own_context`] is true), keyed off its provider name:
+/// [`Provider::capabilities`] reports provider-owned context), keyed off its provider name:
 /// Claude Code reads `CLAUDE.md`; other agent CLIs (Codex, Amp, Copilot,
 /// Gemini, …) follow the cross-tool `AGENTS.md` convention. Extracted facts
 /// are routed here — the seam that survives the backend's own compaction —
@@ -715,19 +797,31 @@ pub trait Provider: Send + Sync {
         ))
     }
 
-    /// Whether the provider manages its own conversation context (e.g. CLI
-    /// wrappers like Claude Code or Gemini CLI). When true, gosling-side
-    /// context management such as tool-pair summarization is skipped because
-    /// the provider's internal state is the source of truth.
-    ///
-    /// `Provider` is used as `dyn Provider` throughout gosling, so this can't
-    /// be an associated const here (associated consts aren't dyn-compatible).
-    /// `gosling::providers::base::ProviderDef` carries a matching
-    /// `MANAGES_OWN_CONTEXT` associated const for callers that need this
-    /// value without constructing a provider instance (e.g. the provider
-    /// registry) — keep the two in sync for a given provider type.
+    /// Declares how this provider owns context and which handoff mechanisms it supports.
+    /// The conservative default describes a Gosling-managed API provider.
+    fn capabilities(&self) -> ProviderCapabilities {
+        ProviderCapabilities::gosling_managed()
+    }
+
+    /// Compatibility projection for callers that have not migrated to
+    /// [`Provider::capabilities`]. New continuity decisions must use the
+    /// structured capability contract.
     fn manages_own_context(&self) -> bool {
-        false
+        self.capabilities().context_ownership != ContextOwnership::Gosling
+    }
+
+    /// Deliver a redacted canonical checkpoint through a provider-native
+    /// resume or history-import API. Providers must return either a provider
+    /// session identity or an explicit acknowledgement before activation.
+    async fn deliver_native_handoff(
+        &self,
+        _kind: NativeHandoffKind,
+        _gosling_session_id: &str,
+        _snapshot_json: &str,
+    ) -> Result<NativeHandoffReceipt, ProviderError> {
+        Err(ProviderError::NotImplemented(
+            "native session handoff is not supported by this provider".to_string(),
+        ))
     }
 
     /// Whether this provider invokes tools outside Gosling's inspection and

@@ -1,4 +1,4 @@
-import { test as base, expect } from './fixtures';
+import { CHAT_SUBMIT_SHORTCUT, test as base, expect } from './fixtures';
 import { Page } from '@playwright/test';
 import { showTestName, clearTestName } from './test-overlay';
 import { join } from 'path';
@@ -289,7 +289,7 @@ test.describe('Gosling App', () => {
           await mainWindow.screenshot({ path: `test-results/${provider.name.toLowerCase()}-before-send.png` });
 
           // Send message
-          await chatInput.press('Enter');
+          await chatInput.press(CHAT_SUBMIT_SHORTCUT);
 
           // Wait for loading indicator to appear and then disappear
           console.log('Waiting for response...');
@@ -328,7 +328,7 @@ test.describe('Gosling App', () => {
           await chatInput.fill('What is 2+2?');
 
           // Send message
-          await chatInput.press('Enter');
+          await chatInput.press(CHAT_SUBMIT_SHORTCUT);
 
           // Wait for loading indicator and response
           await mainWindow.waitForSelector('[data-testid="loading-indicator"]',
@@ -569,7 +569,7 @@ test.describe('Gosling App', () => {
           await mainWindow.screenshot({ path: `test-results/${provider.name.toLowerCase()}-before-quote-request.png` });
 
           // Send message
-          await chatInput.press('Enter');
+          await chatInput.press(CHAT_SUBMIT_SHORTCUT);
 
           // Get the latest response
           const response = await mainWindow.waitForSelector('.gosling-message-tool', { timeout: 5000 });

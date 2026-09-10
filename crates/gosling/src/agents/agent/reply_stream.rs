@@ -48,6 +48,13 @@ impl Agent {
             gosling_mode,
             model_config,
         } = context;
+        let pending_handoff_snapshot_id = conversation.messages().iter().find_map(|message| {
+            message
+                .id
+                .as_deref()
+                .and_then(|id| id.strip_prefix("handoff_snapshot_"))
+                .map(str::to_string)
+        });
 
         // Kept separately (rather than only the merged `system_prompt`) so the
         // Context Manager can account for system vs. project-instructions
@@ -131,6 +138,7 @@ impl Agent {
             let turn_started_at = chrono::Utc::now() - chrono::Duration::seconds(1);
             let research_state = crate::session::DeepResearchState::from_extension_data(&session.extension_data);
             let mut research_nudge_sent = false;
+            let mut pending_handoff_snapshot_id = pending_handoff_snapshot_id;
 
             loop {
                 if is_token_cancelled(&cancel_token) {
@@ -242,11 +250,21 @@ impl Agent {
                             if is_token_cancelled(&cancel_token) {
                                 break;
                             }
-                            yield AgentEvent::Message(
-                                Message::assistant()
-                                    .with_text(crate::context_mgmt::auto_compaction_failure_message(&e))
-                                    .with_terminal_error(e.to_string())
-                            );
+                            let failure_message = Message::assistant()
+                                .with_text(crate::context_mgmt::auto_compaction_failure_message(&e))
+                                .with_terminal_error(e.to_string());
+                            if let Err(checkpoint_error) = self
+                                .persist_provider_failure_checkpoint(
+                                    &session_config.id,
+                                    &active_provider,
+                                    &active_model_config,
+                                    &failure_message,
+                                )
+                                .await
+                            {
+                                warn!("Failed to prepare provider recovery checkpoint: {checkpoint_error}");
+                            }
+                            yield AgentEvent::Message(failure_message);
                             break;
                         }
                     }
@@ -337,6 +355,11 @@ impl Agent {
                             }
 
                             if let Some(response) = response {
+                                if let Some(snapshot_id) = pending_handoff_snapshot_id.take() {
+                                    session_manager
+                                        .acknowledge_handoff_snapshot(&snapshot_id)
+                                        .await?;
+                                }
                                 let response = if response.id.is_some() {
                                     response
                                 } else {
@@ -797,12 +820,22 @@ impl Agent {
 
                             if compaction_attempts >= 2 {
                                 error!("Context limit exceeded after compaction - prompt too large");
-                            yield AgentEvent::Message(
-                                Message::assistant().with_system_notification(
+                                let failure_message = Message::assistant().with_system_notification(
                                     SystemNotificationType::InlineMessage,
                                     "Unable to continue: Context limit still exceeded after compaction. Try using a shorter message, a model with a larger context window, or start a new session."
-                                ).with_terminal_error("Context limit still exceeded after compaction")
-                            );
+                                ).with_terminal_error("Context limit still exceeded after compaction");
+                                if let Err(checkpoint_error) = self
+                                    .persist_provider_failure_checkpoint(
+                                        &session_config.id,
+                                        &active_provider,
+                                        &active_model_config,
+                                        &failure_message,
+                                    )
+                                    .await
+                                {
+                                    warn!("Failed to prepare provider recovery checkpoint: {checkpoint_error}");
+                                }
+                                yield AgentEvent::Message(failure_message);
                                 break;
                             }
 
@@ -847,11 +880,21 @@ impl Agent {
                                     #[cfg(feature = "telemetry")]
                                     crate::posthog::emit_error("compaction_failed", &e.to_string());
                                     error!("Compaction failed: {}", e);
-                                    yield AgentEvent::Message(
-                                        Message::assistant()
-                                            .with_text(crate::context_mgmt::auto_compaction_failure_message(&e))
-                                            .with_terminal_error(e.to_string())
-                                    );
+                                    let failure_message = Message::assistant()
+                                        .with_text(crate::context_mgmt::auto_compaction_failure_message(&e))
+                                        .with_terminal_error(e.to_string());
+                                    if let Err(checkpoint_error) = self
+                                        .persist_provider_failure_checkpoint(
+                                            &session_config.id,
+                                            &active_provider,
+                                            &active_model_config,
+                                            &failure_message,
+                                        )
+                                        .await
+                                    {
+                                        warn!("Failed to prepare provider recovery checkpoint: {checkpoint_error}");
+                                    }
+                                    yield AgentEvent::Message(failure_message);
                                     break;
                                 }
                             }
@@ -871,13 +914,23 @@ impl Agent {
                                 "top_up_url": top_up_url,
                             });
 
-                            yield AgentEvent::Message(
-                                Message::assistant().with_system_notification_with_data(
+                            let failure_message = Message::assistant().with_system_notification_with_data(
                                     SystemNotificationType::CreditsExhausted,
                                     user_msg,
                                     notification_data,
-                                ).with_terminal_error(provider_err.to_string())
-                            );
+                                ).with_terminal_error(provider_err.to_string());
+                            if let Err(checkpoint_error) = self
+                                .persist_provider_failure_checkpoint(
+                                    &session_config.id,
+                                    &active_provider,
+                                    &active_model_config,
+                                    &failure_message,
+                                )
+                                .await
+                            {
+                                warn!("Failed to prepare provider recovery checkpoint: {checkpoint_error}");
+                            }
+                            yield AgentEvent::Message(failure_message);
                             break;
                         }
                         Err(ref provider_err @ ProviderError::Refusal { ref details, ref category }) => {
@@ -886,11 +939,21 @@ impl Agent {
                             error!("Error: {}", provider_err);
 
                             let category = category.as_deref().map(|c| format!("\n\nCategory: {c}")).unwrap_or_default();
-                            yield AgentEvent::Message(
-                                Message::assistant().with_text(format!(
+                            let failure_message = Message::assistant().with_text(format!(
                                     "The provider refused this request.\n\n{details}{category}\n\nPlease start a new session to continue — resending this conversation is likely to be refused again."
-                                )).with_terminal_error(provider_err.to_string())
-                            );
+                                )).with_terminal_error(provider_err.to_string());
+                            if let Err(checkpoint_error) = self
+                                .persist_provider_failure_checkpoint(
+                                    &session_config.id,
+                                    &active_provider,
+                                    &active_model_config,
+                                    &failure_message,
+                                )
+                                .await
+                            {
+                                warn!("Failed to prepare provider recovery checkpoint: {checkpoint_error}");
+                            }
+                            yield AgentEvent::Message(failure_message);
                             // A refusal is terminal: skip goal/grind nudges,
                             // which would resend the same refused conversation.
                             exit_chat = true;
@@ -1005,13 +1068,25 @@ impl Agent {
                                 }
                                 Err(failover_error) => {
                                     error!("Configured provider failover is unavailable: {failover_error}");
-                                    yield AgentEvent::Message(provider_failure_message(
+                                    let failure_message = provider_failure_message(
                                         provider_err,
                                         &format!(
                                             "Ran into this error: {provider_err}.\n\nThe configured failover could not start: {failover_error}"
                                         ),
                                         true,
-                                    ));
+                                    );
+                                    if let Err(checkpoint_error) = self
+                                        .persist_provider_failure_checkpoint(
+                                            &session_config.id,
+                                            &active_provider,
+                                            &active_model_config,
+                                            &failure_message,
+                                        )
+                                        .await
+                                    {
+                                        warn!("Failed to prepare provider recovery checkpoint: {checkpoint_error}");
+                                    }
+                                    yield AgentEvent::Message(failure_message);
                                 }
                             }
                             break;
@@ -1020,22 +1095,50 @@ impl Agent {
                             #[cfg(feature = "telemetry")]
                             crate::posthog::emit_error(provider_err.telemetry_type(), &provider_err.to_string());
                             error!("Error: {}", provider_err);
-                            yield AgentEvent::Message(provider_failure_message(
+                            let failure_message = provider_failure_message(
                                 provider_err,
                                 &format!("{provider_err}\n\nPlease resend your message to try again."),
                                 no_tools_called,
-                            ));
+                            );
+                            if no_tools_called {
+                                if let Err(checkpoint_error) = self
+                                    .persist_provider_failure_checkpoint(
+                                        &session_config.id,
+                                        &active_provider,
+                                        &active_model_config,
+                                        &failure_message,
+                                    )
+                                    .await
+                                {
+                                    warn!("Failed to prepare provider recovery checkpoint: {checkpoint_error}");
+                                }
+                            }
+                            yield AgentEvent::Message(failure_message);
                             break;
                         }
                         Err(ref provider_err) => {
                             #[cfg(feature = "telemetry")]
                             crate::posthog::emit_error(provider_err.telemetry_type(), &provider_err.to_string());
                             error!("Error: {}", provider_err);
-                            yield AgentEvent::Message(provider_failure_message(
+                            let failure_message = provider_failure_message(
                                 provider_err,
                                 &format!("Ran into this error: {provider_err}.\n\nPlease retry if you think this is a transient or recoverable error."),
                                 no_tools_called,
-                            ));
+                            );
+                            if no_tools_called {
+                                if let Err(checkpoint_error) = self
+                                    .persist_provider_failure_checkpoint(
+                                        &session_config.id,
+                                        &active_provider,
+                                        &active_model_config,
+                                        &failure_message,
+                                    )
+                                    .await
+                                {
+                                    warn!("Failed to prepare provider recovery checkpoint: {checkpoint_error}");
+                                }
+                            }
+                            yield AgentEvent::Message(failure_message);
                             break;
                         }
                     }

@@ -14,8 +14,8 @@ use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWrite
 use tokio::process::Command;
 
 use super::base::{
-    stream_from_single_message, ConfigKey, MessageStream, ModelInfo, Provider, ProviderDef,
-    ProviderMetadata,
+    stream_from_single_message, ConfigKey, MessageStream, ModelInfo, Provider,
+    ProviderCapabilities, ProviderDef, ProviderMetadata,
 };
 use super::cli_common::{
     generate_simple_session_description, is_session_description_request, reject_hosted_tools,
@@ -430,8 +430,8 @@ impl Provider for AntigravityProvider {
         &self.name
     }
 
-    fn manages_own_context(&self) -> bool {
-        true
+    fn capabilities(&self) -> ProviderCapabilities {
+        ProviderCapabilities::provider_managed()
     }
 
     fn executes_tools_outside_gosling(&self) -> bool {

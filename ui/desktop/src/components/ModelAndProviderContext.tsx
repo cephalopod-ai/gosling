@@ -19,6 +19,7 @@ import { defineMessages, useIntl } from '../i18n';
 import type { Message } from '../types/message';
 import type { ThinkingEffort } from '../types/providers';
 import type { Session } from '../types/session';
+import type { SessionHandoffSnapshotV1Dto } from '@repo-makeover/gosling-sdk';
 
 const i18n = defineMessages({
   unknownProviderTitle: {
@@ -45,16 +46,31 @@ const i18n = defineMessages({
     id: 'modelAndProviderContext.modelChangeFailed',
     defaultMessage: '{provider}/{model} failed',
   },
+  previousProviderRetained: {
+    id: 'modelAndProviderContext.previousProviderRetained',
+    defaultMessage: 'The switch was not activated. Your previous provider remains active.',
+  },
   selectModel: {
     id: 'modelAndProviderContext.selectModel',
     defaultMessage: 'Select Model',
   },
 });
 
+export interface ChangeModelOptions {
+  confirmNewContext?: boolean;
+  expectedCurrentGeneration?: number;
+  expectedSourceHash?: string;
+  onActivated?: (snapshot: SessionHandoffSnapshotV1Dto) => void;
+}
+
 interface ModelAndProviderContextType {
   currentModel: string | null;
   currentProvider: string | null;
-  changeModel: (sessionId: string | null, model: Model) => Promise<boolean>;
+  changeModel: (
+    sessionId: string | null,
+    model: Model,
+    options?: ChangeModelOptions
+  ) => Promise<boolean>;
   getCurrentModelAndProvider: () => Promise<{ model: string; provider: string }>;
   getFallbackModelAndProvider: () => Promise<{ model: string; provider: string }>;
   getCurrentModelAndProviderForDisplay: () => Promise<{ model: string; provider: string }>;
@@ -174,7 +190,7 @@ export const ModelAndProviderProvider: React.FC<ModelAndProviderProviderProps> =
   const intl = useIntl();
 
   const changeModel = useCallback(
-    async (sessionId: string | null, model: Model) => {
+    async (sessionId: string | null, model: Model, options?: ChangeModelOptions) => {
       const modelName = model.name;
       const providerName = model.provider;
       let phase = 'agent';
@@ -188,9 +204,19 @@ export const ModelAndProviderProvider: React.FC<ModelAndProviderProviderProps> =
             sessionId,
             providerName,
             modelName,
-            model.request_params?.thinking_effort ?? null
+            model.request_params?.thinking_effort ?? null,
+            {
+              confirmNewContext: options?.confirmNewContext,
+              expectedCurrentGeneration: options?.expectedCurrentGeneration,
+              expectedSourceHash: options?.expectedSourceHash,
+              requestParams: model.request_params ?? null,
+              targetContextLimit: model.context_limit ?? null,
+            }
           );
           patchAcpSessionProviderModel(sessionId, applied);
+          if (applied.snapshot) {
+            options?.onActivated?.(applied.snapshot);
+          }
 
           const modelForRecord: Model = {
             ...model,
@@ -243,7 +269,9 @@ export const ModelAndProviderProvider: React.FC<ModelAndProviderProviderProps> =
             provider: providerName,
             model: modelName,
           }),
-          msg: `${error}`,
+          msg: sessionId
+            ? `${error}\n\n${intl.formatMessage(i18n.previousProviderRetained)}`
+            : `${error}`,
           traceback: errorMessage(error),
         });
         return false;

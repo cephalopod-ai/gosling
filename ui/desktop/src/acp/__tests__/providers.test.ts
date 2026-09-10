@@ -1,49 +1,32 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getAcpClient } from '../acpConnection';
-import { acpSetSessionProviderModel, parseProviderType } from '../providers';
+import {
+  acpPreviewSessionHandoff,
+  acpSetSessionProviderModel,
+  parseProviderType,
+} from '../providers';
 
 vi.mock('../acpConnection', () => ({
   getAcpClient: vi.fn(),
 }));
-
-function selectConfigOption(id: string, currentValue: string) {
-  return {
-    id,
-    name: id,
-    type: 'select',
-    currentValue,
-    options: [],
-  };
-}
 
 describe('ACP providers', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('sets thinking effort after provider and model, then returns the final config response', async () => {
+  it('sets provider, model, and thinking effort through one atomic transition', async () => {
+    const snapshot = { snapshotId: 'handoff-1' };
     const client = {
-      setSessionConfigOption: vi
-        .fn()
-        .mockResolvedValueOnce({
-          configOptions: [
-            selectConfigOption('provider', 'anthropic'),
-            selectConfigOption('model', 'provider-default-model'),
-          ],
-        })
-        .mockResolvedValueOnce({
-          configOptions: [
-            selectConfigOption('provider', 'anthropic'),
-            selectConfigOption('model', 'claude-sonnet-4-5'),
-          ],
-        })
-        .mockResolvedValueOnce({
-          configOptions: [
-            selectConfigOption('provider', 'anthropic'),
-            selectConfigOption('model', 'claude-sonnet-4-5'),
-            selectConfigOption('thinking_effort', 'high'),
-          ],
+      gosling: {
+        sessionProviderTransition_unstable: vi.fn().mockResolvedValue({
+          snapshot,
+          previousProvider: 'openai',
+          previousModel: 'gpt-5',
+          activeProvider: 'anthropic',
+          activeModel: 'claude-sonnet-4-5',
         }),
+      },
     };
     vi.mocked(getAcpClient).mockResolvedValue(
       client as unknown as Awaited<ReturnType<typeof getAcpClient>>
@@ -56,26 +39,45 @@ describe('ACP providers', () => {
       'high'
     );
 
-    expect(client.setSessionConfigOption).toHaveBeenCalledTimes(3);
-    expect(client.setSessionConfigOption).toHaveBeenNthCalledWith(1, {
+    expect(client.gosling.sessionProviderTransition_unstable).toHaveBeenCalledOnce();
+    expect(client.gosling.sessionProviderTransition_unstable).toHaveBeenCalledWith({
       sessionId: 'session-1',
-      configId: 'provider',
-      value: 'anthropic',
-    });
-    expect(client.setSessionConfigOption).toHaveBeenNthCalledWith(2, {
-      sessionId: 'session-1',
-      configId: 'model',
-      value: 'claude-sonnet-4-5',
-    });
-    expect(client.setSessionConfigOption).toHaveBeenNthCalledWith(3, {
-      sessionId: 'session-1',
-      configId: 'thinking_effort',
-      value: 'high',
+      targetProvider: 'anthropic',
+      targetModel: 'claude-sonnet-4-5',
+      targetThinkingEffort: 'high',
+      targetContextLimit: null,
+      requestParams: null,
+      expectedCurrentGeneration: null,
+      expectedSourceHash: null,
+      confirmNewContext: false,
     });
     expect(applied).toEqual({
       providerId: 'anthropic',
       modelId: 'claude-sonnet-4-5',
       thinkingEffort: 'high',
+      snapshot,
+    });
+  });
+
+  it('previews checkpoint coverage without activating the target', async () => {
+    const preview = { snapshot: { snapshotId: 'preview-1' }, expectedCurrentGeneration: 3 };
+    const client = {
+      gosling: {
+        sessionHandoffCheckpointPreview_unstable: vi.fn().mockResolvedValue(preview),
+      },
+    };
+    vi.mocked(getAcpClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof getAcpClient>>
+    );
+
+    await expect(
+      acpPreviewSessionHandoff('session-1', 'anthropic', 'claude-sonnet-4-5', 200_000)
+    ).resolves.toEqual(preview);
+    expect(client.gosling.sessionHandoffCheckpointPreview_unstable).toHaveBeenCalledWith({
+      sessionId: 'session-1',
+      targetProvider: 'anthropic',
+      targetModel: 'claude-sonnet-4-5',
+      targetContextLimit: 200_000,
     });
   });
 });

@@ -773,7 +773,7 @@ end to end, unless the operator explicitly accepts a narrower development-only e
       `ScrollArea` tracks following state, pauses after upward user scrolling,
       and resumes at the bottom; its focused regression covers the behavior.
 - [x] Make chat persistence incremental and crash-resilient: store each user
-      message as soon as Enter is submitted, and store assistant output as it is
+      message as soon as it is submitted, and store assistant output as it is
       written to the chat window, so an abrupt Gosling exit does not erase the last
       chat item.
 - [x] For CLI usage with subscription-backed providers where usage data is
@@ -917,7 +917,10 @@ mutation was performed.
 - [x] CLI usage reporting is implemented by `/status`; the command reports
       provider/model/mode plus current-turn and accumulated token usage when the
       provider supplies it, and states when usage is unavailable.
-- [ ] Session Handoff remains a feature backlog item, not an open defect.
+- [x] **FEATURE-GSL-001** — Full Session Handoff continuity is implemented with
+      schema-v33 bounded/redacted checkpoints, structured provider capabilities,
+      atomic provider/model transitions, restart boundaries, failure recovery, and
+      Desktop preview/inspection UX. See ADR-0019 and the 2026-09-09 session log.
 - [ ] Giles's internal uniqueness-constraint failure remains external tool debt.
 - [ ] Release execution remains maintainer-owned.
 

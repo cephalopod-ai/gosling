@@ -6,7 +6,7 @@ pub use resolver::{
     InventoryRegistration, InventoryResolvers,
 };
 
-use super::base::{ConfigKey, ModelInfo, Provider, ProviderType};
+use super::base::{ConfigKey, ModelInfo, Provider, ProviderCapabilities, ProviderType};
 use super::canonical::{map_provider_name, map_to_canonical_model, CanonicalModelRegistry};
 use super::catalog::ProviderSetupCategory;
 use crate::config::declarative_providers::{DeclarativeProviderConfig, ProviderEngine};
@@ -50,6 +50,7 @@ pub struct ProviderInventoryEntry {
     /// gosling to resend history each turn. Frontends use this to decide
     /// whether gosling-side context/compaction UI applies to a session.
     pub manages_own_context: bool,
+    pub capabilities: ProviderCapabilities,
 }
 
 /// Families whose latest model should be surfaced in the compact picker.
@@ -272,7 +273,7 @@ struct ProviderDescriptor {
     supports_refresh: bool,
     static_models: Vec<ModelInfo>,
     model_selection_hint: Option<String>,
-    manages_own_context: bool,
+    capabilities: ProviderCapabilities,
 }
 
 impl ProviderInventoryService {
@@ -323,7 +324,9 @@ impl ProviderInventoryService {
                 .and_then(|snapshot| snapshot.last_refresh_attempt_at),
             last_refresh_error: snapshot.and_then(|snapshot| snapshot.last_refresh_error),
             model_selection_hint: descriptor.model_selection_hint,
-            manages_own_context: descriptor.manages_own_context,
+            manages_own_context: descriptor.capabilities.context_ownership
+                != super::base::ContextOwnership::Gosling,
+            capabilities: descriptor.capabilities,
         }))
     }
 
@@ -733,7 +736,7 @@ impl ProviderInventoryService {
             supports_refresh: entry.supports_inventory_refresh(),
             static_models: metadata.known_models,
             model_selection_hint: metadata.model_selection_hint,
-            manages_own_context: entry.manages_own_context(),
+            capabilities: entry.capabilities(),
         }))
     }
 

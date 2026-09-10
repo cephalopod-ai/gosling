@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { IntlTestWrapper } from '../i18n/test-utils';
 import type { Session } from '../types/session';
@@ -6,6 +7,10 @@ import { useWorkspace } from '../contexts/WorkspaceContext';
 import SessionActionsHeader from './SessionActionsHeader';
 
 vi.mock('../contexts/WorkspaceContext', () => ({ useWorkspace: vi.fn() }));
+const { readCheckpoint } = vi.hoisted(() => ({ readCheckpoint: vi.fn() }));
+vi.mock('../acp/providers', () => ({
+  acpReadSessionHandoffCheckpoint: (...args: unknown[]) => readCheckpoint(...args),
+}));
 
 const session: Session = {
   id: 'session-1',
@@ -42,5 +47,27 @@ describe('SessionActionsHeader workspace badge', () => {
       'title',
       'Pinned to Annual Meeting; new chats use Personal'
     );
+  });
+
+  it('opens the latest durable handoff checkpoint from session actions', async () => {
+    vi.mocked(useWorkspace).mockReturnValue({ activeWorkspace: null } as unknown as ReturnType<
+      typeof useWorkspace
+    >);
+    readCheckpoint.mockResolvedValue({
+      snapshotId: 'handoff-1',
+      continuityClass: 'summarized_handoff',
+      coverage: { coveredMessageCount: 2, totalMessageCount: 2 },
+    });
+    const user = userEvent.setup();
+    render(<SessionActionsHeader session={session} onSessionChange={vi.fn()} />, {
+      wrapper: IntlTestWrapper,
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Session actions' }));
+    await user.click(await screen.findByText('View handoff checkpoint'));
+
+    expect(await screen.findByText('Session handoff checkpoint')).toBeInTheDocument();
+    expect(readCheckpoint).toHaveBeenCalledWith('session-1');
+    expect(screen.getByText('"handoff-1"')).toBeInTheDocument();
   });
 });

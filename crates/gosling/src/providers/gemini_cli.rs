@@ -8,7 +8,8 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::process::Command;
 
 use super::base::{
-    stream_from_single_message, MessageStream, Provider, ProviderDef, ProviderMetadata,
+    stream_from_single_message, MessageStream, Provider, ProviderCapabilities, ProviderDef,
+    ProviderMetadata,
 };
 use super::cli_common::{error_from_event, extract_usage_tokens};
 use super::utils::filter_extensions_from_system_prompt;
@@ -280,8 +281,8 @@ impl Provider for GeminiCliProvider {
         &self.name
     }
 
-    fn manages_own_context(&self) -> bool {
-        true
+    fn capabilities(&self) -> ProviderCapabilities {
+        ProviderCapabilities::provider_managed()
     }
 
     fn executes_tools_outside_gosling(&self) -> bool {

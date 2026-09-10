@@ -34,12 +34,18 @@ pub(crate) fn current_working_dir() -> PathBuf {
 pub trait ProviderDef: ProviderDescriptor + Send + Sync {
     type Provider: Provider + 'static;
 
-    /// Mirrors `Self::Provider`'s `Provider::manages_own_context()` for a given
+    /// Structured continuity capabilities available before a live provider is created.
+    /// Existing provider definitions inherit the legacy context-ownership projection;
+    /// adapters with native resume/import behavior must override this contract explicitly.
+    const CAPABILITIES: ProviderCapabilities =
+        ProviderCapabilities::from_legacy_context_ownership(Self::MANAGES_OWN_CONTEXT);
+
+    /// Compatibility projection of `Self::Provider`'s context ownership for a given
     /// provider type, but as an associated const readable at provider-registry
     /// registration time without constructing an instance (`Provider` is used as
     /// `dyn Provider`, so it can't carry this as an associated const itself).
     /// Keep this in sync with the corresponding `Provider` impl's
-    /// `manages_own_context()` override.
+    /// `capabilities()` implementation.
     const MANAGES_OWN_CONTEXT: bool = false;
 
     /// Mirrors `Self::Provider`'s `Provider::executes_tools_outside_gosling()`

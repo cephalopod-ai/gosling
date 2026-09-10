@@ -1,4 +1,5 @@
 mod artifacts_storage;
+mod handoff_storage;
 mod legacy_import;
 mod library_storage;
 mod message_storage;
@@ -17,6 +18,14 @@ mod tool_operations;
 use summary_storage::summary_covers_history_before;
 
 pub(crate) use tool_operations::ToolOperationStart;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct HandoffToolOperation {
+    pub operation_id: String,
+    pub tool_request_id: String,
+    pub tool_name: String,
+    pub state: String,
+}
 
 use crate::config::paths::Paths;
 use crate::config::GoslingMode;
@@ -52,7 +61,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 use utoipa::ToSchema;
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 32;
+pub const CURRENT_SCHEMA_VERSION: i32 = 33;
 
 pub use output_revisions_storage::OutputCapture;
 pub const SESSIONS_FOLDER: &str = "sessions";
@@ -649,6 +658,14 @@ impl SessionManager {
         self.storage.get_session_tail_page(id, limit).await
     }
 
+    pub(crate) async fn get_session_tail_rows(
+        &self,
+        id: &str,
+        limit: usize,
+    ) -> Result<(Vec<(i64, Message)>, usize)> {
+        self.storage.get_session_tail_rows(id, limit).await
+    }
+
     pub async fn get_session_message_rows_between(
         &self,
         id: &str,
@@ -749,6 +766,71 @@ impl SessionManager {
 
     pub async fn get_session_summary_facts(&self, id: &str) -> Result<Vec<SessionSummaryFact>> {
         self.storage.get_session_summary_facts(id).await
+    }
+
+    pub async fn prepare_handoff_snapshot(
+        &self,
+        snapshot: gosling_sdk_types::session_handoff::SessionHandoffSnapshotV1Dto,
+        expected_current_generation: Option<u64>,
+    ) -> Result<gosling_sdk_types::session_handoff::SessionHandoffSnapshotV1Dto> {
+        self.storage
+            .prepare_handoff_snapshot(snapshot, expected_current_generation)
+            .await
+    }
+
+    pub async fn update_handoff_status(
+        &self,
+        snapshot_id: &str,
+        status: gosling_sdk_types::session_handoff::SessionHandoffStatusDto,
+        failure: Option<&str>,
+    ) -> Result<gosling_sdk_types::session_handoff::SessionHandoffSnapshotV1Dto> {
+        self.storage
+            .update_handoff_status(snapshot_id, status, failure)
+            .await
+    }
+
+    pub async fn update_handoff_snapshot(
+        &self,
+        snapshot: &gosling_sdk_types::session_handoff::SessionHandoffSnapshotV1Dto,
+    ) -> Result<()> {
+        self.storage.update_handoff_snapshot(snapshot).await
+    }
+
+    pub async fn commit_provider_transition(
+        &self,
+        snapshot_id: &str,
+        provider_name: &str,
+        model_config: ModelConfig,
+        mode: GoslingMode,
+    ) -> Result<gosling_sdk_types::session_handoff::SessionHandoffSnapshotV1Dto> {
+        self.storage
+            .commit_provider_transition(self, snapshot_id, provider_name, model_config, mode)
+            .await
+    }
+
+    pub async fn latest_handoff_snapshot(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<gosling_sdk_types::session_handoff::SessionHandoffSnapshotV1Dto>> {
+        self.storage.latest_handoff_snapshot(session_id).await
+    }
+
+    pub async fn latest_handoff_generation(&self, session_id: &str) -> Result<u64> {
+        self.storage.latest_handoff_generation(session_id).await
+    }
+
+    pub async fn acknowledge_handoff_snapshot(&self, snapshot_id: &str) -> Result<()> {
+        self.storage.acknowledge_handoff_snapshot(snapshot_id).await
+    }
+
+    pub(crate) async fn handoff_tool_operations(
+        &self,
+        session_id: &str,
+        limit: usize,
+    ) -> Result<Vec<HandoffToolOperation>> {
+        self.storage
+            .handoff_tool_operations(session_id, limit)
+            .await
     }
 
     pub async fn upsert_session_summary(&self, summary: &SessionSummary) -> Result<()> {
@@ -1029,6 +1111,29 @@ impl SessionManager {
 
     pub async fn copy_session(&self, session_id: &str, new_name: String) -> Result<Session> {
         self.storage.copy_session(self, session_id, new_name).await
+    }
+
+    pub async fn create_handoff_session(
+        &self,
+        source_session_id: &str,
+        new_name: String,
+        provider_name: String,
+        model_config: ModelConfig,
+        snapshot: gosling_sdk_types::session_handoff::SessionHandoffSnapshotV1Dto,
+    ) -> Result<(
+        Session,
+        gosling_sdk_types::session_handoff::SessionHandoffSnapshotV1Dto,
+    )> {
+        self.storage
+            .create_handoff_session(
+                self,
+                source_session_id,
+                new_name,
+                provider_name,
+                model_config,
+                snapshot,
+            )
+            .await
     }
 
     pub async fn truncate_conversation(&self, session_id: &str, timestamp: i64) -> Result<()> {
@@ -4479,6 +4584,64 @@ mod tests {
         .await
         .unwrap();
         assert!(table_exists);
+        let schema_version: i32 = sqlx::query_scalar("SELECT MAX(version) FROM schema_version")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        assert_eq!(schema_version, CURRENT_SCHEMA_VERSION);
+    }
+
+    #[tokio::test]
+    async fn session_handoff_schema_migrates_from_schema_32() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join(SESSIONS_FOLDER).join(DB_NAME);
+        std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
+        let pool = SqlitePoolOptions::new()
+            .connect_with(
+                SqliteConnectOptions::new()
+                    .filename(&db_path)
+                    .create_if_missing(true)
+                    .foreign_keys(true),
+            )
+            .await
+            .unwrap();
+        SessionStorage::create_schema(&pool).await.unwrap();
+        sqlx::query(
+            "INSERT INTO sessions (id, name, working_dir, extension_data, gosling_mode) VALUES ('pre-handoff', 'Preserved', '/tmp', '{}', 'approve')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query("DROP TABLE session_handoff_snapshots")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE schema_version SET version = 32")
+            .execute(&pool)
+            .await
+            .unwrap();
+        pool.close().await;
+
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        assert_eq!(
+            sm.get_session("pre-handoff", false).await.unwrap().name,
+            "Preserved"
+        );
+        let pool = sm.storage().pool().await.unwrap();
+        let table_exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'session_handoff_snapshots')",
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        assert!(table_exists);
+        let index_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name IN ('idx_session_handoff_session_generation', 'idx_session_handoff_status')",
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        assert_eq!(index_count, 2);
         let schema_version: i32 = sqlx::query_scalar("SELECT MAX(version) FROM schema_version")
             .fetch_one(pool)
             .await

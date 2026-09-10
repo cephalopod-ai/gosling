@@ -10,15 +10,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../../../ui/dropdown-menu';
-import { fetchModelReasoning, getProviderMetadata } from '../modelInterface';
+import { getProviderMetadata } from '../modelInterface';
 import { getModelDisplayName } from '../predefinedModelsUtils';
-import { acpReadThinkingEffort } from '../../../../acp/providers';
 
 import { defineMessages, useIntl } from '../../../../i18n';
 import type { Message } from '../../../../types/message';
 import type { RecentModel } from '../../../../utils/settings';
-import { addToRecentModels } from '../../../../utils/recentModels';
-import { trackModelChanged } from '../../../../utils/analytics';
 
 const i18n = defineMessages({
   selectModel: {
@@ -70,11 +67,7 @@ export default function ModelsBottomBar({
 }: ModelsBottomBarProps) {
   // ChatInput owns the override state and passes effective model/provider as sessionModel/sessionProvider.
   // Fall back to config defaults when no session-specific model is available.
-  const {
-    currentModel: configModel,
-    currentProvider: configProvider,
-    changeModel,
-  } = useModelAndProvider();
+  const { currentModel: configModel, currentProvider: configProvider } = useModelAndProvider();
   const currentModel = sessionModel ?? configModel;
   const currentProvider = sessionProvider ?? configProvider;
 
@@ -84,6 +77,7 @@ export default function ModelsBottomBar({
     intl.formatMessage(i18n.selectModel)
   );
   const [isAddModelModalOpen, setIsAddModelModalOpen] = useState(false);
+  const [initialSwitchTarget, setInitialSwitchTarget] = useState<RecentModel | null>(null);
   const [providerDefaultModel, setProviderDefaultModel] = useState<string | null>(null);
   const [recentModels, setRecentModels] = useState<RecentModel[]>([]);
 
@@ -155,30 +149,9 @@ export default function ModelsBottomBar({
     onModelChanged({ model, provider });
   };
 
-  const handleRecentModelClick = async (recent: RecentModel) => {
-    const previousModel = currentModel;
-    const previousProvider = currentProvider;
-    const [reasoning, savedEffort] = await Promise.all([
-      fetchModelReasoning(recent.provider, recent.model),
-      acpReadThinkingEffort().catch(() => null),
-    ]);
-    const model = reasoning
-      ? {
-          name: recent.model,
-          provider: recent.provider,
-          request_params: { thinking_effort: savedEffort ?? 'off' },
-        }
-      : { name: recent.model, provider: recent.provider };
-    const success = await changeModel(sessionId, model);
-    if (!success) return;
-
-    trackModelChanged(recent.provider, recent.model);
-    if (previousModel && previousProvider) {
-      const updated = addToRecentModels(recentModels, previousProvider, previousModel);
-      await window.electron.setSetting('recentModels', updated);
-      setRecentModels(updated);
-    }
-    onModelChanged({ model: recent.model, provider: recent.provider });
+  const handleRecentModelClick = (recent: RecentModel) => {
+    setInitialSwitchTarget(recent);
+    setIsAddModelModalOpen(true);
   };
 
   const filteredRecentModels = recentModels.filter(
@@ -241,7 +214,12 @@ export default function ModelsBottomBar({
               <DropdownMenuSeparator />
             </>
           )}
-          <DropdownMenuItem onClick={() => setIsAddModelModalOpen(true)}>
+          <DropdownMenuItem
+            onClick={() => {
+              setInitialSwitchTarget(null);
+              setIsAddModelModalOpen(true);
+            }}
+          >
             <span>{intl.formatMessage(i18n.changeModel)}</span>
             <Sliders className="ml-auto h-4 w-4 rotate-90" />
           </DropdownMenuItem>
@@ -253,6 +231,8 @@ export default function ModelsBottomBar({
           sessionId={sessionId}
           setView={setView}
           onClose={() => setIsAddModelModalOpen(false)}
+          initialProvider={initialSwitchTarget?.provider}
+          initialModel={initialSwitchTarget?.model}
           sessionModel={currentModel}
           sessionProvider={currentProvider}
           onModelSelected={(model, provider) => handleModelSelected(model, provider)}

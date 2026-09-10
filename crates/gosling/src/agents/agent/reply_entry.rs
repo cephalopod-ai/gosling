@@ -327,6 +327,12 @@ impl Agent {
             .conversation
             .clone()
             .ok_or_else(|| anyhow::anyhow!("Session {} has no conversation", session_config.id))?;
+        let (conversation, _) = crate::session::handoff::conversation_for_pending_handoff(
+            &session_manager,
+            &session_config.id,
+            &conversation,
+        )
+        .await?;
 
         let needs_auto_compact =
             check_if_compaction_needed(provider.as_ref(), &conversation, None, &session).await?;
@@ -541,7 +547,8 @@ impl Agent {
         // shadow — still build and log the packet, but hand the backend its
         // own prompt/messages — and route the summarizer's extracted facts to
         // the backend's durable file instead of the (unused) packet.
-        let self_managing = provider.manages_own_context();
+        let self_managing = provider.capabilities().context_ownership
+            != crate::providers::base::ContextOwnership::Gosling;
         let summarizer_target = summarizer::target_for_provider(provider, working_dir);
         let effective_mode = if self_managing && mode == ContextManagerMode::On {
             debug!(

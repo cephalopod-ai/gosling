@@ -492,8 +492,8 @@ impl Provider for ManagesOwnContextProvider {
         "mock-manages-own-context"
     }
 
-    fn manages_own_context(&self) -> bool {
-        true
+    fn capabilities(&self) -> gosling::providers::base::ProviderCapabilities {
+        gosling::providers::base::ProviderCapabilities::provider_managed()
     }
 }
 

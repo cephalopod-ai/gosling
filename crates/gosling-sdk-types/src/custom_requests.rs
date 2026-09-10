@@ -4,6 +4,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+pub use crate::session_handoff::*;
 pub use crate::shell::*;
 pub use crate::workspace::*;
 
@@ -1030,27 +1031,104 @@ pub struct RenameSessionRequest {
     pub title: String,
 }
 
-/// Hand a session off to a brand-new one: generates a human-readable
-/// continuation briefing from the source session's conversation, then creates
-/// a fresh session carrying over the same working directory, workspace,
-/// provider/model, and extension configuration (but none of the source
-/// conversation itself).
+/// Hand a session off to a brand-new one using a bounded, redacted checkpoint.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
 #[request(method = "_gosling/unstable/session/handoff", response = HandoffSessionResponse)]
 #[serde(rename_all = "camelCase")]
 pub struct HandoffSessionRequest {
     pub session_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_provider: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_model: Option<String>,
+    #[serde(default)]
+    pub confirm_new_context: bool,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
 #[serde(rename_all = "camelCase")]
 pub struct HandoffSessionResponse {
     pub session_id: String,
-    /// Absent when the source session's provider manages its own context (its
-    /// history isn't visible to Gosling to summarize) — the new session still
-    /// carries over the same settings, just without a generated briefing.
+    pub snapshot: SessionHandoffSnapshotV1Dto,
+    pub continuation_prompt: String,
+    /// Compatibility projection of the bounded checkpoint. New clients should
+    /// use `snapshot` and `continuationPrompt`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub handoff_summary: Option<String>,
+}
+
+/// Build a non-persisted checkpoint preview for a proposed provider/model transition.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_gosling/unstable/session/handoff/checkpoint/preview",
+    response = PreviewSessionHandoffResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewSessionHandoffRequest {
+    pub session_id: String,
+    pub target_provider: String,
+    pub target_model: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_context_limit: Option<u64>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewSessionHandoffResponse {
+    pub snapshot: SessionHandoffSnapshotV1Dto,
+    pub expected_current_generation: u64,
+}
+
+/// Atomically change a live session's provider, model, and thinking effort.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_gosling/unstable/session/provider/transition",
+    response = TransitionSessionProviderResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct TransitionSessionProviderRequest {
+    pub session_id: String,
+    pub target_provider: String,
+    pub target_model: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_thinking_effort: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_context_limit: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_params: Option<HashMap<String, serde_json::Value>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_current_generation: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_source_hash: Option<String>,
+    #[serde(default)]
+    pub confirm_new_context: bool,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct TransitionSessionProviderResponse {
+    pub snapshot: SessionHandoffSnapshotV1Dto,
+    pub previous_provider: String,
+    pub previous_model: String,
+    pub active_provider: String,
+    pub active_model: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_gosling/unstable/session/handoff/checkpoint/read",
+    response = ReadSessionHandoffCheckpointResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadSessionHandoffCheckpointRequest {
+    pub session_id: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadSessionHandoffCheckpointResponse {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snapshot: Option<SessionHandoffSnapshotV1Dto>,
 }
 
 /// Archive a session (soft delete).
@@ -2150,6 +2228,9 @@ pub struct ProviderInventoryEntryDto {
     /// context/compaction UI applies to a session using this provider.
     #[serde(default)]
     pub manages_own_context: bool,
+    /// Structured continuity behavior used to plan provider/model handoffs.
+    #[serde(default)]
+    pub capabilities: ProviderCapabilitiesDto,
 }
 
 /// Empty success response for operations that return no data.

@@ -174,7 +174,9 @@ impl GoslingAcpAgent {
             tokio::spawn(async move {
                 let (title, from_llm) = match agent.provider().await {
                     Ok(provider) => {
-                        if provider.manages_own_context() {
+                        if provider.capabilities().context_ownership
+                            != crate::providers::base::ContextOwnership::Gosling
+                        {
                             return;
                         }
 

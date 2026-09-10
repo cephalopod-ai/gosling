@@ -441,6 +441,21 @@
       "responseType": "HandoffSessionResponse_unstable"
     },
     {
+      "method": "_gosling/unstable/session/provider/transition",
+      "requestType": "TransitionSessionProviderRequest_unstable",
+      "responseType": "TransitionSessionProviderResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/session/handoff/checkpoint/preview",
+      "requestType": "PreviewSessionHandoffRequest_unstable",
+      "responseType": "PreviewSessionHandoffResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/session/handoff/checkpoint/read",
+      "requestType": "ReadSessionHandoffCheckpointRequest_unstable",
+      "responseType": "ReadSessionHandoffCheckpointResponse_unstable"
+    },
+    {
       "method": "_gosling/unstable/session/archive",
       "requestType": "ArchiveSessionRequest_unstable",
       "responseType": "EmptyResponse"

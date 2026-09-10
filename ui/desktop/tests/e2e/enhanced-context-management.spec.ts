@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures';
+import { CHAT_SUBMIT_SHORTCUT, test, expect } from './fixtures';
 
 test.describe('Enhanced Context Management E2E Tests', () => {
   test.beforeEach(async ({ goslingPage }) => {
@@ -15,7 +15,7 @@ test.describe('Enhanced Context Management E2E Tests', () => {
       // Type and send a message to generate token usage
       const chatInput = goslingPage.locator('[data-testid="chat-input"]');
       await chatInput.fill('Hello, this is a test message to generate some token usage.');
-      await goslingPage.keyboard.press('Enter');
+      await goslingPage.keyboard.press(CHAT_SUBMIT_SHORTCUT);
       
       // Wait for response and check for context window alert
       await goslingPage.waitForSelector('[data-testid="loading-gosling"]', { state: 'hidden', timeout: 30000 });
@@ -43,7 +43,7 @@ test.describe('Enhanced Context Management E2E Tests', () => {
       
       // Send first message
       await chatInput.fill('First message');
-      await goslingPage.keyboard.press('Enter');
+      await goslingPage.keyboard.press(CHAT_SUBMIT_SHORTCUT);
       await goslingPage.waitForSelector('[data-testid="loading-gosling"]', { state: 'hidden', timeout: 30000 });
       
       // Get initial progress
@@ -59,7 +59,7 @@ test.describe('Enhanced Context Management E2E Tests', () => {
       
       // Send second message
       await chatInput.fill('Second message with more content to increase token usage significantly');
-      await goslingPage.keyboard.press('Enter');
+      await goslingPage.keyboard.press(CHAT_SUBMIT_SHORTCUT);
       await goslingPage.waitForSelector('[data-testid="loading-gosling"]', { state: 'hidden', timeout: 30000 });
       
       // Get updated progress
@@ -88,7 +88,7 @@ test.describe('Enhanced Context Management E2E Tests', () => {
       
       for (const message of messages) {
         await chatInput.fill(message);
-        await goslingPage.keyboard.press('Enter');
+        await goslingPage.keyboard.press(CHAT_SUBMIT_SHORTCUT);
         await goslingPage.waitForSelector('[data-testid="loading-gosling"]', { state: 'hidden', timeout: 30000 });
         await goslingPage.waitForTimeout(1000); // Brief pause between messages
       }
@@ -127,7 +127,7 @@ test.describe('Enhanced Context Management E2E Tests', () => {
       
       // Generate conversation
       await chatInput.fill('Test message for compaction');
-      await goslingPage.keyboard.press('Enter');
+      await goslingPage.keyboard.press(CHAT_SUBMIT_SHORTCUT);
       await goslingPage.waitForSelector('[data-testid="loading-gosling"]', { state: 'hidden', timeout: 30000 });
       
       // Perform compaction
@@ -159,7 +159,7 @@ test.describe('Enhanced Context Management E2E Tests', () => {
       
       // Generate conversation
       await chatInput.fill('Test message for multiple compaction prevention');
-      await goslingPage.keyboard.press('Enter');
+      await goslingPage.keyboard.press(CHAT_SUBMIT_SHORTCUT);
       await goslingPage.waitForSelector('[data-testid="loading-gosling"]', { state: 'hidden', timeout: 30000 });
       
       // Open alert and click compact button
@@ -201,7 +201,7 @@ test.describe('Enhanced Context Management E2E Tests', () => {
       // Send messages
       for (const message of testMessages) {
         await chatInput.fill(message);
-        await goslingPage.keyboard.press('Enter');
+        await goslingPage.keyboard.press(CHAT_SUBMIT_SHORTCUT);
         await goslingPage.waitForSelector('[data-testid="loading-gosling"]', { state: 'hidden', timeout: 30000 });
         await goslingPage.waitForTimeout(1000);
       }
@@ -239,11 +239,11 @@ test.describe('Enhanced Context Management E2E Tests', () => {
       
       // Generate initial conversation
       await chatInput.fill('What is TypeScript?');
-      await goslingPage.keyboard.press('Enter');
+      await goslingPage.keyboard.press(CHAT_SUBMIT_SHORTCUT);
       await goslingPage.waitForSelector('[data-testid="loading-gosling"]', { state: 'hidden', timeout: 30000 });
       
       await chatInput.fill('Can you give me an example?');
-      await goslingPage.keyboard.press('Enter');
+      await goslingPage.keyboard.press(CHAT_SUBMIT_SHORTCUT);
       await goslingPage.waitForSelector('[data-testid="loading-gosling"]', { state: 'hidden', timeout: 30000 });
       
       // Perform compaction
@@ -257,7 +257,7 @@ test.describe('Enhanced Context Management E2E Tests', () => {
       
       // Continue conversation after compaction
       await chatInput.fill('POST_COMPACTION_MESSAGE: Thank you, what about React?');
-      await goslingPage.keyboard.press('Enter');
+      await goslingPage.keyboard.press(CHAT_SUBMIT_SHORTCUT);
       
       // Verify conversation continues normally
       await expect(goslingPage.locator('[data-testid="loading-gosling"]')).toBeVisible();
@@ -277,7 +277,7 @@ test.describe('Enhanced Context Management E2E Tests', () => {
       
       // Generate conversation
       await chatInput.fill('First question about programming');
-      await goslingPage.keyboard.press('Enter');
+      await goslingPage.keyboard.press(CHAT_SUBMIT_SHORTCUT);
       await goslingPage.waitForSelector('[data-testid="loading-gosling"]', { state: 'hidden', timeout: 30000 });
       
       // Perform compaction
@@ -288,7 +288,7 @@ test.describe('Enhanced Context Management E2E Tests', () => {
       
       // Send new message after compaction
       await chatInput.fill('NEW_MESSAGE_AFTER_COMPACTION');
-      await goslingPage.keyboard.press('Enter');
+      await goslingPage.keyboard.press(CHAT_SUBMIT_SHORTCUT);
       await goslingPage.waitForSelector('[data-testid="loading-gosling"]', { state: 'hidden', timeout: 30000 });
       
       // Verify message order: compaction marker should come before new messages
@@ -322,7 +322,7 @@ test.describe('Enhanced Context Management E2E Tests', () => {
       
       // Generate conversation
       await chatInput.fill('Test message for error handling');
-      await goslingPage.keyboard.press('Enter');
+      await goslingPage.keyboard.press(CHAT_SUBMIT_SHORTCUT);
       await goslingPage.waitForSelector('[data-testid="loading-gosling"]', { state: 'hidden', timeout: 30000 });
       
       // Attempt compaction
@@ -358,7 +358,7 @@ test.describe('Enhanced Context Management E2E Tests', () => {
       
       // Generate conversation
       await chatInput.fill('Test message for timeout handling');
-      await goslingPage.keyboard.press('Enter');
+      await goslingPage.keyboard.press(CHAT_SUBMIT_SHORTCUT);
       await goslingPage.waitForSelector('[data-testid="loading-gosling"]', { state: 'hidden', timeout: 30000 });
       
       // Attempt compaction
@@ -386,7 +386,7 @@ test.describe('Enhanced Context Management E2E Tests', () => {
       
       // Generate conversation
       await chatInput.fill('Test message for UI state verification');
-      await goslingPage.keyboard.press('Enter');
+      await goslingPage.keyboard.press(CHAT_SUBMIT_SHORTCUT);
       await goslingPage.waitForSelector('[data-testid="loading-gosling"]', { state: 'hidden', timeout: 30000 });
       
       // Start compaction
@@ -415,7 +415,7 @@ test.describe('Enhanced Context Management E2E Tests', () => {
       
       // Generate conversation
       await chatInput.fill('Test loading state message');
-      await goslingPage.keyboard.press('Enter');
+      await goslingPage.keyboard.press(CHAT_SUBMIT_SHORTCUT);
       await goslingPage.waitForSelector('[data-testid="loading-gosling"]', { state: 'hidden', timeout: 30000 });
       
       // Start compaction and immediately check loading state
@@ -451,7 +451,7 @@ test.describe('Enhanced Context Management E2E Tests', () => {
       
       for (const message of messages) {
         await chatInput.fill(message);
-        await goslingPage.keyboard.press('Enter');
+        await goslingPage.keyboard.press(CHAT_SUBMIT_SHORTCUT);
         await goslingPage.waitForSelector('[data-testid="loading-gosling"]', { state: 'hidden', timeout: 30000 });
         await goslingPage.waitForTimeout(500);
       }
@@ -469,7 +469,7 @@ test.describe('Enhanced Context Management E2E Tests', () => {
       
       // Verify system remains responsive
       await chatInput.fill('Post-compaction test message');
-      await goslingPage.keyboard.press('Enter');
+      await goslingPage.keyboard.press(CHAT_SUBMIT_SHORTCUT);
       await expect(goslingPage.locator('[data-testid="loading-gosling"]')).toBeVisible();
     });
 
@@ -478,11 +478,11 @@ test.describe('Enhanced Context Management E2E Tests', () => {
       
       // Create conversation with specific context
       await chatInput.fill('My name is Alice and I am a software developer working on React applications.');
-      await goslingPage.keyboard.press('Enter');
+      await goslingPage.keyboard.press(CHAT_SUBMIT_SHORTCUT);
       await goslingPage.waitForSelector('[data-testid="loading-gosling"]', { state: 'hidden', timeout: 30000 });
       
       await chatInput.fill('I am having trouble with useState hooks. Can you help?');
-      await goslingPage.keyboard.press('Enter');
+      await goslingPage.keyboard.press(CHAT_SUBMIT_SHORTCUT);
       await goslingPage.waitForSelector('[data-testid="loading-gosling"]', { state: 'hidden', timeout: 30000 });
       
       // Perform compaction
@@ -493,7 +493,7 @@ test.describe('Enhanced Context Management E2E Tests', () => {
       
       // Test if context is maintained by asking a follow-up question
       await chatInput.fill('What did I tell you my name was?');
-      await goslingPage.keyboard.press('Enter');
+      await goslingPage.keyboard.press(CHAT_SUBMIT_SHORTCUT);
       await goslingPage.waitForSelector('[data-testid="loading-gosling"]', { state: 'hidden', timeout: 30000 });
       
       // The response should ideally reference the name Alice or indicate context retention

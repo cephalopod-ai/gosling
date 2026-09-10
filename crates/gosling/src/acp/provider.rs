@@ -41,11 +41,10 @@ use crate::acp::{map_permission_response, PermissionDecision};
 use crate::action_required_manager::{ActionRequiredManager, ElicitationOutcome};
 use crate::config::permission::PermissionLevel;
 use crate::config::{ExtensionConfig, GoslingMode, PermissionManager};
-use crate::context_mgmt::format_message_for_compacting;
 use crate::conversation::message::{Message, MessageContent, TOOL_META_EXTERNAL_DISPATCH_KEY};
 use crate::permission::permission_confirmation::PrincipalType;
 use crate::permission::{Permission, PermissionConfirmation};
-use crate::providers::base::{MessageStream, PermissionRouting, Provider};
+use crate::providers::base::{MessageStream, PermissionRouting, Provider, ProviderCapabilities};
 use crate::subprocess::configure_subprocess;
 use gosling_providers::errors::ProviderError;
 use gosling_providers::model::ModelConfig;
@@ -563,8 +562,8 @@ impl Provider for AcpProvider {
         PermissionRouting::ActionRequired
     }
 
-    fn manages_own_context(&self) -> bool {
-        true
+    fn capabilities(&self) -> ProviderCapabilities {
+        ProviderCapabilities::provider_managed()
     }
 
     fn executes_tools_outside_gosling(&self) -> bool {
@@ -1624,17 +1623,39 @@ fn has_handoff_context(messages: &[Message]) -> bool {
 }
 
 fn build_handoff_context_memo(prior_messages: &[Message]) -> Option<String> {
-    let formatted_messages: Vec<String> = prior_messages
+    const MAX_LEGACY_HANDOFF_CHARS: usize = 60_000;
+
+    let formatted_messages = prior_messages
         .iter()
         .filter(|message| message.is_agent_visible())
-        .map(format_message_for_compacting)
-        .collect();
+        .map(crate::session::handoff::safe_handoff_message_summary)
+        .collect::<Vec<_>>();
 
     if formatted_messages.is_empty() {
         return None;
     }
 
-    let handoff_context = formatted_messages.join("\n");
+    let mut retained = Vec::new();
+    let mut retained_chars = 0usize;
+    for message in formatted_messages.iter().rev() {
+        let message_chars = message.chars().count() + usize::from(!retained.is_empty());
+        if retained_chars + message_chars > MAX_LEGACY_HANDOFF_CHARS {
+            break;
+        }
+        retained.push(message.as_str());
+        retained_chars += message_chars;
+    }
+    retained.reverse();
+    let omitted = formatted_messages.len().saturating_sub(retained.len());
+    let omission_notice = (omitted > 0).then(|| {
+        format!("[{omitted} older message(s) omitted from this bounded compatibility handoff]")
+    });
+    let handoff_context = omission_notice
+        .iter()
+        .map(String::as_str)
+        .chain(retained)
+        .collect::<Vec<_>>()
+        .join("\n");
 
     Some(format!(
         "Conversation context from gosling before this ACP provider session was created:\n\n\
@@ -2226,8 +2247,9 @@ mod tests {
         ));
         assert!(memo.contains("[user]: inspect src/lib.rs"));
         assert!(memo.contains("[assistant]: I found the file"));
-        assert!(memo.contains("tool_request(read_file):"));
-        assert!(memo.contains("tool_response: file contents"));
+        assert!(memo.contains("[tool request: read_file]"));
+        assert!(memo.contains("[tool response: completed]"));
+        assert!(!memo.contains("file contents"));
         assert!(memo.contains("Current user request follows."));
         assert_eq!(prompt_text(&blocks[1]), "continue from there");
     }
@@ -2389,21 +2411,22 @@ mod tests {
     }
 
     #[test]
-    fn messages_to_prompt_includes_all_prior_handoff_context() {
-        let messages = vec![
-            Message::user().with_text("older context that should be retained"),
-            Message::assistant().with_text("middle context"),
-            Message::assistant().with_text("recent context"),
-            Message::user().with_text("current request"),
-        ];
+    fn messages_to_prompt_bounds_legacy_handoff_context() {
+        let mut messages = (0..100)
+            .map(|index| {
+                Message::assistant().with_text(format!("context {index}: {}", "x".repeat(1_500)))
+            })
+            .collect::<Vec<_>>();
+        messages.push(Message::user().with_text("current request"));
 
         let blocks = messages_to_prompt(&messages, true);
 
         assert_eq!(blocks.len(), 2);
         let memo = prompt_text(&blocks[0]);
-        assert!(memo.contains("[user]: older context that should be retained"));
-        assert!(memo.contains("[assistant]: middle context"));
-        assert!(memo.contains("[assistant]: recent context"));
+        assert!(memo.chars().count() < 61_000);
+        assert!(memo.contains("older message(s) omitted"));
+        assert!(!memo.contains("context 0:"));
+        assert!(memo.contains("context 99:"));
         assert_eq!(prompt_text(&blocks[1]), "current request");
     }
 

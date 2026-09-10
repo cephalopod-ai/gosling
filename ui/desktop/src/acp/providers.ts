@@ -6,6 +6,7 @@ import {
   type ProviderSecretDto,
   type ProviderTemplateCatalogEntryDto,
   type ProviderTemplateDto,
+  type SessionHandoffSnapshotV1Dto,
 } from '@repo-makeover/gosling-sdk';
 import type {
   ProviderDetails,
@@ -106,6 +107,15 @@ async function fetchProviderDetails(): Promise<ProviderDetails[]> {
     name: entry.providerId,
     is_configured: entry.configured,
     manages_own_context: entry.managesOwnContext ?? false,
+    capabilities: entry.capabilities ?? {
+      contextOwnership: entry.managesOwnContext ? 'provider' : 'gosling',
+      nativeResume: 'unsupported',
+      historyImport: 'unsupported',
+      inPlaceModelChange: entry.managesOwnContext ? 'unsupported' : 'supported',
+      sessionFork: entry.managesOwnContext ? 'unsupported' : 'supported',
+      bootstrapHandoff: entry.managesOwnContext ? 'required' : 'unsupported',
+      bootstrapAcknowledgement: entry.managesOwnContext ? 'required' : 'unsupported',
+    },
     provider_type: parseProviderType(entry.providerType),
     metadata: {
       name: entry.providerId,
@@ -365,88 +375,67 @@ export type AppliedSessionProviderModel = {
   thinkingEffort?: ThinkingEffort;
   providerId?: string;
   modelId?: string;
+  snapshot?: SessionHandoffSnapshotV1Dto;
 };
 
-function extractAppliedSessionProviderModel(configOptions: unknown): AppliedSessionProviderModel {
-  if (!Array.isArray(configOptions)) {
-    return {};
-  }
-
-  const applied: AppliedSessionProviderModel = {};
-
-  for (const option of configOptions) {
-    if (!option || typeof option !== 'object') {
-      continue;
-    }
-
-    const id = 'id' in option ? option.id : undefined;
-    if (id !== 'provider' && id !== 'model' && id !== 'thinking_effort') {
-      continue;
-    }
-
-    const currentValue = selectCurrentValue(option);
-    if (typeof currentValue !== 'string') {
-      continue;
-    }
-
-    if (id === 'provider') {
-      applied.providerId = currentValue;
-    } else if (id === 'model') {
-      applied.modelId = currentValue;
-    } else {
-      applied.thinkingEffort = currentValue as ThinkingEffort;
-    }
-  }
-
-  return applied;
-}
-
-function selectCurrentValue(kind: unknown): unknown {
-  if (!kind || typeof kind !== 'object') {
-    return undefined;
-  }
-
-  if ('type' in kind && kind.type === 'select' && 'currentValue' in kind) {
-    return kind.currentValue;
-  }
-
-  return undefined;
-}
-
 /**
- * Switch the provider (and model) for an active session via ACP config options.
- *
- * Changing the provider on the server resets the session's model, so the model
- * is applied as a follow-up step when supplied.
+ * Switch the provider, model, and thinking effort for an active session in one
+ * checkpoint-backed transition.
  */
 export async function acpSetSessionProviderModel(
   sessionId: string,
   providerId: string,
-  modelId?: string | null,
-  thinkingEffort?: ThinkingEffort | null
+  modelId: string,
+  thinkingEffort?: ThinkingEffort | null,
+  options?: {
+    confirmNewContext?: boolean;
+    expectedCurrentGeneration?: number;
+    expectedSourceHash?: string;
+    requestParams?: Record<string, unknown> | null;
+    targetContextLimit?: number | null;
+  }
 ): Promise<AppliedSessionProviderModel> {
   const client = await getAcpClient();
-  let response = await client.setSessionConfigOption({
+  const response = await client.gosling.sessionProviderTransition_unstable({
     sessionId,
-    configId: 'provider',
-    value: providerId,
+    targetProvider: providerId,
+    targetModel: modelId,
+    targetThinkingEffort: thinkingEffort ?? null,
+    targetContextLimit: options?.targetContextLimit ?? null,
+    requestParams: options?.requestParams ?? null,
+    expectedCurrentGeneration: options?.expectedCurrentGeneration ?? null,
+    expectedSourceHash: options?.expectedSourceHash ?? null,
+    confirmNewContext: options?.confirmNewContext ?? false,
   });
-  if (modelId) {
-    response = await client.setSessionConfigOption({
-      sessionId,
-      configId: 'model',
-      value: modelId,
-    });
-  }
-  if (thinkingEffort != null) {
-    response = await client.setSessionConfigOption({
-      sessionId,
-      configId: 'thinking_effort',
-      value: thinkingEffort,
-    });
-  }
+  return {
+    providerId: response.activeProvider,
+    modelId: response.activeModel,
+    thinkingEffort: thinkingEffort ?? undefined,
+    snapshot: response.snapshot,
+  };
+}
 
-  return extractAppliedSessionProviderModel(response.configOptions);
+export async function acpPreviewSessionHandoff(
+  sessionId: string,
+  providerId: string,
+  modelId: string,
+  targetContextLimit?: number | null
+) {
+  const client = await getAcpClient();
+  return client.gosling.sessionHandoffCheckpointPreview_unstable({
+    sessionId,
+    targetProvider: providerId,
+    targetModel: modelId,
+    targetContextLimit: targetContextLimit ?? null,
+  });
+}
+
+export async function acpReadSessionHandoffCheckpoint(
+  sessionId: string
+): Promise<SessionHandoffSnapshotV1Dto | null> {
+  const client = await getAcpClient();
+  const response = await client.gosling.sessionHandoffCheckpointRead_unstable({ sessionId });
+  return response.snapshot ?? null;
 }
 
 export async function acpRecordSessionModelSwitch(

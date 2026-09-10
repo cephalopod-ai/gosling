@@ -4,6 +4,24 @@ function isMac(): boolean {
   return window.electron?.platform === 'darwin';
 }
 
+export interface ChatSubmitKeyEvent {
+  key: string;
+  altKey: boolean;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  shiftKey: boolean;
+}
+
+export function isChatSubmitShortcut(event: ChatSubmitKeyEvent): boolean {
+  return (
+    event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey
+  );
+}
+
+export function getChatSubmitShortcutText(): string {
+  return isMac() ? '⌘Enter' : 'Ctrl+Enter';
+}
+
 /**
  * Localised message for the "navigate messages with arrow keys" chat input placeholder.
  * Returns the legacy English string if no intl instance is supplied, so call sites that

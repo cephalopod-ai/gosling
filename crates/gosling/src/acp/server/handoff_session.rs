@@ -7,8 +7,6 @@
 //! doesn't duplicate that activation logic.
 
 use super::*;
-use crate::conversation::Conversation;
-
 impl GoslingAcpAgent {
     pub(super) async fn on_handoff_session(
         &self,
@@ -21,61 +19,92 @@ impl GoslingAcpAgent {
             );
         }
 
+        if self
+            .active_prompt_runs
+            .lock()
+            .await
+            .contains_key(source_session_id)
+        {
+            return Err(agent_client_protocol::Error::invalid_params()
+                .data("Cannot hand off while the session has an active turn or approval"));
+        }
+
         let source = self
             .session_manager
-            .get_session(source_session_id, true)
+            .get_session(source_session_id, false)
             .await
             .internal_err()?;
-        let conversation = source.conversation.clone().unwrap_or_default();
-
         let agent = self.get_session_agent(source_session_id).await?;
-        let provider = agent.provider().await.internal_err()?;
-
-        let handoff_summary = if provider.manages_own_context() {
-            // Gosling's own message array is a display-only mirror for these
-            // providers (see manages_own_context's doc comment) — there's no
-            // real history here to summarize. The new session still carries
-            // over the same settings, just without a generated briefing.
-            None
-        } else {
-            let model_config = agent
-                .model_config_for_session(source_session_id)
-                .await
-                .internal_err()?;
-            let (summary, _usage) = crate::context_mgmt::generate_handoff_summary(
-                provider.as_ref(),
-                &model_config,
+        let current_provider = agent.provider().await.internal_err()?;
+        let current_model_config = agent
+            .model_config_for_session(source_session_id)
+            .await
+            .internal_err()?;
+        let target_provider = req
+            .target_provider
+            .as_deref()
+            .unwrap_or(current_provider.get_name());
+        let target_model = req
+            .target_model
+            .as_deref()
+            .unwrap_or(&current_model_config.model_name);
+        self.validate_model_for_provider(target_provider, target_model)
+            .await?;
+        let target_model_config =
+            crate::model_config::model_config_from_user_config_with_session_settings(
+                target_provider,
+                target_model,
+                Some(&current_model_config),
+                None,
+                None,
+            )
+            .invalid_params_err_ctx("Invalid handoff target model")?;
+        let target_entry = crate::providers::get_from_registry(target_provider)
+            .await
+            .internal_err_ctx("Failed to read handoff target capabilities")?;
+        let snapshot = crate::session::handoff::SessionHandoffBuilder::new(&self.session_manager)
+            .build(
                 source_session_id,
-                &conversation,
+                target_provider,
+                target_model,
+                target_model_config.context_limit(),
+                target_entry.capabilities(),
+                SessionHandoffTriggerDto::SessionFork,
             )
             .await
-            .internal_err()?;
-            Some(summary)
-        };
+            .internal_err_ctx("Failed to prepare handoff checkpoint")?;
+        if snapshot.continuity_class == SessionContinuityClassDto::NewContextOnly
+            && !req.confirm_new_context
+        {
+            return Err(agent_client_protocol::Error::invalid_params().data(
+                "The selected provider supports new context only; set confirmNewContext to continue",
+            ));
+        }
 
         let handoff_name = if source.name.trim().is_empty() {
             "(handoff)".to_string()
         } else {
             format!("{} (handoff)", source.name)
         };
-        let new_session = self
+        let (new_session, snapshot) = self
             .session_manager
-            .copy_session(source_session_id, handoff_name)
+            .create_handoff_session(
+                source_session_id,
+                handoff_name,
+                target_provider.to_string(),
+                target_model_config,
+                snapshot,
+            )
             .await
             .internal_err()?;
-
-        if let Err(error) = self
-            .session_manager
-            .replace_conversation(&new_session.id, &Conversation::new_unvalidated(Vec::new()))
-            .await
-        {
-            self.cleanup_failed_new_session(&new_session.id).await;
-            return Err(error).internal_err();
-        }
+        let continuation_prompt = "Continue from the saved session checkpoint. First restate the objective, current state, and next safe action; do not repeat prior side effects."
+            .to_string();
 
         Ok(HandoffSessionResponse {
             session_id: new_session.id,
-            handoff_summary,
+            snapshot,
+            continuation_prompt: continuation_prompt.clone(),
+            handoff_summary: Some(continuation_prompt),
         })
     }
 }

@@ -72,9 +72,17 @@ impl GoslingAcpAgent {
             )
             .invalid_params_err_ctx("Invalid model config")?;
         agent
-            .recreate_provider_for_session(session_id, &provider_name, model_config)
+            .transition_provider(
+                session_id,
+                &provider_name,
+                model_config,
+                SessionHandoffTriggerDto::ModelChangeRequiresRecreation,
+                None,
+                None,
+                false,
+            )
             .await
-            .internal_err_ctx("Failed to recreate provider")?;
+            .internal_err_ctx("Failed to transition model")?;
         // model_config is already updated on the session by the agent's update_provider call.
         Ok(())
     }
@@ -164,10 +172,27 @@ impl GoslingAcpAgent {
                     .data(format!("Invalid thinking effort: {}", effort_id))
             })?;
         let agent = self.get_session_agent(session_id).await?;
-        agent
-            .update_thinking_effort(session_id, effort)
+        let provider = agent
+            .provider()
             .await
-            .internal_err_ctx("Failed to update thinking effort")?;
+            .internal_err_ctx("Failed to get provider")?;
+        let model_config = agent
+            .model_config_for_session(session_id)
+            .await
+            .internal_err_ctx("Failed to resolve model config")?
+            .with_thinking_effort(effort);
+        agent
+            .transition_provider(
+                session_id,
+                provider.get_name(),
+                model_config,
+                SessionHandoffTriggerDto::ThinkingEffortChangeRequiresRecreation,
+                None,
+                None,
+                false,
+            )
+            .await
+            .internal_err_ctx("Failed to transition thinking effort")?;
 
         Ok(())
     }
@@ -267,27 +292,197 @@ impl GoslingAcpAgent {
             )
             .invalid_params_err_ctx("Invalid model config")?;
 
-        let executes_tools_outside_gosling =
-            crate::providers::get_from_registry(&resolved_provider_name)
-                .await
-                .internal_err_ctx("Failed to read provider capabilities")?
-                .executes_tools_outside_gosling();
-        let compatible_mode =
-            compatible_mode(agent.gosling_mode().await, executes_tools_outside_gosling);
-        if compatible_mode != agent.gosling_mode().await {
-            agent
-                .update_gosling_mode(compatible_mode, session_id)
-                .await
-                .internal_err_ctx("Failed to select a provider-compatible mode")?;
-        }
-
         agent
-            .recreate_provider_for_session(session_id, &resolved_provider_name, model_config)
+            .transition_provider(
+                session_id,
+                &resolved_provider_name,
+                model_config,
+                SessionHandoffTriggerDto::UserRequestedSwitch,
+                None,
+                None,
+                false,
+            )
             .await
-            .internal_err_ctx("Failed to recreate provider")?;
+            .internal_err_ctx("Failed to transition provider")?;
 
         // provider_name is already updated on the session by the agent's update_provider call.
         Ok(())
+    }
+
+    pub(super) async fn on_transition_session_provider(
+        &self,
+        req: TransitionSessionProviderRequest,
+    ) -> Result<TransitionSessionProviderResponse, agent_client_protocol::Error> {
+        let session_id = req.session_id.trim();
+        let target_provider = req.target_provider.trim();
+        let target_model = req.target_model.trim();
+        if session_id.is_empty() || target_provider.is_empty() || target_model.is_empty() {
+            return Err(agent_client_protocol::Error::invalid_params()
+                .data("sessionId, targetProvider, and targetModel are required"));
+        }
+        if self
+            .active_prompt_runs
+            .lock()
+            .await
+            .contains_key(session_id)
+        {
+            return Err(agent_client_protocol::Error::invalid_params()
+                .data("Cannot switch providers while the session has an active turn or approval"));
+        }
+
+        self.validate_model_for_provider(target_provider, target_model)
+            .await?;
+        let agent = self.get_session_agent(session_id).await?;
+        let previous_provider = agent
+            .provider()
+            .await
+            .internal_err_ctx("Failed to get provider")?
+            .get_name()
+            .to_string();
+        let current_model_config = agent
+            .model_config_for_session(session_id)
+            .await
+            .internal_err_ctx("Failed to resolve model config")?;
+        let previous_model = current_model_config.model_name.clone();
+        let context_limit = req.target_context_limit.map(|value| value as usize);
+        let mut model_config =
+            crate::model_config::model_config_from_user_config_with_session_settings(
+                target_provider,
+                target_model,
+                Some(&current_model_config),
+                req.request_params,
+                context_limit,
+            )
+            .invalid_params_err_ctx("Invalid model config")?;
+        let trigger = if previous_provider != target_provider {
+            SessionHandoffTriggerDto::UserRequestedSwitch
+        } else if previous_model != target_model {
+            SessionHandoffTriggerDto::ModelChangeRequiresRecreation
+        } else {
+            SessionHandoffTriggerDto::ThinkingEffortChangeRequiresRecreation
+        };
+        if let Some(effort) = req.target_thinking_effort {
+            let effort = effort
+                .parse::<gosling_providers::thinking::ThinkingEffort>()
+                .map_err(|_| {
+                    agent_client_protocol::Error::invalid_params()
+                        .data("Invalid targetThinkingEffort")
+                })?;
+            model_config = model_config.with_thinking_effort(effort);
+        }
+
+        let snapshot = agent
+            .transition_provider(
+                session_id,
+                target_provider,
+                model_config,
+                trigger,
+                req.expected_current_generation,
+                req.expected_source_hash.as_deref(),
+                req.confirm_new_context,
+            )
+            .await
+            .internal_err_ctx("Provider transition failed")?;
+        Ok(TransitionSessionProviderResponse {
+            snapshot,
+            previous_provider,
+            previous_model,
+            active_provider: target_provider.to_string(),
+            active_model: target_model.to_string(),
+        })
+    }
+
+    pub(super) async fn on_preview_session_handoff(
+        &self,
+        req: PreviewSessionHandoffRequest,
+    ) -> Result<PreviewSessionHandoffResponse, agent_client_protocol::Error> {
+        let session_id = req.session_id.trim();
+        let target_provider = req.target_provider.trim();
+        let target_model = req.target_model.trim();
+        if session_id.is_empty() || target_provider.is_empty() || target_model.is_empty() {
+            return Err(agent_client_protocol::Error::invalid_params()
+                .data("sessionId, targetProvider, and targetModel are required"));
+        }
+        if self
+            .active_prompt_runs
+            .lock()
+            .await
+            .contains_key(session_id)
+        {
+            return Err(agent_client_protocol::Error::invalid_params().data(
+                "Cannot preview a provider switch while the session has an active turn or approval",
+            ));
+        }
+        self.validate_model_for_provider(target_provider, target_model)
+            .await?;
+        let agent = self.get_session_agent(session_id).await?;
+        let current_model_config = agent
+            .model_config_for_session(session_id)
+            .await
+            .internal_err_ctx("Failed to resolve model config")?;
+        let target_entry = crate::providers::get_from_registry(target_provider)
+            .await
+            .internal_err_ctx("Failed to read target provider capabilities")?;
+        let target_model_config =
+            crate::model_config::model_config_from_user_config_with_session_settings(
+                target_provider,
+                target_model,
+                Some(&current_model_config),
+                None,
+                req.target_context_limit.map(|value| value as usize),
+            )
+            .invalid_params_err_ctx("Invalid model config")?;
+        let target_model_config = target_entry
+            .normalize_model_config(target_model_config)
+            .invalid_params_err_ctx("Invalid model config")?;
+        let expected_current_generation = self
+            .session_manager
+            .latest_handoff_generation(session_id)
+            .await
+            .internal_err_ctx("Failed to read handoff generation")?;
+        let mut snapshot =
+            crate::session::handoff::SessionHandoffBuilder::new(&self.session_manager)
+                .build(
+                    session_id,
+                    target_provider,
+                    target_model,
+                    target_model_config.context_limit(),
+                    target_entry.capabilities(),
+                    SessionHandoffTriggerDto::UserRequestedSwitch,
+                )
+                .await
+                .internal_err_ctx("Failed to preview session checkpoint")?;
+        snapshot.generation = expected_current_generation + 1;
+        Ok(PreviewSessionHandoffResponse {
+            snapshot,
+            expected_current_generation,
+        })
+    }
+
+    pub(super) async fn on_read_session_handoff_checkpoint(
+        &self,
+        req: ReadSessionHandoffCheckpointRequest,
+    ) -> Result<ReadSessionHandoffCheckpointResponse, agent_client_protocol::Error> {
+        let session_id = req.session_id.trim();
+        if session_id.is_empty() {
+            return Err(
+                agent_client_protocol::Error::invalid_params().data("sessionId cannot be empty")
+            );
+        }
+        self.session_manager
+            .get_session(session_id, false)
+            .await
+            .map_err(|_| {
+                agent_client_protocol::Error::resource_not_found(Some(session_id.to_string()))
+                    .data(format!("Session not found: {session_id}"))
+            })?;
+        Ok(ReadSessionHandoffCheckpointResponse {
+            snapshot: self
+                .session_manager
+                .latest_handoff_snapshot(session_id)
+                .await
+                .internal_err_ctx("Failed to read session checkpoint")?,
+        })
     }
 
     pub(super) async fn validate_model_for_provider(

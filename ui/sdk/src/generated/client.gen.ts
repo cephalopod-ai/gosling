@@ -117,6 +117,8 @@ import type {
   PreferencesReadResponse_unstable,
   PreferencesRemoveRequest_unstable,
   PreferencesSaveRequest_unstable,
+  PreviewSessionHandoffRequest_unstable,
+  PreviewSessionHandoffResponse_unstable,
   PromptOperationResponse_unstable,
   ProviderCatalogListRequest_unstable,
   ProviderCatalogListResponse_unstable,
@@ -140,6 +142,8 @@ import type {
   ProviderSupportedModelsListResponse_unstable,
   ReadResourceRequest_unstable,
   ReadResourceResponse_unstable,
+  ReadSessionHandoffCheckpointRequest_unstable,
+  ReadSessionHandoffCheckpointResponse_unstable,
   RecordSessionModelSwitchRequest_unstable,
   RecordSessionModelSwitchResponse_unstable,
   RefreshProviderInventoryRequest_unstable,
@@ -190,6 +194,8 @@ import type {
   SteerSessionResponse_unstable,
   SummarizerModelsListRequest_unstable,
   SummarizerModelsListResponse_unstable,
+  TransitionSessionProviderRequest_unstable,
+  TransitionSessionProviderResponse_unstable,
   TruncateSessionConversationRequest_unstable,
   UnarchiveSessionRequest_unstable,
   UpdateSessionProjectRequest_unstable,
@@ -260,6 +266,7 @@ import {
   zOnboardingImportApplyResponse_unstable,
   zOnboardingImportScanResponse_unstable,
   zPreferencesReadResponse_unstable,
+  zPreviewSessionHandoffResponse_unstable,
   zPromptOperationResponse_unstable,
   zProviderCatalogListResponse_unstable,
   zProviderCatalogTemplateResponse_unstable,
@@ -270,6 +277,7 @@ import {
   zProviderSetupCatalogListResponse_unstable,
   zProviderSupportedModelsListResponse_unstable,
   zReadResourceResponse_unstable,
+  zReadSessionHandoffCheckpointResponse_unstable,
   zRecordSessionModelSwitchResponse_unstable,
   zRefreshProviderInventoryResponse_unstable,
   zRestoreOutputRevisionResponse_unstable,
@@ -290,6 +298,7 @@ import {
   zShellProvisioningValidateResponse_unstable,
   zSteerSessionResponse_unstable,
   zSummarizerModelsListResponse_unstable,
+  zTransitionSessionProviderResponse_unstable,
   zUpdateSourceResponse_unstable,
   zWorkspaceDeleteResponse_unstable,
   zWorkspaceExportResponse_unstable,
@@ -1277,6 +1286,42 @@ export class GoslingExtClient {
     return zHandoffSessionResponse_unstable.parse(
       raw,
     ) as HandoffSessionResponse_unstable;
+  }
+
+  async sessionProviderTransition_unstable(
+    params: TransitionSessionProviderRequest_unstable,
+  ): Promise<TransitionSessionProviderResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/session/provider/transition",
+      params,
+    );
+    return zTransitionSessionProviderResponse_unstable.parse(
+      raw,
+    ) as TransitionSessionProviderResponse_unstable;
+  }
+
+  async sessionHandoffCheckpointPreview_unstable(
+    params: PreviewSessionHandoffRequest_unstable,
+  ): Promise<PreviewSessionHandoffResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/session/handoff/checkpoint/preview",
+      params,
+    );
+    return zPreviewSessionHandoffResponse_unstable.parse(
+      raw,
+    ) as PreviewSessionHandoffResponse_unstable;
+  }
+
+  async sessionHandoffCheckpointRead_unstable(
+    params: ReadSessionHandoffCheckpointRequest_unstable,
+  ): Promise<ReadSessionHandoffCheckpointResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/session/handoff/checkpoint/read",
+      params,
+    );
+    return zReadSessionHandoffCheckpointResponse_unstable.parse(
+      raw,
+    ) as ReadSessionHandoffCheckpointResponse_unstable;
   }
 
   async sessionArchive_unstable(

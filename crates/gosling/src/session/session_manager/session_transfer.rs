@@ -21,6 +21,8 @@ use crate::conversation::Conversation;
 use crate::session::extension_data::{EnabledExtensionsState, ExtensionState};
 use anyhow::Result;
 use chrono::Utc;
+use gosling_providers::model::ModelConfig;
+use gosling_sdk_types::session_handoff::{SessionHandoffSnapshotV1Dto, SessionHandoffStatusDto};
 use std::path::{Path, PathBuf};
 
 impl SessionStorage {
@@ -211,5 +213,94 @@ impl SessionStorage {
         crate::posthog::emit_session_started();
 
         self.get_session(&new_session.id, true).await
+    }
+
+    pub(super) async fn create_handoff_session(
+        &self,
+        session_manager: &SessionManager,
+        source_session_id: &str,
+        new_name: String,
+        provider_name: String,
+        model_config: ModelConfig,
+        mut snapshot: SessionHandoffSnapshotV1Dto,
+    ) -> Result<(Session, SessionHandoffSnapshotV1Dto)> {
+        let original_session = self.get_session(source_session_id, false).await?;
+        let _write_guard = self.acquire_write_guard().await;
+        let pool = self.pool().await?;
+        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+        let new_session = Self::create_session_in_tx(
+            &mut tx,
+            original_session.working_dir.clone(),
+            new_name,
+            original_session.session_type,
+            original_session.gosling_mode,
+        )
+        .await?;
+
+        let mut builder = session_manager
+            .update(&new_session.id)
+            .extension_data(original_session.extension_data)
+            .restrict_tools_to_working_dirs(original_session.restrict_tools_to_working_dirs)
+            .provider_name(provider_name)
+            .model_config(model_config)
+            .gosling_mode(original_session.gosling_mode);
+        if !original_session.additional_working_dirs.is_empty() {
+            builder = builder.additional_working_dirs(original_session.additional_working_dirs);
+        }
+        if let Some(project_id) = original_session.project_id {
+            builder = builder.project_id(Some(project_id));
+        }
+        if let (Some(workspace_id), Some(workspace_name), Some(context)) = (
+            original_session.workspace_id,
+            original_session.workspace_name,
+            original_session.workspace_context,
+        ) {
+            builder = builder.workspace_snapshot(
+                workspace_id,
+                workspace_name,
+                original_session.credential_profile_id,
+                original_session.credential_profile_name,
+                original_session.credential_binding_id,
+                context,
+            );
+        }
+        Self::apply_update_in_tx(&mut tx, builder).await?;
+
+        snapshot.session_id = new_session.id.clone();
+        snapshot.source_session_id = Some(source_session_id.to_string());
+        snapshot.generation = 1;
+        snapshot.status = SessionHandoffStatusDto::Active;
+        snapshot.activated_at = Some(Utc::now().to_rfc3339());
+        if snapshot.delivery_strategy
+            != gosling_sdk_types::session_handoff::HandoffDeliveryStrategyDto::NewContext
+        {
+            let conversation = Conversation::new_unvalidated(vec![
+                crate::session::handoff::handoff_bootstrap_message(&snapshot)?,
+            ]);
+            Self::replace_conversation_in_tx(&mut tx, &new_session.id, &conversation).await?;
+        }
+        Self::insert_handoff_snapshot_in_tx(&mut tx, &snapshot).await?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO session_artifacts (
+                session_id, display_path, resolved_path, base_working_dir, workspace_id,
+                mime_type, relation, provenance, source_id, first_seen_at, last_seen_at
+            )
+            SELECT ?, display_path, resolved_path, base_working_dir, workspace_id,
+                   mime_type, relation, provenance, source_id, first_seen_at, last_seen_at
+            FROM session_artifacts WHERE session_id = ?
+            ON CONFLICT(session_id, resolved_path) DO NOTHING
+            "#,
+        )
+        .bind(&new_session.id)
+        .bind(source_session_id)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        #[cfg(feature = "telemetry")]
+        crate::posthog::emit_session_started();
+
+        Ok((self.get_session(&new_session.id, true).await?, snapshot))
     }
 }

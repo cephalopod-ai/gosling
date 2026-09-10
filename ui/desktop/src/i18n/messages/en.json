@@ -320,6 +320,9 @@
   "baseChat.connectionInterruptedBody": {
     "defaultMessage": "The connection closed while the task was running. Work completed before the interruption was saved."
   },
+  "baseChat.continueWithCheckpoint": {
+    "defaultMessage": "Continue with another model using session checkpoint"
+  },
   "baseChat.failedToLoadSession": {
     "defaultMessage": "Failed to Load Session"
   },
@@ -1748,6 +1751,9 @@
   "modelAndProviderContext.modelSwitchRecord": {
     "defaultMessage": "Model changed: {previousModel} -> {currentModel}"
   },
+  "modelAndProviderContext.previousProviderRetained": {
+    "defaultMessage": "The switch was not activated. Your previous provider remains active."
+  },
   "modelAndProviderContext.selectModel": {
     "defaultMessage": "Select Model"
   },
@@ -2489,6 +2495,15 @@
   "sessionActionsHeader.cancel": {
     "defaultMessage": "Cancel"
   },
+  "sessionActionsHeader.checkpointFailed": {
+    "defaultMessage": "Failed to load session checkpoint: {error}"
+  },
+  "sessionActionsHeader.checkpointMissing": {
+    "defaultMessage": "This session does not have a handoff checkpoint yet."
+  },
+  "sessionActionsHeader.checkpointTitle": {
+    "defaultMessage": "Session handoff checkpoint"
+  },
   "sessionActionsHeader.close": {
     "defaultMessage": "Close"
   },
@@ -2518,9 +2533,6 @@
   },
   "sessionActionsHeader.handoffFailed": {
     "defaultMessage": "Failed to hand off session: {error}"
-  },
-  "sessionActionsHeader.handoffNoSummary": {
-    "defaultMessage": "Started a new session with the same settings. This session's context is managed by its own CLI tool, so Gosling couldn't generate a handoff summary from it."
   },
   "sessionActionsHeader.handoffSession": {
     "defaultMessage": "Hand off to new session"
@@ -2557,6 +2569,9 @@
   },
   "sessionActionsHeader.saving": {
     "defaultMessage": "Saving..."
+  },
+  "sessionActionsHeader.viewCheckpoint": {
+    "defaultMessage": "View handoff checkpoint"
   },
   "sessionActionsHeader.viewJson": {
     "defaultMessage": "View session JSON"
@@ -3167,6 +3182,9 @@
   "stringUtils.ollamaNotConfiguredSuffix": {
     "defaultMessage": "must be installed on your machine and open, or you must enter a value for OLLAMA_HOST."
   },
+  "switchModelModal.activated": {
+    "defaultMessage": "Activated"
+  },
   "switchModelModal.backToModelList": {
     "defaultMessage": "Back to model list"
   },
@@ -3175,6 +3193,12 @@
   },
   "switchModelModal.checkProviderConfig": {
     "defaultMessage": "Check your provider configuration in Settings → Providers"
+  },
+  "switchModelModal.checkpointCoverage": {
+    "defaultMessage": "Checkpoint covers {covered} of {total} messages through row {row} (about {tokens} tokens)."
+  },
+  "switchModelModal.checkpointDetails": {
+    "defaultMessage": "Summary: {summary}. Delivery: {delivery}. Interrupted operations: {operations}. Pending approvals: {approvals}. Redactions: {redactions}. Truncations: {truncations}."
   },
   "switchModelModal.chooseModel": {
     "defaultMessage": "Choose a model:"
@@ -3200,6 +3224,15 @@
   "switchModelModal.claudeEnabled": {
     "defaultMessage": "Enabled - Fixed token budget for thinking"
   },
+  "switchModelModal.confirmNewContext": {
+    "defaultMessage": "Confirm new context"
+  },
+  "switchModelModal.confirmSwitch": {
+    "defaultMessage": "Confirm switch"
+  },
+  "switchModelModal.continuity": {
+    "defaultMessage": "Continuity: {continuity}"
+  },
   "switchModelModal.couldNotContactProvider": {
     "defaultMessage": "Could not contact provider"
   },
@@ -3221,6 +3254,15 @@
   "switchModelModal.loadingModels": {
     "defaultMessage": "Loading models…"
   },
+  "switchModelModal.newContextOnly": {
+    "defaultMessage": "New context only"
+  },
+  "switchModelModal.newContextWarning": {
+    "defaultMessage": "This provider cannot receive the checkpoint. Continuing starts a new provider context; the previous provider and checkpoint remain available."
+  },
+  "switchModelModal.preparingPreview": {
+    "defaultMessage": "Preparing preview…"
+  },
   "switchModelModal.providerPlaceholder": {
     "defaultMessage": "Provider, type to search"
   },
@@ -3229,6 +3271,12 @@
   },
   "switchModelModal.recommended": {
     "defaultMessage": "Recommended"
+  },
+  "switchModelModal.reviewCheckpoint": {
+    "defaultMessage": "Review checkpoint"
+  },
+  "switchModelModal.seamlessResume": {
+    "defaultMessage": "Seamless resume"
   },
   "switchModelModal.selectEffortLevel": {
     "defaultMessage": "Select effort level"
@@ -3254,6 +3302,9 @@
   "switchModelModal.selectThinkingMode": {
     "defaultMessage": "Select thinking mode"
   },
+  "switchModelModal.summarizedHandoff": {
+    "defaultMessage": "Summarized handoff"
+  },
   "switchModelModal.thinkingBudget": {
     "defaultMessage": "Thinking Budget (tokens)"
   },
@@ -3277,6 +3328,12 @@
   },
   "switchModelModal.title": {
     "defaultMessage": "Switch models"
+  },
+  "switchModelModal.transitionInProgress": {
+    "defaultMessage": "Switching…"
+  },
+  "switchModelModal.transitionStages": {
+    "defaultMessage": "Preparing checkpoint · Initializing target · Delivering handoff · Activating"
   },
   "switchModelModal.typeModelName": {
     "defaultMessage": "Type model name here"

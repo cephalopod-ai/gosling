@@ -42,6 +42,7 @@ for the relationship to cephalopod-ai/gosling.
 - [adr/0016-deep-research-library.md](adr/0016-deep-research-library.md) — durable, user-configurable Deep Research deliverable library and bounded prior-context browser
 - [adr/0017-session-private-directory-grants.md](adr/0017-session-private-directory-grants.md) — additive, session-only directory grants for active workspace chats
 - [adr/0018-output-contribution-history.md](adr/0018-output-contribution-history.md) — agent/model attribution, saved output revisions, comparison, export, and guarded restore
+- [adr/0019-full-session-handoff-continuity.md](adr/0019-full-session-handoff-continuity.md) — bounded, redacted checkpoints and atomic provider/model continuity
 - [build/](build/) — build documentation
 - [build/context-compaction-failsafe-plan.md](build/context-compaction-failsafe-plan.md) — recurring oversized-session compaction repair plan and acceptance criteria
 - [cloud/](cloud/) — audit and playtest reports (not cloud-hosting runbooks)

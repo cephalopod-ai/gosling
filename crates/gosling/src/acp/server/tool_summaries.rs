@@ -106,7 +106,9 @@ impl GoslingAcpAgent {
                     return;
                 }
             };
-            if provider.manages_own_context() {
+            if provider.capabilities().context_ownership
+                != crate::providers::base::ContextOwnership::Gosling
+            {
                 warn!(
                     "tool chain summary: provider manages own context; skipping chain anchored at {first_id}",
                 );

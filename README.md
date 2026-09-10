@@ -72,7 +72,9 @@ and unnecessary workspace approval prompts for ordinary temporary scratch files.
 `v1.2.4` adds budget-capped auto-compaction with a configurable reduction target, atomic
 conversation/usage-metrics writes so an interrupted compaction cannot leave stale token counts,
 torn-write detection for output-revision restore, structured tool-denial and policy messaging,
-and a corrected distinction between session-lease loss and user-initiated cancellation.
+and a corrected distinction between session-lease loss and user-initiated cancellation. It also
+adds full session handoff continuity: inspectable redacted checkpoints, capability-based continuity
+labels, and atomic provider/model transitions that retain the prior provider on failure.
 
 ## What's included
 
@@ -80,7 +82,7 @@ and a corrected distinction between session-lease loss and user-initiated cancel
 - **Credential profiles in chat** - the chat composer exposes the credential-profile selector and manager, shows a session's pinned profile, and keeps missing-profile failures visible instead of silently choosing another credential.
 - **Desktop lifecycle and windowing reliability** - startup, shutdown, backend cleanup, single-instance behavior, packaged loopback connectivity, and native multi-window actions have dedicated repair and replay evidence.
 - **Session and CLI correctness** - persisted interrupted turns, provider failures, machine-readable output, malformed configuration, doctor behavior, empty-input rejection, and ACP lifecycle handling were repaired through the 2026-07-20 playtest campaign.
-- **Context and memory** - local summarization, durable file-backed facts, backend-specific routing, compacted-session resume paging, and bounded handoff design support longer-running work.
+- **Context and memory** - local summarization, durable file-backed facts, backend-specific routing, compacted-session resume paging, and bounded session handoff checkpoints support longer-running work without raw-history replay.
 - **Security hardening** - tool inspection fails closed, secret and session storage use restricted permissions, sensitive writes are atomic, provider clients are bounded, and plugin/cache/path handling rejects unsafe inputs.
 - **ACP, MCP, and provider integration** - custom ACP requests, MCP app proxy routes, generated SDK/OpenAPI surfaces, external extensions, and subscription-backed provider adapters remain part of the supported integration model.
 - **Independent project stewardship** - release, contributor, provenance, architecture, test-scenario, audit, and user-manual surfaces now identify gosling's independent maintenance boundary without erasing inherited authorship.

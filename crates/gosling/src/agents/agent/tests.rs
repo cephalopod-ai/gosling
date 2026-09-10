@@ -848,15 +848,16 @@ async fn denied_pre_tool_use_does_not_inject_subdirectory_hints() -> Result<()> 
 #[tokio::test]
 async fn refusal_exits_turn() -> Result<()> {
     let temp_dir = tempfile::tempdir()?;
+    let data_dir = temp_dir.path().join("data");
     let provider = Arc::new(RefusingProvider {
         call_count: AtomicUsize::new(0),
     });
     let hook_manager = crate::hooks::HookManager::from_plugins_for_test(vec![]);
     let (agent, session_id) =
-        create_test_agent(temp_dir.path().join("data"), hook_manager, provider.clone()).await?;
+        create_test_agent(data_dir.clone(), hook_manager, provider.clone()).await?;
 
     let session_config = SessionConfig {
-        id: session_id,
+        id: session_id.clone(),
         max_turns: Some(10),
         compacted_context: false,
         tail_limit: None,
@@ -875,6 +876,20 @@ async fn refusal_exits_turn() -> Result<()> {
         1,
         "a refused request must not be resent"
     );
+    let manager = SessionManager::new(data_dir);
+    let snapshot = manager
+        .latest_handoff_snapshot(&session_id)
+        .await?
+        .expect("provider refusal should prepare a recovery checkpoint");
+    assert_eq!(
+        snapshot.trigger,
+        gosling_sdk_types::session_handoff::SessionHandoffTriggerDto::ProviderFailure
+    );
+    assert_eq!(
+        snapshot.status,
+        gosling_sdk_types::session_handoff::SessionHandoffStatusDto::Prepared
+    );
+    assert!(snapshot.failure.is_some());
     Ok(())
 }
 

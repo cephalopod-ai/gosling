@@ -524,7 +524,9 @@ pub async fn check_if_compaction_needed(
     threshold_override: Option<f64>,
     session: &crate::session::Session,
 ) -> Result<bool> {
-    if provider.manages_own_context() {
+    if provider.capabilities().context_ownership
+        != crate::providers::base::ContextOwnership::Gosling
+    {
         return Ok(false);
     }
 
@@ -1209,7 +1211,10 @@ pub fn maybe_summarize_tool_pairs(
     cutoff: usize,
     protect_last_n: usize,
 ) -> Option<JoinHandle<Vec<(Message, String)>>> {
-    if !tool_pair_summarization_enabled() || provider.manages_own_context() {
+    if !tool_pair_summarization_enabled()
+        || provider.capabilities().context_ownership
+            != crate::providers::base::ContextOwnership::Gosling
+    {
         return None;
     }
 
