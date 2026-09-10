@@ -6,104 +6,113 @@ sidebar_label: Local External Server
 
 # Running a Separate Local gosling Server
 
-:::caution Needs verification against the current `gosling serve` command
-This guide describes the deployment pattern (run the ACP server separately, point Desktop at it) using the old standalone `goslingd` binary, which no longer exists — `crates/gosling-server` was removed because nothing in this workspace built or shipped it anymore. The equivalent functionality is now the CLI's own `gosling serve` subcommand (see `crates/gosling-cli/src/cli.rs`, `Command::Serve`), which confirmed differences include:
-- No `GOSLING_HOST`/`GOSLING_PORT` env vars — host/port are `--host`/`--port` flags (defaults `127.0.0.1` / `3284`, not port 3000).
-- No `agent` sub-verb — `gosling serve` is the complete command.
-- `GOSLING_TLS`/`GOSLING_TLS_CERT_PATH`/`GOSLING_TLS_KEY_PATH` and `GOSLING_SERVER__SECRET_KEY` still appear to be read the same way, but this has not been independently re-verified end-to-end.
-- Whether the self-signed certificate + `GOSLINGD_CERT_FINGERPRINT` log line and the Settings → gosling Server UI fields below still exist as described has **not** been re-checked.
+gosling Desktop normally launches and owns a `gosling serve` child process. Advanced local setups
+can run that ACP backend separately and point Desktop at its HTTP(S) base URL. The old standalone
+`goslingd` binary and duplicate `gosling-server` REST API were removed in v1.2.5; they are not part
+of this setup.
 
-The desktop app still has live code that supports pointing it at an external server (`ExternalGoslingdConfig` in `ui/desktop/src/utils/settings` and `ui/desktop/src/utils/csp.ts`), so this is not a dead feature — the content below is kept as a starting point, but treat every command and field name as unverified until someone walks through it against the current build.
-:::
+This server is a single-operator control plane. Keep it on a loopback address unless you have
+designed a separate network and authentication boundary around it. Never expose
+`--dangerously-unauthenticated` beyond loopback; gosling rejects that combination.
 
-gosling Desktop normally starts its own backend server process. Advanced local setups may start that process separately and connect Desktop to it through a loopback address.
+## Start the ACP server
 
-The server is a single-operator local control plane. It does not support binding to a LAN, VPN, public, wildcard, or other non-loopback address without additional authentication. Use a separately designed multi-user service instead of exposing it remotely.
-
-## Initial Setup
-
-### 1. Start the server
-
-On the same machine as Desktop, launch the server with a loopback host, port, TLS, and a secret key. With the old `goslingd` binary this was:
+Choose a long random secret and use the same value for the server and Desktop:
 
 ```bash
-GOSLING_HOST=127.0.0.1 \
-GOSLING_PORT=3000 \
-GOSLING_TLS=true \
-GOSLING_SERVER__SECRET_KEY='YOUR_SECRET' \
-/Applications/Gosling.app/Contents/Resources/bin/goslingd agent
+export GOSLING_SERVER__SECRET_KEY='YOUR_LONG_RANDOM_SECRET'
+gosling serve --host 127.0.0.1 --port 3284 --platform desktop
 ```
 
-The current equivalent is the `gosling` CLI's `serve` subcommand, e.g.:
+The supported command and security controls are:
+
+| Option | Purpose |
+|---|---|
+| `--host` | Address to bind; defaults to `127.0.0.1`. |
+| `--port` | TCP port; defaults to `3284`. |
+| `--platform desktop` | Identifies requests as coming from gosling Desktop. |
+| `--tls` | Serves ACP over TLS. Without certificate paths, gosling creates or reuses a local self-signed certificate. |
+| `--tls-cert-path` and `--tls-key-path` | Use a specific PEM certificate and private key. Both are required together. |
+| `GOSLING_SERVER__SECRET_KEY` | Requires the matching token on status and ACP connections. |
+| `--allowed-origin` | Replaces the default loopback CORS origins with one or more exact origins. Wildcards are rejected. |
+
+`gosling serve` refuses to start without `GOSLING_SERVER__SECRET_KEY` unless
+`--dangerously-unauthenticated` is present. The unauthenticated mode is for deliberate loopback
+development only and cannot bind to a non-loopback address.
+
+### Optional TLS
+
+For a self-signed local certificate:
 
 ```bash
-GOSLING_TLS=true \
-GOSLING_SERVER__SECRET_KEY='YOUR_SECRET' \
-/Applications/Gosling.app/Contents/Resources/bin/gosling serve --host 127.0.0.1 --port 3000
+export GOSLING_SERVER__SECRET_KEY='YOUR_LONG_RANDOM_SECRET'
+gosling serve --host 127.0.0.1 --port 3284 --platform desktop --tls
 ```
 
-This has not been run end-to-end against the current build — verify it starts and listens as expected before relying on it.
+At startup, the server prints `GOSLINGD_CERT_FINGERPRINT=...`. The variable name is retained in the
+log format for compatibility even though the `goslingd` executable no longer exists. Copy that
+fingerprint if you want Desktop to pin the exact certificate. If no fingerprint is configured,
+Desktop trusts the first certificate it sees for that external HTTPS backend and pins it for the
+life of the backend registration (TOFU).
 
-| Variable / flag | Purpose |
-|----------|---------|
-| `--host` | Loopback address to bind. `--dangerously-unauthenticated` additionally requires this to resolve to loopback. |
-| `--port` | TCP port to listen on. |
-| `GOSLING_TLS` | Enables TLS. Confirm gosling Desktop still refuses plain HTTP before relying on this. |
-| `GOSLING_SERVER__SECRET_KEY` | Shared secret. The client must send this in the `X-Secret-Key` header. Treat it like a password. |
+## Verify the listener
 
-:::tip
-Pick a long, random value for `GOSLING_SERVER__SECRET_KEY` and store it in a password manager — the same value goes into gosling Desktop later.
-:::
-
-### 2. Verify the server is up
-
-First, confirm the server is actually listening on the port you expect:
+Confirm that the process is listening:
 
 ```bash
-lsof -nP -iTCP:3000 -sTCP:LISTEN
+lsof -nP -iTCP:3284 -sTCP:LISTEN
 ```
 
-Then test the endpoints from the server itself. The `-k` flag tells `curl` to accept the self-signed TLS certificate the server generates (unverified against the current build):
+Then check the authenticated status route. Add `-k` only when using the generated self-signed TLS
+certificate:
 
 ```bash
-# Connectivity only
-curl -i https://127.0.0.1:3000/status -k
-
-# Authenticated endpoint (real test)
-curl -i https://127.0.0.1:3000/config/read -k \
-  -H 'Content-Type: application/json' \
-  -H 'X-Secret-Key: YOUR_SECRET' \
-  --data '{"key":"GOSLING_PROVIDER","is_secret":false}'
+curl -i http://127.0.0.1:3284/status \
+  -H 'X-Secret-Key: YOUR_LONG_RANDOM_SECRET'
 ```
 
-A `200` response from the second call confirms that TLS is up, the secret key is being accepted, and the server is ready to receive client requests.
+For TLS, use `https://127.0.0.1:3284/status -k`. A successful status response proves that the
+listener and shared secret are working. Desktop performs a second authenticated ACP probe before
+opening a chat.
 
-### 3. Find the certificate fingerprint
+## Configure Desktop
 
-The old `goslingd` generated a self-signed TLS certificate and gosling Desktop pinned it by SHA-256 fingerprint rather than relying on a public certificate authority, logging a `GOSLINGD_CERT_FINGERPRINT=...` line on startup. Whether `gosling serve` still does this has not been re-verified — check the current startup log output before relying on this step.
-
-### 4. Configure gosling Desktop
-
-On the client machine, open gosling Desktop and check whether **Settings → gosling Server** still exposes:
+Open **Settings → External Backend (ACP)** and set:
 
 | Setting | Value |
-|---------|-------|
-| **Use external server** | Enabled |
-| **URL** | `https://127.0.0.1:3000` |
-| **Secret Key** | The same value you used for `GOSLING_SERVER__SECRET_KEY` |
-| **Certificate Fingerprint** | The fingerprint value from the server logs, if the server still logs one |
+|---|---|
+| **Use external backend** | Enabled |
+| **Backend Base URL** | `http://127.0.0.1:3284` or the matching `https://` URL |
+| **Secret Key** | The server's `GOSLING_SERVER__SECRET_KEY` value |
+| **Certificate Fingerprint** | Optional; HTTPS only |
+
+Enter the base URL before `/acp`, without query parameters or a fragment. The secret is held only
+for the current app launch and is intentionally not persisted, so enter it again after restarting
+Desktop. Setting changes apply to new chat windows; restart gosling to update existing windows.
+
+Desktop can also be launched with an explicit external backend environment:
+
+```bash
+export GOSLING_EXTERNAL_BACKEND=true
+export GOSLING_EXTERNAL_BACKEND_URL='http://127.0.0.1:3284'
+export GOSLING_SERVER__SECRET_KEY='YOUR_LONG_RANDOM_SECRET'
+```
+
+Set `GOSLING_EXTERNAL_BACKEND_URL` explicitly. The legacy fallback used when that variable is
+omitted still points to port `3000`, while `gosling serve` now defaults to `3284`.
 
 ## Troubleshooting
 
-### Client cannot authenticate (401 / Unauthorized)
-
-A `401` from the server, or a gosling Desktop error indicating that the secret was rejected, almost always means that `GOSLING_SERVER__SECRET_KEY` on the server does not match the **Secret Key** in gosling Desktop's settings.
-
-To check the secret end-to-end without involving gosling Desktop, run the authenticated `curl` from [step 2](#2-verify-the-server-is-up) using exactly the value you have configured on the client. If that returns `200`, the secret is correct and the problem is in the client configuration; if it returns `401`, the secret on the server is different from what you are sending.
-
-If you rotate the secret on the server, you must also update it in gosling Desktop's settings — they are not synchronized automatically.
+- **Unauthorized or unreachable:** confirm the base URL, protocol, port, and shared secret. Desktop
+  sends the secret to `/status` and uses it as the ACP connection token.
+- **Certificate error:** configure the startup fingerprint, or remove an obsolete fingerprint and
+  allow a new trust-on-first-use registration. Fingerprints require an `https://` base URL.
+- **Existing windows use the old backend:** open a new chat window or restart Desktop.
+- **Custom web origin is blocked:** pass each exact origin with `--allowed-origin`; do not use a
+  wildcard.
 
 ## Related
 
-- [Environment Variables](/docs/guides/environment-variables) — full reference for all `GOSLING_*` variables
-- [Configuration Files](/docs/guides/config-files) — persistent client-side configuration
+- [Environment Variables](/docs/guides/environment-variables)
+- [Configuration Files](/docs/guides/config-files)
+- [ACP Providers](/docs/guides/acp-providers)

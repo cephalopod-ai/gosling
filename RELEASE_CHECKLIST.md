@@ -1,25 +1,27 @@
 # gosling Release Checklist
 
 This is a maintainer-owned publish gate. Documentation preparation does not check
-any item automatically. The current candidate is `v1.2.4`; preserve published
+any item automatically. The current candidate is `v1.2.5`; preserve published
 historical tags rather than rewriting them.
 
 ## Version and source identity
 
 - [ ] The release commit is reviewed, immutable for the tag, and based on the intended `main` revision.
-- [ ] `Cargo.toml`, `Cargo.lock`, `ui/desktop/package.json`, pnpm lockfiles, OpenAPI metadata, generated SDK metadata, packaged app metadata, About, and `gosling --version` all report the selected candidate version.
+- [ ] `Cargo.toml`, workspace entries in `Cargo.lock`, `ui/desktop/package.json`, packaged app metadata, About, and `gosling --version` all report `1.2.5`.
+- [ ] The ACP schema and generated TypeScript SDK match the release source. They do not carry the app version; the deleted Desktop OpenAPI schema is not recreated or staged.
 - [ ] `README.md`, `RELEASE.md`, and the candidate release notes match the final release scope.
 - [ ] Contributor and goose upstream attribution remain intact.
 - [ ] No release note claims a test, platform, signature, updater state, or artifact that was not observed.
 
 ## Source validation
 
-- [x] `cargo fmt --check` passes. (Observed 2026-09-06 for `v1.2.1`.)
-- [x] `cargo clippy --all-targets -- -D warnings` passes. (Observed 2026-09-06 for `v1.2.1`.)
-- [x] The complete Rust workspace test suite passes. (Observed 2026-09-06 for `v1.2.1`.)
-- [x] `cd ui/desktop && pnpm run typecheck` passes. (Observed 2026-09-06 for `v1.2.1`.)
-- [x] `cd ui/desktop && pnpm test` passes. (150 test files observed 2026-09-06 for `v1.2.1`.)
-- [x] The documentation build, test, and typecheck commands pass from `documentation/`. (Observed 2026-08-27.)
+- [ ] `cargo fmt --all -- --check` passes on the final `v1.2.5` tree.
+- [ ] `cargo clippy --all-targets -- -D warnings` passes on the final `v1.2.5` tree.
+- [ ] The complete Rust workspace test suite passes on the final `v1.2.5` tree.
+- [ ] `cd ui/desktop && pnpm run typecheck` passes on the final `v1.2.5` tree.
+- [ ] `cd ui/desktop && pnpm test` passes on the final `v1.2.5` tree.
+- [ ] The documentation build, test, and typecheck commands pass from `documentation/` on the final candidate.
+- [ ] Provider-managed sessions do not receive a gosling-owned compaction countdown; the known per-turn context-injection regression is repaired or explicitly blocks publication.
 - [ ] Release workflow integrity, lockfile integrity, and archive/checksum verification pass.
 - [ ] The full scenario-card suite is replayed, or every non-replayed card is explicitly dispositioned with focused replacement evidence.
 
@@ -33,6 +35,10 @@ historical tags rather than rewriting them.
 - [ ] Clicking a workspace filters the sidebar chat list and does not change the default workspace for global New Chat.
 - [ ] Starting a chat from the `+` action beside a workspace preselects that workspace.
 - [ ] Global New Chat allows explicit workspace selection, and an existing chat remains pinned to its original workspace and credential profile.
+- [ ] **Crash recovery** offers Manual, Safe, and Always policies; Safe is the default, normal shutdown does not resume work, and unsafe/incomplete tool recovery waits for review.
+- [ ] **Session Handoff** previews and inspects a bounded redacted checkpoint, preserves the prior provider on transition failure, and requires explicit confirmation for new-context-only targets.
+- [ ] `Enter` inserts a newline; `Cmd+Enter` submits on macOS; while a task is running the shortcut queues and clicking **Send** interrupts.
+- [ ] Qualified workspace outputs and valid local embedded files open directly without a redundant picker; ambiguous or blocked paths remain guarded; **Close all** clears every artifact tab.
 - [ ] Packaged Content Security Policy permits only the required loopback ACP HTTP/WebSocket connection.
 - [ ] Signed/notarized status, Gatekeeper launch, updater metadata, and architecture identity are correct.
 
@@ -40,6 +46,8 @@ historical tags rather than rewriting them.
 
 - [ ] Clean installs and upgrades work on each published OS/architecture.
 - [ ] `gosling --version`, `gosling doctor`, session creation/resume, interruption, provider failure, and machine-readable output behave as documented.
+- [ ] Existing configurations using the removed direct `codex` provider receive migration guidance for `codex-acp` or `chatgpt_codex`; no documentation advertises removed Amp ACP, Avian, or Gemini OAuth implementations.
+- [ ] Custom source builds that need `code-mode` enable it explicitly; default CLI builds are tested without it.
 - [ ] gosling and goose coexist without sharing config, data, database, keyring service, deep-link scheme, or single-instance lock.
 - [ ] Provider API-key and subscription-backed ACP flows are tested without committing credentials or logs containing secrets.
 - [ ] MCP extension discovery and deterministic goose compatibility adapters preserve source attribution.

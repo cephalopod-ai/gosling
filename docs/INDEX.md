@@ -32,6 +32,7 @@ for the relationship to cephalopod-ai/gosling.
 - [polish/documentation-stewardship-report.md](polish/documentation-stewardship-report.md) — latest stewardship gate results and remaining risks
 - [polish/test-ledger.md](polish/test-ledger.md) — current validation commands, results, and evidence limits
 - [logs/](logs/) — retained session evidence and logging conventions
+- [logs/session/2026-09-09-v1.2.5-release-documentation.md](logs/session/2026-09-09-v1.2.5-release-documentation.md) — v1.2.5 local version and release-documentation preparation, validation, and open publication gates
 - [adr/](adr/) — architecture decision records
 - [adr/0010-project-shell-consumer-composition.md](adr/0010-project-shell-consumer-composition.md) — accepted project-shell consumer/composition topology
 - [adr/0011-shell-application-runtime-boundary.md](adr/0011-shell-application-runtime-boundary.md) — accepted main-owned application runtime and renderer capability boundary

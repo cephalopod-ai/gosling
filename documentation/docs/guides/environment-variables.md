@@ -18,7 +18,7 @@ These are the minimum required variables to get started with gosling.
 |----------|---------|---------|---------|
 | `GOSLING_PROVIDER` | Specifies the LLM provider to use | [See available providers](/docs/getting-started/providers#available-providers) | None (must be [configured](/docs/getting-started/providers#configure-provider-and-model)) |
 | `GOSLING_MODEL` | Specifies which model to use from the provider | Model name (e.g., "gpt-4", "claude-sonnet-4-20250514") | None (must be [configured](/docs/getting-started/providers#configure-provider-and-model)) |
-| `GOSLING_FAILOVER_PROVIDER` | Opt-in fallback for transient provider outages on Gosling-managed API turns | Provider name (for example, `ollama` or `openrouter`) | Disabled |
+| `GOSLING_FAILOVER_PROVIDER` | Opt-in fallback for transient provider outages on gosling-managed API turns | Provider name (for example, `ollama` or `openrouter`) | Disabled |
 | `GOSLING_FAILOVER_MODEL` | Model paired with `GOSLING_FAILOVER_PROVIDER` | A model available through the fallback provider | Disabled |
 | `GOSLING_FAST_MODEL` | Overrides the provider's default fast model used for auxiliary calls (tool-selection, classification, session titles) | Model name (e.g., "gpt-4o-mini", "google/gemini-flash-latest") | Provider-specific default |
 | `GOSLING_TEMPERATURE` | Sets the [temperature](https://medium.com/@kelseyywang/a-comprehensive-guide-to-llm-temperature-%EF%B8%8F-363a40bbc91f) for model responses | Float between 0.0 and 1.0 | Model-specific default |
@@ -543,11 +543,13 @@ These variables configure the [Langfuse integration for observability](/docs/tut
 
 ## gosling Server
 
-These variables configure the local `gosling serve` process (the standalone `goslingd` binary this section used to describe has been retired). They are most often used when [running the server as a separate local process](/docs/guides/remote-gosling-server) and connecting gosling Desktop to it — see that page for the current setup steps and its notes on which of the details below are still unverified.
+These variables configure the local `gosling serve` process (the standalone `goslingd` binary this section used to describe has been retired). They are most often used when [running the server as a separate local process](/docs/guides/remote-gosling-server) and connecting gosling Desktop to it.
 
 | Variable | Purpose | Values | Default |
 |----------|---------|---------|---------|
-| `GOSLING_TLS` | Enable TLS with a self-signed certificate. | `true`, `false` | `true` |
+| `GOSLING_TLS` | Enable TLS. When certificate paths are omitted, gosling creates or reuses a local self-signed certificate. The `--tls` flag is the clearer command-line equivalent. | `true`, `false` | `false` |
+| `GOSLING_TLS_CERT_PATH` | PEM certificate for TLS. Must be paired with `GOSLING_TLS_KEY_PATH`; `--tls-cert-path` is the command-line equivalent. | File path | None |
+| `GOSLING_TLS_KEY_PATH` | PEM private key for TLS. Must be paired with `GOSLING_TLS_CERT_PATH`; `--tls-key-path` is the command-line equivalent. | File path | None |
 | `GOSLING_SERVER__SECRET_KEY` | Shared secret required in the `X-Secret-Key` header on all client requests. `gosling serve` requires this variable unless started with `--dangerously-unauthenticated`. | Secret string | Required unless `--dangerously-unauthenticated` |
 
 Host and port are set with `gosling serve`'s `--host`/`--port` flags (defaults `127.0.0.1` / `3284`), not environment variables.
@@ -556,12 +558,13 @@ Host and port are set with `gosling serve`'s `--host`/`--port` flags (defaults `
 
 ```bash
 # Start a separately managed local gosling server over TLS
-export GOSLING_TLS=true
 export GOSLING_SERVER__SECRET_KEY='a-long-random-secret'
-gosling serve --host 127.0.0.1 --port 3000
+gosling serve --host 127.0.0.1 --port 3284 --platform desktop --tls
 ```
 
-See [Running a Separate Local gosling Server](/docs/guides/remote-gosling-server) for the full setup, including what's unverified about the certificate-fingerprint step.
+For an externally managed Desktop connection, set `GOSLING_EXTERNAL_BACKEND=true`, an explicit
+`GOSLING_EXTERNAL_BACKEND_URL`, and the same `GOSLING_SERVER__SECRET_KEY` in the Desktop process.
+See [Running a Separate Local gosling Server](/docs/guides/remote-gosling-server) for the full setup.
 
 ## Development & Testing
 

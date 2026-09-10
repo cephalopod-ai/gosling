@@ -36,7 +36,11 @@ gosling's architecture is designed for extensibility. Organizations can create "
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-CLI and Desktop both link the `gosling` core crate directly rather than going through a separate server process; Desktop reaches it by spawning `gosling serve` as a child process and speaking ACP over WebSocket. A standalone `gosling-server` REST API crate previously existed for HTTP-based integrations but was removed as unused — see [Building a New Interface](#e-building-a-new-interface-web-mobile-etc) below for the current recommended integration path for a custom UI.
+The CLI links the `gosling` core crate directly. Desktop launches `gosling serve` as a child process
+and speaks ACP over WebSocket to the same core. A standalone `gosling-server` REST API crate
+previously existed for HTTP-based integrations but was removed as unused — see
+[Building a New Interface](#e-building-a-new-interface-web-mobile-etc) below for the current
+recommended integration path for a custom UI.
 
 ## Key Customization Points
 

@@ -16,21 +16,11 @@ ACP providers let you use gosling with your existing Claude Code or ChatGPT Plus
 :::
 
 :::warning Limitations
-- **No session fork or resume**: You can start new sessions, but `gosling session resume` and `gosling session fork` are not supported yet.
+- **No built-in adapter currently advertises native provider-session resume or history import**: gosling can resume its own persisted session and use a bounded handoff checkpoint when the adapter supports summarized bootstrap. See [Session Handoff](/docs/guides/sessions/session-handoff).
 - **ACP session ID differs from gosling session ID**: Telemetry fields may not correlate across the two.
 :::
 
 ## Available ACP Providers
-
-### Amp ACP
-
-Wraps [amp-acp](https://www.npmjs.com/package/amp-acp), an ACP adapter for [Amp](https://ampcode.com). Uses your existing Amp subscription.
-
-**Requirements:**
-- Node.js and npm
-- Amp CLI installed (`curl -fsSL https://ampcode.com/install.sh | bash`)
-- ACP adapter installed (`npm install -g amp-acp`)
-- Authenticated with your Amp account (`amp` CLI working)
 
 ### Claude ACP
 
@@ -43,7 +33,7 @@ Wraps [claude-agent-acp](https://github.com/agentclientprotocol/claude-agent-acp
 
 ### Codex ACP
 
-Wraps [codex-acp](https://github.com/zed-industries/codex-acp), an ACP adapter for OpenAI's Codex. Uses the same ChatGPT subscription as the deprecated `codex` CLI provider. Codex's sandbox blocks network by default; gosling automatically enables network access when HTTP MCP servers are configured.
+Wraps [codex-acp](https://github.com/zed-industries/codex-acp), an ACP adapter for OpenAI's Codex. It replaces the direct `codex` CLI provider removed in v1.2.5 and uses the same ChatGPT subscription. Codex's sandbox blocks network by default; gosling automatically enables network access when HTTP MCP servers are configured.
 
 **Requirements:**
 - Node.js and npm
@@ -60,33 +50,6 @@ Wraps `pi-acp`, an ACP adapter for Pi. Uses your existing Pi installation.
 - Authenticated with your Pi account (`pi` CLI working)
 
 ## Setup Instructions
-
-### Amp ACP
-
-1. **Install the Amp CLI**
-
-   ```bash
-   curl -fsSL https://ampcode.com/install.sh | bash
-   ```
-
-2. **Install the ACP adapter**
-
-   ```bash
-   npm install -g amp-acp
-   ```
-
-3. **Authenticate with Amp**
-
-   Run `amp` and follow the authentication prompts.
-
-4. **Configure gosling**
-
-   Set the provider environment variable:
-   ```bash
-   export GOSLING_PROVIDER=amp-acp
-   ```
-
-   Or configure through the gosling CLI using `gosling configure`.
 
 ### Claude ACP
 
@@ -205,14 +168,6 @@ GOSLING_PROVIDER=codex-acp gosling run \
 
 ## Configuration Options
 
-### Amp ACP Configuration
-
-| Environment Variable | Description       | Default   |
-|----------------------|-------------------|-----------|
-| `GOSLING_PROVIDER`     | Set to `amp-acp`  | None      |
-| `GOSLING_MODEL`        | Model to use      | `current` |
-| `GOSLING_MODE`         | Permission mode   | `auto`    |
-
 ### Claude ACP Configuration
 
 | Environment Variable | Description         | Default   |
@@ -278,7 +233,7 @@ See [codex-acp](https://github.com/zed-industries/codex-acp) for approval policy
 
 ACP providers depend on external binaries, so ensure:
 
-- The ACP agent binary is installed and in your PATH (`amp-acp`, `claude-agent-acp`, `codex-acp`, `pi-acp`, or `copilot`)
+- The ACP agent binary is installed and in your PATH (`claude-agent-acp`, `codex-acp`, `pi-acp`, `copilot`, or another adapter shown by the current provider catalog)
 - The underlying CLI tool is authenticated and working
 - Subscription limits are not exceeded
 - Node.js and npm are installed (for npm-distributed adapters)

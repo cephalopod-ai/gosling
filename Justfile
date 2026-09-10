@@ -294,12 +294,11 @@ bump-version version:
     @cd "{{justfile_directory()}}/ui/desktop" && npm pkg set "version={{ version }}"
     # update Cargo.lock after bumping versions in Cargo.toml
     @cd "{{justfile_directory()}}" && cargo update --workspace
-    @just set-openapi-version {{ version }}
 
 verify-version-surface-paths:
     #!/usr/bin/env bash
     set -euo pipefail
-    for version_surface in Cargo.toml ui/desktop/package.json ui/desktop/openapi.json; do
+    for version_surface in Cargo.toml ui/desktop/package.json; do
       test -f "{{justfile_directory()}}/$version_surface"
     done
 
@@ -316,13 +315,9 @@ prepare-release version:
         Cargo.lock \
         ui/desktop/package.json \
         ui/pnpm-lock.yaml \
-        ui/desktop/openapi.json \
         crates/gosling-providers/src/canonical/data/canonical_models.json \
         crates/gosling-providers/src/canonical/data/provider_metadata.json
     @git commit --message "chore(release): release version {{ version }}"
-
-set-openapi-version version:
-    @jq '.info.version |= "{{ version }}"' "{{justfile_directory()}}/ui/desktop/openapi.json" > "{{justfile_directory()}}/ui/desktop/openapi.json.tmp" && mv "{{justfile_directory()}}/ui/desktop/openapi.json.tmp" "{{justfile_directory()}}/ui/desktop/openapi.json"
 
 # extract version from Cargo.toml
 get-tag-version:

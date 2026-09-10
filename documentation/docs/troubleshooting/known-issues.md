@@ -50,6 +50,19 @@ This error occurs when the input provided to gosling exceeds the maximum token l
 
 ---
 
+### Misleading Compaction Countdown with Provider-Managed Sessions
+
+The v1.2.5 source candidate can inject a `~…k tokens remaining` line into a session whose connected
+CLI or provider owns context compaction. The value uses last-request token usage, including cache
+reads, so it can turn negative or move up and down. It is not a reliable remaining-context budget
+and does not mean that the session must be abandoned.
+
+Let the connected provider perform its normal compaction. Do not start a new session solely because
+this countdown is low or negative. Suppressing the gosling-owned countdown when context ownership
+belongs to the provider remains an open v1.2.5 release blocker.
+
+---
+
 ### Using Ollama Provider
 
 Ollama provides local LLMs, which means you must first [download Ollama and run a model](/docs/getting-started/providers#local-llms) before attempting to use this provider with gosling. If you do not have the model downloaded, you'll run into the following error:
@@ -112,7 +125,7 @@ For detailed steps on updating your LLM provider, refer to the [Installation][in
 
 ### Google Gemini API Key Errors
 
-Gosling supports Gemini through `Google Gemini (API Key)`. Configure `GOOGLE_API_KEY` in the provider settings, then choose an available Gemini model. Do not include API keys when sharing an error with a maintainer; include only the redacted error text and a [diagnostic report](/docs/troubleshooting/diagnostics-and-reporting) in a support request.
+gosling supports Gemini through `Google Gemini (API Key)`. Configure `GOOGLE_API_KEY` in the provider settings, then choose an available Gemini model. Do not include API keys when sharing an error with a maintainer; include only the redacted error text and a [diagnostic report](/docs/troubleshooting/diagnostics-and-reporting) in a support request.
 
 ---
 

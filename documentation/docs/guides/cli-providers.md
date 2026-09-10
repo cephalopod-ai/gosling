@@ -2,16 +2,16 @@
 sidebar_position: 8
 title: CLI Providers
 sidebar_label: CLI Providers
-description: Use Claude Code, Codex, Cursor Agent, Gemini CLI, or Antigravity subscriptions in gosling
+description: Use Claude Code, Cursor Agent, Gemini CLI, or Antigravity subscriptions in gosling
 ---
 
 # CLI Providers
 
 :::warning Deprecated — Use ACP Providers
-The Claude Code (`claude-code`), Codex (`codex`), and Gemini CLI (`gemini-cli`) providers are deprecated. Use the [ACP providers](/docs/guides/acp-providers) (`claude-acp`, `codex-acp`) instead, which support gosling extensions via MCP and use the standardized Agent Client Protocol. For Gemini, use `Google Gemini (API Key)` with `GOOGLE_API_KEY`. CLI providers are kept for backward compatibility only.
+The remaining direct CLI providers are deprecated. Use the [ACP providers](/docs/guides/acp-providers) (`claude-acp`, `codex-acp`) when available, since they support gosling extensions through the standardized Agent Client Protocol. The legacy direct `codex` provider was removed in `v1.2.5`; use `codex-acp` or `chatgpt_codex`. For Gemini, use `Google Gemini (API Key)` with `GOOGLE_API_KEY`.
 :::
 
-gosling can make use of pass-through providers that integrate with existing CLI tools from Anthropic, OpenAI, Cursor, and Google. These providers allow you to use your existing Claude Code, Codex, Cursor Agent, and Google Gemini CLI subscriptions through gosling's interface, adding session management, persistence, and workflow integration capabilities to these tools.
+gosling can use pass-through providers that integrate with existing CLI tools from Anthropic, Cursor, and Google. These providers add gosling's session management, persistence, and workflow surfaces around the external agent.
 
 :::warning Limitations
 These providers don’t fully support all gosling features, may have platform or capability limitations, and can sometimes require advanced debugging if issues arise. They’re included here purely as a convenience.
@@ -21,7 +21,7 @@ These providers don’t fully support all gosling features, may have platform or
 
 CLI providers are useful if you:
 
-- already have a Claude Code, Codex, Cursor, or Google Gemini CLI subscription and want to use it through gosling instead of paying per token
+- already have a Claude Code, Cursor, or Google Gemini CLI subscription and want to use it through gosling instead of paying per token
 - need session persistence to save, resume, and export conversation history
 - prefer unified commands across different AI providers
 - want to [use multiple models together](#combining-with-planner-models) in your tasks
@@ -62,23 +62,6 @@ The Claude Code provider integrates with Anthropic's [Claude CLI tool](https://c
 - Claude CLI tool installed and configured
 - Active Claude Code subscription
 - CLI tool authenticated with your Anthropic account
-
-### OpenAI Codex
-
-The Codex provider integrates with OpenAI's [Codex CLI tool](https://developers.openai.com/codex/cli), allowing you to use OpenAI models through your existing ChatGPT Plus/Pro subscription or API credits.
-
-**Features:**
-- Uses GPT-6 Astra and OpenAI's GPT-5 series models (`gpt-6-astra`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.3-codex-spark`)
-- Configurable reasoning effort levels (`none`, `low`, `medium`, `high`, `xhigh`, `max`, `ultra`; the ceiling varies per model)
-- Optional skills support for enhanced capabilities
-- JSON output parsing for structured responses
-- Automatic filtering of gosling extensions from system prompts
-
-**Requirements:**
-- Codex CLI tool installed (`npm i -g @openai/codex` or `brew install --cask codex`)
-- Active ChatGPT Plus/Pro subscription or OpenAI API credits
-- CLI tool authenticated with your OpenAI account
-- By default, Codex requires running from a git repository. Set `CODEX_SKIP_GIT_CHECK=true` to bypass this requirement
 
 ### Cursor Agent
 
@@ -162,45 +145,6 @@ gosling therefore accepts this provider only in `auto` mode and refuses `approve
    ◇  Enter a model from that provider:
    │  default
    ```
-### OpenAI Codex
-
-1. **Install Codex CLI Tool**
-
-   Install the Codex CLI using npm or Homebrew:
-   ```bash
-   npm i -g @openai/codex
-   # or
-   brew install --cask codex
-   ```
-
-2. **Authenticate with OpenAI**
-
-   Run `codex` and follow the authentication prompts. You can use your ChatGPT account or API key.
-
-3. **Configure gosling**
-
-   Set the provider environment variable:
-   ```bash
-   export GOSLING_PROVIDER=codex
-   ```
-
-   Or configure through the gosling CLI using `gosling configure`:
-
-   ```bash
-   ┌   gosling-configure
-   │
-   ◇  What would you like to configure?
-   │  Configure Providers
-   │
-   ◇  Which model provider should we use?
-   │  OpenAI Codex CLI
-   │
-   ◇  Model fetch complete
-   │
-   ◇  Enter a model from that provider:
-   │  gpt-5.6-sol
-   ```
-
 ### Cursor Agent
 
 1. **Install Cursor agent Tool**
@@ -383,43 +327,6 @@ GOSLING_PROVIDER=claude-code GOSLING_MODE=approve gosling session
 | `GOSLING_PROVIDER` | Set to `cursor-agent` to use this provider | None |
 | `CURSOR_AGENT_COMMAND` | Path to the Cursor Agent command | `cursor-agent` |
 
-### OpenAI Codex Configuration
-
-| Environment Variable | Description | Default |
-|---------------------|-------------|---------|
-| `GOSLING_PROVIDER` | Set to `codex` to use this provider | None |
-| `GOSLING_MODEL` | Model to use (only known models are passed to CLI) | `gpt-5.6-sol` |
-| `CODEX_COMMAND` | Path to the Codex CLI command | `codex` |
-| `CODEX_REASONING_EFFORT` | Reasoning effort level: `none`, `low`, `medium`, `high`, `xhigh`, `max`, or `ultra`. gosling lowers a level the selected model does not support to its ceiling | `high` |
-| `CODEX_ENABLE_SKILLS` | Enable Codex skills: `true` or `false` | `true` |
-| `CODEX_SKIP_GIT_CHECK` | Skip git repository requirement: `true` or `false` | `false` |
-
-**Known Models:**
-
-The following models are recognized and passed to the Codex CLI via the `-m` flag. If `GOSLING_MODEL` is set to a value not in this list, no model flag is passed and Codex uses its default:
-
-- `gpt-6-astra` (998K effective context)
-- `gpt-5.6-sol` (258K effective context)
-- `gpt-5.6-terra` (258K effective context)
-- `gpt-5.6-luna` (258K effective context)
-- `gpt-5.5` (258K effective context)
-- `gpt-5.4` (258K effective context)
-- `gpt-5.4-mini` (258K effective context)
-- `gpt-5.3-codex-spark` (121K effective context)
-
-:::note Model availability follows your Codex account
-This list mirrors the catalog the Codex CLI fetches for a ChatGPT account. Astra access depends on the account's rollout status. Models retired from that catalog are rejected by the backend with an HTTP 400 even though the CLI still accepts the flag, so gosling only offers what the catalog currently serves. To use a model outside this list, run `codex -m <model_name>` directly or configure it in Codex's `config.toml`. See the [Codex CLI documentation](https://developers.openai.com/codex/cli) for details.
-:::
-
-**Permission Modes (`GOSLING_MODE`):**
-
-| Mode | Codex Flag | Behavior |
-|------|------------|----------|
-| `auto` | `--yolo` | Bypasses all approvals and sandbox restrictions |
-| `smart-approve` | `--full-auto` | Workspace-write sandbox, approvals only on failure |
-| `approve` | (none) | Interactive approvals (Codex default behavior) |
-| `chat` | `--sandbox read-only` | Read-only sandbox mode |
-
 ### Gemini CLI Configuration
 
 | Environment Variable | Description | Default |
@@ -450,8 +357,7 @@ The CLI providers automatically filter out gosling's extension information from 
 
 ### Message Translation
 
-- **Claude Code**: Converts gosling messages to text content blocks with role prefixes (Human:/Assistant:), similar to Codex and Gemini CLI
-- **Codex**: Converts messages to simple text prompts with role prefixes (Human:/Assistant:), similar to Gemini CLI
+- **Claude Code**: Converts gosling messages to text content blocks with role prefixes (Human:/Assistant:), similar to Gemini CLI
 - **Cursor Agent**: Converts gosling messages to Cursor's JSON message format, handling tool calls and responses appropriately
 - **Gemini CLI**: Converts messages to simple text prompts with role prefixes (Human:/Assistant:)
 - **Antigravity**: Sends one `{"event":"user",...}` NDJSON line per turn to a persistent `agy` process; the system prompt is folded into the first turn because the CLI has no system-prompt flag
@@ -459,7 +365,6 @@ The CLI providers automatically filter out gosling's extension information from 
 ### Response Processing
 
 - **Claude Code**: Parses streaming JSON responses to extract text content and usage information
-- **Codex**: Parses newline-delimited JSON events to extract text content and usage information
 - **Cursor Agent**: Parses JSON responses to extract text content and usage information
 - **Gemini CLI**: Processes plain text responses from the CLI tool
 - **Antigravity**: Streams `agent_response` text deltas from its `step_update` events and reads usage from the closing `result` event
@@ -471,7 +376,6 @@ CLI providers depend on external tools, so ensure:
 - CLI tools are properly installed and in your PATH
 - Authentication is maintained and valid
 - Subscription limits are not exceeded
-- For Codex: you're in a git repository, or set `CODEX_SKIP_GIT_CHECK=true`
 
 
 ---

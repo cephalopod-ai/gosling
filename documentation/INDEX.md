@@ -27,6 +27,8 @@ This file is the durable map for the repository's documentation surface.
 - [v1.2.1 source notes](./docs/release-notes/v1.2.1.md)
 - [v1.2.2 local build notes](./docs/release-notes/v1.2.2.md)
 - [v1.2.3 local build notes](./docs/release-notes/v1.2.3.md)
+- [v1.2.4 release notes](./docs/release-notes/v1.2.4.md)
+- [v1.2.5 source-candidate notes](./docs/release-notes/v1.2.5.md)
 - [release-note archive](./docs/release-notes/)
 - [tutorials](./docs/tutorials/)
 - [experimental](./docs/experimental/)
@@ -58,7 +60,7 @@ This file is the durable map for the repository's documentation surface.
 - Root `README.md` is the product entry point; `documentation/README.md` is the docs-site build and publishing guide.
 - Session-share deep links are documented with the `gosling://` scheme only. Legacy `goose://` share-link compatibility is not part of the current docs contract.
 - Durable documentation governance artifacts currently live in this directory as point-in-time records rather than a full log/archive program.
-- The current source/local-build version is `v1.2.3` as of 2026-09-08. It does not identify the version available from a published channel. Validation, tagging, signing, publication, and updater promotion remain separate release gates; see [the release process](../RELEASE.md).
+- The current source candidate is `v1.2.5` as of 2026-09-09. The latest published GitHub release is named `v1.2.4` and uses the historical `release_v1.2.4` tag. Validation, tagging, signing, publication, and updater promotion remain separate release gates; see [the release process](../RELEASE.md).
 
 ## follow-up disposition
 

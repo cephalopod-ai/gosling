@@ -18,7 +18,7 @@ gosling is designed to be forked and customized. You can create your own "distro
 | Preconfigure non-secret Desktop workspace templates | Low |
 | Modify system prompts | Low |
 | Customize desktop branding (icons, names, colors) | Medium |
-| Build a new UI via REST API or ACP | High |
+| Build a new UI via ACP | High |
 
 ## Getting started
 
@@ -28,11 +28,11 @@ The full guide lives in the repo root since you'll need to work at the code leve
 
 It covers:
 
-- **Architecture overview** — how gosling's layers (UI → server → core) fit together
+- **Architecture overview** — how gosling's interfaces connect to the core through ACP
 - **Configuration-only customization** — environment variables, `config.yaml`, `init-config.yaml`
 - **Extension bundling** — adding MCP servers as built-in extensions
 - **Custom branding** — replacing icons, app names, system prompts
-- **Building new interfaces** — integrating via the REST API or Agent Client Protocol (ACP)
+- **Building new interfaces** — integrating through the Agent Client Protocol (ACP)
 - **Custom AI providers** — declarative JSON providers or implementing the Provider trait
 - **Workspace templates** — names, safe path placeholders, product outputs, and credential-profile references without embedded secrets
 - **Licensing & contribution guidance** — staying compliant with Apache 2.0

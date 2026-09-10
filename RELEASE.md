@@ -4,19 +4,24 @@ gosling releases are built and published by GitHub Actions from version tags. Pr
 
 ## Current release target
 
-The current release target is **v1.2.4**; see the
-[release notes](documentation/docs/release-notes/v1.2.4.md). It supersedes the
-`v1.2.3` source candidate, which was prepared in the manifests but never
-tagged or published. Release versions increment the single-digit
+The current source candidate is **v1.2.5**; see the
+[candidate notes](documentation/docs/release-notes/v1.2.5.md). It contains the
+eight commits after `v1.2.4` and has not been tagged, packaged, or published.
+Release versions increment the single-digit
 patch component and carry at 9: `v1.2.1` through `v1.2.9`, then `v1.3.0`, and
 `v1.9.9` carries to `v2.0.0`.
+
+The latest GitHub release is named `v1.2.4` but is attached to
+`release_v1.2.4`. A separate annotated `v1.2.4` tag identifies the same source
+commit and has no release object. Preserve both tags. The `v1.2.5` release path
+should use the canonical `v1.2.5` tag expected by `release.yml`.
 
 Two candidate versions, `1.1.0` and `1.2.0`, were prepared in the source
 manifests but never tagged or published. `v1.2.1` supersedes both. The
 [v1.1.0 candidate notes](documentation/docs/release-notes/v1.1.0.md) are
 retained as a record of that unpublished candidate.
 
-The previous stable GitHub release is titled `v1.0.1` but is tagged
+An earlier stable GitHub release is titled `v1.0.1` but is tagged
 `v1.0.1-optimization-and-workspaces`. That historical tag does not match the
 normal `[v]major.minor.patch` grammar. Preserve it as published history: do not
 retag it or globally replace historical version strings. The historical
@@ -30,10 +35,14 @@ that version with `just bump-version <version>`, including:
 
 - `Cargo.toml` workspace package version;
 - workspace package entries in `Cargo.lock`;
-- `ui/desktop/package.json` and the applicable pnpm lockfile entries;
-- `ui/desktop/openapi.json` `info.version` and generated SDK metadata;
+- `ui/desktop/package.json`;
 - packaged Desktop metadata and About/version output;
 - README and candidate-specific documentation release notes.
+
+The generated ACP schema and TypeScript SDK must still be current when protocol
+types change, but they do not carry the application release number. The removed
+`ui/desktop/openapi.json` and `gosling-server` crate are not version surfaces and
+must not be recreated during a bump.
 
 ## Automated release path
 
@@ -53,8 +62,8 @@ Use the exact reviewed release commit. Replace `<release-commit>` only after the
 checklist is complete:
 
 ```bash
-git tag -a v1.2.4 <release-commit> -m "gosling v1.2.4"
-git push origin v1.2.4
+git tag -a v1.2.5 <release-commit> -m "gosling v1.2.5"
+git push origin v1.2.5
 ```
 
 Do not move or recreate a published tag to repair an artifact. Fix forward with a new patch version.
