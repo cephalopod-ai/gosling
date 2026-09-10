@@ -2405,6 +2405,8 @@ export type TransitionSessionProviderRequest_unstable = {
     } | null;
     expectedCurrentGeneration?: number | null;
     expectedSourceHash?: string | null;
+    expectedActiveRunId?: string | null;
+    expectedToolStateHash?: string | null;
     confirmNewContext?: boolean;
 };
 
@@ -2429,6 +2431,17 @@ export type PreviewSessionHandoffRequest_unstable = {
 export type PreviewSessionHandoffResponse_unstable = {
     snapshot: SessionHandoffSnapshotV1Dto;
     expectedCurrentGeneration: number;
+    queuedAfterRunId?: string | null;
+    toolContinuity: ToolContinuityPreviewDto;
+};
+
+export type ToolContinuityPreviewDto = {
+    enabledExtensionNames?: Array<string>;
+    goslingToolCount: number;
+    authorizationMode: string;
+    providerNativeToolingMayChange: boolean;
+    ungrantedSideEffectingToolCount: number;
+    stateHash: string;
 };
 
 export type ReadSessionHandoffCheckpointRequest_unstable = {

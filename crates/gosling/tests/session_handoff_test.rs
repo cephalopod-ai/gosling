@@ -454,6 +454,81 @@ async fn new_context_delivery_excludes_the_checkpoint() {
 }
 
 #[tokio::test]
+async fn provider_transition_rebases_current_usage_and_preserves_accumulated_usage() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let manager = SessionManager::new(temp_dir.path().to_path_buf());
+    let session_id = source_session(&manager).await;
+    let accumulated = gosling_providers::conversation::token_usage::Usage::new(
+        Some(1_000),
+        Some(200),
+        Some(1_200),
+    );
+    manager
+        .update(&session_id)
+        .usage(gosling_providers::conversation::token_usage::Usage::new(
+            Some(900),
+            Some(100),
+            Some(1_000),
+        ))
+        .accumulated_usage(accumulated)
+        .apply()
+        .await
+        .unwrap();
+    manager
+        .add_message(
+            &session_id,
+            &Message::user().with_text("continue with a fresh target context"),
+        )
+        .await
+        .unwrap();
+    let snapshot = SessionHandoffBuilder::new(&manager)
+        .build(
+            &session_id,
+            "openai",
+            "gpt-4o",
+            128_000,
+            ProviderCapabilities::gosling_managed(),
+            SessionHandoffTriggerDto::UserRequestedSwitch,
+        )
+        .await
+        .unwrap();
+    let prepared = manager
+        .prepare_handoff_snapshot(snapshot, None)
+        .await
+        .unwrap();
+    manager
+        .update_handoff_status(
+            &prepared.snapshot_id,
+            SessionHandoffStatusDto::Activating,
+            None,
+        )
+        .await
+        .unwrap();
+
+    manager
+        .commit_provider_transition(
+            &prepared.snapshot_id,
+            "openai",
+            ModelConfig::new("gpt-4o"),
+            GoslingMode::Approve,
+        )
+        .await
+        .unwrap();
+
+    let transitioned = manager.get_session(&session_id, false).await.unwrap();
+    let checkpoint_tokens = prepared.coverage.estimated_tokens as i32;
+    assert_eq!(
+        transitioned.usage,
+        gosling_providers::conversation::token_usage::Usage::new(
+            Some(checkpoint_tokens),
+            Some(0),
+            Some(checkpoint_tokens),
+        )
+    );
+    assert_eq!(transitioned.accumulated_usage, accumulated);
+}
+
+#[tokio::test]
 async fn retention_and_session_delete_keep_checkpoint_storage_bounded() {
     let temp_dir = tempfile::tempdir().unwrap();
     let manager = SessionManager::new(temp_dir.path().to_path_buf());

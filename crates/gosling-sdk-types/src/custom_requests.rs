@@ -1077,6 +1077,21 @@ pub struct PreviewSessionHandoffRequest {
 pub struct PreviewSessionHandoffResponse {
     pub snapshot: SessionHandoffSnapshotV1Dto,
     pub expected_current_generation: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub queued_after_run_id: Option<String>,
+    pub tool_continuity: ToolContinuityPreviewDto,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolContinuityPreviewDto {
+    #[serde(default)]
+    pub enabled_extension_names: Vec<String>,
+    pub gosling_tool_count: u64,
+    pub authorization_mode: String,
+    pub provider_native_tooling_may_change: bool,
+    pub ungranted_side_effecting_tool_count: u64,
+    pub state_hash: String,
 }
 
 /// Atomically change a live session's provider, model, and thinking effort.
@@ -1100,6 +1115,10 @@ pub struct TransitionSessionProviderRequest {
     pub expected_current_generation: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expected_source_hash: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_active_run_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_tool_state_hash: Option<String>,
     #[serde(default)]
     pub confirm_new_context: bool,
 }

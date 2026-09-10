@@ -3263,8 +3263,14 @@
   "switchModelModal.preparingPreview": {
     "defaultMessage": "Preparing preview…"
   },
+  "switchModelModal.providerNativeToolsWarning": {
+    "defaultMessage": "Provider-native tools do not transfer between providers and the target may expose a different native tool set. Session-enabled Gosling extensions will remain configured."
+  },
   "switchModelModal.providerPlaceholder": {
     "defaultMessage": "Provider, type to search"
+  },
+  "switchModelModal.queuedSwitch": {
+    "defaultMessage": "The current response will finish first. Gosling will refresh this checkpoint with its final output, then activate the switch before the next queued message."
   },
   "switchModelModal.quickStartGuide": {
     "defaultMessage": "Quick start guide"
@@ -3302,6 +3308,9 @@
   "switchModelModal.selectThinkingMode": {
     "defaultMessage": "Select thinking mode"
   },
+  "switchModelModal.sessionToolContinuity": {
+    "defaultMessage": "Session tools: {tools}. Enabled Gosling extensions preserved: {extensions}. Authorization mode remains {mode}."
+  },
   "switchModelModal.summarizedHandoff": {
     "defaultMessage": "Summarized handoff"
   },
@@ -3337,6 +3346,9 @@
   },
   "switchModelModal.typeModelName": {
     "defaultMessage": "Type model name here"
+  },
+  "switchModelModal.ungrantedToolsWarning": {
+    "defaultMessage": "{count} side-effecting Gosling tools are not explicitly allowed in Autonomous mode and will remain blocked. Enabling an extension does not authorize its tools."
   },
   "switchModelModal.useOtherProvider": {
     "defaultMessage": "Use other provider"

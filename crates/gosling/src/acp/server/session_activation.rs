@@ -315,6 +315,7 @@ impl GoslingAcpAgent {
     ) {
         let acp_session = GoslingAcpSession {
             agent,
+            operation_gate: Arc::new(SessionOperationGate::default()),
             tool_requests,
             compacted_context,
             tail_limit,

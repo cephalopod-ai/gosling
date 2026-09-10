@@ -391,6 +391,8 @@ export async function acpSetSessionProviderModel(
     confirmNewContext?: boolean;
     expectedCurrentGeneration?: number;
     expectedSourceHash?: string;
+    expectedActiveRunId?: string;
+    expectedToolStateHash?: string;
     requestParams?: Record<string, unknown> | null;
     targetContextLimit?: number | null;
   }
@@ -405,6 +407,8 @@ export async function acpSetSessionProviderModel(
     requestParams: options?.requestParams ?? null,
     expectedCurrentGeneration: options?.expectedCurrentGeneration ?? null,
     expectedSourceHash: options?.expectedSourceHash ?? null,
+    expectedActiveRunId: options?.expectedActiveRunId ?? null,
+    expectedToolStateHash: options?.expectedToolStateHash ?? null,
     confirmNewContext: options?.confirmNewContext ?? false,
   });
   return {

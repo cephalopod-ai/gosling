@@ -2124,6 +2124,8 @@ export const zTransitionSessionProviderRequest_unstable = z.object({
     requestParams: z.record(z.unknown()).nullish(),
     expectedCurrentGeneration: z.number().int().gte(0).nullish(),
     expectedSourceHash: z.string().nullish(),
+    expectedActiveRunId: z.string().nullish(),
+    expectedToolStateHash: z.string().nullish(),
     confirmNewContext: z.boolean().optional().default(false)
 });
 
@@ -2145,9 +2147,20 @@ export const zPreviewSessionHandoffRequest_unstable = z.object({
     targetContextLimit: z.number().int().gte(0).nullish()
 });
 
+export const zToolContinuityPreviewDto = z.object({
+    enabledExtensionNames: z.array(z.string()).optional().default([]),
+    goslingToolCount: z.number().int().gte(0),
+    authorizationMode: z.string(),
+    providerNativeToolingMayChange: z.boolean(),
+    ungrantedSideEffectingToolCount: z.number().int().gte(0),
+    stateHash: z.string()
+});
+
 export const zPreviewSessionHandoffResponse_unstable = z.object({
     snapshot: zSessionHandoffSnapshotV1Dto,
-    expectedCurrentGeneration: z.number().int().gte(0)
+    expectedCurrentGeneration: z.number().int().gte(0),
+    queuedAfterRunId: z.string().nullish(),
+    toolContinuity: zToolContinuityPreviewDto
 });
 
 export const zReadSessionHandoffCheckpointRequest_unstable = z.object({

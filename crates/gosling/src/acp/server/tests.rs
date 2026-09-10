@@ -44,6 +44,8 @@ async fn acp_active_run_pins_the_agent_manager_lru_entry() {
     manager.get_or_create_agent("active".into()).await.unwrap();
     manager.get_or_create_agent("idle".into()).await.unwrap();
     let active_prompt_runs = Mutex::new(HashMap::new());
+    let operation_gate = Arc::new(SessionOperationGate::default());
+    let operation_guard = operation_gate.begin_prompt("run-1").await.unwrap();
 
     register_active_prompt_run(
         &active_prompt_runs,
@@ -51,6 +53,7 @@ async fn acp_active_run_pins_the_agent_manager_lru_entry() {
         "active",
         "run-1".into(),
         CancellationToken::new(),
+        operation_guard,
     )
     .await
     .unwrap();
@@ -59,11 +62,59 @@ async fn acp_active_run_pins_the_agent_manager_lru_entry() {
     assert!(manager.has_session("active").await);
     assert!(!manager.has_session("idle").await);
     assert!(manager.is_session_busy("active").await);
-    assert_eq!(
-        unregister_active_prompt_run(&active_prompt_runs, &manager, "active", "run-1").await,
-        Some(false)
-    );
+    let active_run = unregister_active_prompt_run(&active_prompt_runs, &manager, "active", "run-1")
+        .await
+        .unwrap();
+    assert!(!active_run.was_cancelled());
+    drop(active_run);
     assert!(!manager.is_session_busy("active").await);
+}
+
+#[tokio::test]
+async fn provider_transition_waits_for_the_confirmed_run_and_blocks_the_next_prompt() {
+    let gate = Arc::new(SessionOperationGate::default());
+    let active = gate.begin_prompt("run-1").await.unwrap();
+    let transition = gate.queue_provider_transition(Some("run-1"), true).unwrap();
+
+    let waiting_gate = Arc::clone(&gate);
+    let next_prompt = tokio::spawn(async move { waiting_gate.begin_prompt("run-2").await });
+    tokio::task::yield_now().await;
+    assert!(!next_prompt.is_finished());
+
+    drop(active);
+    transition.wait_until_idle().await;
+    assert!(!next_prompt.is_finished());
+
+    drop(transition);
+    let next = next_prompt.await.unwrap().unwrap();
+    assert_eq!(gate.active_run_id().as_deref(), Some("run-2"));
+    drop(next);
+}
+
+#[tokio::test]
+async fn provider_transition_rejects_a_different_active_run_than_the_preview() {
+    let gate = Arc::new(SessionOperationGate::default());
+    let active = gate.begin_prompt("run-new").await.unwrap();
+
+    let error = gate
+        .queue_provider_transition(Some("run-old"), true)
+        .err()
+        .expect("a stale active-run fence must fail");
+
+    assert!(error.to_string().contains("active turn changed"));
+    drop(active);
+}
+
+#[tokio::test]
+async fn provider_transition_accepts_the_previewed_run_just_after_it_finishes() {
+    let gate = Arc::new(SessionOperationGate::default());
+    let active = gate.begin_prompt("run-1").await.unwrap();
+    drop(active);
+
+    let transition = gate.queue_provider_transition(Some("run-1"), true).unwrap();
+
+    transition.wait_until_idle().await;
+    drop(transition);
 }
 
 #[test]

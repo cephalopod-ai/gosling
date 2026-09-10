@@ -1,8 +1,11 @@
 use super::{HandoffToolOperation, SessionManager, SessionStorage};
 use anyhow::Result;
 use chrono::Utc;
+use gosling_providers::conversation::token_usage::Usage;
 use gosling_providers::model::ModelConfig;
-use gosling_sdk_types::session_handoff::{SessionHandoffSnapshotV1Dto, SessionHandoffStatusDto};
+use gosling_sdk_types::session_handoff::{
+    SessionContinuityClassDto, SessionHandoffSnapshotV1Dto, SessionHandoffStatusDto,
+};
 use sqlx::{Sqlite, Transaction};
 
 const DEFAULT_HANDOFF_RETENTION_GENERATIONS: i64 = 5;
@@ -203,10 +206,21 @@ impl SessionStorage {
             "session changed after the handoff checkpoint was prepared"
         );
 
+        let current_context_tokens =
+            if snapshot.continuity_class == SessionContinuityClassDto::NewContextOnly {
+                0
+            } else {
+                i32::try_from(snapshot.coverage.estimated_tokens).unwrap_or(i32::MAX)
+            };
         let builder = session_manager
             .update(&snapshot.session_id)
             .provider_name(provider_name)
             .model_config(model_config)
+            .usage(Usage::new(
+                Some(current_context_tokens),
+                Some(0),
+                Some(current_context_tokens),
+            ))
             .gosling_mode(mode);
         Self::apply_update_in_tx(&mut tx, builder).await?;
 

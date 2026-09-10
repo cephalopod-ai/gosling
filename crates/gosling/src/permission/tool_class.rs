@@ -59,8 +59,11 @@ const EGRESS_TOOL_SUFFIXES: &[&str] = &[
     "__http_request",
 ];
 
-const EXTENSION_MANAGEMENT_TOOL_NAMES: &[&str] =
-    &["manage_extensions", "extensionmanager__manage_extensions"];
+const EXTENSION_MANAGEMENT_TOOL_NAMES: &[&str] = &[
+    "manage_extensions",
+    "extensionmanager__manage_extensions",
+    "platform__manage_extensions",
+];
 
 const MIXED_RISK_TOOL_NAMES: &[&str] = &[
     "computercontroller__cache",
@@ -157,6 +160,9 @@ mod tests {
         assert!(requires_explicit_grant_in_auto("network__http_request"));
         assert!(requires_explicit_grant_in_auto(
             "extensionmanager__manage_extensions"
+        ));
+        assert!(requires_explicit_grant_in_auto(
+            "platform__manage_extensions"
         ));
         assert!(requires_explicit_grant_in_auto("computercontroller__cache"));
         assert!(!requires_explicit_grant_in_auto("read"));

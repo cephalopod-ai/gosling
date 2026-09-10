@@ -13,9 +13,15 @@ shows you what it covers, and activates the target as one transition.
 1. Open the model picker in an existing chat and choose a provider and model.
 2. Select **Review checkpoint**.
 3. Review the source and target, coverage, summary state, delivery method, interrupted operations,
-   pending approvals, and redaction or truncation counts.
+   pending approvals, tool continuity, authorization mode, and redaction or truncation counts.
 4. Confirm the switch. gosling shows the transition stages and does not submit a duplicate switch
    while one is active.
+
+You can review and confirm a switch while the current response is still running. The preview is
+speculative: confirmation reserves the next session operation, waits for that exact response to
+finish, rebuilds the checkpoint from the completed ledger, and activates the target before a later
+queued prompt can start. Changes to enabled tools, working-directory scope, authorization mode, or
+tool permissions invalidate the preview and require another review.
 
 If target initialization or the database commit fails, the prior provider and model remain active.
 For eligible provider failures, use **Continue with another model using session checkpoint** to open
@@ -54,14 +60,26 @@ another provider.
 ## Tool and approval safety
 
 A handoff is context, not permission to repeat work. Previous tool output is marked as untrusted
-quoted history. Active or interrupted operations are non-retryable, and gosling will not switch
-during an active tool operation or pending approval. The replacement must receive a new user request
-before doing more work, and normal permission prompts still apply.
+quoted history. Active or interrupted operations are non-retryable, and gosling waits for an active
+turn to reach terminal bookkeeping before switching. A pending approval still blocks the core
+transition. The replacement must receive a new user request before doing more work, and normal
+permission prompts still apply.
+
+The preview distinguishes gosling-managed tools from provider-native tools. Session-enabled
+extensions, working-directory scope, and authorization mode carry across the switch, but a
+provider's native shell, filesystem, or computer-control tools are not transferable and may change
+when the provider changes. Enabling a gosling extension also does not authorize its side effects:
+Autonomous mode still requires an explicit stored grant for protected tools. The preview warns when
+provider-native tooling may change or enabled side-effecting tools lack that grant.
 
 After activation, old messages stay visible in the chat but are no longer sent as model context. One
 hidden checkpoint becomes the new context boundary. This remains true on later turns and after an
 application restart, preventing a provider-owned session from rebuilding itself from an unbounded
 raw transcript.
+
+The current-context usage counter is rebased to the checkpoint's estimated size when the new
+context becomes active, then reflects subsequent turns. New-context-only delivery starts at zero.
+Accumulated session usage and cost are preserved.
 
 ## Handoff and crash recovery are different
 

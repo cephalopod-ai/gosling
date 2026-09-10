@@ -90,7 +90,7 @@ use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
-use tokio::sync::{Mutex, OnceCell};
+use tokio::sync::{Mutex, Notify, OnceCell};
 use tokio_util::compat::{TokioAsyncReadCompatExt as _, TokioAsyncWriteCompatExt as _};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
@@ -145,9 +145,9 @@ mod tools;
 mod transport;
 mod workspace_handlers;
 
-use active_runs::ActivePromptRun;
 #[cfg(test)]
 use active_runs::{register_active_prompt_run, unregister_active_prompt_run};
+use active_runs::{ActivePromptRun, SessionOperationGate};
 pub(crate) use extension_selection::{
     apply_shell_extension_selection, push_or_replace_extension, selected_builtin_extensions,
 };
@@ -236,6 +236,7 @@ const PROVIDER_CONFIG_STATUS_CHECK_CONCURRENCY: usize = 16;
 /// below is keyed by session ID.
 struct GoslingAcpSession {
     agent: Arc<Agent>,
+    operation_gate: Arc<SessionOperationGate>,
     tool_requests: HashMap<String, crate::conversation::message::ToolRequest>,
     compacted_context: bool,
     tail_limit: usize,

@@ -6402,6 +6402,18 @@
             "null"
           ]
         },
+        "expectedActiveRunId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "expectedToolStateHash": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "confirmNewContext": {
           "type": "boolean",
           "default": false
@@ -6483,14 +6495,60 @@
         "expectedCurrentGeneration": {
           "type": "integer",
           "minimum": 0
+        },
+        "queuedAfterRunId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "toolContinuity": {
+          "$ref": "#/$defs/ToolContinuityPreviewDto"
         }
       },
       "required": [
         "snapshot",
-        "expectedCurrentGeneration"
+        "expectedCurrentGeneration",
+        "toolContinuity"
       ],
       "x-side": "agent",
       "x-method": "_gosling/unstable/session/handoff/checkpoint/preview"
+    },
+    "ToolContinuityPreviewDto": {
+      "type": "object",
+      "properties": {
+        "enabledExtensionNames": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "goslingToolCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "authorizationMode": {
+          "type": "string"
+        },
+        "providerNativeToolingMayChange": {
+          "type": "boolean"
+        },
+        "ungrantedSideEffectingToolCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "stateHash": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "goslingToolCount",
+        "authorizationMode",
+        "providerNativeToolingMayChange",
+        "ungrantedSideEffectingToolCount",
+        "stateHash"
+      ]
     },
     "ReadSessionHandoffCheckpointRequest_unstable": {
       "type": "object",

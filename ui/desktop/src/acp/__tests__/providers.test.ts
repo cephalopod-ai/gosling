@@ -49,6 +49,8 @@ describe('ACP providers', () => {
       requestParams: null,
       expectedCurrentGeneration: null,
       expectedSourceHash: null,
+      expectedActiveRunId: null,
+      expectedToolStateHash: null,
       confirmNewContext: false,
     });
     expect(applied).toEqual({

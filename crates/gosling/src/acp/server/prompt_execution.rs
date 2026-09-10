@@ -166,19 +166,19 @@ impl GoslingAcpAgent {
         let agent = match self.get_session_agent(&session_id).await {
             Ok(agent) => agent,
             Err(error) => {
-                self.clear_active_run(&session_id, &run_id).await;
+                let _ = self.clear_active_run(&session_id, &run_id).await;
                 return Err(error);
             }
         };
 
         if cancel_token.is_cancelled() {
-            self.clear_active_run(&session_id, &run_id).await;
+            let _ = self.clear_active_run(&session_id, &run_id).await;
             Self::send_active_run_update(cx, &args.session_id, None)?;
             return Ok(PromptResponse::new(StopReason::Cancelled));
         }
 
         if let Err(error) = Self::send_active_run_update(cx, &args.session_id, Some(&run_id)) {
-            self.clear_active_run(&session_id, &run_id).await;
+            let _ = self.clear_active_run(&session_id, &run_id).await;
             return Err(error);
         }
 
@@ -186,7 +186,7 @@ impl GoslingAcpAgent {
             .record_acp_prompt_state(&session_id, AcpPromptRunState::InProgress)
             .await
         {
-            self.clear_active_run(&session_id, &run_id).await;
+            let _ = self.clear_active_run(&session_id, &run_id).await;
             let _ = Self::send_active_run_update(cx, &args.session_id, None);
             return Err(error);
         }
@@ -216,7 +216,7 @@ impl GoslingAcpAgent {
                 let persisted = self
                     .record_acp_prompt_state(&session_id, AcpPromptRunState::Failed)
                     .await;
-                self.clear_active_run(&session_id, &run_id).await;
+                let _ = self.clear_active_run(&session_id, &run_id).await;
                 let _ = Self::send_active_run_update(cx, &args.session_id, None);
                 persisted?;
                 return Err(agent_client_protocol::Error::internal_error()
@@ -385,7 +385,7 @@ impl GoslingAcpAgent {
                 extend_chain_membership(&chain_buffer, &mut session.chain_membership);
             }
         }
-        self.clear_active_run(&session_id, &run_id).await;
+        let completed_run = self.clear_active_run(&session_id, &run_id).await;
         Self::send_active_run_update(cx, &args.session_id, None)?;
         was_cancelled |= cancel_token.is_cancelled();
         if stream_error.is_none() && !was_cancelled {
@@ -518,6 +518,7 @@ impl GoslingAcpAgent {
         if let Some(usage) = build_prompt_usage(&session) {
             response = response.usage(usage);
         }
+        drop(completed_run);
         Ok(response)
     }
 }

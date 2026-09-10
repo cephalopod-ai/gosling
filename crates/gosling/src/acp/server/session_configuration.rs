@@ -5,6 +5,37 @@
 
 use super::*;
 
+fn tool_state_hash(
+    session: &Session,
+    tools: &[rmcp::model::Tool],
+    permission_manager: &crate::config::permission::PermissionManager,
+) -> Result<String, agent_client_protocol::Error> {
+    let mut tool_permissions = tools
+        .iter()
+        .map(|tool| {
+            let tool_name = tool.name.to_string();
+            let permission = permission_manager.get_user_permission(&tool_name);
+            (tool_name, permission)
+        })
+        .collect::<Vec<_>>();
+    tool_permissions.sort_by(|left, right| left.0.cmp(&right.0));
+    let state = serde_json::to_vec(&(
+        session.gosling_mode,
+        session
+            .extension_data
+            .get_extension_state("enabled_extensions", "v0"),
+        session
+            .extension_data
+            .get_extension_state("shell_skill_selection", "v0"),
+        &session.working_dir,
+        &session.additional_working_dirs,
+        session.restrict_tools_to_working_dirs,
+        tool_permissions,
+    ))
+    .internal_err_ctx("Failed to serialize session tool state")?;
+    Ok(blake3::hash(&state).to_hex().to_string())
+}
+
 pub(super) fn resolve_default_provider_model_config(
     config: &Config,
 ) -> Result<(String, gosling_providers::model::ModelConfig), agent_client_protocol::Error> {
@@ -45,6 +76,87 @@ pub(super) async fn resolve_provider_default_model_config(
 }
 
 impl GoslingAcpAgent {
+    async fn tool_continuity_preview(
+        &self,
+        session: &Session,
+        agent: &Arc<Agent>,
+        target_provider: &str,
+        target_executes_tools_outside_gosling: bool,
+    ) -> Result<ToolContinuityPreviewDto, agent_client_protocol::Error> {
+        let source_provider = agent
+            .provider()
+            .await
+            .internal_err_ctx("Failed to get provider")?;
+        let source_provider_name = source_provider.get_name();
+        let source_executes_tools_outside_gosling =
+            source_provider.executes_tools_outside_gosling();
+        let mut enabled_extension_names = agent.list_extensions().await;
+        enabled_extension_names.sort();
+        enabled_extension_names.dedup();
+        let tools = agent
+            .list_tools(&session.id, None)
+            .await
+            .internal_err_ctx("Failed to inspect session tools")?;
+        let ungranted_side_effecting_tool_count = if session.gosling_mode == GoslingMode::Auto {
+            tools
+                .iter()
+                .filter(|tool| {
+                    let tool_name = tool.name.as_ref();
+                    crate::permission::tool_class::requires_explicit_grant_in_auto(tool_name)
+                        && self.permission_manager.get_user_permission(tool_name)
+                            != Some(crate::config::permission::PermissionLevel::AlwaysAllow)
+                })
+                .count() as u64
+        } else {
+            0
+        };
+
+        Ok(ToolContinuityPreviewDto {
+            enabled_extension_names,
+            gosling_tool_count: tools.len() as u64,
+            authorization_mode: session.gosling_mode.to_string(),
+            provider_native_tooling_may_change: source_provider_name != target_provider
+                && (source_executes_tools_outside_gosling || target_executes_tools_outside_gosling),
+            ungranted_side_effecting_tool_count,
+            state_hash: tool_state_hash(session, &tools, &self.permission_manager)?,
+        })
+    }
+
+    async fn send_session_usage_update(
+        &self,
+        session_id: &str,
+    ) -> Result<(), agent_client_protocol::Error> {
+        let Some(cx) = self.client_cx.get() else {
+            return Ok(());
+        };
+        let session = self
+            .session_manager
+            .get_session(session_id, false)
+            .await
+            .internal_err_ctx("Failed to load transitioned session usage")?;
+        let Some(updates) = build_usage_updates(&session) else {
+            return Ok(());
+        };
+        if self.supports_gosling_custom_notifications() {
+            cx.send_notification(updates.custom)?;
+        }
+        cx.send_notification(SessionNotification::new(
+            SessionId::new(session_id.to_string()),
+            SessionUpdate::UsageUpdate(updates.standard),
+        ))?;
+        Ok(())
+    }
+
+    async fn send_session_usage_update_after_transition(&self, session_id: &str) {
+        if let Err(error) = self.send_session_usage_update(session_id).await {
+            warn!(
+                session_id,
+                %error,
+                "Provider transition committed but the usage update could not be sent"
+            );
+        }
+    }
+
     pub(super) async fn on_set_model(
         &self,
         session_id: &str,
@@ -83,6 +195,8 @@ impl GoslingAcpAgent {
             )
             .await
             .internal_err_ctx("Failed to transition model")?;
+        self.send_session_usage_update_after_transition(session_id)
+            .await;
         // model_config is already updated on the session by the agent's update_provider call.
         Ok(())
     }
@@ -193,6 +307,8 @@ impl GoslingAcpAgent {
             )
             .await
             .internal_err_ctx("Failed to transition thinking effort")?;
+        self.send_session_usage_update_after_transition(session_id)
+            .await;
 
         Ok(())
     }
@@ -304,6 +420,8 @@ impl GoslingAcpAgent {
             )
             .await
             .internal_err_ctx("Failed to transition provider")?;
+        self.send_session_usage_update_after_transition(session_id)
+            .await;
 
         // provider_name is already updated on the session by the agent's update_provider call.
         Ok(())
@@ -320,19 +438,31 @@ impl GoslingAcpAgent {
             return Err(agent_client_protocol::Error::invalid_params()
                 .data("sessionId, targetProvider, and targetModel are required"));
         }
-        if self
-            .active_prompt_runs
-            .lock()
-            .await
-            .contains_key(session_id)
-        {
-            return Err(agent_client_protocol::Error::invalid_params()
-                .data("Cannot switch providers while the session has an active turn or approval"));
-        }
-
+        let transition_guard = self
+            .queue_provider_transition(session_id, req.expected_active_run_id.as_deref(), true)
+            .await?;
         self.validate_model_for_provider(target_provider, target_model)
             .await?;
+        transition_guard.wait_until_idle().await;
         let agent = self.get_session_agent(session_id).await?;
+        if let Some(expected_tool_state_hash) = req.expected_tool_state_hash.as_deref() {
+            let session = self
+                .session_manager
+                .get_session(session_id, false)
+                .await
+                .internal_err_ctx("Failed to read session tool state")?;
+            let tools = agent
+                .list_tools(&session.id, None)
+                .await
+                .internal_err_ctx("Failed to inspect session tools")?;
+            if tool_state_hash(&session, &tools, &self.permission_manager)?
+                != expected_tool_state_hash
+            {
+                return Err(agent_client_protocol::Error::invalid_params().data(
+                    "Session tools or authorization mode changed after the provider switch was previewed; review the checkpoint again",
+                ));
+            }
+        }
         let previous_provider = agent
             .provider()
             .await
@@ -378,11 +508,17 @@ impl GoslingAcpAgent {
                 model_config,
                 trigger,
                 req.expected_current_generation,
-                req.expected_source_hash.as_deref(),
+                if req.expected_active_run_id.is_some() {
+                    None
+                } else {
+                    req.expected_source_hash.as_deref()
+                },
                 req.confirm_new_context,
             )
             .await
             .internal_err_ctx("Provider transition failed")?;
+        self.send_session_usage_update_after_transition(session_id)
+            .await;
         Ok(TransitionSessionProviderResponse {
             snapshot,
             previous_provider,
@@ -403,19 +539,15 @@ impl GoslingAcpAgent {
             return Err(agent_client_protocol::Error::invalid_params()
                 .data("sessionId, targetProvider, and targetModel are required"));
         }
-        if self
-            .active_prompt_runs
-            .lock()
-            .await
-            .contains_key(session_id)
-        {
-            return Err(agent_client_protocol::Error::invalid_params().data(
-                "Cannot preview a provider switch while the session has an active turn or approval",
-            ));
-        }
         self.validate_model_for_provider(target_provider, target_model)
             .await?;
+        let queued_after_run_id = self.active_run_id(session_id).await?;
         let agent = self.get_session_agent(session_id).await?;
+        let session = self
+            .session_manager
+            .get_session(session_id, false)
+            .await
+            .internal_err_ctx("Failed to read session tool state")?;
         let current_model_config = agent
             .model_config_for_session(session_id)
             .await
@@ -435,6 +567,14 @@ impl GoslingAcpAgent {
         let target_model_config = target_entry
             .normalize_model_config(target_model_config)
             .invalid_params_err_ctx("Invalid model config")?;
+        let tool_continuity = self
+            .tool_continuity_preview(
+                &session,
+                &agent,
+                target_provider,
+                target_entry.executes_tools_outside_gosling(),
+            )
+            .await?;
         let expected_current_generation = self
             .session_manager
             .latest_handoff_generation(session_id)
@@ -456,6 +596,8 @@ impl GoslingAcpAgent {
         Ok(PreviewSessionHandoffResponse {
             snapshot,
             expected_current_generation,
+            queued_after_run_id,
+            tool_continuity,
         })
     }
 

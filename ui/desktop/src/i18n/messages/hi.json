@@ -3643,5 +3643,17 @@
   },
   "switchModelModal.transitionStages": {
     "defaultMessage": "Preparing checkpoint · Initializing target · Delivering handoff · Activating"
+  },
+  "switchModelModal.providerNativeToolsWarning": {
+    "defaultMessage": "Provider-native tools do not transfer between providers and the target may expose a different native tool set. The enabled Gosling extensions above will remain configured."
+  },
+  "switchModelModal.queuedSwitch": {
+    "defaultMessage": "The current response will finish first. Gosling will refresh this checkpoint with its final output, then activate the switch before the next queued message."
+  },
+  "switchModelModal.sessionToolContinuity": {
+    "defaultMessage": "Session tools: {tools} from {extensions} enabled extensions. Authorization mode remains {mode}."
+  },
+  "switchModelModal.ungrantedToolsWarning": {
+    "defaultMessage": "{count} side-effecting Gosling tools are not explicitly allowed in Autonomous mode and will remain blocked. Enabling an extension does not authorize its tools."
   }
 }

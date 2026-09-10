@@ -60,6 +60,8 @@ export interface ChangeModelOptions {
   confirmNewContext?: boolean;
   expectedCurrentGeneration?: number;
   expectedSourceHash?: string;
+  expectedActiveRunId?: string;
+  expectedToolStateHash?: string;
   onActivated?: (snapshot: SessionHandoffSnapshotV1Dto) => void;
 }
 
@@ -209,6 +211,8 @@ export const ModelAndProviderProvider: React.FC<ModelAndProviderProviderProps> =
               confirmNewContext: options?.confirmNewContext,
               expectedCurrentGeneration: options?.expectedCurrentGeneration,
               expectedSourceHash: options?.expectedSourceHash,
+              expectedActiveRunId: options?.expectedActiveRunId,
+              expectedToolStateHash: options?.expectedToolStateHash,
               requestParams: model.request_params ?? null,
               targetContextLimit: model.context_limit ?? null,
             }

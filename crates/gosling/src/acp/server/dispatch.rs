@@ -118,10 +118,14 @@ impl HandleDispatchFrom<Client> for GoslingAcpHandler {
                             let t_handler = std::time::Instant::now();
                             match config_id.as_ref() {
                                 "provider" => {
-                                    // Wait for any in-flight turn to finish before switching, so the
-                                    // switch can't race a request that already captured the
-                                    // pre-switch provider/model pair. See `wait_for_session_idle`.
-                                    agent.wait_for_session_idle(&session_id.0).await;
+                                    let transition = match agent
+                                        .queue_provider_transition(&session_id.0, None, false)
+                                        .await
+                                    {
+                                        Ok(transition) => transition,
+                                        Err(e) => { responder.respond_with_error(e)?; return Ok(()); }
+                                    };
+                                    transition.wait_until_idle().await;
                                     Config::global().invalidate_secrets_cache();
                                     match agent.update_provider(&session_id.0, &value_id.0, None, None, None).await {
                                         Ok(_) => {}
@@ -135,14 +139,28 @@ impl HandleDispatchFrom<Client> for GoslingAcpHandler {
                                     }
                                 }
                                 "model" => {
-                                    // Same race as the "provider" branch above.
-                                    agent.wait_for_session_idle(&session_id.0).await;
+                                    let transition = match agent
+                                        .queue_provider_transition(&session_id.0, None, false)
+                                        .await
+                                    {
+                                        Ok(transition) => transition,
+                                        Err(e) => { responder.respond_with_error(e)?; return Ok(()); }
+                                    };
+                                    transition.wait_until_idle().await;
                                     match agent.on_set_model(&session_id.0, &value_id.0).await {
                                         Ok(_) => {}
                                         Err(e) => { responder.respond_with_error(e)?; return Ok(()); }
                                     }
                                 }
                                 "thinking_effort" => {
+                                    let transition = match agent
+                                        .queue_provider_transition(&session_id.0, None, false)
+                                        .await
+                                    {
+                                        Ok(transition) => transition,
+                                        Err(e) => { responder.respond_with_error(e)?; return Ok(()); }
+                                    };
+                                    transition.wait_until_idle().await;
                                     match agent.on_set_thinking_effort(&session_id.0, &value_id.0).await {
                                         Ok(_) => {}
                                         Err(e) => { responder.respond_with_error(e)?; return Ok(()); }

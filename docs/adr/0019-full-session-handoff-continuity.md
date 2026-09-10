@@ -26,12 +26,25 @@ boundary in one SQLite transaction. The in-memory provider changes only after th
 generation, changed message ledger, target failure, or commit failure marks the generation failed
 and leaves the prior provider and stored configuration in place.
 
+A preview may be created while a response is active. It records that run as a fence and hashes the
+session's enabled extensions, working-directory scope, authorization mode, visible gosling tools,
+and explicit user tool grants. Confirmation reserves the next session operation, waits for the fenced
+run's terminal bookkeeping, revalidates tool and authorization state, and rebuilds the checkpoint
+from the completed ledger. Prompts submitted after the reservation wait until the transition
+finishes, so they cannot overtake it. The preview is rejected if another run or tool-policy change
+made it stale.
+
 At commit, covered messages remain user-visible but become agent-invisible. A single hidden,
 agent-visible checkpoint becomes the new context root, except for explicitly confirmed new-context
 delivery. This prevents later turns and application restarts from replaying the old raw transcript.
 Restoring a provider-owned session creates a fresh `SessionResume` checkpoint; ordinary
 gosling-managed API sessions can continue from their ledger directly. The ACP compatibility path is
 also redacted and capped, but normal switches and resumes use the core checkpoint.
+
+Transition commit replaces provider-specific current-context usage with the bounded checkpoint's
+estimated size (or zero for new-context-only delivery), so an outgoing provider's token count cannot
+be displayed against the target model's context limit. Accumulated session usage and cost remain
+unchanged.
 
 ## Safety boundary
 
@@ -42,6 +55,13 @@ ledger evidence. Active and interrupted operations are recorded as non-retryable
 approvals never transfer as approvals. A new-context-only target requires explicit confirmation;
 automatic session restoration fails closed instead of silently discarding continuity.
 
+Session extension enablement and authorization are separate. Enabled gosling extensions,
+working-directory scope, and the session authorization mode persist across a transition, but the
+target must still pass normal permission inspection. Provider-native tools are owned by their
+adapter and cannot be transferred to another provider. The preview reports gosling tool and
+extension counts, warns when provider-native tooling may change, and identifies enabled
+side-effecting tools that Autonomous mode cannot run without an explicit stored grant.
+
 The target's first response acknowledges the objective, current state, and next safe action. For a
 provider-managed bootstrap, gosling makes a bounded acknowledgement request before committing a
 live switch. Native delivery must return a provider session identity or acknowledgement; when the
@@ -49,12 +69,13 @@ adapter also supports bootstrap, native failure falls back to that bounded path.
 
 ## User and API surface
 
-Desktop obtains capability data from the server, previews the exact non-persisted checkpoint, and
+Desktop obtains capability data from the server, previews a non-persisted checkpoint, and
 shows continuity class, delivery strategy, row/message coverage, summary state, operation and
-approval counts, and redaction/truncation counts before confirmation. It submits one atomic request
-and reports that the previous provider remains active on failure. Stored checkpoints are available
-from the session actions menu, and eligible provider errors offer **Continue with another model
-using session checkpoint**.
+approval counts, tool-continuity and authorization warnings, and redaction/truncation counts before
+confirmation. It submits one atomic request, which may remain queued behind the previewed active
+turn, and reports that the previous provider remains active on failure. Stored checkpoints are
+available from the session actions menu, and eligible provider errors offer **Continue with another
+model using session checkpoint**.
 
 The typed ACP methods are:
 

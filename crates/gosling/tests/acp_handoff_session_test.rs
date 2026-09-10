@@ -7,6 +7,8 @@ use common_tests::fixtures::{
     run_test, send_custom, Connection, OpenAiFixture, PermissionDecision, Session,
     TestConnectionConfig,
 };
+use gosling::config::permission::PermissionLevel;
+use gosling::config::PermissionManager;
 use gosling::conversation::message::Message;
 use gosling::session::SessionManager;
 use gosling_test_support::TEST_MODEL;
@@ -164,6 +166,23 @@ fn checkpoint_preview_is_non_mutating_and_stale_transition_is_rejected() {
                 .and_then(serde_json::Value::as_u64),
             Some(1)
         );
+        assert!(preview.get("queuedAfterRunId").is_none());
+        assert_eq!(
+            preview
+                .pointer("/toolContinuity/authorizationMode")
+                .and_then(serde_json::Value::as_str),
+            Some("smart_approve")
+        );
+        assert!(preview
+            .pointer("/toolContinuity/stateHash")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|hash| hash.len() == 64));
+        assert!(preview
+            .pointer("/toolContinuity/enabledExtensionNames")
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|extensions| extensions
+                .iter()
+                .any(|name| name.as_str() == Some("extensionmanager"))));
         assert!(manager
             .latest_handoff_snapshot(&session_id)
             .await
@@ -272,6 +291,156 @@ fn checkpoint_preview_is_non_mutating_and_stale_transition_is_rejected() {
             .unwrap()
             .unwrap();
         assert_eq!(latest.generation, 1);
+    });
+}
+
+#[test]
+fn transition_rejects_tool_or_authorization_changes_after_preview() {
+    run_test(async {
+        let data_root = tempfile::tempdir().unwrap();
+        let openai = OpenAiFixture::new(
+            Vec::new(),
+            <AcpServerConnection as Connection>::expected_session_id(),
+        )
+        .await;
+        let mut conn = <AcpServerConnection as Connection>::new(
+            TestConnectionConfig {
+                data_root: data_root.path().to_path_buf(),
+                builtins: vec!["developer".to_string()],
+                ..Default::default()
+            },
+            openai,
+        )
+        .await;
+        let manager = SessionManager::new(data_root.path().to_path_buf());
+        let session_data = conn.new_session().await.unwrap();
+        let session_id = session_data.session.session_id().0.to_string();
+        let preview = send_custom(
+            conn.cx(),
+            "_gosling/unstable/session/handoff/checkpoint/preview",
+            serde_json::json!({
+                "sessionId": session_id,
+                "targetProvider": "openai",
+                "targetModel": TEST_MODEL,
+            }),
+        )
+        .await
+        .unwrap();
+        let tool_state_hash = preview
+            .pointer("/toolContinuity/stateHash")
+            .and_then(serde_json::Value::as_str)
+            .unwrap();
+        PermissionManager::for_config_dir(data_root.path().to_path_buf())
+            .update_user_permission("shell", PermissionLevel::AlwaysAllow)
+            .unwrap();
+
+        let error = send_custom(
+            conn.cx(),
+            "_gosling/unstable/session/provider/transition",
+            serde_json::json!({
+                "sessionId": session_id,
+                "targetProvider": "openai",
+                "targetModel": TEST_MODEL,
+                "expectedCurrentGeneration": 0,
+                "expectedToolStateHash": tool_state_hash,
+                "confirmNewContext": false,
+            }),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("tools or authorization mode changed"));
+        assert!(manager
+            .latest_handoff_snapshot(&session_id)
+            .await
+            .unwrap()
+            .is_none());
+    });
+}
+
+#[test]
+fn transition_queues_behind_the_previewed_active_turn_and_includes_its_output() {
+    run_test(async {
+        let data_root = tempfile::tempdir().unwrap();
+        let mut conn = new_connection_with_exchanges(
+            data_root.path(),
+            vec![(
+                "finish before switching".to_string(),
+                include_str!("acp_test_data/openai_basic.txt"),
+            )],
+        )
+        .await;
+        let session_data = conn.new_session().await.unwrap();
+        let session_id = session_data.session.session_id().0.to_string();
+        let mut active_session = session_data.session;
+        let active_prompt = tokio::spawn(async move {
+            active_session
+                .prompt("finish before switching", PermissionDecision::Cancel)
+                .await
+        });
+
+        let preview = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                let preview = send_custom(
+                    conn.cx(),
+                    "_gosling/unstable/session/handoff/checkpoint/preview",
+                    serde_json::json!({
+                        "sessionId": session_id,
+                        "targetProvider": "openai",
+                        "targetModel": TEST_MODEL,
+                    }),
+                )
+                .await
+                .unwrap();
+                if preview.get("queuedAfterRunId").is_some() {
+                    break preview;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("the active run should become visible to the preview");
+        let active_run_id = preview
+            .get("queuedAfterRunId")
+            .and_then(serde_json::Value::as_str)
+            .unwrap();
+        let tool_state_hash = preview
+            .pointer("/toolContinuity/stateHash")
+            .and_then(serde_json::Value::as_str)
+            .unwrap();
+
+        let transition = send_custom(
+            conn.cx(),
+            "_gosling/unstable/session/provider/transition",
+            serde_json::json!({
+                "sessionId": session_id,
+                "targetProvider": "openai",
+                "targetModel": TEST_MODEL,
+                "expectedCurrentGeneration": 0,
+                "expectedActiveRunId": active_run_id,
+                "expectedToolStateHash": tool_state_hash,
+                "confirmNewContext": false,
+            }),
+        )
+        .await
+        .unwrap();
+        let output = active_prompt.await.unwrap().unwrap();
+
+        assert_eq!(output.text, "2");
+        assert_eq!(
+            transition
+                .pointer("/snapshot/coverage/totalMessageCount")
+                .and_then(serde_json::Value::as_u64),
+            Some(2)
+        );
+        assert_eq!(
+            transition
+                .pointer("/snapshot/latestUserIntent/content")
+                .and_then(serde_json::Value::as_str),
+            Some("finish before switching")
+        );
     });
 }
 

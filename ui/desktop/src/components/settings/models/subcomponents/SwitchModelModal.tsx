@@ -41,6 +41,7 @@ import { errorMessage } from '../../../../utils/conversionUtils';
 import type {
   SessionContinuityClassDto,
   SessionHandoffSnapshotV1Dto,
+  ToolContinuityPreviewDto,
 } from '@repo-makeover/gosling-sdk';
 
 const i18n = defineMessages({
@@ -235,6 +236,26 @@ const i18n = defineMessages({
     defaultMessage:
       'Summary: {summary}. Delivery: {delivery}. Interrupted operations: {operations}. Pending approvals: {approvals}. Redactions: {redactions}. Truncations: {truncations}.',
   },
+  queuedSwitch: {
+    id: 'switchModelModal.queuedSwitch',
+    defaultMessage:
+      'The current response will finish first. Gosling will refresh this checkpoint with its final output, then activate the switch before the next queued message.',
+  },
+  sessionToolContinuity: {
+    id: 'switchModelModal.sessionToolContinuity',
+    defaultMessage:
+      'Session tools: {tools}. Enabled Gosling extensions preserved: {extensions}. Authorization mode remains {mode}.',
+  },
+  providerNativeToolsWarning: {
+    id: 'switchModelModal.providerNativeToolsWarning',
+    defaultMessage:
+      'Provider-native tools do not transfer between providers and the target may expose a different native tool set. Session-enabled Gosling extensions will remain configured.',
+  },
+  ungrantedToolsWarning: {
+    id: 'switchModelModal.ungrantedToolsWarning',
+    defaultMessage:
+      '{count} side-effecting Gosling tools are not explicitly allowed in Autonomous mode and will remain blocked. Enabling an extension does not authorize its tools.',
+  },
   transitionStages: {
     id: 'switchModelModal.transitionStages',
     defaultMessage: 'Preparing checkpoint · Initializing target · Delivering handoff · Activating',
@@ -375,11 +396,14 @@ export const SwitchModelModal = ({
   const [activeProvidersList, setActiveProvidersList] = useState<ProviderDetails[]>([]);
   const fetchedProviders = useRef<Set<string>>(new Set());
   const reasoningRequestId = useRef(0);
+  const submitInFlight = useRef(false);
   const [thinkingEffort, setThinkingEffort] = useState<ThinkingEffort | null>(null);
   const [selectedModelReasoning, setSelectedModelReasoning] = useState<boolean | null>(null);
   const [handoffPreview, setHandoffPreview] = useState<{
     snapshot: SessionHandoffSnapshotV1Dto;
     expectedCurrentGeneration: number;
+    queuedAfterRunId?: string | null;
+    toolContinuity: ToolContinuityPreviewDto;
     targetKey: string;
   } | null>(null);
   const [isPreviewing, setIsPreviewing] = useState(false);
@@ -467,8 +491,7 @@ export const SwitchModelModal = ({
     onClose();
   };
 
-  const handleSubmit = async () => {
-    if (isPreviewing || isSwitching) return;
+  const performSubmit = async () => {
     setAttemptedSubmit(true);
     const isFormValid = validateForm();
 
@@ -528,6 +551,8 @@ export const SwitchModelModal = ({
         confirmNewContext: handoffPreview?.snapshot.continuityClass === 'new_context_only',
         expectedCurrentGeneration: handoffPreview?.expectedCurrentGeneration,
         expectedSourceHash: handoffPreview?.snapshot.coverage.sourceHash,
+        expectedActiveRunId: handoffPreview?.queuedAfterRunId ?? undefined,
+        expectedToolStateHash: handoffPreview?.toolContinuity.stateHash,
         onActivated: () => setTransitionActivated(true),
       });
       if (success) {
@@ -541,7 +566,20 @@ export const SwitchModelModal = ({
         }
         onModelSelected?.(modelObj.name, modelObj.provider || '');
         onClose();
+      } else {
+        setHandoffPreview(null);
+        setTransitionActivated(false);
       }
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (isPreviewing || isSwitching || submitInFlight.current) return;
+    submitInFlight.current = true;
+    try {
+      await performSubmit();
+    } finally {
+      submitInFlight.current = false;
       setIsSwitching(false);
     }
   };
@@ -1125,6 +1163,39 @@ export const SwitchModelModal = ({
                         handoffPreview.snapshot.redactionReport.truncatedItemCount,
                     })}
                   </p>
+                  <p>
+                    {intl.formatMessage(i18n.sessionToolContinuity, {
+                      tools: handoffPreview.toolContinuity.goslingToolCount,
+                      extensions:
+                        handoffPreview.toolContinuity.enabledExtensionNames?.join(', ') || '—',
+                      mode: handoffPreview.toolContinuity.authorizationMode,
+                    })}
+                  </p>
+                </div>
+              )}
+
+              {handoffPreview?.queuedAfterRunId && (
+                <div className="mt-2 flex gap-2 rounded-md border border-blue-500/40 bg-blue-500/10 p-2 text-xs text-blue-800 dark:text-blue-200">
+                  <LoaderCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                  <span>{intl.formatMessage(i18n.queuedSwitch)}</span>
+                </div>
+              )}
+
+              {handoffPreview?.toolContinuity.providerNativeToolingMayChange && (
+                <div className="mt-2 flex gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-800 dark:text-amber-200">
+                  <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                  <span>{intl.formatMessage(i18n.providerNativeToolsWarning)}</span>
+                </div>
+              )}
+
+              {(handoffPreview?.toolContinuity.ungrantedSideEffectingToolCount ?? 0) > 0 && (
+                <div className="mt-2 flex gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-800 dark:text-amber-200">
+                  <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                  <span>
+                    {intl.formatMessage(i18n.ungrantedToolsWarning, {
+                      count: handoffPreview?.toolContinuity.ungrantedSideEffectingToolCount,
+                    })}
+                  </span>
                 </div>
               )}
 
