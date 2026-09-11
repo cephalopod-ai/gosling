@@ -32,28 +32,26 @@ describe('AlertBox', () => {
     configMocks.upsert.mockResolvedValue(undefined);
   });
 
-  it('keeps an invalid reduction open and surfaces the server rejection', async () => {
+  it('keeps a rejected reduction open and surfaces the server error', async () => {
     const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
-    configMocks.upsert.mockRejectedValueOnce(new Error('Reduction must be below threshold'));
+    configMocks.upsert.mockRejectedValueOnce(new Error('Could not save reduction'));
     renderWithIntl(
       <AlertBox
         alert={{ type: AlertType.Info, message: 'Context', progress: { current: 80, total: 100 } }}
       />
     );
-    await screen.findByText('Reduce by (percentage points) 15%');
+    await screen.findByText('Reduce by (% of threshold) 15%');
     const buttons = screen.getAllByRole('button');
     fireEvent.click(buttons[1]);
     const input = screen.getByRole('spinbutton');
     expect(input).toHaveAttribute('max', '99');
-    fireEvent.change(input, { target: { value: '80' } });
+    fireEvent.change(input, { target: { value: '99' } });
     fireEvent.keyDown(input, { key: 'Enter' });
     await screen.findByRole('spinbutton');
     await vi.waitFor(() =>
-      expect(alertSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Reduction must be below threshold')
-      )
+      expect(alertSpy).toHaveBeenCalledWith(expect.stringContaining('Could not save reduction'))
     );
-    expect(configMocks.upsert).toHaveBeenCalledWith('GOSLING_AUTO_COMPACT_REDUCTION', 0.8, false);
+    expect(configMocks.upsert).toHaveBeenCalledWith('GOSLING_AUTO_COMPACT_REDUCTION', 0.99, false);
     expect(screen.getByRole('spinbutton')).toBeInTheDocument();
     alertSpy.mockRestore();
   });
@@ -124,7 +122,7 @@ describe('AlertBox', () => {
 
       // Should show auto-compact threshold (default 80%)
       expect(await screen.findByText(/Auto compact at 80%/)).toBeInTheDocument();
-      expect(screen.getByText('Target: 80% → 65%')).toBeInTheDocument();
+      expect(screen.getByText('Target: 80% → 68%')).toBeInTheDocument();
     });
 
     it('should not render progress dots or token counts', () => {

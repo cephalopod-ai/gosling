@@ -289,11 +289,13 @@ impl GoslingAcpAgent {
 
         let (mode_state, config_options) =
             build_session_setup_config(&self.provider_inventory, &session).await?;
+        let context_limit = resolve_active_context_limit(&agent, &session).await;
 
         send_session_setup_notifications(
             cx,
             &session,
             self.supports_gosling_custom_notifications(),
+            context_limit,
         )?;
 
         let mut response = LoadSessionResponse::new().modes(mode_state);

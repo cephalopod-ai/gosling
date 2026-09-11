@@ -1,5 +1,7 @@
 use crate::acp::custom_requests::{GoslingExtension, ShellCredentialPolicy};
-use crate::acp::server::{meta_string, validate_absolute_cwd, ResultExt};
+use crate::acp::server::{
+    meta_string, resolve_active_context_limit, validate_absolute_cwd, ResultExt,
+};
 use crate::agents::ExtensionLoadResult;
 use crate::config::{Config, GoslingMode};
 use crate::session::{DeepResearchState, ExtensionData, ExtensionState, Session, SessionType};
@@ -218,7 +220,7 @@ impl GoslingAcpAgent {
         self.configure_new_session(config, session, setup).await?;
 
         let reloaded_session = self.reload_session(&session.id).await?;
-        let (_agent, extension_results) = self
+        let (agent, extension_results) = self
             .activate_acp_session(cx, &reloaded_session, HashMap::new())
             .await?;
 
@@ -226,10 +228,12 @@ impl GoslingAcpAgent {
         let response = self
             .build_new_session_response(&reloaded_session, &extension_results)
             .await?;
+        let context_limit = resolve_active_context_limit(&agent, &reloaded_session).await;
         super::send_session_setup_notifications(
             cx,
             &reloaded_session,
             self.supports_gosling_custom_notifications(),
+            context_limit,
         )?;
         Ok(response)
     }

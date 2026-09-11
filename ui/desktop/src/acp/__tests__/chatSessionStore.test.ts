@@ -238,6 +238,7 @@ describe('acpChatSessionStore', () => {
 
     expect(acpChatSessionStore.getSnapshot(currentSessionId)?.tokenState).toMatchObject({
       totalTokens: 758_000,
+      contextLimit: 997_500,
       contextUsageEstimated: true,
       lastRequestTokens: 29_000,
     });

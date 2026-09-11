@@ -172,6 +172,7 @@ interface ChatInputProps {
   onFilesProcessed?: () => void;
   setView: (view: View) => void;
   totalTokens?: number;
+  contextLimit?: number;
   contextUsageEstimated?: boolean;
   lastRequestTokens?: number;
   accumulatedInputTokens?: number;
@@ -213,6 +214,7 @@ export default function ChatInput({
   onFilesProcessed,
   setView,
   totalTokens,
+  contextLimit,
   contextUsageEstimated,
   lastRequestTokens,
   accumulatedInputTokens,
@@ -334,6 +336,7 @@ export default function ChatInput({
   }, [sessionModel, sessionProvider, configModel, configProvider, sessionId, modelOverride]);
   const [tokenLimit, setTokenLimit] = useState<number>(TOKEN_LIMIT_DEFAULT);
   const [isTokenLimitLoaded, setIsTokenLimitLoaded] = useState(false);
+  const effectiveTokenLimit = contextLimit ?? tokenLimit;
   // Persistent-session CLI/ACP providers (e.g. Claude Code) keep their own
   // conversation state and only ever receive the newest turn from Gosling, so
   // Gosling's own compaction has nothing to trim here — see manages_own_context.
@@ -682,14 +685,15 @@ export default function ChatInput({
     // still shows the raw number unobtrusively.
     if (
       !managesOwnContext &&
-      ((totalTokens && totalTokens > 0) || (isTokenLimitLoaded && tokenLimit))
+      ((totalTokens && totalTokens > 0) ||
+        ((contextLimit !== undefined || isTokenLimitLoaded) && effectiveTokenLimit))
     ) {
       addAlert({
-        type: getContextAlertType(totalTokens || 0, tokenLimit),
+        type: getContextAlertType(totalTokens || 0, effectiveTokenLimit),
         message: intl.formatMessage(i18n.contextWindow),
         progress: {
           current: totalTokens || 0,
-          total: tokenLimit,
+          total: effectiveTokenLimit,
         },
         showCompactButton: true,
         compactButtonDisabled: !totalTokens || isLoading,
@@ -704,7 +708,8 @@ export default function ChatInput({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     totalTokens,
-    tokenLimit,
+    contextLimit,
+    effectiveTokenLimit,
     isTokenLimitLoaded,
     isLoading,
     managesOwnContext,
@@ -1762,7 +1767,7 @@ export default function ChatInput({
             {/* Right: context window indicator */}
             <ContextWindowIndicator
               totalTokens={totalTokens || 0}
-              tokenLimit={tokenLimit}
+              tokenLimit={effectiveTokenLimit}
               alerts={alerts}
               estimated={contextUsageEstimated}
               lastRequestTokens={lastRequestTokens}

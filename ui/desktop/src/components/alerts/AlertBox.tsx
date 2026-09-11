@@ -26,7 +26,7 @@ const i18n = defineMessages({
   },
   autoCompactReduceBy: {
     id: 'alertBox.autoCompactReduceBy',
-    defaultMessage: 'Reduce by (percentage points)',
+    defaultMessage: 'Reduce by (% of threshold)',
   },
   autoCompactTarget: {
     id: 'alertBox.autoCompactTarget',
@@ -230,10 +230,7 @@ export const AlertBox = ({ alert, className }: AlertBoxProps) => {
   const intl = useIntl();
   const [autoCompactThreshold, setAutoCompactThreshold] = useState(0.8);
   const [autoCompactReduction, setAutoCompactReduction] = useState(0.15);
-  const targetPercent = Math.max(
-    0,
-    Math.round((autoCompactThreshold - autoCompactReduction) * 100)
-  );
+  const targetPercent = Math.round(autoCompactThreshold * (1 - autoCompactReduction) * 100);
 
   return (
     <div className={cn('flex flex-col gap-2 px-3 py-3', alertStyles[alert.type], className)}>

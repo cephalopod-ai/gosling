@@ -40,11 +40,10 @@ pub use summarizer::{summarizer_mode, PendingSummary, SummarizerMode, Summarizer
 
 pub const DEFAULT_COMPACTION_THRESHOLD: f64 = 0.8;
 
-/// How far below `GOSLING_AUTO_COMPACT_THRESHOLD` auto-compaction targets when
-/// it fires, expressed as a fraction of the context window. E.g. threshold
-/// 0.8 with the 0.15 default lands auto-compaction at 0.65 usage in a single
-/// pass, regardless of how far past 0.8 usage had climbed before the check
-/// ran — see `auto_compact_reduction_budget`.
+/// The fraction of threshold usage that auto-compaction removes when it fires.
+/// E.g. threshold 0.8 with the 0.15 default lands auto-compaction at 0.68 usage
+/// in a single pass, regardless of how far past 0.8 usage had climbed before
+/// the check ran — see `auto_compact_reduction_budget`.
 pub const DEFAULT_AUTO_COMPACT_REDUCTION: f64 = 0.15;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -107,7 +106,7 @@ fn auto_compact_reduction() -> f64 {
 }
 
 fn auto_compact_target_tokens(context_limit: usize, threshold: f64, reduction: f64) -> usize {
-    (context_limit as f64 * (threshold - reduction)).round() as usize
+    (context_limit as f64 * threshold * (1.0 - reduction)).round() as usize
 }
 
 /// A turn starts at an agent-visible user message that isn't itself a tool
@@ -563,10 +562,6 @@ pub fn validate_compaction_settings(threshold: f64, reduction: f64) -> Result<()
         reduction.is_finite() && (0.0..1.0).contains(&reduction),
         "autoCompactReduction must be at least 0 and less than 1"
     );
-    anyhow::ensure!(
-        threshold == 0.0 || reduction == 0.0 || reduction < threshold,
-        "autoCompactReduction must be less than autoCompactThreshold (or 0 for full compaction)"
-    );
     Ok(())
 }
 
@@ -715,12 +710,13 @@ pub async fn auto_compaction_check(
 }
 
 /// Computes how many tokens auto-compaction should try to remove so the
-/// conversation lands at `threshold - GOSLING_AUTO_COMPACT_REDUCTION` of the
-/// context window in a single pass — regardless of how far past `threshold`
-/// usage had already climbed when the check ran, rather than needing several
-/// turns to crawl back under it. Returns `None` when the reduction is
-/// disabled (zero), which requests full eligible-region compaction. Invalid
-/// settings return an actionable error instead of silently changing the budget.
+/// conversation lands at `threshold * (1 - GOSLING_AUTO_COMPACT_REDUCTION)`
+/// of the context window in a single pass — regardless of how far past
+/// `threshold` usage had already climbed when the check ran, rather than
+/// needing several turns to crawl back under it. Returns `None` when the
+/// reduction is disabled (zero), which requests full eligible-region
+/// compaction. Invalid settings return an actionable error instead of silently
+/// changing the budget.
 ///
 /// `threshold_override`/`reduction_override` mirror `check_if_compaction_needed`'s
 /// `threshold_override`: production callers pass `None` to read the real
@@ -2153,7 +2149,7 @@ mod tests {
         let provider = MockProvider::new(Message::assistant().with_text("x"), 1_000);
         let session = crate::session::Session::default();
         let conversation = Conversation::new_unvalidated(vec![Message::user().with_text("hi")]);
-        for reduction in [-0.1, 0.6, 0.8, f64::NAN] {
+        for reduction in [-0.1, 1.0, 1.1, f64::NAN] {
             assert!(auto_compact_reduction_budget(
                 &provider,
                 &conversation,
@@ -2175,12 +2171,13 @@ mod tests {
         .unwrap()
         .is_none());
         assert!(validate_compaction_settings(0.0, 0.15).is_ok());
+        assert!(validate_compaction_settings(0.6, 0.8).is_ok());
         assert!(validate_compaction_settings(1.0, 0.15).is_err());
     }
 
     #[tokio::test]
-    async fn test_auto_compact_reduction_budget_targets_threshold_minus_reduction() {
-        // context_limit=1000, threshold=0.8, reduction=0.15 -> target = 650 tokens.
+    async fn test_auto_compact_reduction_budget_targets_fraction_of_threshold() {
+        // context_limit=1000, threshold=0.8, reduction=0.25 -> target = 600 tokens.
         let provider = MockProvider::new(Message::assistant().with_text("x"), 1_000);
         let session = crate::session::Session {
             usage: Usage::new(Some(900), Some(0), Some(900)),
@@ -2193,15 +2190,15 @@ mod tests {
             &conversation,
             &session,
             Some(0.8),
-            Some(0.15),
+            Some(0.25),
         )
         .await
         .unwrap();
 
         assert_eq!(
             budget,
-            Some(250),
-            "should ask to remove current (900) minus the threshold-relative target (650), \
+            Some(300),
+            "should ask to remove current (900) minus 25% of the threshold usage (600), \
              regardless of how the 900 was reached"
         );
     }
@@ -2230,8 +2227,8 @@ mod tests {
             Some(AutoCompactionPlan {
                 threshold: 0.8,
                 reduction: 0.15,
-                target_tokens: Some(650),
-                tokens_to_remove: Some(250),
+                target_tokens: Some(680),
+                tokens_to_remove: Some(220),
             })
         );
     }
@@ -2281,7 +2278,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             just_over.plan.unwrap().tokens_to_remove,
-            Some(251),
+            Some(188),
             "scenario 3: one token over threshold"
         );
 
@@ -2308,7 +2305,7 @@ mod tests {
         );
         assert_eq!(
             after_lower.plan.unwrap().tokens_to_remove,
-            Some(260),
+            Some(200),
             "scenario 5: threshold lowered between turns"
         );
 
@@ -2327,7 +2324,7 @@ mod tests {
                 smaller_reduction.target_tokens,
                 smaller_reduction.tokens_to_remove
             ),
-            (Some(650), Some(110)),
+            (Some(675), Some(85)),
             "scenario 6: smaller reduction setting"
         );
         assert_eq!(
@@ -2335,7 +2332,7 @@ mod tests {
                 larger_reduction.target_tokens,
                 larger_reduction.tokens_to_remove
             ),
-            (Some(500), Some(260)),
+            (Some(563), Some(197)),
             "scenario 6: larger reduction setting on the next turn"
         );
 
@@ -2373,14 +2370,14 @@ mod tests {
         );
         assert_eq!(
             after_smaller_model.plan.unwrap().tokens_to_remove,
-            Some(260),
+            Some(197),
             "scenario 9: switch to a smaller context model"
         );
 
-        let next_turn = check_compaction_scenario(1_000, 500, Some(900), 0.75, 0.25)
+        let next_turn = check_compaction_scenario(1_000, 563, Some(900), 0.75, 0.25)
             .await
             .unwrap();
-        assert_eq!(next_turn.usage.current_tokens, 500);
+        assert_eq!(next_turn.usage.current_tokens, 563);
         assert_eq!(next_turn.usage.last_request_tokens, Some(900));
         assert!(
             next_turn.plan.is_none(),

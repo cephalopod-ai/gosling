@@ -27,14 +27,31 @@ pub(in crate::acp) struct UsageUpdates {
     pub(in crate::acp) standard: UsageUpdate,
 }
 
+#[cfg(test)]
 pub(in crate::acp) fn build_usage_updates(session: &Session) -> Option<UsageUpdates> {
-    build_usage_updates_with_context(session, None)
+    build_usage_updates_inner(session, None, None)
+}
+
+pub(in crate::acp) fn build_usage_updates_with_limit(
+    session: &Session,
+    context_limit: Option<usize>,
+) -> Option<UsageUpdates> {
+    build_usage_updates_inner(session, None, context_limit)
 }
 
 pub(in crate::acp) fn build_usage_updates_with_context(
     session: &Session,
     context: Option<&crate::context_mgmt::ContextUsageSnapshot>,
 ) -> Option<UsageUpdates> {
+    build_usage_updates_inner(session, context, None)
+}
+
+fn build_usage_updates_inner(
+    session: &Session,
+    context: Option<&crate::context_mgmt::ContextUsageSnapshot>,
+    context_limit: Option<usize>,
+) -> Option<UsageUpdates> {
+    let persisted_context_limit = session.model_config.as_ref()?.context_limit();
     let persisted_used = session.usage.total_tokens.unwrap_or(0).max(0) as u64;
     let last_request_used = context
         .and_then(|context| context.last_request_tokens)
@@ -48,7 +65,7 @@ pub(in crate::acp) fn build_usage_updates_with_context(
         ),
         None => (
             persisted_used,
-            session.model_config.as_ref()?.context_limit() as u64,
+            context_limit.unwrap_or(persisted_context_limit) as u64,
             session.context_usage_estimated,
         ),
     };
@@ -77,6 +94,23 @@ pub(in crate::acp) fn build_usage_updates_with_context(
             standard
         },
     })
+}
+
+pub(in crate::acp) async fn resolve_active_context_limit(
+    agent: &Agent,
+    session: &Session,
+) -> Option<usize> {
+    let model_config = session.model_config.as_ref()?;
+    let fallback = model_config.context_limit();
+    let Ok(provider) = agent.provider().await else {
+        return Some(fallback);
+    };
+    Some(
+        provider
+            .get_context_limit(model_config)
+            .await
+            .unwrap_or(fallback),
+    )
 }
 
 impl GoslingAcpAgent {
@@ -516,9 +550,13 @@ impl GoslingAcpAgent {
             .get_session(&session_id, false)
             .await
             .internal_err_ctx("Failed to load session")?;
-        if let Some(updates) =
+        let updates = if latest_context_usage.is_some() {
             build_usage_updates_with_context(&session, latest_context_usage.as_ref())
-        {
+        } else {
+            let context_limit = resolve_active_context_limit(&agent, &session).await;
+            build_usage_updates_with_limit(&session, context_limit)
+        };
+        if let Some(updates) = updates {
             if self.supports_gosling_custom_notifications() {
                 cx.send_notification(updates.custom)?;
             }

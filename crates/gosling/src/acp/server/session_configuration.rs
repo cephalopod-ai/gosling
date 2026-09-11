@@ -134,7 +134,9 @@ impl GoslingAcpAgent {
             .get_session(session_id, false)
             .await
             .internal_err_ctx("Failed to load transitioned session usage")?;
-        let Some(updates) = build_usage_updates(&session) else {
+        let agent = self.get_session_agent(session_id).await?;
+        let context_limit = resolve_active_context_limit(&agent, &session).await;
+        let Some(updates) = build_usage_updates_with_limit(&session, context_limit) else {
             return Ok(());
         };
         if self.supports_gosling_custom_notifications() {

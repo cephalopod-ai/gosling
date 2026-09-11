@@ -15,7 +15,7 @@ use gosling_providers::thinking::ThinkingEffort;
 use serde::Serialize;
 use strum::{EnumMessage, VariantNames};
 
-use super::server::{build_usage_updates, DEFAULT_PROVIDER_ID, DEFAULT_PROVIDER_LABEL};
+use super::server::{build_usage_updates_with_limit, DEFAULT_PROVIDER_ID, DEFAULT_PROVIDER_LABEL};
 
 pub(super) fn session_provider_selection(session: &Session) -> &str {
     session
@@ -482,9 +482,10 @@ pub(super) fn send_session_setup_notifications(
     cx: &ConnectionTo<Client>,
     session: &Session,
     supports_gosling_custom_notifications: bool,
+    context_limit: Option<usize>,
 ) -> Result<(), agent_client_protocol::Error> {
     let session_id = SessionId::new(session.id.clone());
-    if let Some(updates) = build_usage_updates(session) {
+    if let Some(updates) = build_usage_updates_with_limit(session, context_limit) {
         if supports_gosling_custom_notifications {
             cx.send_notification(updates.custom)?;
         }

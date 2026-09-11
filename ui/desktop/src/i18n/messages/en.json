@@ -6,7 +6,7 @@
     "defaultMessage": "Target: full eligible-history compaction"
   },
   "alertBox.autoCompactReduceBy": {
-    "defaultMessage": "Reduce by (percentage points)"
+    "defaultMessage": "Reduce by (% of threshold)"
   },
   "alertBox.autoCompactTarget": {
     "defaultMessage": "Target: {threshold}% → {target}%"

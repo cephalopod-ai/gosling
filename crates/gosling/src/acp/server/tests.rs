@@ -1221,6 +1221,29 @@ fn test_build_usage_update_distinguishes_active_estimate_from_last_request() {
 }
 
 #[test]
+fn test_build_usage_update_uses_runtime_context_limit() {
+    let mut session = make_session_with_usage(
+        TokenUsage::new(Some(200_000), Some(58_000), Some(258_000)),
+        TokenUsage::default(),
+    );
+    session.model_config = Some(
+        gosling_providers::model::ModelConfig::new("gpt-6-astra").with_context_limit(Some(997_500)),
+    );
+
+    let updates = build_usage_updates_with_limit(&session, Some(258_400))
+        .expect("usage updates should be present");
+    let usage = match updates.custom.update {
+        GoslingSessionUpdate::UsageUpdate(usage) => usage,
+        other => panic!("expected usage update, got {other:?}"),
+    };
+
+    assert_eq!(usage.used, 258_000);
+    assert_eq!(usage.context_limit, 258_400);
+    assert!(!usage.estimated);
+    assert_eq!(updates.standard.size, 258_400);
+}
+
+#[test]
 fn test_build_usage_update_preserves_transition_provenance_after_reload() {
     let mut session = make_session_with_usage(
         TokenUsage::new(Some(758_000), Some(0), Some(758_000)),

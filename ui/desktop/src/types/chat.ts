@@ -9,6 +9,7 @@ export type TokenState = {
   accumulatedTotalTokens: number;
   cacheReadTokens?: number;
   cacheWriteTokens?: number;
+  contextLimit?: number;
   contextUsageEstimated?: boolean;
   inputTokens: number;
   lastRequestTokens?: number;

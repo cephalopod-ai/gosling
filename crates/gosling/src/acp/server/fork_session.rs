@@ -54,6 +54,7 @@ impl GoslingAcpAgent {
 
             let (agent, extension_results) =
                 self.prepare_acp_session_agent(cx, &gosling_session).await?;
+            let context_limit = resolve_active_context_limit(&agent, &gosling_session).await;
             self.register_acp_session(
                 gosling_session.id.clone(),
                 agent,
@@ -83,6 +84,7 @@ impl GoslingAcpAgent {
                 cx,
                 &gosling_session,
                 self.supports_gosling_custom_notifications(),
+                context_limit,
             )?;
             super::presentation::ensure_response_fits(response, "Fork session")
         }

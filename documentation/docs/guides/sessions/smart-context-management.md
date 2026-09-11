@@ -30,8 +30,9 @@ Auto-compaction is triggered by default when you reach 80% of the token limit in
 
 Control the auto-compaction behavior with the `GOSLING_AUTO_COMPACT_THRESHOLD` [environment variable](/docs/guides/environment-variables.md#session-management). 
 Disable this feature by setting the value to `0.0`. Values must be finite and less than `1.0`;
-`1.0` is rejected by preference/config saves. A positive reduction must be below an enabled
-threshold. Invalid reduction settings stop compaction with an error instead of silently selecting full compaction.
+`1.0` is rejected by preference/config saves. Reduction is a proportion of threshold usage,
+not a number of percentage points. Invalid reduction settings stop compaction with an error
+instead of silently selecting full compaction.
 
 ```
 # Automatically compact sessions when 60% of available tokens are used
@@ -43,7 +44,7 @@ When you reach the auto-compaction threshold:
   2. Once complete, you'll see the measured starting estimate, configured raw-context target, and resulting active-context estimate.
   3. Continue the session. Your previous conversation remains visible, but only the compacted conversion is included in the active context for gosling.
 
-Auto-compaction targets a level below the threshold rather than fully collapsing the conversation every time — controlled by `GOSLING_AUTO_COMPACT_REDUCTION` (default `0.15`, i.e. 15 percentage points). With the example above, crossing 60% usage selects the oldest safe prefix whose raw token count is enough to target 45%, leaving the remainder untouched. Generated summary and continuation framing also occupy context, so the completion notice reports the resulting estimate rather than claiming it landed exactly on the raw-context target. The budget is computed from the same snapshot that triggered compaction, even if one tool-heavy turn caused usage to jump far past the threshold. Set the reduction to `0.0` to fully collapse the eligible history on every auto-compaction, matching the previous behavior:
+Auto-compaction targets a level below the threshold rather than fully collapsing the conversation every time — controlled by `GOSLING_AUTO_COMPACT_REDUCTION` (default `0.15`, meaning 15% of threshold usage). With the example above, crossing 60% usage selects the oldest safe prefix whose raw token count is enough to target 51%, leaving the remainder untouched. At the default 80% threshold, a 25% reduction targets 60% (`80% × 75%`). Generated summary and continuation framing also occupy context, so the completion notice reports the resulting estimate rather than claiming it landed exactly on the raw-context target. The budget is computed from the same snapshot that triggered compaction, even if one tool-heavy turn caused usage to jump far past the threshold. Set the reduction to `0.0` to fully collapse the eligible history on every auto-compaction, matching the previous behavior:
 
 ```
 # Always fully collapse on auto-compaction instead of a partial, threshold-relative trim

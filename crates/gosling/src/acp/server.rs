@@ -130,9 +130,9 @@ mod shell_handlers;
 mod shell_library_formats;
 mod slash_commands;
 
-pub(super) use prompt_execution::build_usage_updates;
 #[cfg(test)]
-use prompt_execution::{build_prompt_usage, build_usage_updates_with_context};
+use prompt_execution::{build_prompt_usage, build_usage_updates, build_usage_updates_with_context};
+pub(super) use prompt_execution::{build_usage_updates_with_limit, resolve_active_context_limit};
 use session_configuration::{
     resolve_default_provider_model_config, resolve_provider_default_model_config,
 };

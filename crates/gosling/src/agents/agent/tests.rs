@@ -15,6 +15,25 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use tempfile::TempDir;
 
 #[test]
+fn auto_compaction_message_describes_proportional_reduction() {
+    let usage = ContextUsageSnapshot {
+        context_limit: 1_000,
+        current_tokens: 810,
+        last_request_tokens: Some(790),
+        estimated_tokens: 810,
+    };
+    let plan = AutoCompactionPlan {
+        threshold: 0.8,
+        reduction: 0.25,
+        target_tokens: Some(600),
+        tokens_to_remove: Some(210),
+    };
+
+    assert!(auto_compaction_started_message(&usage, &plan)
+        .contains("toward 600 tokens (60.0%; removing 25% of threshold usage)"));
+}
+
+#[test]
 fn resolve_use_login_shell_path_defaults_by_platform() {
     assert!(resolve_use_login_shell_path(
         None,

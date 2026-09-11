@@ -441,7 +441,7 @@ fn auto_compaction_started_message(
 ) -> String {
     match plan.target_tokens {
         Some(target) => format!(
-            "Active context is estimated at {} / {} tokens ({:.1}%), above the {:.0}% auto-compact threshold. Compacting the oldest safe prefix toward {} tokens ({:.1}%; {:.0} percentage points below the threshold)...",
+            "Active context is estimated at {} / {} tokens ({:.1}%), above the {:.0}% auto-compact threshold. Compacting the oldest safe prefix toward {} tokens ({:.1}%; removing {:.0}% of threshold usage)...",
             usage.current_tokens,
             usage.context_limit,
             usage_percentage(usage.current_tokens, usage.context_limit),

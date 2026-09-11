@@ -82,19 +82,6 @@ fn warn_about_invalid_config_values() {
         }
         _ => {}
     }
-    let threshold = config
-        .get_param::<f64>("GOSLING_AUTO_COMPACT_THRESHOLD")
-        .unwrap_or(gosling::context_mgmt::DEFAULT_COMPACTION_THRESHOLD);
-    let reduction = config
-        .get_param::<f64>("GOSLING_AUTO_COMPACT_REDUCTION")
-        .unwrap_or(gosling::context_mgmt::DEFAULT_AUTO_COMPACT_REDUCTION);
-    if threshold > 0.0 && reduction > 0.0 && reduction >= threshold {
-        if let Err(error) =
-            gosling::context_mgmt::validate_compaction_settings(threshold, reduction)
-        {
-            eprintln!("Warning: Invalid auto-compaction settings: {error}");
-        }
-    }
 }
 
 fn generate_serve_secret_key() -> String {
