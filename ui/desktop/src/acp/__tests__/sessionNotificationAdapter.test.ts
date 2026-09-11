@@ -622,6 +622,8 @@ describe('createAcpSessionNotificationAdapter', () => {
             sessionUpdate: 'usage_update',
             used: 42,
             contextLimit: 200,
+            estimated: true,
+            lastRequestUsed: 17,
             accumulatedInputTokens: 10,
             accumulatedOutputTokens: 15,
             accumulatedCost: 0.12,
@@ -632,6 +634,8 @@ describe('createAcpSessionNotificationAdapter', () => {
           type: 'tokenState',
           tokenState: {
             totalTokens: 42,
+            contextUsageEstimated: true,
+            lastRequestTokens: 17,
             accumulatedInputTokens: 10,
             accumulatedOutputTokens: 15,
             accumulatedTotalTokens: 25,

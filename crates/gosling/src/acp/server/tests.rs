@@ -1183,8 +1183,41 @@ fn test_build_usage_update_clamps_negative_used_to_zero() {
     };
     assert_eq!(usage.used, 0);
     assert_eq!(usage.context_limit, 258_000);
+    assert!(!usage.estimated);
+    assert_eq!(usage.last_request_used, 0);
     assert_eq!(updates.standard.used, 0);
     assert_eq!(updates.standard.size, 258_000);
+}
+
+#[test]
+fn test_build_usage_update_distinguishes_active_estimate_from_last_request() {
+    let mut session = make_session_with_usage(
+        TokenUsage::new(Some(20_000), Some(9_000), Some(29_000)),
+        TokenUsage::default(),
+    );
+    session.model_config = Some(
+        gosling_providers::model::ModelConfig::new("test-model").with_context_limit(Some(997_500)),
+    );
+    let context = crate::context_mgmt::ContextUsageSnapshot {
+        context_limit: 997_500,
+        current_tokens: 758_000,
+        stored_tokens: Some(29_000),
+        estimated_tokens: 758_000,
+    };
+
+    let updates = build_usage_updates_with_context(&session, Some(&context))
+        .expect("usage updates should be present");
+    let usage = match updates.custom.update {
+        GoslingSessionUpdate::UsageUpdate(usage) => usage,
+        other => panic!("expected usage update, got {other:?}"),
+    };
+
+    assert_eq!(usage.used, 758_000);
+    assert_eq!(usage.context_limit, 997_500);
+    assert!(usage.estimated);
+    assert_eq!(usage.last_request_used, 29_000);
+    assert_eq!(updates.standard.used, 758_000);
+    assert_eq!(updates.standard.size, 997_500);
 }
 
 #[test]

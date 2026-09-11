@@ -628,19 +628,24 @@ async fn test_manual_compaction_updates_token_counts_and_conversation() -> Resul
     // - Total input observed: ~6100 tokens
     //
     // After compaction:
-    // - current input_tokens = summary output (200) - the new compact context
+    // - current input_tokens = a fresh count of the full model-visible compacted conversation
     // - current output_tokens = None (compaction doesn't produce new output)
-    // - current total_tokens = 200
+    // - current total_tokens = that same fresh conversation count
     // - accumulated_total = initial (1000) + compaction cost
-    let expected_summary_output = 200; // compact summary
+    let compacted_conversation = updated_session
+        .conversation
+        .as_ref()
+        .expect("Session should have conversation");
+    let expected_context_tokens =
+        gosling::context_mgmt::estimate_conversation_tokens(compacted_conversation).await? as i32;
 
     // Verify the key invariants after manual compaction:
-    // After compaction, the current context is ONLY the summary (200 tokens)
-    // This is the new agent-visible input context
+    // The current context includes every model-visible summary/continuation message,
+    // rather than only the provider's billed summary output.
     assert_eq!(
         updated_session.usage.input_tokens,
-        Some(expected_summary_output),
-        "Input tokens should be exactly the summary output (200 tokens)"
+        Some(expected_context_tokens),
+        "Input tokens should match the compacted conversation's fresh token count"
     );
     assert_eq!(
         updated_session.usage.output_tokens, None,
@@ -648,8 +653,8 @@ async fn test_manual_compaction_updates_token_counts_and_conversation() -> Resul
     );
     assert_eq!(
         updated_session.usage.total_tokens,
-        Some(expected_summary_output),
-        "Total should equal input (200 tokens) after compaction"
+        Some(expected_context_tokens),
+        "Total should match the compacted conversation's fresh token count"
     );
 
     // Accumulated tokens increased by the compaction cost
@@ -665,11 +670,7 @@ async fn test_manual_compaction_updates_token_counts_and_conversation() -> Resul
     );
 
     // Verify conversation has been compacted
-    let compacted_conversation = updated_session
-        .conversation
-        .expect("Session should have conversation");
-
-    assert_conversation_compacted(&compacted_conversation);
+    assert_conversation_compacted(compacted_conversation);
 
     Ok(())
 }
@@ -885,11 +886,16 @@ async fn test_context_limit_recovery_compaction() -> Result<()> {
     let mut compaction_occurred = false;
     let mut got_response = false;
     let mut input_tokens_after_compaction: Option<i32> = None;
+    let mut counted_tokens_after_compaction: Option<i32> = None;
 
     while let Some(event_result) = reply_stream.next().await {
         match event_result {
-            Ok(AgentEvent::HistoryReplaced(_)) => {
+            Ok(AgentEvent::HistoryReplaced(compacted_conversation)) => {
                 compaction_occurred = true;
+                counted_tokens_after_compaction = Some(
+                    gosling::context_mgmt::estimate_conversation_tokens(&compacted_conversation)
+                        .await? as i32,
+                );
 
                 // Capture the input tokens immediately after compaction
                 let session_after_compact = agent
@@ -945,12 +951,14 @@ async fn test_context_limit_recovery_compaction() -> Result<()> {
     let tokens_after =
         input_tokens_after_compaction.expect("Should have captured tokens after compaction");
 
-    // After compaction, the input context should be ONLY the summary: 200 tokens
+    // After compaction, current usage should equal a fresh count of the entire
+    // model-visible compacted conversation, not the summarizer's billed output.
     // Before: system (6000) + long_tool_call messages (~15,400) = 21,400 (exceeded limit!)
-    // After: only summary (200 tokens)
+    // After: compact summary and its model-visible continuation framing.
     assert_eq!(
-        tokens_after, 200,
-        "Input tokens after compaction should be exactly 200 (summary only). Got: {}",
+        tokens_after,
+        counted_tokens_after_compaction.expect("Should count the compacted conversation"),
+        "Input tokens after compaction should match the fresh conversation count. Got: {}",
         tokens_after
     );
 
@@ -1012,8 +1020,8 @@ async fn test_context_limit_recovery_compaction() -> Result<()> {
     Ok(())
 }
 
-/// Pins the auto-compaction threshold for a test that asserts against the
-/// built-in 0.8 default.
+/// Pins the auto-compaction settings for tests that assert against the built-in
+/// 0.8 threshold and 0.15 reduction defaults.
 ///
 /// `check_if_compaction_needed` resolves `GOSLING_AUTO_COMPACT_THRESHOLD`
 /// through `Config::global()`, which reads the operator's real settings file.
@@ -1024,7 +1032,10 @@ async fn test_context_limit_recovery_compaction() -> Result<()> {
 /// whole run keeps it out of `acp_custom_requests_test`, which runs in a
 /// separate binary and asserts an exact preference list.
 fn pin_auto_compact_threshold() -> impl Drop {
-    env_lock::lock_env([("GOSLING_AUTO_COMPACT_THRESHOLD", Some("0.8"))])
+    env_lock::lock_env([
+        ("GOSLING_AUTO_COMPACT_THRESHOLD", Some("0.8")),
+        ("GOSLING_AUTO_COMPACT_REDUCTION", Some("0.15")),
+    ])
 }
 
 /// Case 1: check_if_compaction_needed fires in reply() before the first LLM call.
@@ -1070,6 +1081,8 @@ async fn test_compaction_fires_before_first_llm_call() -> Result<()> {
 
     let mut regular_usage_before_compaction = 0u32;
     let mut compaction_occurred = false;
+    let mut context_snapshots = Vec::new();
+    let mut compaction_notices = Vec::new();
 
     while let Some(event_result) = reply_stream.next().await {
         match event_result? {
@@ -1080,6 +1093,14 @@ async fn test_compaction_fires_before_first_llm_call() -> Result<()> {
                 if !compaction_occurred {
                     regular_usage_before_compaction += 1;
                 }
+            }
+            AgentEvent::ContextUsage(snapshot) => context_snapshots.push(snapshot),
+            AgentEvent::Message(message) => {
+                compaction_notices.extend(message.content.iter().filter_map(|content| {
+                    content
+                        .as_system_notification()
+                        .map(|notification| notification.msg.clone())
+                }));
             }
             _ => {}
         }
@@ -1093,6 +1114,18 @@ async fn test_compaction_fires_before_first_llm_call() -> Result<()> {
         regular_usage_before_compaction, 0,
         "No regular LLM call should precede compaction in Case 1 — compaction fires before reply_internal"
     );
+    assert!(context_snapshots
+        .iter()
+        .any(|snapshot| snapshot.current_tokens == 110_000));
+    assert!(context_snapshots
+        .iter()
+        .any(|snapshot| snapshot.current_tokens < 110_000));
+    assert!(compaction_notices
+        .iter()
+        .any(|notice| notice.contains("Compacting the oldest safe prefix toward")));
+    assert!(compaction_notices
+        .iter()
+        .any(|notice| notice.contains("the raw-context target was")));
 
     let updated = agent
         .config

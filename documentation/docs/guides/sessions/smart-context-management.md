@@ -39,11 +39,11 @@ export GOSLING_AUTO_COMPACT_THRESHOLD=0.6
 ```
 
 When you reach the auto-compaction threshold:
-  1. gosling will automatically start compacting the conversation to make room.
-  2. Once complete, you'll see a confirmation message that the conversation was compacted and summarized.
+  1. gosling reports the active-context estimate, threshold, target, and that it is compacting the oldest safe prefix.
+  2. Once complete, you'll see the measured starting estimate, configured raw-context target, and resulting active-context estimate.
   3. Continue the session. Your previous conversation remains visible, but only the compacted conversion is included in the active context for gosling.
 
-Auto-compaction targets a level below the threshold rather than fully collapsing the conversation every time — controlled by `GOSLING_AUTO_COMPACT_REDUCTION` (default `0.15`, i.e. 15 percentage points). With the defaults above, crossing 60% usage compacts just enough of the oldest eligible history to bring usage back down to 45%, leaving newer turns untouched until a future pass needs them. This holds regardless of how far past the threshold usage had climbed before the check ran — a conversation that jumps from 40% to 90% in one turn still lands at 45% in a single pass, rather than needing several turns to crawl back down. Set it to `0.0` to always fully collapse the eligible history on every auto-compaction, matching the previous behavior:
+Auto-compaction targets a level below the threshold rather than fully collapsing the conversation every time — controlled by `GOSLING_AUTO_COMPACT_REDUCTION` (default `0.15`, i.e. 15 percentage points). With the example above, crossing 60% usage selects the oldest safe prefix whose raw token count is enough to target 45%, leaving the remainder untouched. Generated summary and continuation framing also occupy context, so the completion notice reports the resulting estimate rather than claiming it landed exactly on the raw-context target. The budget is computed from the same snapshot that triggered compaction, even if one tool-heavy turn caused usage to jump far past the threshold. Set the reduction to `0.0` to fully collapse the eligible history on every auto-compaction, matching the previous behavior:
 
 ```
 # Always fully collapse on auto-compaction instead of a partial, threshold-relative trim
@@ -52,7 +52,7 @@ export GOSLING_AUTO_COMPACT_REDUCTION=0.0
 
 A manual `/compact` (below) always fully collapses the conversation regardless of this setting.
 
-To keep the exchange you're actively working in fully intact, gosling never summarizes the most recent turns — by default the last 10 real turns (a turn is one user message plus gosling's response) are kept verbatim, and everything older is folded into the summary. Adjust this with `GOSLING_COMPACT_PROTECT_LAST_N_TURNS`:
+Gosling preferentially keeps the most recent turns verbatim — by default the last 10 real turns (a turn starts with a genuine user prompt). This is a best-effort fidelity preference, not permission to ignore the reduction budget: if a short session or one large tool loop contains the required reduction inside that region, gosling advances through complete messages and completed tool request/response pairs until the budget is met. The latest text prompt is restored literally if the cutoff must cross it. Adjust the preferred tail with `GOSLING_COMPACT_PROTECT_LAST_N_TURNS`:
 
 ```
 # Keep the last 20 turns verbatim instead of the default 10
@@ -295,9 +295,9 @@ After sending your first message, gosling Desktop and gosling CLI display token 
 
 <Tabs groupId="interface">
     <TabItem value="ui" label="gosling Desktop" default>
-    The Desktop displays token usage next to the model name at the bottom of the session window. The numerator is usage from the **last model request**, not an estimate of a future compaction request. The denominator is the active provider route's effective context limit when that route reports one. Public API and subscription-route limits for the same model name can differ.
+    The Desktop displays token usage next to the model name at the bottom of the session window. For gosling-managed contexts, the numerator is the same **active-context estimate** used by the auto-compaction check and carries an `est` suffix. The tooltip keeps the distinct last-model-request count for diagnosis. Before an active estimate is available, the numerator uses provider-reported last-request usage and carries a `req` suffix. The denominator is the active provider route's effective context limit when that route reports one. Public API and subscription-route limits for the same model name can differ.
 
-    The color provides a visual indicator of the last request's usage:
+    The color provides a visual indicator of the displayed context usage:
       - **Green**: Normal usage - Plenty of context space available
       - **Orange**: Warning state - Approaching limit (80% of capacity)
       - **Red**: Error state - Context limit reached

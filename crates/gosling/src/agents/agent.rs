@@ -37,9 +37,9 @@ use crate::config::extensions::name_to_key;
 use crate::config::permission::PermissionManager;
 use crate::config::{CodeExecutionRuntime, Config, GoslingMode};
 use crate::context_mgmt::{
-    check_if_compaction_needed, compact_messages, context_manager_mode, resolve_provider_input,
-    summarizer, ContextBuildRequest, ContextManager, ContextManagerMode, FileMemorySource,
-    MemoryQuery, MemorySource, SummarizerMode, DEFAULT_COMPACTION_THRESHOLD,
+    compact_messages, context_manager_mode, resolve_provider_input, summarizer, AutoCompactionPlan,
+    ContextBuildRequest, ContextManager, ContextManagerMode, ContextUsageSnapshot,
+    FileMemorySource, MemoryQuery, MemorySource, SummarizerMode,
 };
 use crate::conversation::message::{
     ActionRequiredData, InferenceMetadata, Message, MessageContent, ProviderMetadata,
@@ -422,8 +422,78 @@ pub struct Agent {
 pub enum AgentEvent {
     Message(Message),
     Usage(crate::providers::base::ProviderUsage),
+    ContextUsage(ContextUsageSnapshot),
     McpNotification((String, ServerNotification)),
     HistoryReplaced(Conversation),
+}
+
+fn usage_percentage(tokens: usize, context_limit: usize) -> f64 {
+    if context_limit == 0 {
+        0.0
+    } else {
+        tokens as f64 / context_limit as f64 * 100.0
+    }
+}
+
+fn auto_compaction_started_message(
+    usage: &ContextUsageSnapshot,
+    plan: &AutoCompactionPlan,
+) -> String {
+    match plan.target_tokens {
+        Some(target) => format!(
+            "Active context is estimated at {} / {} tokens ({:.1}%), above the {:.0}% auto-compact threshold. Compacting the oldest safe prefix toward {} tokens ({:.1}%; {:.0} percentage points below the threshold)...",
+            usage.current_tokens,
+            usage.context_limit,
+            usage_percentage(usage.current_tokens, usage.context_limit),
+            plan.threshold * 100.0,
+            target,
+            usage_percentage(target, usage.context_limit),
+            plan.reduction * 100.0,
+        ),
+        None => format!(
+            "Active context is estimated at {} / {} tokens ({:.1}%), above the {:.0}% auto-compact threshold. Full auto-compaction is configured...",
+            usage.current_tokens,
+            usage.context_limit,
+            usage_percentage(usage.current_tokens, usage.context_limit),
+            plan.threshold * 100.0,
+        ),
+    }
+}
+
+fn auto_compaction_completed_message(
+    before: &ContextUsageSnapshot,
+    after_tokens: usize,
+    plan: &AutoCompactionPlan,
+) -> String {
+    match plan.target_tokens {
+        Some(target) => format!(
+            "Compaction complete: active context is now estimated at {} / {} tokens ({:.1}%). It started at {} tokens; the raw-context target was {} tokens.",
+            after_tokens,
+            before.context_limit,
+            usage_percentage(after_tokens, before.context_limit),
+            before.current_tokens,
+            target,
+        ),
+        None => format!(
+            "Compaction complete: active context is now estimated at {} / {} tokens ({:.1}%). It started at {} tokens.",
+            after_tokens,
+            before.context_limit,
+            usage_percentage(after_tokens, before.context_limit),
+            before.current_tokens,
+        ),
+    }
+}
+
+fn context_usage_after_compaction(
+    before: &ContextUsageSnapshot,
+    after_tokens: usize,
+) -> ContextUsageSnapshot {
+    ContextUsageSnapshot {
+        context_limit: before.context_limit,
+        current_tokens: after_tokens,
+        stored_tokens: before.stored_tokens,
+        estimated_tokens: after_tokens,
+    }
 }
 
 impl Default for Agent {

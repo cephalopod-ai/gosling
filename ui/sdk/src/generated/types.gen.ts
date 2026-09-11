@@ -3085,6 +3085,8 @@ export type GoslingSessionUpdate = ({
 export type SessionUsageUpdate = {
     used: number;
     contextLimit: number;
+    estimated?: boolean;
+    lastRequestUsed?: number;
     accumulatedInputTokens: number;
     accumulatedOutputTokens: number;
     accumulatedCost?: number | null;

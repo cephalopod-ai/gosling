@@ -8319,6 +8319,15 @@
           "type": "integer",
           "minimum": 0
         },
+        "estimated": {
+          "type": "boolean",
+          "default": false
+        },
+        "lastRequestUsed": {
+          "type": "integer",
+          "default": 0,
+          "minimum": 0
+        },
         "accumulatedInputTokens": {
           "type": "integer",
           "minimum": 0

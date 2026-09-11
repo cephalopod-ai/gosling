@@ -5,6 +5,8 @@ interface ContextWindowIndicatorProps {
   totalTokens: number;
   tokenLimit: number;
   alerts: Alert[];
+  estimated?: boolean;
+  lastRequestTokens?: number;
   // Persistent-session CLI/ACP providers (e.g. Claude Code) manage their own
   // context — Gosling can't compact it and this number isn't heading toward a
   // Gosling-triggered failure, so it shouldn't wear the same orange/red
@@ -29,15 +31,21 @@ export function ContextWindowIndicator({
   totalTokens,
   tokenLimit,
   alerts,
+  estimated = false,
+  lastRequestTokens,
   managesOwnContext = false,
 }: ContextWindowIndicatorProps) {
   if (!tokenLimit) return null;
 
   const percentage = Math.round((totalTokens / tokenLimit) * 100);
   const colorClass = getProgressColor(percentage, managesOwnContext);
+  const formattedUsage = `${formatTokenCount(totalTokens)} of ${formatTokenCount(tokenLimit)} effective context limit`;
   const usageLabel = managesOwnContext
-    ? `Context managed by the connected CLI tool. Last request: ${formatTokenCount(totalTokens)} of ${formatTokenCount(tokenLimit)} effective context limit`
-    : `Last model request: ${formatTokenCount(totalTokens)} of ${formatTokenCount(tokenLimit)} effective context limit`;
+    ? `Context managed by the connected CLI tool. Last request: ${formattedUsage}`
+    : estimated
+      ? `Active context estimate: ${formattedUsage}. Last model request: ${formatTokenCount(lastRequestTokens ?? totalTokens)}`
+      : `Last model request: ${formattedUsage}`;
+  const visibleUsage = `${formatTokenCount(totalTokens)}${estimated && !managesOwnContext ? ' est' : ' req'} / ${formatTokenCount(tokenLimit)}`;
 
   return (
     <div className="flex items-center h-full">
@@ -47,7 +55,7 @@ export function ContextWindowIndicator({
           title={usageLabel}
           className={`text-xs font-mono ${colorClass}`}
         >
-          {formatTokenCount(totalTokens)} / {formatTokenCount(tokenLimit)}
+          {visibleUsage}
         </span>
       </BottomMenuAlertPopover>
     </div>

@@ -775,6 +775,8 @@ export default function BaseChat({
             initialValue={initialPrompt}
             setView={setView}
             totalTokens={tokenState?.totalTokens ?? session?.usage?.total_tokens ?? undefined}
+            contextUsageEstimated={tokenState?.contextUsageEstimated}
+            lastRequestTokens={tokenState?.lastRequestTokens}
             accumulatedInputTokens={
               tokenState?.accumulatedInputTokens ??
               session?.accumulated_usage?.input_tokens ??

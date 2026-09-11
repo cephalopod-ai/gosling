@@ -56,8 +56,11 @@ instead of the active provider route's effective limit.
 
 - Prefer provider-route model metadata over canonical public-model metadata in
   the Desktop context indicator.
-- Label the displayed token count as the most recent model request, not the
-  freshly constructed compaction input.
+- For gosling-managed contexts, display the same active-context snapshot used
+  to trigger and budget compaction, explicitly marked as an estimate. Preserve
+  the distinct most-recent-request value as diagnostic metadata.
+- Report the measured start, threshold, raw-context target, compaction scope,
+  and resulting active-context estimate in automatic compaction notices.
 - Return a concise recovery message if even the minimum bounded compaction unit
   is rejected. Preserve the original session and recommend a new session rather
   than implying authentication or database damage.
@@ -99,8 +102,14 @@ current provider.
   from a conservative route-specific fallback otherwise.
 - Desktop does not show the public GPT-5.4 limit for the ChatGPT Codex route.
 - Failed compaction leaves the original conversation unchanged.
+- A non-zero automatic reduction budget remains authoritative even when there
+  are fewer than the preferred protected turns, and one large tool loop can be
+  cut between completed tool request/response pairs.
 - Successful manual or automatic compaction produces one valid continuation
-  context and aggregates usage across all summarization requests.
+  context, records its freshly counted active size, and keeps provider usage
+  from all summarization requests in lifetime billing totals only.
+- Desktop distinguishes the active estimate (`est`) from last-request usage
+  (`req`) and shows the value that triggered automatic compaction.
 
 ## Observed recovery evidence
 

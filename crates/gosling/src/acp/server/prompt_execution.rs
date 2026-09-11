@@ -28,8 +28,30 @@ pub(in crate::acp) struct UsageUpdates {
 }
 
 pub(in crate::acp) fn build_usage_updates(session: &Session) -> Option<UsageUpdates> {
-    let used = session.usage.total_tokens.unwrap_or(0).max(0) as u64;
-    let ctx_limit = session.model_config.as_ref()?.context_limit() as u64;
+    build_usage_updates_with_context(session, None)
+}
+
+pub(in crate::acp) fn build_usage_updates_with_context(
+    session: &Session,
+    context: Option<&crate::context_mgmt::ContextUsageSnapshot>,
+) -> Option<UsageUpdates> {
+    let persisted_used = session.usage.total_tokens.unwrap_or(0).max(0) as u64;
+    let last_request_used = context
+        .and_then(|context| context.stored_tokens)
+        .map(|tokens| tokens as u64)
+        .unwrap_or(persisted_used);
+    let (used, ctx_limit, estimated) = match context {
+        Some(context) => (
+            context.current_tokens as u64,
+            context.context_limit as u64,
+            true,
+        ),
+        None => (
+            persisted_used,
+            session.model_config.as_ref()?.context_limit() as u64,
+            false,
+        ),
+    };
     let accumulated_input_tokens =
         to_nonnegative_u64(session.accumulated_usage.input_tokens).unwrap_or(0);
     let accumulated_output_tokens =
@@ -40,6 +62,8 @@ pub(in crate::acp) fn build_usage_updates(session: &Session) -> Option<UsageUpda
             update: GoslingSessionUpdate::UsageUpdate(SessionUsageUpdate {
                 used,
                 context_limit: ctx_limit,
+                estimated,
+                last_request_used,
                 accumulated_input_tokens,
                 accumulated_output_tokens,
                 accumulated_cost: session.accumulated_cost,
@@ -241,6 +265,7 @@ impl GoslingAcpAgent {
         let mut stream_error = None;
         let mut terminal_assistant_text = String::new();
         let mut current_assistant_message_ids = HashSet::new();
+        let mut latest_context_usage = None;
 
         loop {
             let event = tokio::select! {
@@ -364,6 +389,25 @@ impl GoslingAcpAgent {
                         ))?;
                     }
                 }
+                Ok(crate::agents::AgentEvent::ContextUsage(context_usage)) => {
+                    latest_context_usage = Some(context_usage);
+                    let session = self
+                        .session_manager
+                        .get_session(&session_id, false)
+                        .await
+                        .internal_err_ctx("Failed to load live context usage")?;
+                    if let Some(updates) =
+                        build_usage_updates_with_context(&session, latest_context_usage.as_ref())
+                    {
+                        if self.supports_gosling_custom_notifications() {
+                            cx.send_notification(updates.custom)?;
+                        }
+                        cx.send_notification(SessionNotification::new(
+                            args.session_id.clone(),
+                            SessionUpdate::UsageUpdate(updates.standard),
+                        ))?;
+                    }
+                }
                 Ok(_) => {}
                 Err(e) => {
                     stream_error = Some(
@@ -472,7 +516,9 @@ impl GoslingAcpAgent {
             .get_session(&session_id, false)
             .await
             .internal_err_ctx("Failed to load session")?;
-        if let Some(updates) = build_usage_updates(&session) {
+        if let Some(updates) =
+            build_usage_updates_with_context(&session, latest_context_usage.as_ref())
+        {
             if self.supports_gosling_custom_notifications() {
                 cx.send_notification(updates.custom)?;
             }

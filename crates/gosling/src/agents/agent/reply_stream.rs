@@ -189,83 +189,71 @@ impl Agent {
                 // Reload the session to get current token counts — the stale snapshot
                 // passed into reply_internal won't reflect updates from update_session_metrics.
                 let current_session_for_compact = session_manager.get_session(&session_config.id, false).await?;
-                if check_if_compaction_needed(
+                if let Some(auto_compaction) = crate::context_mgmt::auto_compaction_check(
                     active_provider.as_ref(),
                     &conversation,
-                    None,
                     &current_session_for_compact,
+                    None,
+                    None,
                 )
                 .await?
                 {
-                    let config = Config::global();
-                    let threshold = config
-                        .get_param::<f64>("GOSLING_AUTO_COMPACT_THRESHOLD")
-                        .unwrap_or(DEFAULT_COMPACTION_THRESHOLD);
-                    let threshold_percentage = (threshold * 100.0) as u32;
+                    yield AgentEvent::ContextUsage(auto_compaction.usage.clone());
+                    if let Some(plan) = auto_compaction.plan {
+                        yield AgentEvent::Message(
+                            Message::assistant().with_system_notification(
+                                SystemNotificationType::InlineMessage,
+                                auto_compaction_started_message(&auto_compaction.usage, &plan),
+                            )
+                        );
+                        yield AgentEvent::Message(
+                            Message::assistant().with_system_notification(
+                                SystemNotificationType::ThinkingMessage,
+                                COMPACTION_THINKING_TEXT,
+                            )
+                        );
 
-                    yield AgentEvent::Message(
-                        Message::assistant().with_system_notification(
-                            SystemNotificationType::InlineMessage,
-                            format!(
-                                "Exceeded auto-compact threshold of {}%. Performing auto-compaction...",
-                                threshold_percentage
-                            ),
-                        )
-                    );
-                    yield AgentEvent::Message(
-                        Message::assistant().with_system_notification(
-                            SystemNotificationType::ThinkingMessage,
-                            COMPACTION_THINKING_TEXT,
-                        )
-                    );
-
-                    let auto_compact_budget = crate::context_mgmt::auto_compact_reduction_budget(
-                        active_provider.as_ref(),
-                        &conversation,
-                        &current_session_for_compact,
-                        None,
-                        None,
-                    )
-                    .await?;
-
-                    match self.perform_compact_with_provider(
-                        active_provider.clone(),
-                        &active_model_config,
-                        &session_config,
-                        &conversation,
-                        auto_compact_budget,
-                        cancel_token.as_ref(),
-                    ).await {
-                        Ok(compacted_conversation) => {
-                            conversation = compacted_conversation;
-                            yield AgentEvent::HistoryReplaced(conversation.clone());
-                            yield AgentEvent::Message(
-                                Message::assistant().with_system_notification(
-                                    SystemNotificationType::InlineMessage,
-                                    "Compaction complete",
-                                )
-                            );
-                        }
-                        Err(e) => {
-                            if is_token_cancelled(&cancel_token) {
+                        match self.perform_compact_with_provider(
+                            active_provider.clone(),
+                            &active_model_config,
+                            &session_config,
+                            &conversation,
+                            plan.tokens_to_remove,
+                            cancel_token.as_ref(),
+                        ).await {
+                            Ok(compacted_conversation) => {
+                                conversation = compacted_conversation;
+                                let after_tokens = crate::context_mgmt::estimate_conversation_tokens(&conversation).await?;
+                                yield AgentEvent::HistoryReplaced(conversation.clone());
+                                yield AgentEvent::ContextUsage(context_usage_after_compaction(&auto_compaction.usage, after_tokens));
+                                yield AgentEvent::Message(
+                                    Message::assistant().with_system_notification(
+                                        SystemNotificationType::InlineMessage,
+                                        auto_compaction_completed_message(&auto_compaction.usage, after_tokens, &plan),
+                                    )
+                                );
+                            }
+                            Err(e) => {
+                                if is_token_cancelled(&cancel_token) {
+                                    break;
+                                }
+                                let failure_message = Message::assistant()
+                                    .with_text(crate::context_mgmt::auto_compaction_failure_message(&e))
+                                    .with_terminal_error(e.to_string());
+                                if let Err(checkpoint_error) = self
+                                    .persist_provider_failure_checkpoint(
+                                        &session_config.id,
+                                        &active_provider,
+                                        &active_model_config,
+                                        &failure_message,
+                                    )
+                                    .await
+                                {
+                                    warn!("Failed to prepare provider recovery checkpoint: {checkpoint_error}");
+                                }
+                                yield AgentEvent::Message(failure_message);
                                 break;
                             }
-                            let failure_message = Message::assistant()
-                                .with_text(crate::context_mgmt::auto_compaction_failure_message(&e))
-                                .with_terminal_error(e.to_string());
-                            if let Err(checkpoint_error) = self
-                                .persist_provider_failure_checkpoint(
-                                    &session_config.id,
-                                    &active_provider,
-                                    &active_model_config,
-                                    &failure_message,
-                                )
-                                .await
-                            {
-                                warn!("Failed to prepare provider recovery checkpoint: {checkpoint_error}");
-                            }
-                            yield AgentEvent::Message(failure_message);
-                            break;
                         }
                     }
                 }
@@ -350,7 +338,7 @@ impl Agent {
                             compaction_attempts = 0;
 
                             if let Some(ref usage) = usage {
-                                self.update_session_metrics(&session_config.id, usage, false).await?;
+                                self.update_session_metrics(&session_config.id, usage).await?;
                                 yield AgentEvent::Usage(usage.clone());
                             }
 

@@ -56,6 +56,10 @@ impl Default for GoslingSessionUpdate {
 pub struct SessionUsageUpdate {
     pub used: u64,
     pub context_limit: u64,
+    #[serde(default)]
+    pub estimated: bool,
+    #[serde(default)]
+    pub last_request_used: u64,
     pub accumulated_input_tokens: u64,
     pub accumulated_output_tokens: u64,
     #[serde(skip_serializing_if = "Option::is_none")]

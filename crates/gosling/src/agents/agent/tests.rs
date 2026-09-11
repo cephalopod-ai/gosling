@@ -1198,6 +1198,7 @@ async fn run_stop_hook_test_turn(
             AgentEvent::Message(message) => messages.push(message),
             AgentEvent::McpNotification(_)
             | AgentEvent::HistoryReplaced(_)
+            | AgentEvent::ContextUsage(_)
             | AgentEvent::Usage(_) => {}
         }
     }
@@ -1351,10 +1352,16 @@ async fn reply_persists_user_input_and_streamed_assistant_checkpoints() -> Resul
     assert_eq!(submitted_messages.messages()[0].as_concat_text(), "hello");
 
     tokio::pin!(reply_stream);
-    let first_event = reply_stream.next().await.transpose()?;
-    let Some(AgentEvent::Message(first_chunk)) = first_event else {
-        panic!("expected the first streamed assistant chunk");
+    let mut observed_context_usage = false;
+    let first_chunk = loop {
+        match reply_stream.next().await.transpose()? {
+            Some(AgentEvent::ContextUsage(_)) => observed_context_usage = true,
+            Some(AgentEvent::Message(message)) => break message,
+            Some(_) => {}
+            None => panic!("expected the first streamed assistant chunk"),
+        }
     };
+    assert!(observed_context_usage);
     assert_eq!(first_chunk.as_concat_text(), "streamed ");
 
     let checkpoint = agent

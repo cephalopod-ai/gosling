@@ -26,7 +26,15 @@ const i18n = defineMessages({
   },
   autoCompactReduceBy: {
     id: 'alertBox.autoCompactReduceBy',
-    defaultMessage: 'Reduce by',
+    defaultMessage: 'Reduce by (percentage points)',
+  },
+  autoCompactTarget: {
+    id: 'alertBox.autoCompactTarget',
+    defaultMessage: 'Target: {threshold}% → {target}%',
+  },
+  autoCompactFullTarget: {
+    id: 'alertBox.autoCompactFullTarget',
+    defaultMessage: 'Target: full eligible-history compaction',
   },
   compactNow: {
     id: 'alertBox.compactNow',
@@ -54,6 +62,7 @@ interface EditablePercentPreferenceProps {
   minPercent: number;
   label: string;
   failedMessage: (error: string) => string;
+  onLoaded?: (value: number) => void;
   onSaved?: (value: number) => void;
 }
 
@@ -66,6 +75,7 @@ const EditablePercentPreference = ({
   minPercent,
   label,
   failedMessage,
+  onLoaded,
   onSaved,
 }: EditablePercentPreferenceProps) => {
   const { read, upsert } = useConfig();
@@ -83,6 +93,7 @@ const EditablePercentPreference = ({
         if (value !== undefined && value !== null && typeof value === 'number') {
           setLoadedValue(value);
           setPercentValue(Math.max(minPercent, Math.round(value * 100)));
+          onLoaded?.(value);
         }
       } catch (err) {
         console.error(`Error fetching ${configKey}:`, err);
@@ -217,6 +228,12 @@ const EditablePercentPreference = ({
 
 export const AlertBox = ({ alert, className }: AlertBoxProps) => {
   const intl = useIntl();
+  const [autoCompactThreshold, setAutoCompactThreshold] = useState(0.8);
+  const [autoCompactReduction, setAutoCompactReduction] = useState(0.15);
+  const targetPercent = Math.max(
+    0,
+    Math.round((autoCompactThreshold - autoCompactReduction) * 100)
+  );
 
   return (
     <div className={cn('flex flex-col gap-2 px-3 py-3', alertStyles[alert.type], className)}>
@@ -228,7 +245,11 @@ export const AlertBox = ({ alert, className }: AlertBoxProps) => {
             minPercent={0}
             label={intl.formatMessage(i18n.autoCompactAt)}
             failedMessage={(error) => intl.formatMessage(i18n.failedToSaveThreshold, { error })}
-            onSaved={alert.onThresholdChange}
+            onLoaded={setAutoCompactThreshold}
+            onSaved={(value) => {
+              setAutoCompactThreshold(value);
+              alert.onThresholdChange?.(value);
+            }}
           />
           <EditablePercentPreference
             configKey="GOSLING_AUTO_COMPACT_REDUCTION"
@@ -236,7 +257,17 @@ export const AlertBox = ({ alert, className }: AlertBoxProps) => {
             minPercent={0}
             label={intl.formatMessage(i18n.autoCompactReduceBy)}
             failedMessage={(error) => intl.formatMessage(i18n.failedToSaveReduction, { error })}
+            onLoaded={setAutoCompactReduction}
+            onSaved={setAutoCompactReduction}
           />
+          <span className="text-[10px] text-center opacity-70">
+            {autoCompactReduction === 0
+              ? intl.formatMessage(i18n.autoCompactFullTarget)
+              : intl.formatMessage(i18n.autoCompactTarget, {
+                  threshold: Math.round(autoCompactThreshold * 100),
+                  target: targetPercent,
+                })}
+          </span>
           {alert.showCompactButton && alert.onCompact && (
             <button
               onClick={(e) => {

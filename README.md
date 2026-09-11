@@ -82,7 +82,9 @@ Windows/Linux to send. Valid local files embedded in tool output open directly, 
 aliases resolve correctly, and **Close all** clears artifact tabs. Internally, gosling now
 standardizes its UI/server integration on ACP: the unused duplicate `gosling-server` REST crate,
 Desktop OpenAPI surface, and obsolete provider paths were
-removed, while CLI session selection was consolidated behind one resolver.
+removed, while CLI session selection was consolidated behind one resolver. Auto-compaction now
+honors its threshold-relative reduction budget for short and tool-heavy sessions, and Desktop
+distinguishes the active-context estimate from last-request usage.
 
 ## What's included
 

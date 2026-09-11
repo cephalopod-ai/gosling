@@ -40,7 +40,7 @@ describe('AlertBox', () => {
         alert={{ type: AlertType.Info, message: 'Context', progress: { current: 80, total: 100 } }}
       />
     );
-    await screen.findByText('Reduce by 15%');
+    await screen.findByText('Reduce by (percentage points) 15%');
     const buttons = screen.getAllByRole('button');
     fireEvent.click(buttons[1]);
     const input = screen.getByRole('spinbutton');
@@ -124,6 +124,7 @@ describe('AlertBox', () => {
 
       // Should show auto-compact threshold (default 80%)
       expect(await screen.findByText(/Auto compact at 80%/)).toBeInTheDocument();
+      expect(screen.getByText('Target: 80% → 65%')).toBeInTheDocument();
     });
 
     it('should not render progress dots or token counts', () => {

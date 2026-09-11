@@ -334,20 +334,14 @@ impl Agent {
         )
         .await?;
 
-        let needs_auto_compact =
-            check_if_compaction_needed(provider.as_ref(), &conversation, None, &session).await?;
-        let auto_compact_budget = if needs_auto_compact {
-            crate::context_mgmt::auto_compact_reduction_budget(
-                provider.as_ref(),
-                &conversation,
-                &session,
-                None,
-                None,
-            )
-            .await?
-        } else {
-            None
-        };
+        let auto_compaction = crate::context_mgmt::auto_compaction_check(
+            provider.as_ref(),
+            &conversation,
+            &session,
+            None,
+            None,
+        )
+        .await?;
 
         let conversation_to_compact = conversation.clone();
 
@@ -357,68 +351,64 @@ impl Agent {
                 yield event;
             }
 
-            let final_conversation = if !needs_auto_compact {
-                conversation
-            } else {
-                let config = Config::global();
-                let threshold = config
-                    .get_param::<f64>("GOSLING_AUTO_COMPACT_THRESHOLD")
-                    .unwrap_or(DEFAULT_COMPACTION_THRESHOLD);
-                let threshold_percentage = (threshold * 100.0) as u32;
+            let final_conversation = if let Some(check) = auto_compaction {
+                if let Some(plan) = check.plan {
+                    yield AgentEvent::ContextUsage(check.usage.clone());
+                    yield AgentEvent::Message(
+                        Message::assistant().with_system_notification(
+                            SystemNotificationType::InlineMessage,
+                            auto_compaction_started_message(&check.usage, &plan),
+                        )
+                    );
 
-                let inline_msg = format!(
-                    "Exceeded auto-compact threshold of {}%. Performing auto-compaction...",
-                    threshold_percentage
-                );
+                    yield AgentEvent::Message(
+                        Message::assistant().with_system_notification(
+                            SystemNotificationType::ThinkingMessage,
+                            COMPACTION_THINKING_TEXT,
+                        )
+                    );
 
-                yield AgentEvent::Message(
-                    Message::assistant().with_system_notification(
-                        SystemNotificationType::InlineMessage,
-                        inline_msg,
-                    )
-                );
-
-                yield AgentEvent::Message(
-                    Message::assistant().with_system_notification(
-                        SystemNotificationType::ThinkingMessage,
-                        COMPACTION_THINKING_TEXT,
-                    )
-                );
-
-                let compact_model_config = self.model_config_for_session(&session_config.id).await?;
-                match self
-                    .perform_compact(
-                        &compact_model_config,
-                        &session_config,
-                        &conversation_to_compact,
-                        auto_compact_budget,
-                        cancel_token.as_ref(),
-                    )
-                    .await
-                {
-                    Ok(compacted_conversation) => {
-                        yield AgentEvent::HistoryReplaced(compacted_conversation.clone());
-                        yield AgentEvent::Message(
-                            Message::assistant().with_system_notification(
-                                SystemNotificationType::InlineMessage,
-                                "Compaction complete",
-                            )
-                        );
-                        compacted_conversation
-                    }
-                    Err(e) => {
-                        if is_token_cancelled(&cancel_token) {
-                            Self::ensure_turn_not_revoked(&cancel_token, &caller_cancel_token)?;
+                    let compact_model_config = self.model_config_for_session(&session_config.id).await?;
+                    match self
+                        .perform_compact(
+                            &compact_model_config,
+                            &session_config,
+                            &conversation_to_compact,
+                            plan.tokens_to_remove,
+                            cancel_token.as_ref(),
+                        )
+                        .await
+                    {
+                        Ok(compacted_conversation) => {
+                            let after_tokens = crate::context_mgmt::estimate_conversation_tokens(&compacted_conversation).await?;
+                            yield AgentEvent::HistoryReplaced(compacted_conversation.clone());
+                            yield AgentEvent::ContextUsage(context_usage_after_compaction(&check.usage, after_tokens));
+                            yield AgentEvent::Message(
+                                Message::assistant().with_system_notification(
+                                    SystemNotificationType::InlineMessage,
+                                    auto_compaction_completed_message(&check.usage, after_tokens, &plan),
+                                )
+                            );
+                            compacted_conversation
+                        }
+                        Err(e) => {
+                            if is_token_cancelled(&cancel_token) {
+                                Self::ensure_turn_not_revoked(&cancel_token, &caller_cancel_token)?;
+                                return;
+                            }
+                            yield AgentEvent::Message(
+                                Message::assistant()
+                                    .with_text(crate::context_mgmt::auto_compaction_failure_message(&e))
+                                    .with_terminal_error(e.to_string())
+                            );
                             return;
                         }
-                        yield AgentEvent::Message(
-                            Message::assistant()
-                                .with_text(crate::context_mgmt::auto_compaction_failure_message(&e))
-                                .with_terminal_error(e.to_string())
-                        );
-                        return;
                     }
+                } else {
+                    conversation
                 }
+            } else {
+                conversation
             };
 
             let mut reply_stream = self.reply_internal(final_conversation, session_config, session, cancel_token.clone()).await?;
@@ -490,7 +480,7 @@ impl Agent {
         // A compacted resume contains only a tail: its context may be folded in memory,
         // but replacing durable history would delete messages that were never loaded.
         if session_config.compacted_context {
-            self.update_session_metrics(&session_config.id, &usage, true)
+            self.update_compaction_metrics(&session_config.id, &compacted_conversation, &usage)
                 .await?;
         } else {
             // Atomic: a crash between a committed conversation replacement and a

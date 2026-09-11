@@ -2,8 +2,14 @@
   "alertBox.autoCompactAt": {
     "defaultMessage": "Auto compact at"
   },
+  "alertBox.autoCompactFullTarget": {
+    "defaultMessage": "Target: full eligible-history compaction"
+  },
   "alertBox.autoCompactReduceBy": {
-    "defaultMessage": "Reduce by"
+    "defaultMessage": "Reduce by (percentage points)"
+  },
+  "alertBox.autoCompactTarget": {
+    "defaultMessage": "Target: {threshold}% → {target}%"
   },
   "alertBox.compactNow": {
     "defaultMessage": "Compact now"

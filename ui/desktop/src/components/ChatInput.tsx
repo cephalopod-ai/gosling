@@ -172,6 +172,8 @@ interface ChatInputProps {
   onFilesProcessed?: () => void;
   setView: (view: View) => void;
   totalTokens?: number;
+  contextUsageEstimated?: boolean;
+  lastRequestTokens?: number;
   accumulatedInputTokens?: number;
   accumulatedOutputTokens?: number;
   accumulatedCost?: number | null;
@@ -211,6 +213,8 @@ export default function ChatInput({
   onFilesProcessed,
   setView,
   totalTokens,
+  contextUsageEstimated,
+  lastRequestTokens,
   accumulatedInputTokens,
   accumulatedOutputTokens,
   accumulatedCost,
@@ -1760,6 +1764,8 @@ export default function ChatInput({
               totalTokens={totalTokens || 0}
               tokenLimit={tokenLimit}
               alerts={alerts}
+              estimated={contextUsageEstimated}
+              lastRequestTokens={lastRequestTokens}
               managesOwnContext={managesOwnContext}
             />
 

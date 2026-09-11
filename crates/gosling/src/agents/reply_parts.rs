@@ -588,7 +588,6 @@ impl Agent {
         &self,
         session_id: &str,
         usage: &ProviderUsage,
-        is_compaction_usage: bool,
     ) -> Result<()> {
         let manager = self.config.session_manager.clone();
         let session = manager.get_session(session_id, false).await?;
@@ -597,23 +596,34 @@ impl Agent {
             .as_deref()
             .and_then(|pn| self.estimate_usage_cost(usage, pn));
 
-        let current_usage = if is_compaction_usage {
-            // After compaction: summary output becomes new input context
-            let new_input = usage.usage.output_tokens;
-            Usage::new(new_input, None, new_input)
-        } else {
-            usage.usage
-        };
-
         manager
-            .record_usage(session_id, current_usage, usage.usage, cost_delta)
+            .record_usage(session_id, usage.usage, usage.usage, cost_delta)
             .await?;
 
         Ok(())
     }
 
+    pub(crate) async fn update_compaction_metrics(
+        &self,
+        session_id: &str,
+        conversation: &Conversation,
+        usage: &ProviderUsage,
+    ) -> Result<()> {
+        let manager = self.config.session_manager.clone();
+        let session = manager.get_session(session_id, false).await?;
+        let cost_delta = session
+            .provider_name
+            .as_deref()
+            .and_then(|pn| self.estimate_usage_cost(usage, pn));
+        let current_usage = compacted_context_usage(conversation).await?;
+
+        manager
+            .record_usage(session_id, current_usage, usage.usage, cost_delta)
+            .await
+    }
+
     /// Compaction's equivalent of calling `session_manager.replace_conversation`
-    /// followed by `update_session_metrics(.., is_compaction_usage: true)`, but
+    /// followed by `update_compaction_metrics`, but
     /// atomic: both writes commit or roll back together (see
     /// `SessionManager::replace_conversation_and_record_usage`).
     pub(crate) async fn replace_conversation_and_update_metrics(
@@ -629,11 +639,7 @@ impl Agent {
             .as_deref()
             .and_then(|pn| self.estimate_usage_cost(usage, pn));
 
-        // Compaction usage always maps its output tokens to the new input
-        // context (same mapping as `update_session_metrics`'s
-        // `is_compaction_usage: true` branch).
-        let new_input = usage.usage.output_tokens;
-        let current_usage = Usage::new(new_input, None, new_input);
+        let current_usage = compacted_context_usage(conversation).await?;
 
         manager
             .replace_conversation_and_record_usage(
@@ -652,6 +658,12 @@ impl Agent {
 
         canonical.cost.estimate_cost(&usage.usage)
     }
+}
+
+async fn compacted_context_usage(conversation: &Conversation) -> Result<Usage> {
+    let tokens = crate::context_mgmt::estimate_conversation_tokens(conversation).await?;
+    let tokens = i32::try_from(tokens).unwrap_or(i32::MAX);
+    Ok(Usage::new(Some(tokens), None, Some(tokens)))
 }
 
 /// Check whether a tool should be callable by an app based on MCP Apps visibility metadata.

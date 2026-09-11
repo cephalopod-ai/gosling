@@ -141,6 +141,7 @@ mod tests {
                     }
                     Ok(AgentEvent::McpNotification(_)) => {}
                     Ok(AgentEvent::Usage(_)) => {}
+                    Ok(AgentEvent::ContextUsage(_)) => {}
                     Ok(AgentEvent::HistoryReplaced(_updated_conversation)) => {
                         // We should update the conversation here, but we're not reading it
                     }
@@ -2642,6 +2643,7 @@ mod tests {
                         texts.push(message.as_concat_text());
                     }
                     AgentEvent::Usage(_)
+                    | AgentEvent::ContextUsage(_)
                     | AgentEvent::McpNotification(_)
                     | AgentEvent::HistoryReplaced(_) => {}
                 }
