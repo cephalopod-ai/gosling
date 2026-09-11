@@ -8324,8 +8324,10 @@
           "default": false
         },
         "lastRequestUsed": {
-          "type": "integer",
-          "default": 0,
+          "type": [
+            "integer",
+            "null"
+          ],
           "minimum": 0
         },
         "accumulatedInputTokens": {

@@ -43,7 +43,7 @@ export function ContextWindowIndicator({
   const usageLabel = managesOwnContext
     ? `Context managed by the connected CLI tool. Last request: ${formattedUsage}`
     : estimated
-      ? `Active context estimate: ${formattedUsage}. Last model request: ${formatTokenCount(lastRequestTokens ?? totalTokens)}`
+      ? `Active context estimate: ${formattedUsage}${lastRequestTokens === undefined ? '' : `. Last model request: ${formatTokenCount(lastRequestTokens)}`}`
       : `Last model request: ${formattedUsage}`;
   const visibleUsage = `${formatTokenCount(totalTokens)}${estimated && !managesOwnContext ? ' est' : ' req'} / ${formatTokenCount(tokenLimit)}`;
 

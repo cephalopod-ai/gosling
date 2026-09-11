@@ -90,6 +90,7 @@ impl SessionStorage {
         SELECT id, working_dir, additional_working_dirs_json, restrict_tools_to_working_dirs, name, description, user_set_name, session_type, created_at, updated_at, extension_data,
                total_tokens, input_tokens, output_tokens,
                cache_read_tokens, cache_write_tokens,
+               context_usage_estimated, last_request_tokens,
                accumulated_total_tokens, accumulated_input_tokens, accumulated_output_tokens,
                accumulated_cache_read_tokens, accumulated_cache_write_tokens,
                accumulated_cost,
@@ -185,6 +186,8 @@ impl SessionStorage {
         add_update!(builder.usage, "output_tokens");
         add_update!(builder.usage, "cache_read_tokens");
         add_update!(builder.usage, "cache_write_tokens");
+        add_update!(builder.context_usage_estimated, "context_usage_estimated");
+        add_update!(builder.last_request_tokens, "last_request_tokens");
         add_update!(builder.accumulated_usage, "accumulated_total_tokens");
         add_update!(builder.accumulated_usage, "accumulated_input_tokens");
         add_update!(builder.accumulated_usage, "accumulated_output_tokens");
@@ -245,6 +248,12 @@ impl SessionStorage {
                 .bind(u.output_tokens)
                 .bind(u.cache_read_input_tokens)
                 .bind(u.cache_write_input_tokens);
+        }
+        if let Some(estimated) = builder.context_usage_estimated {
+            q = q.bind(estimated);
+        }
+        if let Some(last_request_tokens) = builder.last_request_tokens {
+            q = q.bind(last_request_tokens);
         }
         if let Some(u) = builder.accumulated_usage {
             q = q
@@ -332,6 +341,7 @@ impl SessionStorage {
         current_usage: Usage,
         accumulated_delta: Usage,
         cost_delta: Option<f64>,
+        current_usage_estimated: bool,
     ) -> Result<()> {
         let pool = self.pool().await?;
         let result = sqlx::query(
@@ -342,6 +352,8 @@ impl SessionStorage {
                 output_tokens = ?,
                 cache_read_tokens = ?,
                 cache_write_tokens = ?,
+                context_usage_estimated = ?,
+                last_request_tokens = CASE WHEN ? THEN last_request_tokens ELSE ? END,
                 accumulated_total_tokens = CASE WHEN ? IS NULL THEN accumulated_total_tokens ELSE COALESCE(accumulated_total_tokens, 0) + ? END,
                 accumulated_input_tokens = CASE WHEN ? IS NULL THEN accumulated_input_tokens ELSE COALESCE(accumulated_input_tokens, 0) + ? END,
                 accumulated_output_tokens = CASE WHEN ? IS NULL THEN accumulated_output_tokens ELSE COALESCE(accumulated_output_tokens, 0) + ? END,
@@ -357,6 +369,9 @@ impl SessionStorage {
         .bind(current_usage.output_tokens)
         .bind(current_usage.cache_read_input_tokens)
         .bind(current_usage.cache_write_input_tokens)
+        .bind(current_usage_estimated)
+        .bind(current_usage_estimated)
+        .bind(current_usage.total_tokens)
         .bind(accumulated_delta.total_tokens)
         .bind(accumulated_delta.total_tokens)
         .bind(accumulated_delta.input_tokens)
@@ -379,16 +394,9 @@ impl SessionStorage {
         Ok(())
     }
 
-    /// Same statement as `record_usage`, run against an existing transaction
-    /// instead of `pool` directly. Used by `MessageStorage::replace_conversation_and_record_usage`
-    /// so a compaction's message replacement and usage update commit or roll
-    /// back together — a crash between two separate commits used to leave
-    /// `sessions.total_tokens` reflecting the pre-compaction conversation
-    /// while the messages table already held the post-compaction one, which
-    /// could spuriously re-trigger auto-compaction on the next turn (the
-    /// stale-high stored value wins `resolve_context_usage`'s
-    /// `max(stored, estimated)` undercounting guard). Keep this SQL in sync
-    /// with `record_usage` above.
+    /// Persists a compaction estimate in the same transaction as the replacement
+    /// conversation. Unlike provider-reported usage, this must not replace the
+    /// last real model-request measurement.
     pub(super) async fn record_usage_in_tx(
         tx: &mut sqlx::Transaction<'_, Sqlite>,
         session_id: &str,
@@ -404,6 +412,7 @@ impl SessionStorage {
                 output_tokens = ?,
                 cache_read_tokens = ?,
                 cache_write_tokens = ?,
+                context_usage_estimated = TRUE,
                 accumulated_total_tokens = CASE WHEN ? IS NULL THEN accumulated_total_tokens ELSE COALESCE(accumulated_total_tokens, 0) + ? END,
                 accumulated_input_tokens = CASE WHEN ? IS NULL THEN accumulated_input_tokens ELSE COALESCE(accumulated_input_tokens, 0) + ? END,
                 accumulated_output_tokens = CASE WHEN ? IS NULL THEN accumulated_output_tokens ELSE COALESCE(accumulated_output_tokens, 0) + ? END,

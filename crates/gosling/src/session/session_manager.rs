@@ -61,7 +61,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 use utoipa::ToSchema;
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 33;
+pub const CURRENT_SCHEMA_VERSION: i32 = 34;
 
 pub use output_revisions_storage::OutputCapture;
 pub const SESSIONS_FOLDER: &str = "sessions";
@@ -154,6 +154,10 @@ pub struct Session {
     pub extension_data: ExtensionData,
     #[serde(default)]
     pub usage: Usage,
+    #[serde(default)]
+    pub context_usage_estimated: bool,
+    #[serde(default)]
+    pub last_request_tokens: Option<i32>,
     #[serde(default)]
     pub accumulated_usage: Usage,
     pub accumulated_cost: Option<f64>,
@@ -318,6 +322,8 @@ pub struct SessionUpdateBuilder<'a> {
     restrict_tools_to_working_dirs: Option<bool>,
     extension_data: Option<ExtensionData>,
     usage: Option<Usage>,
+    context_usage_estimated: Option<bool>,
+    last_request_tokens: Option<Option<i32>>,
     accumulated_usage: Option<Usage>,
     accumulated_cost: Option<Option<f64>>,
     provider_name: Option<Option<String>>,
@@ -355,6 +361,8 @@ impl<'a> SessionUpdateBuilder<'a> {
             restrict_tools_to_working_dirs: None,
             extension_data: None,
             usage: None,
+            context_usage_estimated: None,
+            last_request_tokens: None,
             accumulated_usage: None,
             accumulated_cost: None,
             provider_name: None,
@@ -429,6 +437,16 @@ impl<'a> SessionUpdateBuilder<'a> {
 
     pub fn usage(mut self, usage: Usage) -> Self {
         self.usage = Some(usage);
+        self
+    }
+
+    pub fn context_usage_estimated(mut self, estimated: bool) -> Self {
+        self.context_usage_estimated = Some(estimated);
+        self
+    }
+
+    pub fn last_request_tokens(mut self, tokens: Option<i32>) -> Self {
+        self.last_request_tokens = Some(tokens);
         self
     }
 
@@ -992,7 +1010,31 @@ impl SessionManager {
         cost_delta: Option<f64>,
     ) -> Result<()> {
         self.storage
-            .record_usage(session_id, current_usage, accumulated_delta, cost_delta)
+            .record_usage(
+                session_id,
+                current_usage,
+                accumulated_delta,
+                cost_delta,
+                false,
+            )
+            .await
+    }
+
+    pub(crate) async fn record_context_estimate(
+        &self,
+        session_id: &str,
+        current_usage: Usage,
+        accumulated_delta: Usage,
+        cost_delta: Option<f64>,
+    ) -> Result<()> {
+        self.storage
+            .record_usage(
+                session_id,
+                current_usage,
+                accumulated_delta,
+                cost_delta,
+                true,
+            )
             .await
     }
 
@@ -1340,6 +1382,8 @@ impl Default for Session {
             updated_at: Default::default(),
             extension_data: ExtensionData::default(),
             usage: Usage::default(),
+            context_usage_estimated: false,
+            last_request_tokens: None,
             accumulated_usage: Usage::default(),
             accumulated_cost: None,
             conversation: None,
@@ -1453,6 +1497,8 @@ impl sqlx::FromRow<'_, sqlx::sqlite::SqliteRow> for Session {
                 cache_read_input_tokens: row.try_get("cache_read_tokens").ok().flatten(),
                 cache_write_input_tokens: row.try_get("cache_write_tokens").ok().flatten(),
             },
+            context_usage_estimated: row.try_get("context_usage_estimated").unwrap_or(false),
+            last_request_tokens: row.try_get("last_request_tokens").ok().flatten(),
             accumulated_usage: Usage {
                 input_tokens: row.try_get("accumulated_input_tokens")?,
                 output_tokens: row.try_get("accumulated_output_tokens")?,
@@ -4650,6 +4696,49 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn context_usage_provenance_migrates_from_schema_33() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join(SESSIONS_FOLDER).join(DB_NAME);
+        std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
+        let pool = SqlitePoolOptions::new()
+            .connect_with(
+                SqliteConnectOptions::new()
+                    .filename(&db_path)
+                    .create_if_missing(true)
+                    .foreign_keys(true),
+            )
+            .await
+            .unwrap();
+        SessionStorage::create_schema(&pool).await.unwrap();
+        sqlx::query(
+            "INSERT INTO sessions (id, name, working_dir, extension_data, gosling_mode, total_tokens) VALUES ('pre-provenance', 'Preserved', '/tmp', '{}', 'approve', 758000)",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query("ALTER TABLE sessions DROP COLUMN context_usage_estimated")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("ALTER TABLE sessions DROP COLUMN last_request_tokens")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE schema_version SET version = 33")
+            .execute(&pool)
+            .await
+            .unwrap();
+        pool.close().await;
+
+        let manager = SessionManager::new(temp_dir.path().to_path_buf());
+        let migrated = manager.get_session("pre-provenance", false).await.unwrap();
+
+        assert!(migrated.context_usage_estimated);
+        assert_eq!(migrated.last_request_tokens, None);
+        assert_eq!(migrated.usage.total_tokens, Some(758_000));
+    }
+
+    #[tokio::test]
     async fn test_removed_tagteam_schema_is_cleaned_up() {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join(SESSIONS_FOLDER).join(DB_NAME);
@@ -5010,6 +5099,44 @@ mod tests {
         assert_eq!(reloaded.accumulated_cost, Some(1.0));
     }
 
+    #[tokio::test]
+    async fn context_estimate_preserves_last_request_measurement() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = SessionManager::new(temp_dir.path().to_path_buf());
+        let session = manager
+            .create_session(
+                PathBuf::from("/tmp/test"),
+                "Usage provenance".to_string(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        manager
+            .record_usage(
+                &session.id,
+                Usage::new(Some(20_000), Some(9_000), Some(29_000)),
+                Usage::default(),
+                None,
+            )
+            .await
+            .unwrap();
+        manager
+            .record_context_estimate(
+                &session.id,
+                Usage::new(Some(758_000), None, Some(758_000)),
+                Usage::default(),
+                None,
+            )
+            .await
+            .unwrap();
+
+        let reloaded = manager.get_session(&session.id, false).await.unwrap();
+        assert_eq!(reloaded.usage.total_tokens, Some(758_000));
+        assert!(reloaded.context_usage_estimated);
+        assert_eq!(reloaded.last_request_tokens, Some(29_000));
+    }
+
     // FSR-CROSS-001: compaction used to call `replace_conversation` and
     // `record_usage` as two separately-committed writes; a crash between the
     // two could leave `sessions.total_tokens` stale-high relative to the
@@ -5072,6 +5199,8 @@ mod tests {
             "<summary>"
         );
         assert_eq!(reloaded.usage, current_usage);
+        assert!(reloaded.context_usage_estimated);
+        assert_eq!(reloaded.last_request_tokens, Some(10_000));
         assert_eq!(reloaded.accumulated_usage.total_tokens, Some(16_200));
         assert_eq!(reloaded.accumulated_cost, Some(0.5));
 

@@ -89,6 +89,8 @@ impl SessionStorage {
                 output_tokens INTEGER,
                 cache_read_tokens INTEGER,
                 cache_write_tokens INTEGER,
+                context_usage_estimated BOOLEAN NOT NULL DEFAULT FALSE,
+                last_request_tokens INTEGER,
                 accumulated_total_tokens INTEGER,
                 accumulated_input_tokens INTEGER,
                 accumulated_output_tokens INTEGER,

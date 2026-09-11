@@ -107,6 +107,8 @@ impl SessionStorage {
             .extension_data(extension_data)
             .restrict_tools_to_working_dirs(true)
             .usage(import.usage)
+            .context_usage_estimated(import.context_usage_estimated)
+            .last_request_tokens(import.last_request_tokens)
             .accumulated_usage(import.accumulated_usage)
             .accumulated_cost(import.accumulated_cost);
 

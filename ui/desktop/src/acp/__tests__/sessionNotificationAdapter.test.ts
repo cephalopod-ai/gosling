@@ -645,6 +645,34 @@ describe('createAcpSessionNotificationAdapter', () => {
       ]);
     });
 
+    it('does not invent last-request usage when an estimate has no request measurement', () => {
+      const adapter = createAcpSessionNotificationAdapter();
+
+      expect(
+        adapter.applyGosling(
+          goslingUpdate({
+            sessionUpdate: 'usage_update',
+            used: 758_000,
+            contextLimit: 997_500,
+            estimated: true,
+            accumulatedInputTokens: 10,
+            accumulatedOutputTokens: 15,
+          })
+        )
+      ).toEqual([
+        {
+          type: 'tokenState',
+          tokenState: {
+            totalTokens: 758_000,
+            contextUsageEstimated: true,
+            accumulatedInputTokens: 10,
+            accumulatedOutputTokens: 15,
+            accumulatedTotalTokens: 25,
+          },
+        },
+      ]);
+    });
+
     it('maps status messages and keeps later id-less chunks separate', () => {
       const adapter = createAcpSessionNotificationAdapter();
 

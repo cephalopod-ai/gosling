@@ -58,8 +58,8 @@ pub struct SessionUsageUpdate {
     pub context_limit: u64,
     #[serde(default)]
     pub estimated: bool,
-    #[serde(default)]
-    pub last_request_used: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_request_used: Option<u64>,
     pub accumulated_input_tokens: u64,
     pub accumulated_output_tokens: u64,
     #[serde(skip_serializing_if = "Option::is_none")]

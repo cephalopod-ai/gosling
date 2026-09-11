@@ -491,7 +491,7 @@ fn context_usage_after_compaction(
     ContextUsageSnapshot {
         context_limit: before.context_limit,
         current_tokens: after_tokens,
-        stored_tokens: before.stored_tokens,
+        last_request_tokens: before.last_request_tokens,
         estimated_tokens: after_tokens,
     }
 }

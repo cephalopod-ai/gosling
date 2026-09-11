@@ -5,7 +5,10 @@ import type {
 } from '@agentclientprotocol/sdk';
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { SessionArtifactDto } from '@repo-makeover/gosling-sdk';
+import type {
+  GoslingSessionNotification_unstable,
+  SessionArtifactDto,
+} from '@repo-makeover/gosling-sdk';
 import type { Message } from '../../types/message';
 import { ChatState } from '../../types/chatState';
 import type { Session } from '../../types/session';
@@ -207,6 +210,37 @@ describe('acpChatSessionStore', () => {
 
     expect(acpChatSessionStore.getSnapshot(currentSessionId)?.artifacts).toEqual([artifact]);
     expect(acpChatSessionStore.getSnapshot('another-session')).toBeUndefined();
+  });
+
+  it('keeps the last request measurement when a model switch reports only an estimate', () => {
+    const currentSessionId = sessionId('model-switch-usage');
+    const usageNotification = (
+      used: number,
+      estimated: boolean,
+      lastRequestUsed?: number
+    ): GoslingSessionNotification_unstable => ({
+      sessionId: currentSessionId,
+      update: {
+        sessionUpdate: 'usage_update',
+        used,
+        contextLimit: 997_500,
+        estimated,
+        lastRequestUsed,
+        accumulatedInputTokens: 20_000,
+        accumulatedOutputTokens: 9_000,
+      },
+    });
+
+    acpChatSessionActions.applyAcpGoslingSessionNotification(
+      usageNotification(29_000, false, 29_000)
+    );
+    acpChatSessionActions.applyAcpGoslingSessionNotification(usageNotification(758_000, true));
+
+    expect(acpChatSessionStore.getSnapshot(currentSessionId)?.tokenState).toMatchObject({
+      totalTokens: 758_000,
+      contextUsageEstimated: true,
+      lastRequestTokens: 29_000,
+    });
   });
 
   it('finishes session load with session metadata', () => {

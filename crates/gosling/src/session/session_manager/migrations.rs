@@ -782,6 +782,37 @@ impl SessionStorage {
             }
             32 => Self::create_output_revisions_schema(tx).await?,
             33 => Self::create_session_handoff_schema(tx).await?,
+            34 => {
+                let has_estimated = sqlx::query_scalar::<_, bool>(
+                    "SELECT EXISTS (SELECT 1 FROM pragma_table_info('sessions') WHERE name = 'context_usage_estimated')",
+                )
+                .fetch_one(&mut **tx)
+                .await?;
+                let has_last_request = sqlx::query_scalar::<_, bool>(
+                    "SELECT EXISTS (SELECT 1 FROM pragma_table_info('sessions') WHERE name = 'last_request_tokens')",
+                )
+                .fetch_one(&mut **tx)
+                .await?;
+                if !has_estimated {
+                    sqlx::query(
+                        "ALTER TABLE sessions ADD COLUMN context_usage_estimated BOOLEAN NOT NULL DEFAULT FALSE",
+                    )
+                    .execute(&mut **tx)
+                    .await?;
+                }
+                if !has_last_request {
+                    sqlx::query("ALTER TABLE sessions ADD COLUMN last_request_tokens INTEGER")
+                        .execute(&mut **tx)
+                        .await?;
+                }
+                if !has_estimated || !has_last_request {
+                    sqlx::query(
+                        "UPDATE sessions SET context_usage_estimated = TRUE WHERE total_tokens IS NOT NULL",
+                    )
+                    .execute(&mut **tx)
+                    .await?;
+                }
+            }
             _ => {
                 anyhow::bail!("Unknown migration version: {}", version);
             }

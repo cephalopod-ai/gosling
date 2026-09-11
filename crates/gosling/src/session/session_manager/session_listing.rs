@@ -123,6 +123,7 @@ impl SessionStorage {
             SELECT s.id, s.working_dir, s.additional_working_dirs_json, s.restrict_tools_to_working_dirs, s.name, s.description, s.user_set_name, s.session_type, s.created_at, s.updated_at, s.extension_data,
                    s.total_tokens, s.input_tokens, s.output_tokens,
                    s.cache_read_tokens, s.cache_write_tokens,
+                   s.context_usage_estimated, s.last_request_tokens,
                    s.accumulated_total_tokens, s.accumulated_input_tokens, s.accumulated_output_tokens,
                    s.accumulated_cache_read_tokens, s.accumulated_cache_write_tokens,
                    s.accumulated_cost,

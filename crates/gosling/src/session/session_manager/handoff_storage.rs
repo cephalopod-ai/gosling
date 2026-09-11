@@ -221,6 +221,7 @@ impl SessionStorage {
                 Some(0),
                 Some(current_context_tokens),
             ))
+            .context_usage_estimated(true)
             .gosling_mode(mode);
         Self::apply_update_in_tx(&mut tx, builder).await?;
 

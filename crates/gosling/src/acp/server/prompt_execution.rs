@@ -37,9 +37,9 @@ pub(in crate::acp) fn build_usage_updates_with_context(
 ) -> Option<UsageUpdates> {
     let persisted_used = session.usage.total_tokens.unwrap_or(0).max(0) as u64;
     let last_request_used = context
-        .and_then(|context| context.stored_tokens)
+        .and_then(|context| context.last_request_tokens)
         .map(|tokens| tokens as u64)
-        .unwrap_or(persisted_used);
+        .or_else(|| to_nonnegative_u64(session.last_request_tokens));
     let (used, ctx_limit, estimated) = match context {
         Some(context) => (
             context.current_tokens as u64,
@@ -49,7 +49,7 @@ pub(in crate::acp) fn build_usage_updates_with_context(
         None => (
             persisted_used,
             session.model_config.as_ref()?.context_limit() as u64,
-            false,
+            session.context_usage_estimated,
         ),
     };
     let accumulated_input_tokens =

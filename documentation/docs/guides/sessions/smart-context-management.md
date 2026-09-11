@@ -295,7 +295,7 @@ After sending your first message, gosling Desktop and gosling CLI display token 
 
 <Tabs groupId="interface">
     <TabItem value="ui" label="gosling Desktop" default>
-    The Desktop displays token usage next to the model name at the bottom of the session window. For gosling-managed contexts, the numerator is the same **active-context estimate** used by the auto-compaction check and carries an `est` suffix. The tooltip keeps the distinct last-model-request count for diagnosis. Before an active estimate is available, the numerator uses provider-reported last-request usage and carries a `req` suffix. The denominator is the active provider route's effective context limit when that route reports one. Public API and subscription-route limits for the same model name can differ.
+    The Desktop displays token usage next to the model name at the bottom of the session window. For gosling-managed contexts, the numerator is the same **active-context estimate** used by the auto-compaction check and carries an `est` suffix. When a distinct last-model-request count is known, the tooltip keeps it for diagnosis; it does not invent one from a compaction or handoff estimate. Before an active estimate is available, the numerator uses provider-reported last-request usage and carries a `req` suffix. The denominator is the active provider route's effective context limit when that route reports one. Public API and subscription-route limits for the same model name can differ.
 
     The color provides a visual indicator of the displayed context usage:
       - **Green**: Normal usage - Plenty of context space available

@@ -3086,7 +3086,7 @@ export type SessionUsageUpdate = {
     used: number;
     contextLimit: number;
     estimated?: boolean;
-    lastRequestUsed?: number;
+    lastRequestUsed?: number | null;
     accumulatedInputTokens: number;
     accumulatedOutputTokens: number;
     accumulatedCost?: number | null;

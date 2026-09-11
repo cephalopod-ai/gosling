@@ -262,6 +262,8 @@ impl Agent {
                 Some(0),
                 Some(0),
             ))
+            .context_usage_estimated(false)
+            .last_request_tokens(None)
             .apply()
             .await?;
 

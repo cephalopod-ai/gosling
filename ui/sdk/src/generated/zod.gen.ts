@@ -2736,7 +2736,7 @@ export const zSessionUsageUpdate = z.object({
     used: z.number().int().gte(0),
     contextLimit: z.number().int().gte(0),
     estimated: z.boolean().optional().default(false),
-    lastRequestUsed: z.number().int().gte(0).optional().default(0),
+    lastRequestUsed: z.number().int().gte(0).nullish(),
     accumulatedInputTokens: z.number().int().gte(0),
     accumulatedOutputTokens: z.number().int().gte(0),
     accumulatedCost: z.number().nullish()

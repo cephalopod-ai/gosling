@@ -1,6 +1,7 @@
 use base64::Engine;
 use gosling::config::GoslingMode;
 use gosling::conversation::message::{InferenceMetadata, Message};
+use gosling::session::session_manager::CURRENT_SCHEMA_VERSION;
 use gosling::session::{Session, SessionManager, SessionType};
 use gosling_sdk_types::custom_requests::*;
 use rmcp::model::{CallToolRequestParams, CallToolResult};
@@ -723,7 +724,7 @@ async fn schema_31_upgrade_preserves_existing_sessions() {
         .execute(&pool)
         .await
         .unwrap();
-    sqlx::query("DELETE FROM schema_version WHERE version IN (32, 33)")
+    sqlx::query("DELETE FROM schema_version WHERE version > 31")
         .execute(&pool)
         .await
         .unwrap();
@@ -744,7 +745,7 @@ async fn schema_31_upgrade_preserves_existing_sessions() {
         .fetch_one(&pool)
         .await
         .unwrap();
-    assert_eq!(version, 33);
+    assert_eq!(version, i64::from(CURRENT_SCHEMA_VERSION));
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM output_revisions")
         .fetch_one(&pool)
         .await

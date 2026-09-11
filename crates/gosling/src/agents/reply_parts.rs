@@ -618,7 +618,7 @@ impl Agent {
         let current_usage = compacted_context_usage(conversation).await?;
 
         manager
-            .record_usage(session_id, current_usage, usage.usage, cost_delta)
+            .record_context_estimate(session_id, current_usage, usage.usage, cost_delta)
             .await
     }
 

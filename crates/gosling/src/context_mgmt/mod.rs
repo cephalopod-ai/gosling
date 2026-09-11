@@ -51,7 +51,7 @@ pub const DEFAULT_AUTO_COMPACT_REDUCTION: f64 = 0.15;
 pub struct ContextUsageSnapshot {
     pub context_limit: usize,
     pub current_tokens: usize,
-    pub stored_tokens: Option<usize>,
+    pub last_request_tokens: Option<usize>,
     pub estimated_tokens: usize,
 }
 
@@ -104,6 +104,10 @@ fn auto_compact_reduction() -> f64 {
     Config::global()
         .get_param::<f64>("GOSLING_AUTO_COMPACT_REDUCTION")
         .unwrap_or(DEFAULT_AUTO_COMPACT_REDUCTION)
+}
+
+fn auto_compact_target_tokens(context_limit: usize, threshold: f64, reduction: f64) -> usize {
+    (context_limit as f64 * (threshold - reduction)).round() as usize
 }
 
 /// A turn starts at an agent-visible user message that isn't itself a tool
@@ -645,11 +649,14 @@ pub async fn resolve_context_usage(
         .unwrap_or_else(|_| model_config.context_limit());
 
     let estimated_tokens = estimate_conversation_tokens(conversation).await?;
-    let stored_tokens = session
+    let stored_current_tokens = session
         .usage
         .total_tokens
         .and_then(|stored| usize::try_from(stored).ok());
-    let current_tokens = match stored_tokens {
+    let last_request_tokens = session
+        .last_request_tokens
+        .and_then(|stored| usize::try_from(stored).ok());
+    let current_tokens = match stored_current_tokens {
         Some(stored) => stored.max(estimated_tokens),
         None => estimated_tokens,
     };
@@ -657,7 +664,7 @@ pub async fn resolve_context_usage(
     Ok(ContextUsageSnapshot {
         context_limit,
         current_tokens,
-        stored_tokens,
+        last_request_tokens,
         estimated_tokens,
     })
 }
@@ -689,8 +696,11 @@ pub async fn auto_compaction_check(
 
     let reduction = reduction_override.unwrap_or_else(auto_compact_reduction);
     validate_compaction_settings(threshold, reduction)?;
-    let target_tokens = (reduction > 0.0)
-        .then_some((usage.context_limit as f64 * (threshold - reduction)) as usize);
+    let target_tokens = (reduction > 0.0).then_some(auto_compact_target_tokens(
+        usage.context_limit,
+        threshold,
+        reduction,
+    ));
     let tokens_to_remove = target_tokens.map(|target| usage.current_tokens.saturating_sub(target));
 
     Ok(Some(AutoCompactionCheck {
@@ -736,7 +746,7 @@ pub async fn auto_compact_reduction_budget(
     }
 
     let usage = resolve_context_usage(provider, conversation, session).await?;
-    let target_tokens = (usage.context_limit as f64 * (threshold - reduction)) as usize;
+    let target_tokens = auto_compact_target_tokens(usage.context_limit, threshold, reduction);
     Ok(Some(usage.current_tokens.saturating_sub(target_tokens)))
 }
 
@@ -2201,6 +2211,7 @@ mod tests {
         let provider = MockProvider::new(Message::assistant().with_text("x"), 1_000);
         let session = crate::session::Session {
             usage: Usage::new(Some(900), Some(0), Some(900)),
+            last_request_tokens: Some(700),
             ..crate::session::Session::default()
         };
         let conversation = Conversation::new_unvalidated(vec![Message::user().with_text("hi")]);
@@ -2212,7 +2223,7 @@ mod tests {
                 .expect("Gosling-owned context should produce a usage snapshot");
 
         assert_eq!(check.usage.current_tokens, 900);
-        assert_eq!(check.usage.stored_tokens, Some(900));
+        assert_eq!(check.usage.last_request_tokens, Some(700));
         assert!(check.usage.estimated_tokens < 900);
         assert_eq!(
             check.plan,
@@ -2222,6 +2233,158 @@ mod tests {
                 target_tokens: Some(650),
                 tokens_to_remove: Some(250),
             })
+        );
+    }
+
+    async fn check_compaction_scenario(
+        context_limit: usize,
+        current_tokens: i32,
+        last_request_tokens: Option<i32>,
+        threshold: f64,
+        reduction: f64,
+    ) -> Option<AutoCompactionCheck> {
+        let provider = MockProvider::new(Message::assistant().with_text("x"), context_limit);
+        let session = crate::session::Session {
+            usage: Usage::new(Some(current_tokens), Some(0), Some(current_tokens)),
+            context_usage_estimated: true,
+            last_request_tokens,
+            ..crate::session::Session::default()
+        };
+        let conversation = Conversation::new_unvalidated(vec![Message::user().with_text("hi")]);
+
+        auto_compaction_check(
+            &provider,
+            &conversation,
+            &session,
+            Some(threshold),
+            Some(reduction),
+        )
+        .await
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_auto_compaction_ten_transition_scenarios() {
+        let disabled = check_compaction_scenario(1_000, 900, Some(850), 0.0, 0.25).await;
+        assert!(disabled.is_none(), "scenario 1: disabled threshold");
+
+        let exact_boundary = check_compaction_scenario(1_000, 750, Some(700), 0.75, 0.25)
+            .await
+            .unwrap();
+        assert!(
+            exact_boundary.plan.is_none(),
+            "scenario 2: equality does not compact"
+        );
+
+        let just_over = check_compaction_scenario(1_000, 751, Some(700), 0.75, 0.25)
+            .await
+            .unwrap();
+        assert_eq!(
+            just_over.plan.unwrap().tokens_to_remove,
+            Some(251),
+            "scenario 3: one token over threshold"
+        );
+
+        let before_raise = check_compaction_scenario(1_000, 760, Some(700), 0.75, 0.25)
+            .await
+            .unwrap();
+        let after_raise = check_compaction_scenario(1_000, 760, Some(700), 0.80, 0.25)
+            .await
+            .unwrap();
+        assert!(
+            before_raise.plan.is_some() && after_raise.plan.is_none(),
+            "scenario 4: threshold raised between turns"
+        );
+
+        let before_lower = check_compaction_scenario(1_000, 760, Some(700), 0.80, 0.20)
+            .await
+            .unwrap();
+        let after_lower = check_compaction_scenario(1_000, 760, Some(700), 0.70, 0.20)
+            .await
+            .unwrap();
+        assert!(
+            before_lower.plan.is_none(),
+            "scenario 5: higher prior threshold"
+        );
+        assert_eq!(
+            after_lower.plan.unwrap().tokens_to_remove,
+            Some(260),
+            "scenario 5: threshold lowered between turns"
+        );
+
+        let smaller_reduction = check_compaction_scenario(1_000, 760, Some(700), 0.75, 0.10)
+            .await
+            .unwrap()
+            .plan
+            .unwrap();
+        let larger_reduction = check_compaction_scenario(1_000, 760, Some(700), 0.75, 0.25)
+            .await
+            .unwrap()
+            .plan
+            .unwrap();
+        assert_eq!(
+            (
+                smaller_reduction.target_tokens,
+                smaller_reduction.tokens_to_remove
+            ),
+            (Some(650), Some(110)),
+            "scenario 6: smaller reduction setting"
+        );
+        assert_eq!(
+            (
+                larger_reduction.target_tokens,
+                larger_reduction.tokens_to_remove
+            ),
+            (Some(500), Some(260)),
+            "scenario 6: larger reduction setting on the next turn"
+        );
+
+        let full = check_compaction_scenario(1_000, 760, Some(700), 0.75, 0.0)
+            .await
+            .unwrap()
+            .plan
+            .unwrap();
+        assert_eq!(
+            (full.target_tokens, full.tokens_to_remove),
+            (None, None),
+            "scenario 7: zero reduction requests full compaction"
+        );
+
+        let before_larger_model = check_compaction_scenario(1_000, 760, Some(700), 0.75, 0.25)
+            .await
+            .unwrap();
+        let after_larger_model = check_compaction_scenario(2_000, 760, Some(700), 0.75, 0.25)
+            .await
+            .unwrap();
+        assert!(
+            before_larger_model.plan.is_some() && after_larger_model.plan.is_none(),
+            "scenario 8: switch to a larger context model"
+        );
+
+        let before_smaller_model = check_compaction_scenario(2_000, 760, Some(700), 0.75, 0.25)
+            .await
+            .unwrap();
+        let after_smaller_model = check_compaction_scenario(1_000, 760, Some(700), 0.75, 0.25)
+            .await
+            .unwrap();
+        assert!(
+            before_smaller_model.plan.is_none(),
+            "scenario 9: larger model before switch"
+        );
+        assert_eq!(
+            after_smaller_model.plan.unwrap().tokens_to_remove,
+            Some(260),
+            "scenario 9: switch to a smaller context model"
+        );
+
+        let next_turn = check_compaction_scenario(1_000, 500, Some(900), 0.75, 0.25)
+            .await
+            .unwrap();
+        assert_eq!(next_turn.usage.current_tokens, 500);
+        assert_eq!(next_turn.usage.last_request_tokens, Some(900));
+        assert!(
+            next_turn.plan.is_none(),
+            "scenario 10: a prior large request must not retrigger compaction after the active context was reduced"
         );
     }
 }

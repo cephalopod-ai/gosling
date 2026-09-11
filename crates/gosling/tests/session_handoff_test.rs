@@ -470,6 +470,8 @@ async fn provider_transition_rebases_current_usage_and_preserves_accumulated_usa
             Some(100),
             Some(1_000),
         ))
+        .context_usage_estimated(false)
+        .last_request_tokens(Some(1_000))
         .accumulated_usage(accumulated)
         .apply()
         .await
@@ -525,6 +527,8 @@ async fn provider_transition_rebases_current_usage_and_preserves_accumulated_usa
             Some(checkpoint_tokens),
         )
     );
+    assert!(transitioned.context_usage_estimated);
+    assert_eq!(transitioned.last_request_tokens, Some(1_000));
     assert_eq!(transitioned.accumulated_usage, accumulated);
 }
 

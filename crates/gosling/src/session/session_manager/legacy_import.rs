@@ -92,11 +92,12 @@ impl SessionStorage {
             id, name, user_set_name, session_type, working_dir, created_at, updated_at, extension_data,
             total_tokens, input_tokens, output_tokens,
             cache_read_tokens, cache_write_tokens,
+            context_usage_estimated, last_request_tokens,
             accumulated_total_tokens, accumulated_input_tokens, accumulated_output_tokens,
             accumulated_cache_read_tokens, accumulated_cache_write_tokens,
             accumulated_cost,
             provider_name, model_config_json, gosling_mode
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#,
         )
         .bind(&session.id)
@@ -112,6 +113,8 @@ impl SessionStorage {
         .bind(session.usage.output_tokens)
         .bind(session.usage.cache_read_input_tokens)
         .bind(session.usage.cache_write_input_tokens)
+        .bind(session.context_usage_estimated)
+        .bind(session.last_request_tokens.or(session.usage.total_tokens))
         .bind(session.accumulated_usage.total_tokens)
         .bind(session.accumulated_usage.input_tokens)
         .bind(session.accumulated_usage.output_tokens)

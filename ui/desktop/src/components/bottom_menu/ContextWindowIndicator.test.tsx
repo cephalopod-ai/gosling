@@ -28,6 +28,18 @@ describe('ContextWindowIndicator', () => {
     expect(usage).toHaveTextContent('758k est / 998k');
   });
 
+  it('omits a last-request claim when no request measurement is known', () => {
+    render(
+      <ContextWindowIndicator totalTokens={758_000} tokenLimit={997_500} alerts={[]} estimated />
+    );
+
+    const usage = screen.getByLabelText(
+      'Active context estimate: 758k of 998k effective context limit'
+    );
+    expect(usage).toHaveTextContent('758k est / 998k');
+    expect(usage).not.toHaveAccessibleName(/Last model request/);
+  });
+
   it('does not escalate to orange/red for a provider that manages its own context', () => {
     render(
       <ContextWindowIndicator

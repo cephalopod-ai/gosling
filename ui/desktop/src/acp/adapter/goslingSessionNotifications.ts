@@ -15,7 +15,9 @@ export function applyGoslingSessionNotification(
           tokenState: {
             totalTokens: update.used,
             contextUsageEstimated: update.estimated ?? false,
-            lastRequestTokens: update.lastRequestUsed ?? update.used,
+            ...(update.lastRequestUsed != null
+              ? { lastRequestTokens: update.lastRequestUsed }
+              : {}),
             accumulatedInputTokens: update.accumulatedInputTokens,
             accumulatedOutputTokens: update.accumulatedOutputTokens,
             accumulatedTotalTokens: update.accumulatedInputTokens + update.accumulatedOutputTokens,
