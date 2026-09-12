@@ -175,6 +175,16 @@ turns. Provider-owned session restore establishes the same boundary, while new-c
 requires explicit confirmation and injects no checkpoint. Stale generations, changed message rows,
 and pre-commit failures preserve the prior provider configuration.
 
+The default read-only Session History platform extension provides bounded, redacted
+`session_search` and `session_read` access to persisted text in the active session and up to eight
+handoff-source ancestors. This is the recovery path for details omitted by a checkpoint; it neither
+replays raw history into context nor accepts an arbitrary session ID. Search omits the active turn
+and centers excerpts on matching text. Provider-owned tool runtimes receive the same client through
+a private session-and-store-scoped stdio MCP bridge. A revisioned extension-state migration adds the
+new default to legacy sessions without repeatedly restoring intentionally removed extensions. Reply
+bookkeeping receives the exact pending snapshot ID from handoff resolution, so a historical
+checkpoint message cannot be mistaken for an active snapshot acknowledgement.
+
 The capability object describes context ownership, native resume/import, in-place model changes,
 forking, bootstrap, and acknowledgement support. It replaces provider-name branching while retaining
 the legacy context-ownership boolean as a derived compatibility projection. Native adapters must

@@ -48,18 +48,10 @@ impl Agent {
         self: &Arc<Self>,
         session: &Session,
     ) -> Vec<ExtensionLoadResult> {
-        let session_extensions =
-            EnabledExtensionsState::from_extension_data(&session.extension_data);
-        let enabled_configs = match session_extensions {
-            Some(state) => state.extensions,
-            None => {
-                tracing::warn!(
-                    "No extensions found in session {}. This is unexpected.",
-                    session.id
-                );
-                return vec![];
-            }
-        };
+        let enabled_configs = EnabledExtensionsState::extensions_or_default(
+            Some(&session.extension_data),
+            crate::config::Config::global(),
+        );
 
         let session_id = session.id.clone();
 

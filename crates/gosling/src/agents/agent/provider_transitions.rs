@@ -637,20 +637,21 @@ impl Agent {
                         anyhow!("Could not configure fallback provider: invalid model {}", e)
                     })?;
 
-                    let fallback_provider = crate::providers::create_with_working_dir(
-                        &fallback_provider_name,
-                        extensions,
-                        session.working_dir.clone(),
-                    )
-                    .await
-                    .map_err(|e| {
-                        anyhow!(
-                            "Could not create provider '{}' or fallback '{}': {}",
-                            provider_name,
-                            fallback_provider_name,
-                            e
+                    let fallback_provider = self
+                        .create_provider_with_session_scope(
+                            session,
+                            &fallback_provider_name,
+                            extensions,
                         )
-                    })?;
+                        .await
+                        .map_err(|e| {
+                            anyhow!(
+                                "Could not create provider '{}' or fallback '{}': {}",
+                                provider_name,
+                                fallback_provider_name,
+                                e
+                            )
+                        })?;
 
                     (
                         fallback_provider,
@@ -880,13 +881,30 @@ impl Agent {
         extensions: Vec<ExtensionConfig>,
     ) -> Result<Arc<dyn Provider>> {
         self.validate_session_provider_scope(session, provider_name)?;
+        let entry = crate::providers::get_from_registry(provider_name).await?;
+        let extensions = if entry.executes_tools_outside_gosling() {
+            let executable = std::env::current_exe()
+                .context("Could not locate Gosling for the session history bridge")?;
+            let data_dir = self.config.session_manager.data_dir();
+            extensions
+                .into_iter()
+                .map(|extension| {
+                    crate::agents::platform_extensions::session_history::bridge_for_provider_owned_tools(
+                        extension,
+                        &executable,
+                        &data_dir,
+                        &session.id,
+                    )
+                    .map_err(anyhow::Error::msg)
+                })
+                .collect::<Result<Vec<_>>>()?
+        } else {
+            extensions
+        };
         let Some(profile_id) = session.credential_profile_id.as_deref() else {
-            return crate::providers::create_with_working_dir(
-                provider_name,
-                extensions,
-                session.working_dir.clone(),
-            )
-            .await;
+            return entry
+                .create_with_working_dir(extensions, session.working_dir.clone())
+                .await;
         };
         let service = self
             .config
@@ -895,12 +913,9 @@ impl Agent {
             .ok_or_else(|| anyhow!("Workspace credential service is unavailable"))?;
         let scope = service.config_scope(profile_id).await?;
         Config::with_resolution_scope(scope, async {
-            crate::providers::create_with_working_dir(
-                provider_name,
-                extensions,
-                session.working_dir.clone(),
-            )
-            .await
+            entry
+                .create_with_working_dir(extensions, session.working_dir.clone())
+                .await
         })
         .await
     }

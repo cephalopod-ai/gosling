@@ -249,6 +249,20 @@ impl GoslingAcpAgent {
                 self.build_enabled_extensions_data(config, &session, mcp_servers, None)?;
             builder = builder.extension_data(extension_data);
             session_needs_update = true;
+        } else if let Some(state) =
+            EnabledExtensionsState::from_extension_data(&session.extension_data)
+        {
+            let configured =
+                get_enabled_extensions_with_config_for_cwd(config, &session.working_dir);
+            let (state, changed) = state.upgrade_platform_catalog(&configured);
+            if changed {
+                let mut extension_data = session.extension_data.clone();
+                state
+                    .to_extension_data(&mut extension_data)
+                    .internal_err_ctx("Failed to migrate session extensions")?;
+                builder = builder.extension_data(extension_data);
+                session_needs_update = true;
+            }
         }
 
         if session_needs_update {

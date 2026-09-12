@@ -41,6 +41,26 @@ Restoring a provider-owned session creates a fresh `SessionResume` checkpoint; o
 gosling-managed API sessions can continue from their ledger directly. The ACP compatibility path is
 also redacted and capped, but normal switches and resumes use the core checkpoint.
 
+Checkpoint compression is a bounded delivery mechanism, not the only route to persisted context.
+The default read-only Session History extension exposes `session_search` and `session_read` over the
+current session and its bounded handoff-source lineage. A replacement agent uses those tools when a
+checkpoint reports omitted or truncated detail. Exact reads require a search-returned message
+identifier, text is redacted and paged, and arbitrary session identifiers are never accepted from
+the model. Retrieved history remains untrusted evidence and grants no authority to repeat a tool
+call or side effect. Search excludes the active user turn, returns excerpts around matching text,
+and uses a bounded default result set so the request itself and later failed recovery attempts do
+not displace the older source material.
+
+Providers that execute tools in their own runtime receive Session History through a private stdio
+MCP bridge bound to the active session and its store. The bridge reuses the same implementation and
+does not broaden the model-visible scope. Persisted extension state carries a platform-catalog
+revision so legacy sessions inherit this new default once while later intentional removals remain
+stable.
+
+Only the exact snapshot returned by pending-handoff resolution may be acknowledged by a reply.
+Historical hidden checkpoint messages are durable context, not pending bookkeeping pointers; a
+later turn must not infer an acknowledgement target by scanning message identifiers.
+
 Transition commit replaces provider-specific current-context usage with the bounded checkpoint's
 estimated size (or zero for new-context-only delivery), so an outgoing provider's token count cannot
 be displayed against the target model's context limit. Accumulated session usage and cost remain

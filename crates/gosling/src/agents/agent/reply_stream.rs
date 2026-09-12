@@ -29,6 +29,7 @@ impl Agent {
         conversation: Conversation,
         session_config: SessionConfig,
         session: Session,
+        pending_handoff_snapshot_id: Option<String>,
         cancel_token: Option<CancellationToken>,
     ) -> Result<BoxStream<'_, Result<AgentEvent>>> {
         let context = self
@@ -48,14 +49,6 @@ impl Agent {
             gosling_mode,
             model_config,
         } = context;
-        let pending_handoff_snapshot_id = conversation.messages().iter().find_map(|message| {
-            message
-                .id
-                .as_deref()
-                .and_then(|id| id.strip_prefix("handoff_snapshot_"))
-                .map(str::to_string)
-        });
-
         // Kept separately (rather than only the merged `system_prompt`) so the
         // Context Manager can account for system vs. project-instructions
         // tokens as distinct slots instead of double-counting the addendum.

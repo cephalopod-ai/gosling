@@ -7,6 +7,7 @@ pub mod project;
 pub mod review;
 pub mod secret;
 pub mod session;
+pub mod session_history_mcp;
 pub mod skills;
 pub mod term;
 #[cfg(feature = "tui")]

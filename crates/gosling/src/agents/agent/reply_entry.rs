@@ -327,12 +327,13 @@ impl Agent {
             .conversation
             .clone()
             .ok_or_else(|| anyhow::anyhow!("Session {} has no conversation", session_config.id))?;
-        let (conversation, _) = crate::session::handoff::conversation_for_pending_handoff(
-            &session_manager,
-            &session_config.id,
-            &conversation,
-        )
-        .await?;
+        let (conversation, pending_handoff_snapshot_id) =
+            crate::session::handoff::conversation_for_pending_handoff(
+                &session_manager,
+                &session_config.id,
+                &conversation,
+            )
+            .await?;
 
         let auto_compaction = crate::context_mgmt::auto_compaction_check(
             provider.as_ref(),
@@ -411,7 +412,13 @@ impl Agent {
                 conversation
             };
 
-            let mut reply_stream = self.reply_internal(final_conversation, session_config, session, cancel_token.clone()).await?;
+            let mut reply_stream = self.reply_internal(
+                final_conversation,
+                session_config,
+                session,
+                pending_handoff_snapshot_id,
+                cancel_token.clone(),
+            ).await?;
             while let Some(event) = reply_stream.next().await {
                 yield event?;
             }

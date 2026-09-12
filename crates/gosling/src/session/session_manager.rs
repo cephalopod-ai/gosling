@@ -609,6 +609,14 @@ impl SessionManager {
         &self.storage
     }
 
+    pub fn data_dir(&self) -> PathBuf {
+        self.storage
+            .session_dir
+            .parent()
+            .unwrap_or(&self.storage.session_dir)
+            .to_path_buf()
+    }
+
     /// Cheap liveness probe for the session store: acquires the connection
     /// pool and runs a trivial query. Intended for health/readiness
     /// endpoints that need to distinguish "the process is up" from "the
@@ -718,6 +726,17 @@ impl SessionManager {
         limit: usize,
     ) -> Result<SessionMessageSearchResults> {
         self.storage.search_session_messages(id, query, limit).await
+    }
+
+    pub async fn search_session_messages_before_current_turn(
+        &self,
+        id: &str,
+        query: &str,
+        limit: usize,
+    ) -> Result<SessionMessageSearchResults> {
+        self.storage
+            .search_session_messages_before_current_turn(id, query, limit)
+            .await
     }
 
     pub async fn list_session_artifacts(

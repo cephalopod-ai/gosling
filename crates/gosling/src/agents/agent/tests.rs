@@ -1416,6 +1416,73 @@ async fn reply_persists_user_input_and_streamed_assistant_checkpoints() -> Resul
 }
 
 #[tokio::test]
+async fn historical_checkpoint_message_is_not_acknowledged_as_pending() -> Result<()> {
+    let temp_dir = tempfile::tempdir()?;
+    let hook_manager = crate::hooks::HookManager::from_plugins_for_test(vec![]);
+    let (agent, session_id) = create_test_agent(
+        temp_dir.path().join("data"),
+        hook_manager,
+        Arc::new(ChunkedTextProvider),
+    )
+    .await?;
+    let snapshot =
+        crate::session::handoff::SessionHandoffBuilder::new(&agent.config.session_manager)
+            .build(
+                &session_id,
+                "superseded-provider",
+                "superseded-model",
+                128_000,
+                crate::providers::base::ProviderCapabilities::gosling_managed(),
+                gosling_sdk_types::session_handoff::SessionHandoffTriggerDto::ManualCheckpoint,
+            )
+            .await?;
+    let superseded = agent
+        .config
+        .session_manager
+        .prepare_handoff_snapshot(snapshot, Some(0))
+        .await?;
+    agent
+        .config
+        .session_manager
+        .update_handoff_status(
+            &superseded.snapshot_id,
+            gosling_sdk_types::session_handoff::SessionHandoffStatusDto::Superseded,
+            None,
+        )
+        .await?;
+    agent
+        .config
+        .session_manager
+        .add_message(
+            &session_id,
+            &Message::user()
+                .with_id(format!("handoff_snapshot_{}", superseded.snapshot_id))
+                .with_text("historical checkpoint")
+                .with_visibility(false, true),
+        )
+        .await?;
+
+    let reply_stream = agent
+        .reply(
+            Message::user().with_text("continue after the old handoff"),
+            SessionConfig {
+                id: session_id,
+                max_turns: Some(10),
+                compacted_context: false,
+                tail_limit: None,
+            },
+            None,
+        )
+        .await?;
+    tokio::pin!(reply_stream);
+    while let Some(event) = reply_stream.next().await {
+        event?;
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn already_cancelled_reply_does_not_persist_a_user_message() -> Result<()> {
     let temp_dir = tempfile::tempdir()?;
     let hook_manager = crate::hooks::HookManager::from_plugins_for_test(vec![]);

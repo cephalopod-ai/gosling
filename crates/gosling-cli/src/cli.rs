@@ -755,6 +755,14 @@ enum McpSubcommand {
 
 #[derive(Subcommand)]
 enum Command {
+    #[command(name = "session-history-mcp", hide = true)]
+    SessionHistoryMcp {
+        #[arg(long, hide = true)]
+        session_id: String,
+        #[arg(long, hide = true)]
+        data_dir: PathBuf,
+    },
+
     /// Configure gosling settings
     #[command(about = "Configure gosling settings")]
     Configure {},
@@ -1285,6 +1293,7 @@ pub struct InputConfig {
 
 fn get_command_name(command: &Option<Command>) -> &'static str {
     match command {
+        Some(Command::SessionHistoryMcp { .. }) => "session-history-mcp",
         Some(Command::Configure {}) => "configure",
         Some(Command::Doctor {}) => "doctor",
         Some(Command::Info { .. }) => "info",
@@ -2107,6 +2116,14 @@ pub async fn cli() -> anyhow::Result<()> {
     register_builtin_extensions(gosling_mcp::BUILTIN_EXTENSIONS.clone());
 
     let cli = Cli::parse();
+    if let Some(Command::SessionHistoryMcp {
+        session_id,
+        data_dir,
+    }) = &cli.command
+    {
+        return crate::commands::session_history_mcp::serve(session_id.clone(), data_dir.clone())
+            .await;
+    }
     warn_about_invalid_config_values();
 
     if let Err(e) = crate::project_tracker::update_project_tracker(None, None) {
@@ -2121,6 +2138,7 @@ pub async fn cli() -> anyhow::Result<()> {
     );
 
     match cli.command {
+        Some(Command::SessionHistoryMcp { .. }) => unreachable!(),
         Some(Command::Completion { shell, bin_name }) => {
             // Generate into a buffer first: clap_complete panics if the writer
             // fails, which turns `gosling completion bash | head` (early-closed

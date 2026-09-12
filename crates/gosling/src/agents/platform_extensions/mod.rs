@@ -3,6 +3,7 @@ pub mod code_execution;
 pub mod developer;
 pub mod ext_manager;
 pub mod orchestrator;
+pub mod session_history;
 pub mod summarize;
 pub mod summon;
 pub mod todo;
@@ -64,6 +65,19 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
                 unprefixed_tools: true,
                 hidden: false,
                 client_factory: |ctx| Box::new(summon::SummonClient::new(ctx).unwrap()),
+            },
+        );
+
+        map.insert(
+            session_history::EXTENSION_NAME,
+            PlatformExtensionDef {
+                name: session_history::EXTENSION_NAME,
+                display_name: "Session History",
+                description: "Search and read persisted messages from the current session continuity lineage",
+                default_enabled: true,
+                unprefixed_tools: true,
+                hidden: false,
+                client_factory: |ctx| Box::new(session_history::SessionHistoryClient::new(ctx)),
             },
         );
 

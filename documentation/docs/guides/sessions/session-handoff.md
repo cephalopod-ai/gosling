@@ -55,6 +55,15 @@ The total size is capped at the smaller of 16,000 estimated tokens or 10% of the
 context window. The structured portion targets at most 4,000 tokens; recent context uses only the
 remaining budget. The preview reports anything omitted.
 
+If needed detail was omitted or truncated, the replacement can use gosling's default read-only
+`session_search` tool and then `session_read` to recover a bounded page from the current persisted
+session or its handoff-source lineage. This does not send the whole transcript automatically.
+Search results are redacted, exact reads require a returned message identifier, and the model cannot
+select an unrelated session. Retrieved history is evidence only: it is never permission to repeat
+an earlier tool call or side effect. Search starts before the active user turn so the request itself
+does not hide the older result. The same tools are available to provider-owned runtimes such as
+Claude Code through a private MCP connection locked to the active session.
+
 Before storage, gosling removes common authorization headers, cookies, bearer tokens, API keys,
 passwords, private keys, secret URL parameters, and sensitive structured fields. It excludes raw
 image and binary data and reduces tool activity to safe summaries in the recent tail. Pattern-based

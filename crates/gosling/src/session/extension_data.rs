@@ -192,7 +192,11 @@ impl TodoState {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EnabledExtensionsState {
     pub extensions: Vec<ExtensionConfig>,
+    #[serde(default)]
+    pub platform_catalog_revision: u32,
 }
+
+const PLATFORM_CATALOG_REVISION: u32 = 1;
 
 impl ExtensionState for EnabledExtensionsState {
     const EXTENSION_NAME: &'static str = "enabled_extensions";
@@ -201,7 +205,10 @@ impl ExtensionState for EnabledExtensionsState {
 
 impl EnabledExtensionsState {
     pub fn new(extensions: Vec<ExtensionConfig>) -> Self {
-        Self { extensions }
+        Self {
+            extensions,
+            platform_catalog_revision: PLATFORM_CATALOG_REVISION,
+        }
     }
 
     pub fn from_extension_data(extension_data: &ExtensionData) -> Option<Self> {
@@ -210,16 +217,40 @@ impl EnabledExtensionsState {
         Some(state)
     }
 
+    pub fn upgrade_platform_catalog(
+        mut self,
+        configured_extensions: &[ExtensionConfig],
+    ) -> (Self, bool) {
+        if self.platform_catalog_revision >= PLATFORM_CATALOG_REVISION {
+            return (self, false);
+        }
+
+        if let Some(session_history) = configured_extensions
+            .iter()
+            .find(|extension| extension.name() == "session_history")
+        {
+            let already_present = self
+                .extensions
+                .iter()
+                .any(|extension| extension.name() == "session_history");
+            if !already_present {
+                self.extensions.push(session_history.clone());
+            }
+        }
+
+        self.platform_catalog_revision = PLATFORM_CATALOG_REVISION;
+        (self, true)
+    }
+
     pub fn extensions_or_default(
         extension_data: Option<&ExtensionData>,
         config: &Config,
     ) -> Vec<ExtensionConfig> {
+        let configured = crate::config::extensions::get_enabled_extensions_with_config(config);
         extension_data
             .and_then(Self::from_extension_data)
-            .map(|state| state.extensions)
-            .unwrap_or_else(|| {
-                crate::config::extensions::get_enabled_extensions_with_config(config)
-            })
+            .map(|state| state.upgrade_platform_catalog(&configured).0.extensions)
+            .unwrap_or(configured)
     }
 
     pub async fn for_session(
@@ -313,6 +344,27 @@ mod tests {
             EnabledExtensionsState::extensions_or_default(extension_data.as_ref(), &config),
             expected,
         );
+    }
+
+    #[test]
+    fn legacy_session_extension_state_inherits_session_history() {
+        let config = test_config();
+        let mut extension_data = ExtensionData::new();
+        extension_data.set_extension_state(
+            EnabledExtensionsState::EXTENSION_NAME,
+            EnabledExtensionsState::VERSION,
+            json!({"extensions": [test_extension()]}),
+        );
+
+        let extensions =
+            EnabledExtensionsState::extensions_or_default(Some(&extension_data), &config);
+        let names = extensions
+            .iter()
+            .map(|extension| extension.name())
+            .collect::<Vec<_>>();
+
+        assert!(names.iter().any(|name| name == "developer"));
+        assert!(names.iter().any(|name| name == "session_history"));
     }
 
     #[test]

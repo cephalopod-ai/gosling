@@ -24,6 +24,28 @@ use rmcp::model::Role;
 use sqlx::{Pool, Sqlite};
 use std::collections::HashSet;
 
+const SEARCH_SNIPPET_CHARS: usize = 500;
+const SEARCH_SNIPPET_LEADING_CONTEXT_CHARS: usize = 160;
+
+fn relevant_search_snippet(text: &str, query: &str) -> String {
+    let lowered = text.to_lowercase();
+    let query = query.to_lowercase();
+    let match_byte = lowered.find(&query).or_else(|| {
+        query
+            .split_whitespace()
+            .filter_map(|term| lowered.find(term))
+            .min()
+    });
+    let match_char = match_byte
+        .and_then(|index| lowered.get(..index))
+        .map(|prefix| prefix.chars().count())
+        .unwrap_or(0);
+    text.chars()
+        .skip(match_char.saturating_sub(SEARCH_SNIPPET_LEADING_CONTEXT_CHARS))
+        .take(SEARCH_SNIPPET_CHARS)
+        .collect()
+}
+
 impl SessionStorage {
     pub(super) async fn get_conversation(&self, session_id: &str) -> Result<Conversation> {
         let pool = self.pool().await?;
@@ -299,6 +321,27 @@ impl SessionStorage {
         query: &str,
         limit: usize,
     ) -> Result<SessionMessageSearchResults> {
+        self.search_session_messages_scoped(session_id, query, limit, false)
+            .await
+    }
+
+    pub(super) async fn search_session_messages_before_current_turn(
+        &self,
+        session_id: &str,
+        query: &str,
+        limit: usize,
+    ) -> Result<SessionMessageSearchResults> {
+        self.search_session_messages_scoped(session_id, query, limit, true)
+            .await
+    }
+
+    async fn search_session_messages_scoped(
+        &self,
+        session_id: &str,
+        query: &str,
+        limit: usize,
+        exclude_current_turn: bool,
+    ) -> Result<SessionMessageSearchResults> {
         let terms: Vec<String> = query
             .split_whitespace()
             .filter(|term| !term.is_empty())
@@ -316,6 +359,15 @@ impl SessionStorage {
             SELECT id, message_id, role, content_json, created_timestamp
             FROM messages
             WHERE session_id = ?
+            "#,
+        );
+        if exclude_current_turn {
+            sql.push_str(
+                " AND id < COALESCE((SELECT MAX(current_turn.id) FROM messages current_turn WHERE current_turn.session_id = ? AND current_turn.role = 'user'), 9223372036854775807)",
+            );
+        }
+        sql.push_str(
+            r#"
               AND EXISTS (
                 SELECT 1
                 FROM json_each(content_json)
@@ -333,6 +385,9 @@ impl SessionStorage {
 
         let mut q =
             sqlx::query_as::<_, (i64, Option<String>, String, String, i64)>(&sql).bind(session_id);
+        if exclude_current_turn {
+            q = q.bind(session_id);
+        }
         for term in &terms {
             q = q.bind(term);
         }
@@ -342,7 +397,7 @@ impl SessionStorage {
         let mut matches = Vec::new();
         for (row_id, message_id, role, content_json, created) in rows {
             let content: Vec<MessageContent> = serde_json::from_str(&content_json)?;
-            let snippet = content
+            let text = content
                 .iter()
                 .filter_map(|content| content.as_text())
                 .collect::<Vec<_>>()
@@ -351,7 +406,7 @@ impl SessionStorage {
                 row_id,
                 message_id,
                 role,
-                snippet: snippet.chars().take(500).collect(),
+                snippet: relevant_search_snippet(&text, query),
                 created,
                 before_cursor: Some((row_id + 1).to_string()),
             });
