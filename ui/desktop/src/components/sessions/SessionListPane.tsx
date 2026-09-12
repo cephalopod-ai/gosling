@@ -219,6 +219,8 @@ const i18n = defineMessages({
   archivedAtLabel: { id: 'sessions.archived.at', defaultMessage: 'Archived' },
 });
 
+const sessionGridClassName = 'grid grid-cols-[repeat(auto-fill,minmax(14rem,1fr))] gap-4';
+
 interface EditSessionModalProps {
   session: SessionListItem | null;
   isOpen: boolean;
@@ -831,16 +833,16 @@ export default function SessionListPane({ mode, isActive, onSelectSession }: Ses
     return (
       <Card
         onClick={handleCardClick}
-        className={`h-full py-3 px-4 transition-all duration-150 flex flex-col justify-between relative group ${
+        className={`group relative flex min-h-56 min-w-0 flex-col justify-between overflow-hidden px-4 py-3 transition-all duration-150 ${
           mode === 'active' ? 'cursor-pointer hover:shadow-default' : ''
         }`}
       >
-        <div>
+        <div className="min-w-0">
           <h3 className="mb-1 w-full break-words text-base line-clamp-2">{displayName}</h3>
           <div className="mt-2 flex-1">
-            <div className="flex items-center text-xs text-text-secondary">
+            <div className="flex min-w-0 items-center text-xs text-text-secondary">
               <Calendar className="mr-1 h-3 w-3 flex-shrink-0" />
-              <span>
+              <span className="min-w-0 truncate">
                 {formatMessageTimestamp(
                   Date.parse(
                     mode === 'archived' ? archiveTimestamp(session) : sessionActivityAt(session)
@@ -848,9 +850,9 @@ export default function SessionListPane({ mode, isActive, onSelectSession }: Ses
                 )}
               </span>
             </div>
-            <div className="flex items-center text-xs text-text-secondary">
+            <div className="flex min-w-0 items-center text-xs text-text-secondary">
               <Folder className="mr-1 h-3 w-3 flex-shrink-0" />
-              <span className="truncate">{session.workingDir}</span>
+              <span className="min-w-0 truncate">{session.workingDir}</span>
             </div>
             {mode === 'archived' && (
               <>
@@ -873,10 +875,10 @@ export default function SessionListPane({ mode, isActive, onSelectSession }: Ses
         </div>
 
         {mode === 'active' ? (
-          <div className="flex justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+          <div className="mt-2 flex min-h-6 flex-wrap items-center justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
             <button
               onClick={(event) => handleOpenInNewWindow(session, event)}
-              className="cursor-pointer rounded p-2 hover:bg-gray-100 dark:hover:bg-gray-700"
+              className="cursor-pointer rounded p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700"
               title={intl.formatMessage(i18n.openInNewWindow)}
             >
               <ExternalLink className="h-3 w-3 text-text-secondary hover:text-text-primary" />
@@ -887,7 +889,7 @@ export default function SessionListPane({ mode, isActive, onSelectSession }: Ses
                 setEditingSession(session);
                 setShowEditModal(true);
               }}
-              className="cursor-pointer rounded p-2 hover:bg-gray-100 dark:hover:bg-gray-700"
+              className="cursor-pointer rounded p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700"
               title={intl.formatMessage(i18n.editSessionName)}
             >
               <Edit2 className="h-3 w-3 text-text-secondary hover:text-text-primary" />
@@ -897,7 +899,7 @@ export default function SessionListPane({ mode, isActive, onSelectSession }: Ses
                 event.stopPropagation();
                 void handleDuplicateSession(session);
               }}
-              className="cursor-pointer rounded p-2 hover:bg-gray-100 dark:hover:bg-gray-700"
+              className="cursor-pointer rounded p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700"
               title={intl.formatMessage(i18n.duplicateSession)}
             >
               <Copy className="h-3 w-3 text-text-secondary hover:text-text-primary" />
@@ -907,7 +909,7 @@ export default function SessionListPane({ mode, isActive, onSelectSession }: Ses
                 event.stopPropagation();
                 void handleArchiveSession(session);
               }}
-              className="cursor-pointer rounded p-2 hover:bg-amber-50 dark:hover:bg-amber-900/20"
+              className="cursor-pointer rounded p-1.5 hover:bg-amber-50 dark:hover:bg-amber-900/20"
               title={intl.formatMessage(i18n.archiveSession)}
             >
               <Archive className="h-3 w-3 text-amber-600 hover:text-amber-700" />
@@ -917,14 +919,14 @@ export default function SessionListPane({ mode, isActive, onSelectSession }: Ses
                 event.stopPropagation();
                 void handleDeleteSession(session);
               }}
-              className="cursor-pointer rounded p-2 transition-colors hover:bg-red-50 dark:hover:bg-red-900/20"
+              className="cursor-pointer rounded p-1.5 transition-colors hover:bg-red-50 dark:hover:bg-red-900/20"
               title={intl.formatMessage(i18n.deleteSession)}
             >
               <Trash2 className="h-3 w-3 text-red-500 hover:text-red-600" />
             </button>
             <button
               onClick={(event) => void handleExportSession(session, event)}
-              className="cursor-pointer rounded p-2 hover:bg-gray-100 dark:hover:bg-gray-700"
+              className="cursor-pointer rounded p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700"
               title={intl.formatMessage(i18n.exportSession)}
             >
               <Download className="h-3 w-3 text-text-secondary hover:text-text-primary" />
@@ -933,7 +935,7 @@ export default function SessionListPane({ mode, isActive, onSelectSession }: Ses
               <button
                 onClick={(event) => void handleShareSessionNostr(session, event)}
                 disabled={sharingSessionId === session.id}
-                className="cursor-pointer rounded p-2 hover:bg-gray-100 disabled:cursor-wait disabled:opacity-60 dark:hover:bg-gray-700"
+                className="cursor-pointer rounded p-1.5 hover:bg-gray-100 disabled:cursor-wait disabled:opacity-60 dark:hover:bg-gray-700"
                 title={intl.formatMessage(i18n.shareNostrSession)}
               >
                 {sharingSessionId === session.id ? (
@@ -945,13 +947,13 @@ export default function SessionListPane({ mode, isActive, onSelectSession }: Ses
             )}
           </div>
         ) : (
-          <div className="flex justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+          <div className="mt-2 flex min-h-6 flex-wrap items-center justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
             <button
               onClick={(event) => {
                 event.stopPropagation();
                 handleRestoreSession(session);
               }}
-              className="cursor-pointer rounded p-2 hover:bg-emerald-50 dark:hover:bg-emerald-900/20"
+              className="cursor-pointer rounded p-1.5 hover:bg-emerald-50 dark:hover:bg-emerald-900/20"
               title={intl.formatMessage(i18n.restoreSession)}
             >
               <RotateCcw className="h-3 w-3 text-emerald-600 hover:text-emerald-700" />
@@ -961,14 +963,14 @@ export default function SessionListPane({ mode, isActive, onSelectSession }: Ses
                 event.stopPropagation();
                 void handleDeleteSession(session);
               }}
-              className="cursor-pointer rounded p-2 transition-colors hover:bg-red-50 dark:hover:bg-red-900/20"
+              className="cursor-pointer rounded p-1.5 transition-colors hover:bg-red-50 dark:hover:bg-red-900/20"
               title={intl.formatMessage(i18n.deleteSession)}
             >
               <Trash2 className="h-3 w-3 text-red-500 hover:text-red-600" />
             </button>
             <button
               onClick={(event) => void handleExportSession(session, event)}
-              className="cursor-pointer rounded p-2 hover:bg-gray-100 dark:hover:bg-gray-700"
+              className="cursor-pointer rounded p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700"
               title={intl.formatMessage(i18n.exportSession)}
             >
               <Download className="h-3 w-3 text-text-secondary hover:text-text-primary" />
@@ -985,7 +987,7 @@ export default function SessionListPane({ mode, isActive, onSelectSession }: Ses
     const tokenWidths = ['w-12', 'w-10', 'w-14', 'w-8'];
 
     return (
-      <Card className="session-skeleton flex h-full flex-col justify-between px-4 py-3">
+      <Card className="session-skeleton flex min-h-56 min-w-0 flex-col justify-between px-4 py-3">
         <div className="flex-1">
           <Skeleton className={`mb-2 h-5 ${titleWidths[variant % titleWidths.length]}`} />
           <div className="mb-1 flex items-center">
@@ -1065,7 +1067,7 @@ export default function SessionListPane({ mode, isActive, onSelectSession }: Ses
             <div className="sticky top-0 z-10 bg-background-primary/95 backdrop-blur-sm">
               <h2 className="text-text-secondary">{group.label}</h2>
             </div>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+            <div className={sessionGridClassName}>
               {group.sessions.map((session) => (
                 <SessionItem key={session.id} session={session} />
               ))}
@@ -1121,7 +1123,7 @@ export default function SessionListPane({ mode, isActive, onSelectSession }: Ses
                 <div className="space-y-8">
                   <div className="space-y-4">
                     <Skeleton className="h-6 w-16" />
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+                    <div className={sessionGridClassName}>
                       <SessionSkeleton variant={0} />
                       <SessionSkeleton variant={1} />
                       <SessionSkeleton variant={2} />
@@ -1131,7 +1133,7 @@ export default function SessionListPane({ mode, isActive, onSelectSession }: Ses
                   </div>
                   <div className="space-y-4">
                     <Skeleton className="h-6 w-20" />
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+                    <div className={sessionGridClassName}>
                       <SessionSkeleton variant={1} />
                       <SessionSkeleton variant={2} />
                       <SessionSkeleton variant={3} />
