@@ -76,7 +76,8 @@ and a corrected distinction between session-lease loss and user-initiated cancel
 
 The `v1.2.5` source candidate introduces Full Session Handoff continuity with inspectable redacted
 checkpoints, read-only recovery of omitted persisted session text, capability-based continuity
-labels, and atomic provider/model transitions that retain the prior provider on failure. It adds a
+labels, reference-aware retention for shorthand and named task cues, and atomic provider/model
+transitions that retain the prior provider on failure. It adds a
 selectable Desktop crash-recovery policy that defaults to
 **Safe**. It makes `Enter` insert a newline and uses `Cmd+Enter` on macOS or `Ctrl+Enter` on
 Windows/Linux to send. Valid local files embedded in tool output open directly, workspace-output

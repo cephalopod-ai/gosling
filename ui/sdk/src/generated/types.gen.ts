@@ -2300,6 +2300,7 @@ export type SessionHandoffSnapshotV1Dto = {
     coverage: HandoffCoverageDto;
     currentObjective?: HandoffEvidenceItemDto | null;
     latestUserIntent?: HandoffEvidenceItemDto | null;
+    referencedContext?: Array<HandoffEvidenceItemDto>;
     completedWork?: Array<HandoffEvidenceItemDto>;
     decisions?: Array<HandoffEvidenceItemDto>;
     filesTouched?: Array<HandoffFileDto>;

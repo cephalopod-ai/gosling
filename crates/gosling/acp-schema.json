@@ -5937,6 +5937,13 @@
             }
           ]
         },
+        "referencedContext": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HandoffEvidenceItemDto"
+          },
+          "default": []
+        },
         "completedWork": {
           "type": "array",
           "items": {

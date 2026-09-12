@@ -167,6 +167,15 @@ deterministic, redacted, size-bounded checkpoint. ACP preview and transition han
 contract to Desktop through generated SDK types; Desktop owns presentation and confirmation, not
 classification or snapshot construction.
 
+Checkpoint selection treats the latest user request as the task boundary and adds bounded
+`referencedContext` excerpts from prior visible conversation evidence that matches distinctive
+request cues. The immediately preceding assistant response is retained as an antecedent fallback
+for requests such as “do that.” Selection may cross an older agent-visibility boundary, but only
+the redacted excerpts enter the new checkpoint; the old raw rows remain model-invisible. Under
+budget pressure, generic command/check and completed-work entries lose their oldest records first,
+while reference excerpts lose their least relevant match first. The receiving model must resolve
+shorthand against these excerpts before using Session History as the fallback.
+
 `Agent::transition_provider` is the single live-switch owner. It prepares a generation, initializes
 the target while retaining the current provider, performs the selected delivery, and atomically
 commits provider/model metadata, snapshot activation, and an agent-context boundary. Covered rows

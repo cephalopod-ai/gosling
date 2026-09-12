@@ -2086,6 +2086,7 @@ export const zSessionHandoffSnapshotV1Dto = z.object({
     coverage: zHandoffCoverageDto,
     currentObjective: zHandoffEvidenceItemDto.nullish(),
     latestUserIntent: zHandoffEvidenceItemDto.nullish(),
+    referencedContext: z.array(zHandoffEvidenceItemDto).optional().default([]),
     completedWork: z.array(zHandoffEvidenceItemDto).optional().default([]),
     decisions: z.array(zHandoffEvidenceItemDto).optional().default([]),
     filesTouched: z.array(zHandoffFileDto).optional().default([]),

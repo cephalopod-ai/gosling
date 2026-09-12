@@ -42,6 +42,19 @@ gosling-managed API sessions can continue from their ledger directly. The ACP co
 also redacted and capped, but normal switches and resumes use the core checkpoint.
 
 Checkpoint compression is a bounded delivery mechanism, not the only route to persisted context.
+The structured checkpoint includes a backward-compatible `referencedContext` section. Core derives
+up to six redacted excerpts from distinctive terms and quoted labels in the latest user request,
+ranking rarer matches above generic recurrence and retaining the immediately preceding assistant
+response as the fallback antecedent for pronoun-only requests. This selector may read user-visible
+rows behind a previous agent-context boundary, but it never replays those raw rows; only the
+bounded selected excerpts cross the next boundary. Generic structured history is trimmed oldest
+first, while reference matches are trimmed least-relevant first.
+
+The replacement model resolves shorthand and named task references against `referencedContext`
+before planning. It preserves exact names, constraints, artifact paths, pending work, and requested
+validation rather than silently substituting a generic interpretation. If a referent remains absent
+or ambiguous, Session History remains the recovery route.
+
 The default read-only Session History extension exposes `session_search` and `session_read` over the
 current session and its bounded handoff-source lineage. A replacement agent uses those tools when a
 checkpoint reports omitted or truncated detail. Exact reads require a search-returned message
@@ -107,8 +120,9 @@ The typed ACP methods are:
 ## Consequences
 
 Cross-provider continuity is deliberately a bounded reconstruction, not a promise to reproduce
-provider-private state. Redaction and truncation can omit detail, so the preview makes those losses
-visible. Provider-managed bootstrap can consume an extra model request and cannot prove that a
+provider-private state. Reference selection is lexical and can miss paraphrased antecedents;
+redaction and truncation can also omit detail, so Session History remains available and the preview
+makes losses visible. Provider-managed bootstrap can consume an extra model request and cannot prove that a
 third-party agent followed its acknowledgement instruction. Keeping old messages user-visible also
 retains their local storage cost. Snapshot retention therefore keeps the active generation and a
 small configurable history (five generations by default) while pruning older terminal generations.

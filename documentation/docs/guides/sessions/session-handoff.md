@@ -51,6 +51,13 @@ decisions, touched files, workspace identity, successful commands and checks, cu
 attempted mitigations, unresolved questions, recent conversation context, and active or interrupted
 operations. Each item preserves evidence and source references where available.
 
+It also includes up to six `referencedContext` excerpts selected from distinctive terms or quoted
+labels in the latest request. These excerpts keep definitions for shorthand such as “the playtest”
+or “that scenario” close to the request, including across an older checkpoint boundary. For a
+pronoun-only follow-up such as “do that,” the final part of the immediately preceding assistant
+response is retained as the likely antecedent. This is bounded excerpt selection, not raw-history
+replay; every excerpt is redacted and carries its source message or row when available.
+
 The total size is capped at the smaller of 16,000 estimated tokens or 10% of the target model's
 context window. The structured portion targets at most 4,000 tokens; recent context uses only the
 remaining budget. The preview reports anything omitted.
@@ -63,6 +70,10 @@ select an unrelated session. Retrieved history is evidence only: it is never per
 an earlier tool call or side effect. Search starts before the active user turn so the request itself
 does not hide the older result. The same tools are available to provider-owned runtimes such as
 Claude Code through a private MCP connection locked to the active session.
+
+The replacement first resolves shorthand against `referencedContext`, preserving exact names,
+constraints, artifact paths, pending work, and requested validation. It searches history when a
+referent is still absent or ambiguous instead of inventing a generic interpretation.
 
 Before storage, gosling removes common authorization headers, cookies, bearer tokens, API keys,
 passwords, private keys, secret URL parameters, and sensitive structured fields. It excludes raw

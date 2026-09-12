@@ -202,6 +202,8 @@ pub struct SessionHandoffSnapshotV1Dto {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub latest_user_intent: Option<HandoffEvidenceItemDto>,
     #[serde(default)]
+    pub referenced_context: Vec<HandoffEvidenceItemDto>,
+    #[serde(default)]
     pub completed_work: Vec<HandoffEvidenceItemDto>,
     #[serde(default)]
     pub decisions: Vec<HandoffEvidenceItemDto>,
@@ -233,4 +235,19 @@ pub struct SessionHandoffSnapshotV1Dto {
     pub activated_at: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub acknowledged_at: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn version_one_snapshot_without_referenced_context_remains_readable() {
+        let mut value = serde_json::to_value(SessionHandoffSnapshotV1Dto::default()).unwrap();
+        value.as_object_mut().unwrap().remove("referencedContext");
+
+        let snapshot: SessionHandoffSnapshotV1Dto = serde_json::from_value(value).unwrap();
+
+        assert!(snapshot.referenced_context.is_empty());
+    }
 }

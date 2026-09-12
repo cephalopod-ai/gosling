@@ -157,6 +157,131 @@ async fn deterministic_checkpoint_is_bounded_redacted_and_provider_independent()
 }
 
 #[tokio::test]
+async fn checkpoint_retains_context_that_resolves_latest_user_references() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let manager = SessionManager::new(temp_dir.path().to_path_buf());
+    let session_id = source_session(&manager).await;
+    manager
+        .add_message(
+            &session_id,
+            &Message::assistant().with_text(format!(
+                "{}\n\nHuman-facing playtest: verify PLAYTEST-DETAIL through the Desktop; password=hunter2.\n\nSanta Claus scenario: preserve SANTA-DETAIL as belief evolution, not correction.",
+                "Earlier analysis that should not consume the relevant excerpt. ".repeat(80)
+            )),
+        )
+        .await
+        .unwrap();
+    manager
+        .add_message(
+            &session_id,
+            &Message::user().with_text(
+                "Produce a plan for the next step followed by the playtest or the Santa Claus scenario",
+            ),
+        )
+        .await
+        .unwrap();
+
+    let snapshot = SessionHandoffBuilder::new(&manager)
+        .build(
+            &session_id,
+            "anthropic",
+            "claude-sonnet",
+            128_000,
+            ProviderCapabilities::gosling_managed(),
+            SessionHandoffTriggerDto::UserRequestedSwitch,
+        )
+        .await
+        .unwrap();
+    let checkpoint = serde_json::to_string(&snapshot).unwrap();
+
+    assert!(!snapshot.referenced_context.is_empty());
+    assert!(checkpoint.contains("PLAYTEST-DETAIL"));
+    assert!(checkpoint.contains("SANTA-DETAIL"));
+    assert!(!checkpoint.contains("hunter2"));
+    assert!(!snapshot.referenced_context.iter().any(|item| item
+        .content
+        .contains("Earlier analysis that should not consume")));
+}
+
+#[tokio::test]
+async fn reference_retention_survives_a_prior_context_boundary() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let manager = SessionManager::new(temp_dir.path().to_path_buf());
+    let session_id = source_session(&manager).await;
+    manager
+        .add_message(
+            &session_id,
+            &Message::assistant()
+                .with_text("Human-facing playtest: preserve BOUNDARY-PLAYTEST-DETAIL")
+                .with_visibility(true, false),
+        )
+        .await
+        .unwrap();
+    manager
+        .add_message(
+            &session_id,
+            &Message::user().with_text("Run the human-facing playtest next"),
+        )
+        .await
+        .unwrap();
+
+    let snapshot = SessionHandoffBuilder::new(&manager)
+        .build(
+            &session_id,
+            "anthropic",
+            "claude-sonnet",
+            128_000,
+            ProviderCapabilities::gosling_managed(),
+            SessionHandoffTriggerDto::UserRequestedSwitch,
+        )
+        .await
+        .unwrap();
+
+    assert!(snapshot
+        .referenced_context
+        .iter()
+        .any(|item| item.content.contains("BOUNDARY-PLAYTEST-DETAIL")));
+}
+
+#[tokio::test]
+async fn pronoun_request_retains_the_latest_assistant_antecedent() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let manager = SessionManager::new(temp_dir.path().to_path_buf());
+    let session_id = source_session(&manager).await;
+    manager
+        .add_message(
+            &session_id,
+            &Message::assistant().with_text(format!(
+                "{}ANTECEDENT-DETAIL",
+                "A long response whose ending carries the final recommendation. ".repeat(60)
+            )),
+        )
+        .await
+        .unwrap();
+    manager
+        .add_message(&session_id, &Message::user().with_text("Do that next"))
+        .await
+        .unwrap();
+
+    let snapshot = SessionHandoffBuilder::new(&manager)
+        .build(
+            &session_id,
+            "anthropic",
+            "claude-sonnet",
+            128_000,
+            ProviderCapabilities::gosling_managed(),
+            SessionHandoffTriggerDto::UserRequestedSwitch,
+        )
+        .await
+        .unwrap();
+
+    assert!(snapshot
+        .referenced_context
+        .iter()
+        .any(|item| item.content.contains("ANTECEDENT-DETAIL")));
+}
+
+#[tokio::test]
 async fn handoff_creation_commits_new_session_and_active_checkpoint_together() {
     let temp_dir = tempfile::tempdir().unwrap();
     let manager = SessionManager::new(temp_dir.path().to_path_buf());
