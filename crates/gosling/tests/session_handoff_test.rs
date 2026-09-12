@@ -420,6 +420,61 @@ async fn large_history_is_hard_bounded_by_the_target_context() {
 }
 
 #[tokio::test]
+async fn large_context_models_receive_a_larger_reference_aware_checkpoint() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let manager = SessionManager::new(temp_dir.path().to_path_buf());
+    let session_id = source_session(&manager).await;
+    manager
+        .add_message(
+            &session_id,
+            &Message::assistant().with_text(
+                "MEGA-CONTEXT-PLAYTEST means exercise the saved multi-stage desktop workflow",
+            ),
+        )
+        .await
+        .unwrap();
+    for index in 0..160 {
+        manager
+            .add_message(
+                &session_id,
+                &Message::assistant().with_text(format!(
+                    "Intermediate analysis {index}: {}",
+                    "evidence ".repeat(140)
+                )),
+            )
+            .await
+            .unwrap();
+    }
+    manager
+        .add_message(
+            &session_id,
+            &Message::user().with_text("Continue the MEGA-CONTEXT-PLAYTEST plan"),
+        )
+        .await
+        .unwrap();
+
+    let snapshot = SessionHandoffBuilder::new(&manager)
+        .build(
+            &session_id,
+            "openai",
+            "large-context-model",
+            1_000_000,
+            ProviderCapabilities::gosling_managed(),
+            SessionHandoffTriggerDto::ManualCheckpoint,
+        )
+        .await
+        .unwrap();
+
+    assert!(snapshot.coverage.estimated_tokens > 16_000);
+    assert!(snapshot.coverage.estimated_tokens <= 64_000);
+    assert!(snapshot.coverage.recent_tail_message_count > 80);
+    assert!(snapshot
+        .referenced_context
+        .iter()
+        .any(|item| item.content.contains("MEGA-CONTEXT-PLAYTEST means")));
+}
+
+#[tokio::test]
 async fn pending_handoff_delivers_checkpoint_and_latest_user_once() {
     let temp_dir = tempfile::tempdir().unwrap();
     let manager = SessionManager::new(temp_dir.path().to_path_buf());

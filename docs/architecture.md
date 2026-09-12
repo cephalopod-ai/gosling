@@ -176,6 +176,12 @@ budget pressure, generic command/check and completed-work entries lose their old
 while reference excerpts lose their least relevant match first. The receiving model must resolve
 shorthand against these excerpts before using Session History as the fallback.
 
+Retention scales from a 16,000-token baseline with the receiving model's context window. The total
+checkpoint remains at most 10% of that window and no more than 64,000 tokens. The structured share
+scales from 4,000 to 16,000 tokens, reference capacity from 6 to 24 excerpts, and the inspected tail
+from 80 to 320 messages. This uses large-context capability without allowing continuity data to
+consume most of the next model's working window.
+
 `Agent::transition_provider` is the single live-switch owner. It prepares a generation, initializes
 the target while retaining the current provider, performs the selected delivery, and atomically
 commits provider/model metadata, snapshot activation, and an agent-context boundary. Covered rows

@@ -51,16 +51,18 @@ decisions, touched files, workspace identity, successful commands and checks, cu
 attempted mitigations, unresolved questions, recent conversation context, and active or interrupted
 operations. Each item preserves evidence and source references where available.
 
-It also includes up to six `referencedContext` excerpts selected from distinctive terms or quoted
-labels in the latest request. These excerpts keep definitions for shorthand such as “the playtest”
-or “that scenario” close to the request, including across an older checkpoint boundary. For a
+It also includes `referencedContext` excerpts selected from distinctive terms or quoted labels in
+the latest request. Six excerpts are available at the baseline budget, scaling to 24 for the
+largest checkpoint budget. These excerpts keep definitions for shorthand such as “the playtest” or
+“that scenario” close to the request, including across an older checkpoint boundary. For a
 pronoun-only follow-up such as “do that,” the final part of the immediately preceding assistant
 response is retained as the likely antecedent. This is bounded excerpt selection, not raw-history
 replay; every excerpt is redacted and carries its source message or row when available.
 
-The total size is capped at the smaller of 16,000 estimated tokens or 10% of the target model's
-context window. The structured portion targets at most 4,000 tokens; recent context uses only the
-remaining budget. The preview reports anything omitted.
+The total size is capped at the smaller of 64,000 estimated tokens or 10% of the target model's
+context window. The structured portion grows from a 4,000-token baseline to at most 16,000 tokens;
+the inspected tail grows from 80 to at most 320 messages. Recent context uses only the remaining
+budget. The preview reports anything omitted.
 
 If needed detail was omitted or truncated, the replacement can use gosling's default read-only
 `session_search` tool and then `session_read` to recover a bounded page from the current persisted

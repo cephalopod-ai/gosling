@@ -7,7 +7,7 @@ Status: accepted
 
 gosling uses its persisted session ledger as the source of truth when a live session changes
 provider or model. Before a transition, core builds a versioned, deterministic
-`SessionHandoffSnapshotV1`, redacts it, bounds it to the smaller of 16,000 tokens or 10% of the
+`SessionHandoffSnapshotV1`, redacts it, bounds it to the smaller of 64,000 tokens or 10% of the
 target context window, and stores it in the schema-v33 `session_handoff_snapshots` table. Snapshot
 coverage includes the last covered row, source hash, summary state, estimated size, redactions, and
 truncations so the user can inspect what will cross the boundary.
@@ -42,13 +42,15 @@ gosling-managed API sessions can continue from their ledger directly. The ACP co
 also redacted and capped, but normal switches and resumes use the core checkpoint.
 
 Checkpoint compression is a bounded delivery mechanism, not the only route to persisted context.
-The structured checkpoint includes a backward-compatible `referencedContext` section. Core derives
-up to six redacted excerpts from distinctive terms and quoted labels in the latest user request,
-ranking rarer matches above generic recurrence and retaining the immediately preceding assistant
-response as the fallback antecedent for pronoun-only requests. This selector may read user-visible
-rows behind a previous agent-context boundary, but it never replays those raw rows; only the
-bounded selected excerpts cross the next boundary. Generic structured history is trimmed oldest
-first, while reference matches are trimmed least-relevant first.
+The structured checkpoint includes a backward-compatible `referencedContext` section. At the
+16,000-token baseline, core derives up to six redacted excerpts from distinctive terms and quoted
+labels in the latest user request, ranking rarer matches above generic recurrence and retaining the
+immediately preceding assistant response as the fallback antecedent for pronoun-only requests.
+Retention scales with the target-context budget to at most 24 reference excerpts and 320 candidate
+tail messages. This selector may read user-visible rows behind a previous agent-context boundary,
+but it never replays those raw rows; only the bounded selected excerpts cross the next boundary.
+Generic structured history is trimmed oldest first, while reference matches are trimmed
+least-relevant first.
 
 The replacement model resolves shorthand and named task references against `referencedContext`
 before planning. It preserves exact names, constraints, artifact paths, pending work, and requested

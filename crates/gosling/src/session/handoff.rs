@@ -9,13 +9,17 @@ use rmcp::model::Role;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::LazyLock;
 
-const DEFAULT_MAX_HANDOFF_TOKENS: usize = 16_000;
-const DEFAULT_MAX_STRUCTURED_TOKENS: usize = 4_000;
-const MAX_TAIL_MESSAGES: usize = 80;
+const BASELINE_HANDOFF_TOKENS: usize = 16_000;
+const DEFAULT_MAX_HANDOFF_TOKENS: usize = 64_000;
+const DEFAULT_MIN_STRUCTURED_TOKENS: usize = 4_000;
+const DEFAULT_MAX_STRUCTURED_TOKENS: usize = 16_000;
+const BASE_TAIL_MESSAGES: usize = 80;
+const MAX_TAIL_MESSAGES: usize = 320;
 const MAX_ITEM_CHARS: usize = 2_000;
 const MAX_ITEMS_PER_SECTION: usize = 32;
 const MAX_REFERENCE_CUES: usize = 16;
-const MAX_REFERENCED_CONTEXT_ITEMS: usize = 6;
+const BASE_REFERENCED_CONTEXT_ITEMS: usize = 6;
+const MAX_REFERENCED_CONTEXT_ITEMS: usize = 24;
 const MAX_REFERENCE_EXCERPT_CHARS: usize = 1_600;
 
 fn configured_token_budget(name: &str, default: usize) -> usize {
@@ -24,6 +28,25 @@ fn configured_token_budget(name: &str, default: usize) -> usize {
         .and_then(|value| value.parse::<usize>().ok())
         .unwrap_or(default)
         .clamp(512, 64_000)
+}
+
+fn handoff_token_budget(target_context_limit: usize) -> usize {
+    configured_token_budget("GOSLING_HANDOFF_MAX_TOKENS", DEFAULT_MAX_HANDOFF_TOKENS)
+        .min((target_context_limit / 10).max(512))
+}
+
+fn structured_token_budget(max_tokens: usize) -> usize {
+    let adaptive_default = (max_tokens / 4)
+        .clamp(DEFAULT_MIN_STRUCTURED_TOKENS, DEFAULT_MAX_STRUCTURED_TOKENS)
+        .min(max_tokens);
+    configured_token_budget("GOSLING_HANDOFF_STRUCTURED_TOKENS", adaptive_default).min(max_tokens)
+}
+
+fn scale_retention_limit(baseline: usize, maximum: usize, max_tokens: usize) -> usize {
+    baseline
+        .saturating_mul(max_tokens)
+        .div_ceil(BASELINE_HANDOFF_TOKENS)
+        .clamp(baseline, maximum)
 }
 
 fn omit_lower_priority_item(snapshot: &mut SessionHandoffSnapshotV1Dto) -> bool {
@@ -482,6 +505,7 @@ fn referenced_context(
     redactor: &mut Redactor,
     rows: &[(i64, Message)],
     latest_user: Option<&(i64, Message)>,
+    max_items: usize,
 ) -> Vec<HandoffEvidenceItemDto> {
     let Some((latest_user_row_id, latest_user_message)) = latest_user else {
         return Vec::new();
@@ -541,7 +565,7 @@ fn referenced_context(
 
     let mut selected = ranked
         .into_iter()
-        .take(MAX_REFERENCED_CONTEXT_ITEMS)
+        .take(max_items)
         .map(|(_, row_id, message, text, matched)| (row_id, message, text, matched))
         .collect::<Vec<_>>();
     if let Some((row_id, message, text)) = candidates
@@ -550,7 +574,7 @@ fn referenced_context(
         .find(|(_, message, _)| message.role == Role::Assistant)
     {
         if !selected.iter().any(|selected| selected.0 == *row_id) {
-            if selected.len() == MAX_REFERENCED_CONTEXT_ITEMS {
+            if selected.len() == max_items {
                 selected.pop();
             }
             selected.push((*row_id, *message, text.as_str(), Vec::new()));
@@ -714,6 +738,15 @@ impl<'a> SessionHandoffBuilder<'a> {
         target_capabilities: ProviderCapabilities,
         trigger: SessionHandoffTriggerDto,
     ) -> Result<SessionHandoffSnapshotV1Dto> {
+        let max_tokens = handoff_token_budget(target_context_limit);
+        let structured_budget = structured_token_budget(max_tokens);
+        let tail_message_limit =
+            scale_retention_limit(BASE_TAIL_MESSAGES, MAX_TAIL_MESSAGES, max_tokens);
+        let referenced_context_limit = scale_retention_limit(
+            BASE_REFERENCED_CONTEXT_ITEMS,
+            MAX_REFERENCED_CONTEXT_ITEMS,
+            max_tokens,
+        );
         let session = self.session_manager.get_session(session_id, false).await?;
         let summary = self.session_manager.get_session_summary(session_id).await?;
         let facts = self
@@ -722,7 +755,7 @@ impl<'a> SessionHandoffBuilder<'a> {
             .await?;
         let (rows, total_message_count) = self
             .session_manager
-            .get_session_tail_rows(session_id, MAX_TAIL_MESSAGES)
+            .get_session_tail_rows(session_id, tail_message_limit)
             .await?;
         let artifacts = self
             .session_manager
@@ -789,7 +822,8 @@ impl<'a> SessionHandoffBuilder<'a> {
                 timestamp: Some(summary.covered_through_timestamp),
             })
             .or_else(|| latest_user_intent.clone());
-        let referenced_context = referenced_context(&mut redactor, &rows, latest_user);
+        let referenced_context =
+            referenced_context(&mut redactor, &rows, latest_user, referenced_context_limit);
 
         let mut decisions = facts
             .iter()
@@ -975,9 +1009,6 @@ impl<'a> SessionHandoffBuilder<'a> {
         let first_row_id = rows.first().map(|(row_id, _)| *row_id);
         let covered_through_row_id = rows.last().map(|(row_id, _)| *row_id);
         let (continuity_class, delivery_strategy) = delivery_plan(target_capabilities);
-        let max_tokens =
-            configured_token_budget("GOSLING_HANDOFF_MAX_TOKENS", DEFAULT_MAX_HANDOFF_TOKENS)
-                .min((target_context_limit / 10).max(512));
         let mut truncations = Vec::new();
         if total_message_count > rows.len() && summary_covered == 0 {
             truncations.push(format!(
@@ -1060,11 +1091,6 @@ impl<'a> SessionHandoffBuilder<'a> {
         };
         snapshot.redaction_report = redactor.finish();
 
-        let structured_budget = configured_token_budget(
-            "GOSLING_HANDOFF_STRUCTURED_TOKENS",
-            DEFAULT_MAX_STRUCTURED_TOKENS,
-        )
-        .min(max_tokens);
         fit_structured_snapshot(&mut snapshot, structured_budget)?;
         let structured_tokens = estimate_tokens(&snapshot)?;
         let tail_budget = max_tokens.saturating_sub(structured_tokens);
