@@ -175,3 +175,95 @@ async fn session_history_tools_are_declared_read_only() {
         .iter()
         .all(|tool| tool.annotations.as_ref().and_then(|a| a.read_only_hint) == Some(true)));
 }
+
+#[tokio::test]
+async fn lineage_survives_a_later_handoff_generation_on_the_target() {
+    let temp = tempfile::tempdir().unwrap();
+    let manager = Arc::new(SessionManager::new(temp.path().join("data")));
+    let source = manager
+        .create_session(
+            temp.path().to_path_buf(),
+            "source".to_string(),
+            SessionType::User,
+            GoslingMode::Auto,
+        )
+        .await
+        .unwrap();
+    manager
+        .add_message(
+            &source.id,
+            &Message::user()
+                .with_id("ancestor-message")
+                .with_text("ancestor-marker recorded before the handoff"),
+        )
+        .await
+        .unwrap();
+    let snapshot = SessionHandoffBuilder::new(&manager)
+        .build(
+            &source.id,
+            "target-provider",
+            "target-model",
+            128_000,
+            ProviderCapabilities::gosling_managed(),
+            SessionHandoffTriggerDto::SessionFork,
+        )
+        .await
+        .unwrap();
+    let (target, _) = manager
+        .create_handoff_session(
+            &source.id,
+            "target".to_string(),
+            "target-provider".to_string(),
+            ModelConfig::new("target-model"),
+            snapshot,
+        )
+        .await
+        .unwrap();
+
+    // Any later snapshot on the target -- an in-place switch, a failed switch,
+    // or a provider-failure checkpoint -- becomes the latest generation. It must
+    // carry the ancestor forward rather than pointing back at itself.
+    let next = SessionHandoffBuilder::new(&manager)
+        .build(
+            &target.id,
+            "other-provider",
+            "other-model",
+            128_000,
+            ProviderCapabilities::gosling_managed(),
+            SessionHandoffTriggerDto::ProviderFailure,
+        )
+        .await
+        .unwrap();
+    assert_eq!(next.source_session_id.as_deref(), Some(source.id.as_str()));
+    manager.prepare_handoff_snapshot(next, None).await.unwrap();
+
+    manager
+        .add_message(
+            &target.id,
+            &Message::user()
+                .with_id("target-current-request")
+                .with_text("what was the ancestor-marker"),
+        )
+        .await
+        .unwrap();
+    let client = SessionHistoryClient::new(PlatformExtensionContext {
+        extension_manager: None,
+        session_manager: manager,
+        session: None,
+        use_login_shell_path: false,
+        code_execution_runtime: CodeExecutionRuntime::Disabled,
+    });
+    let ctx = ToolCallContext::new(target.id, Some(temp.path().to_path_buf()), None);
+    let search = client
+        .call_tool(
+            &ctx,
+            "session_search",
+            Some(object!({"query": "ancestor-marker"})),
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(search.is_error, Some(false));
+    assert!(first_text(&search).contains("ancestor-message"));
+    assert!(first_text(&search).contains("\"source_session\": true"));
+}

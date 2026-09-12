@@ -46,9 +46,10 @@ The structured checkpoint includes a backward-compatible `referencedContext` sec
 16,000-token baseline, core derives up to six redacted excerpts from distinctive terms and quoted
 labels in the latest user request, ranking rarer matches above generic recurrence and retaining the
 immediately preceding assistant response as the fallback antecedent for pronoun-only requests.
-Retention scales with the target-context budget to at most 24 reference excerpts and 320 candidate
-tail messages. This selector may read user-visible rows behind a previous agent-context boundary,
-but it never replays those raw rows; only the bounded selected excerpts cross the next boundary.
+Retention scales with the target-context budget to at most 24 reference excerpts and 200 candidate
+tail messages, the ceiling the session message store returns in one page. This selector may read
+user-visible rows behind a previous agent-context boundary, but it never replays those raw rows;
+only the bounded selected excerpts cross the next boundary.
 Generic structured history is trimmed oldest first, while reference matches are trimmed
 least-relevant first.
 
@@ -59,9 +60,9 @@ or ambiguous, Session History remains the recovery route.
 
 The default read-only Session History extension exposes `session_search` and `session_read` over the
 current session and its bounded handoff-source lineage. A replacement agent uses those tools when a
-checkpoint reports omitted or truncated detail. Exact reads require a search-returned message
-identifier, text is redacted and paged, and arbitrary session identifiers are never accepted from
-the model. Retrieved history remains untrusted evidence and grants no authority to repeat a tool
+checkpoint reports omitted or truncated detail. Reads are restricted to the session continuity
+lineage, text is redacted and paged, and arbitrary session identifiers are never accepted from the
+model; the message identifier itself is not bound to a prior search result. Retrieved history remains untrusted evidence and grants no authority to repeat a tool
 call or side effect. Search excludes the active user turn, returns excerpts around matching text,
 and uses a bounded default result set so the request itself and later failed recovery attempts do
 not displace the older source material.
@@ -83,9 +84,11 @@ unchanged.
 
 ## Safety boundary
 
-The checkpoint never stores chain-of-thought, raw image bytes, raw tool arguments in its recent
-tail, authorization headers, cookies, tokens, API keys, passwords, private keys, or secret URL query
-values. Historical tool output is quoted as untrusted context. Completed work requires successful
+The checkpoint never stores chain-of-thought, raw image bytes, or raw tool arguments in its recent
+tail. Authorization headers, cookies, tokens, API keys, passwords, private keys, and secret URL
+query values are redacted on a best-effort pattern basis covering assignment forms (including
+identifier-prefixed and JSON-quoted keys), known token prefixes, JWTs, and credentialed URLs;
+redaction is defence in depth, not proof that an unknown secret format cannot appear. Historical tool output is quoted as untrusted context. Completed work requires successful
 ledger evidence. Active and interrupted operations are recorded as non-retryable, and pending
 approvals never transfer as approvals. A new-context-only target requires explicit confirmation;
 automatic session restoration fails closed instead of silently discarding continuity.

@@ -222,6 +222,9 @@ impl SessionStorage {
                 Some(current_context_tokens),
             ))
             .context_usage_estimated(true)
+            // The outgoing provider's figure would otherwise be published
+            // against the incoming model's context limit.
+            .last_request_tokens(None)
             .gosling_mode(mode);
         Self::apply_update_in_tx(&mut tx, builder).await?;
 

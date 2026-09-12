@@ -14,7 +14,7 @@ const DEFAULT_MAX_HANDOFF_TOKENS: usize = 64_000;
 const DEFAULT_MIN_STRUCTURED_TOKENS: usize = 4_000;
 const DEFAULT_MAX_STRUCTURED_TOKENS: usize = 16_000;
 const BASE_TAIL_MESSAGES: usize = 80;
-const MAX_TAIL_MESSAGES: usize = 320;
+const MAX_TAIL_MESSAGES: usize = crate::session::MAX_SESSION_MESSAGE_PAGE_LIMIT;
 const MAX_ITEM_CHARS: usize = 2_000;
 const MAX_ITEMS_PER_SECTION: usize = 32;
 const MAX_REFERENCE_CUES: usize = 16;
@@ -50,9 +50,12 @@ fn scale_retention_limit(baseline: usize, maximum: usize, max_tokens: usize) -> 
 }
 
 fn omit_lower_priority_item(snapshot: &mut SessionHandoffSnapshotV1Dto) -> bool {
+    // `files_touched` and `active_or_interrupted_operations` arrive newest-first
+    // from their `ORDER BY ... DESC` sources, so dropping index 0 there would
+    // discard the most recent item instead of the oldest.
     if remove_oldest(&mut snapshot.commands_and_checks)
         || remove_oldest(&mut snapshot.completed_work)
-        || remove_oldest(&mut snapshot.files_touched)
+        || remove_newest(&mut snapshot.files_touched)
         || remove_oldest(&mut snapshot.attempted_mitigations)
         || remove_oldest(&mut snapshot.decisions)
         || remove_oldest(&mut snapshot.unresolved_questions)
@@ -61,7 +64,7 @@ fn omit_lower_priority_item(snapshot: &mut SessionHandoffSnapshotV1Dto) -> bool 
         return true;
     }
     if snapshot.active_or_interrupted_operations.len() > 8 {
-        snapshot.active_or_interrupted_operations.remove(0);
+        snapshot.active_or_interrupted_operations.pop();
         return true;
     }
     if snapshot.pending_approvals.len() > 8 {
@@ -73,6 +76,10 @@ fn omit_lower_priority_item(snapshot: &mut SessionHandoffSnapshotV1Dto) -> bool 
         return true;
     }
     false
+}
+
+fn remove_newest<T>(items: &mut Vec<T>) -> bool {
+    items.pop().is_some()
 }
 
 fn remove_oldest<T>(items: &mut Vec<T>) -> bool {
@@ -89,16 +96,20 @@ fn keep_latest<T>(items: &mut Vec<T>, limit: usize) {
     }
 }
 
-fn truncate_evidence_content(items: &mut [HandoffEvidenceItemDto], max_chars: usize) -> bool {
-    let mut changed = false;
+fn truncate_evidence_content(items: &mut [HandoffEvidenceItemDto], max_chars: usize) -> usize {
+    let mut truncated = 0;
     for item in items {
         if item.content.chars().count() > max_chars {
-            item.content = item.content.chars().take(max_chars).collect();
+            item.content = item
+                .content
+                .chars()
+                .take(max_chars.saturating_sub(1))
+                .collect();
             item.content.push('…');
-            changed = true;
+            truncated += 1;
         }
     }
-    changed
+    truncated
 }
 
 fn fit_structured_snapshot(
@@ -113,20 +124,18 @@ fn fit_structured_snapshot(
         if estimate_tokens(snapshot)? <= max_tokens {
             break;
         }
-        let mut changed = false;
+        let mut truncated = 0;
         if let Some(objective) = snapshot.current_objective.as_mut() {
-            changed |= truncate_evidence_content(std::slice::from_mut(objective), max_chars);
+            truncated += truncate_evidence_content(std::slice::from_mut(objective), max_chars);
         }
         if let Some(intent) = snapshot.latest_user_intent.as_mut() {
-            changed |= truncate_evidence_content(std::slice::from_mut(intent), max_chars);
+            truncated += truncate_evidence_content(std::slice::from_mut(intent), max_chars);
         }
-        changed |= truncate_evidence_content(&mut snapshot.referenced_context, max_chars);
-        changed |= truncate_evidence_content(&mut snapshot.current_errors, max_chars);
-        changed |= truncate_evidence_content(&mut snapshot.pending_approvals, max_chars);
-        changed |= truncate_evidence_content(&mut snapshot.next_actions, max_chars);
-        if changed {
-            snapshot.redaction_report.truncated_item_count += 1;
-        }
+        truncated += truncate_evidence_content(&mut snapshot.referenced_context, max_chars);
+        truncated += truncate_evidence_content(&mut snapshot.current_errors, max_chars);
+        truncated += truncate_evidence_content(&mut snapshot.pending_approvals, max_chars);
+        truncated += truncate_evidence_content(&mut snapshot.next_actions, max_chars);
+        snapshot.redaction_report.truncated_item_count += truncated as u64;
     }
     if omitted {
         snapshot.coverage.truncations.push(
@@ -159,14 +168,41 @@ static SECRET_PATTERNS: LazyLock<Vec<(&'static str, Regex)>> = LazyLock::new(|| 
                 .expect("authorization regex"),
         ),
         (
+            // Key names carry identifier prefixes/suffixes in real payloads
+            // (`OPENAI_API_KEY=`) and are quoted in JSON (`"api_key":`), so the
+            // name must be matched inside its surrounding identifier and the
+            // separator must tolerate a closing quote.
             "api_key",
-            Regex::new(r#"(?i)\b(api[_-]?key|access[_-]?token|client[_-]?secret|password)\b\s*[:=]\s*[\"']?[^\s,;\"']+"#)
-                .expect("secret assignment regex"),
+            Regex::new(
+                r#"(?i)[A-Za-z0-9_.\-]*(?:api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|secret[_-]?access[_-]?key|secret[_-]?key|auth[_-]?token|password|passwd|passphrase)[A-Za-z0-9_.\-]*[\"']?\s*[:=]\s*[\"']?[^\s,;\"']+"#,
+            )
+            .expect("secret assignment regex"),
         ),
         (
             "token",
-            Regex::new(r"\b(?:sk|ghp|github_pat|xox[baprs]|AKIA)[-_A-Za-z0-9]{12,}\b")
-                .expect("token regex"),
+            Regex::new(
+                r"\b(?:sk|pk|rk|ghp|gho|ghu|ghs|github_pat|glpat|xox[baprs]|npm|AKIA|ASIA)[-_][A-Za-z0-9_\-]{10,}\b",
+            )
+            .expect("token regex"),
+        ),
+        (
+            "jwt",
+            Regex::new(r"\beyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\b")
+                .expect("jwt regex"),
+        ),
+        (
+            "cloud_api_key",
+            Regex::new(r"\bAIza[0-9A-Za-z_\-]{20,}\b").expect("cloud api key regex"),
+        ),
+        (
+            "url_credentials",
+            Regex::new(r"[a-zA-Z][a-zA-Z0-9+.\-]*://[^/\s:@]+:[^/\s@]+@")
+                .expect("url credentials regex"),
+        ),
+        (
+            "webhook_url",
+            Regex::new(r"https://hooks\.slack\.com/services/[A-Za-z0-9/+_\-]+")
+                .expect("webhook url regex"),
         ),
         (
             "private_key",
@@ -520,7 +556,11 @@ fn referenced_context(
                 && message.metadata.user_visible
                 && !visible_text(message).trim().is_empty()
         })
-        .map(|(row_id, message)| (*row_id, message, visible_text(message)))
+        .map(|(row_id, message)| {
+            let text = visible_text(message);
+            let lowercase = text.to_ascii_lowercase();
+            (*row_id, message, text, lowercase)
+        })
         .collect::<Vec<_>>();
     if candidates.is_empty() {
         return Vec::new();
@@ -531,7 +571,7 @@ fn referenced_context(
     for cue in &cues {
         let frequency = candidates
             .iter()
-            .filter(|(_, _, text)| text.to_ascii_lowercase().contains(cue))
+            .filter(|(_, _, _, lowercase)| lowercase.contains(cue))
             .count();
         frequencies.insert(cue.clone(), frequency);
     }
@@ -545,8 +585,7 @@ fn referenced_context(
 
     let mut ranked = candidates
         .iter()
-        .filter_map(|(row_id, message, text)| {
-            let lowercase = text.to_ascii_lowercase();
+        .filter_map(|(row_id, message, text, lowercase)| {
             let matched = cues
                 .iter()
                 .filter(|cue| lowercase.contains(cue.as_str()))
@@ -568,25 +607,33 @@ fn referenced_context(
         .take(max_items)
         .map(|(_, row_id, message, text, matched)| (row_id, message, text, matched))
         .collect::<Vec<_>>();
-    if let Some((row_id, message, text)) = candidates
+    if let Some((row_id, message, text, _)) = candidates
         .iter()
         .rev()
-        .find(|(_, message, _)| message.role == Role::Assistant)
+        .find(|(_, message, _, _)| message.role == Role::Assistant)
     {
         if !selected.iter().any(|selected| selected.0 == *row_id) {
             if selected.len() == max_items {
                 selected.pop();
             }
-            selected.push((*row_id, *message, text.as_str(), Vec::new()));
+            // Budget eviction trims this section from the end, so the fallback
+            // antecedent for pronoun-only requests goes first: appending it
+            // would make the one guaranteed entry the first one discarded.
+            selected.insert(0, (*row_id, *message, text.as_str(), Vec::new()));
         }
     }
     selected
         .into_iter()
         .map(|(row_id, message, text, matched)| {
+            // Redact before excerpting: cutting raw text can strip the key that
+            // anchors a secret pattern, letting the value survive the later pass.
+            // No length cap here -- truncating first would defeat the excerpt
+            // selector, which must still be able to centre on a late cue.
+            let redacted = redactor.text(text, usize::MAX);
             let content = if matched.is_empty() {
-                balanced_excerpt(text, MAX_REFERENCE_EXCERPT_CHARS)
+                balanced_excerpt(&redacted, MAX_REFERENCE_EXCERPT_CHARS)
             } else {
-                reference_excerpt(text, &matched)
+                reference_excerpt(&redacted, &matched)
             };
             evidence(
                 redactor,
@@ -748,6 +795,16 @@ impl<'a> SessionHandoffBuilder<'a> {
             max_tokens,
         );
         let session = self.session_manager.get_session(session_id, false).await?;
+        // Parentage lives only in the snapshot body, and `latest_handoff_snapshot`
+        // reads the newest generation, so every new generation must carry the
+        // ancestor forward or `continuity_lineage` loses it the moment this
+        // session takes another handoff.
+        let inherited_source_session_id = self
+            .session_manager
+            .latest_handoff_snapshot(session_id)
+            .await?
+            .and_then(|previous| previous.source_session_id)
+            .filter(|source| source != session_id);
         let summary = self.session_manager.get_session_summary(session_id).await?;
         let facts = self
             .session_manager
@@ -1010,10 +1067,11 @@ impl<'a> SessionHandoffBuilder<'a> {
         let covered_through_row_id = rows.last().map(|(row_id, _)| *row_id);
         let (continuity_class, delivery_strategy) = delivery_plan(target_capabilities);
         let mut truncations = Vec::new();
-        if total_message_count > rows.len() && summary_covered == 0 {
+        let uncovered_message_count =
+            total_message_count.saturating_sub(summary_covered + rows.len());
+        if uncovered_message_count > 0 {
             truncations.push(format!(
-                "{} older message(s) omitted because no current durable summary covers them",
-                total_message_count - rows.len()
+                "{uncovered_message_count} older message(s) omitted: neither carried by a current durable summary nor by the recent tail"
             ));
         }
         if artifacts.total_count > files_touched.len() {
@@ -1027,7 +1085,9 @@ impl<'a> SessionHandoffBuilder<'a> {
             snapshot_id: format!("handoff_{}", uuid::Uuid::new_v4()),
             schema_version: SESSION_HANDOFF_SCHEMA_VERSION,
             session_id: session_id.to_string(),
-            source_session_id: Some(session_id.to_string()),
+            source_session_id: Some(
+                inherited_source_session_id.unwrap_or_else(|| session_id.to_string()),
+            ),
             generation: 0,
             trigger,
             status: SessionHandoffStatusDto::Prepared,
@@ -1052,11 +1112,7 @@ impl<'a> SessionHandoffBuilder<'a> {
             coverage: HandoffCoverageDto {
                 first_row_id,
                 covered_through_row_id,
-                covered_message_count: (summary_covered.min(total_message_count)
-                    + rows
-                        .len()
-                        .min(total_message_count.saturating_sub(summary_covered)))
-                    as u64,
+                covered_message_count: 0,
                 total_message_count: total_message_count as u64,
                 source_hash: hasher.finalize().to_hex().to_string(),
                 summary_status,
@@ -1139,6 +1195,15 @@ impl<'a> SessionHandoffBuilder<'a> {
         }
         snapshot.coverage.recent_tail_message_count =
             snapshot.recent_conversation_tail.len() as u64;
+        // Counted after trimming: the user confirms an irreversible transition
+        // against this number, so it must describe the shipped checkpoint rather
+        // than the rows that were fetched as candidates.
+        snapshot.coverage.covered_message_count = (summary_covered.min(total_message_count)
+            + snapshot
+                .recent_conversation_tail
+                .len()
+                .min(total_message_count.saturating_sub(summary_covered)))
+            as u64;
         let final_estimate = refresh_estimated_tokens(&mut snapshot)?;
         anyhow::ensure!(
             final_estimate <= max_tokens,
@@ -1269,6 +1334,57 @@ mod tests {
         assert!(value.chars().count() <= 40);
         assert!(report.redaction_count >= 2);
         assert_eq!(report.truncated_item_count, 1);
+    }
+
+    #[test]
+    fn redacts_secret_shapes_that_carry_identifier_prefixes_or_json_quoting() {
+        // Every case below was observed leaving the boundary verbatim before the
+        // key-name pattern was allowed to match inside its surrounding
+        // identifier and past a closing quote.
+        for secret in [
+            "OPENAI_API_KEY=sk-realsecretvalue",
+            "AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMIK7MDENG",
+            "DB_PASSWORD=hunter2horse",
+            r#"{"api_key":"abc123456789"}"#,
+            r#"{"access_token":"abc123456789"}"#,
+            r#"{"password":"hunter2horse"}"#,
+            "postgres://user:pa55word@db.internal/app",
+            "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpM",
+            "AIzaSyD-1234567890abcdefghijklmnopqrst",
+        ] {
+            let mut redactor = Redactor::default();
+            let redacted = redactor.text(secret, MAX_ITEM_CHARS);
+            assert!(
+                redacted.contains("[REDACTED]"),
+                "secret shape was not redacted: {secret}"
+            );
+            for leaked in [
+                "sk-realsecretvalue",
+                "wJalrXUtnFEMIK7MDENG",
+                "hunter2horse",
+                "abc123456789",
+                "pa55word",
+                "SflKxwRJSMeKKF2QT4fwpM",
+                "1234567890abcdefghijklmnopqrst",
+            ] {
+                assert!(
+                    !redacted.contains(leaked),
+                    "{leaked} survived redaction of {secret}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn ordinary_prose_is_not_redacted() {
+        let mut redactor = Redactor::default();
+        for benign in [
+            "the password reset flow still needs tests",
+            "see docs/adr/0019 for the token budget",
+            "cargo test --package gosling",
+        ] {
+            assert_eq!(redactor.text(benign, MAX_ITEM_CHARS), benign);
+        }
     }
 
     #[test]

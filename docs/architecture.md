@@ -179,7 +179,7 @@ shorthand against these excerpts before using Session History as the fallback.
 Retention scales from a 16,000-token baseline with the receiving model's context window. The total
 checkpoint remains at most 10% of that window and no more than 64,000 tokens. The structured share
 scales from 4,000 to 16,000 tokens, reference capacity from 6 to 24 excerpts, and the inspected tail
-from 80 to 320 messages. This uses large-context capability without allowing continuity data to
+from 80 to 200 messages. This uses large-context capability without allowing continuity data to
 consume most of the next model's working window.
 
 `Agent::transition_provider` is the single live-switch owner. It prepares a generation, initializes
@@ -191,8 +191,9 @@ requires explicit confirmation and injects no checkpoint. Stale generations, cha
 and pre-commit failures preserve the prior provider configuration.
 
 The default read-only Session History platform extension provides bounded, redacted
-`session_search` and `session_read` access to persisted text in the active session and up to eight
-handoff-source ancestors. This is the recovery path for details omitted by a checkpoint; it neither
+`session_search` and `session_read` access to persisted text in the active session and up to seven
+handoff-source ancestors; every handoff generation carries the ancestor pointer forward, so a later
+provider switch on a handed-off session does not orphan its source. This is the recovery path for details omitted by a checkpoint; it neither
 replays raw history into context nor accepts an arbitrary session ID. Search omits the active turn
 and centers excerpts on matching text. Provider-owned tool runtimes receive the same client through
 a private session-and-store-scoped stdio MCP bridge. A revisioned extension-state migration adds the

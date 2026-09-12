@@ -28,7 +28,11 @@ const SEARCH_SNIPPET_CHARS: usize = 500;
 const SEARCH_SNIPPET_LEADING_CONTEXT_CHARS: usize = 160;
 
 fn relevant_search_snippet(text: &str, query: &str) -> String {
-    let lowered = text.to_lowercase();
+    // Redact before windowing: the window offset is derived from the caller's
+    // query, so cutting raw text first lets a window that opens inside a secret
+    // drop the key the patterns anchor on.
+    let text = &crate::session::handoff::redact_session_history_for_agent(text, usize::MAX);
+    let lowered = text.to_ascii_lowercase();
     let query = query.to_lowercase();
     let match_byte = lowered.find(&query).or_else(|| {
         query
@@ -363,7 +367,11 @@ impl SessionStorage {
         );
         if exclude_current_turn {
             sql.push_str(
-                " AND id < COALESCE((SELECT MAX(current_turn.id) FROM messages current_turn WHERE current_turn.session_id = ? AND current_turn.role = 'user'), 9223372036854775807)",
+                " AND id < COALESCE((SELECT MAX(current_turn.id) FROM messages current_turn \
+                 WHERE current_turn.session_id = ? AND current_turn.role = 'user' \
+                 AND COALESCE(json_extract(current_turn.metadata_json, '$.steer'), 0) = 0 \
+                 AND EXISTS (SELECT 1 FROM json_each(current_turn.content_json) WHERE json_extract(value, '$.type') = 'text') \
+                 AND NOT EXISTS (SELECT 1 FROM json_each(current_turn.content_json) WHERE json_extract(value, '$.type') = 'toolResponse')), 0)",
             );
         }
         sql.push_str(

@@ -752,7 +752,10 @@ async fn provider_transition_rebases_current_usage_and_preserves_accumulated_usa
         )
     );
     assert!(transitioned.context_usage_estimated);
-    assert_eq!(transitioned.last_request_tokens, Some(1_000));
+    // The outgoing provider's last request says nothing about the incoming
+    // model's window, so it must not survive the rebase and be published
+    // against the new context limit.
+    assert_eq!(transitioned.last_request_tokens, None);
     assert_eq!(transitioned.accumulated_usage, accumulated);
 }
 

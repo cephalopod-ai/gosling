@@ -61,7 +61,7 @@ replay; every excerpt is redacted and carries its source message or row when ava
 
 The total size is capped at the smaller of 64,000 estimated tokens or 10% of the target model's
 context window. The structured portion grows from a 4,000-token baseline to at most 16,000 tokens;
-the inspected tail grows from 80 to at most 320 messages. Recent context uses only the remaining
+the inspected tail grows from 80 to at most 200 messages. Recent context uses only the remaining
 budget. The preview reports anything omitted.
 
 If needed detail was omitted or truncated, the replacement can use gosling's default read-only
