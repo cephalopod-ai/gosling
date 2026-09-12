@@ -15,7 +15,11 @@ shows you what it covers, and activates the target as one transition.
 3. Review the source and target, coverage, summary state, delivery method, interrupted operations,
    pending approvals, tool continuity, authorization mode, and redaction or truncation counts.
 4. Confirm the switch. gosling shows the transition stages and does not submit a duplicate switch
-   while one is active.
+while one is active.
+
+The preview is bound to canonical session content, so the ordering of internal extension-state
+fields cannot make an unchanged conversation appear stale. Actual message, tool-policy, or session
+changes still require a fresh review.
 
 You can review and confirm a switch while the current response is still running. The preview is
 speculative: confirmation reserves the next session operation, waits for that exact response to

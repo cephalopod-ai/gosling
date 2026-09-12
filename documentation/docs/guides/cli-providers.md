@@ -57,6 +57,7 @@ The Claude Code provider integrates with Anthropic's [Claude CLI tool](https://c
 - Automatic filtering of gosling extensions from system prompts (since Claude Code has its own tool ecosystem); stdio and streamable-http extensions are handed to the CLI as MCP servers
 - Streaming JSON (NDJSON) protocol for persistent, multi-turn sessions
 - Clarifying questions from Claude Code appear as a form in gosling, in every mode
+- Terminal CLI errors are shown as provider failures instead of completing as an empty response
 
 **Requirements:**
 - Claude CLI tool installed and configured

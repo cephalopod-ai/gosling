@@ -35,7 +35,7 @@ use crate::permission::{Permission, PermissionConfirmation};
 use crate::subprocess::configure_subprocess;
 use gosling_providers::model::ModelConfig;
 
-use super::cli_common::{error_from_event, extract_usage_tokens};
+use super::cli_common::{error_from_event, error_from_message, extract_usage_tokens};
 
 const CLAUDE_CODE_PROVIDER_NAME: &str = "claude-code";
 pub const CLAUDE_CODE_DEFAULT_MODEL: &str = "default";
@@ -239,9 +239,9 @@ fn ask_user_question_response(
 /// Maps a model value the CLI advertises onto the name Gosling passes back to it
 /// as `--model`. Fable 5 and Fable 5.1 are separate models the CLI serves side by
 /// side under separate names, and only a CLI new enough to advertise
-/// `claude-fable-5-1` accepts it — an older one errors the turn out with an empty
-/// synthetic response — so each generation maps to itself rather than the newer
-/// name standing in for both.
+/// `claude-fable-5-1` accepts it — an older one returns a terminal model error —
+/// so each generation maps to itself rather than the newer name standing in for
+/// both.
 fn current_claude_model(model: &str) -> Option<&'static str> {
     match model.strip_suffix("[1m]").unwrap_or(model) {
         "best" | "opus" | "claude-opus-5" => Some("claude-opus-5"),
@@ -271,6 +271,29 @@ fn normalize_model_names(models: Vec<String>) -> Vec<String> {
         .filter(|model| available.contains(**model))
         .map(|model| (*model).to_string())
         .collect()
+}
+
+fn terminal_result_error(result: &Value) -> Option<ProviderError> {
+    let is_error = result
+        .get("is_error")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+        || result
+            .get("subtype")
+            .and_then(Value::as_str)
+            .is_some_and(|subtype| subtype.starts_with("error_"));
+    if !is_error {
+        return None;
+    }
+
+    let message = result
+        .get("result")
+        .and_then(Value::as_str)
+        .filter(|message| !message.trim().is_empty())
+        .or_else(|| result.get("error").and_then(Value::as_str))
+        .or_else(|| result.get("message").and_then(Value::as_str))
+        .unwrap_or("Claude CLI returned an error result");
+    Some(error_from_message("Claude CLI", message))
 }
 
 // https://github.com/anthropics/claude-agent-sdk-python/blob/0e9397e/src/claude_agent_sdk/types.py#L857-L859
@@ -1229,6 +1252,10 @@ impl Provider for ClaudeCodeProvider {
                                 }
                                 Some("result") => {
                                     process.needs_drain = false;
+                                    if let Some(error) = terminal_result_error(&parsed) {
+                                        stream_error = Some(error);
+                                        break;
+                                    }
                                     if let Some(usage_info) = parsed.get("usage") {
                                         let new = extract_usage_tokens(usage_info);
                                         let reports_own_cache = new.cache_read_input_tokens.is_some()
@@ -1529,6 +1556,47 @@ mod tests {
         assert_eq!(usage.output_tokens, Some(50));
     }
 
+    #[tokio::test]
+    async fn terminal_error_result_is_not_reported_as_a_successful_empty_turn() {
+        use futures::StreamExt;
+
+        let (_provider, mut stream, _stdin_reader) = stream_with_canned_stdout(&[
+            r#"{"type":"control_response","response":{"subtype":"success","request_id":"req_0"}}"#,
+            r#"{"type":"result","subtype":"error_during_execution","is_error":true,"result":"API Error: 400 installed CLI does not support this model","usage":{"input_tokens":0,"output_tokens":0}}"#,
+        ])
+        .await;
+
+        let error = stream
+            .next()
+            .await
+            .expect("terminal result should finish the stream")
+            .expect_err("an explicit error result must not become successful usage");
+        assert!(matches!(error, ProviderError::RequestFailed(_)));
+        assert!(error
+            .to_string()
+            .contains("installed CLI does not support this model"));
+        assert!(stream.next().await.is_none());
+    }
+
+    #[test]
+    fn terminal_error_result_preserves_context_length_classification() {
+        let error = terminal_result_error(&json!({
+            "type": "result",
+            "subtype": "error_during_execution",
+            "result": "context window exceeded"
+        }))
+        .expect("error subtype should be terminal");
+
+        assert!(matches!(error, ProviderError::ContextLengthExceeded(_)));
+        assert!(terminal_result_error(&json!({
+            "type": "result",
+            "subtype": "success",
+            "is_error": false,
+            "result": "Done"
+        }))
+        .is_none());
+    }
+
     #[test_case(
         r#"{"type":"error","error":"context window exceeded"}"#,
         true
@@ -1694,8 +1762,8 @@ mod tests {
     }
 
     /// A CLI too old to serve Fable 5.1 advertises the 5 generation instead, and
-    /// must be offered that name — passing it `claude-fable-5-1` errors the turn
-    /// out with an empty synthetic response. Values captured from `claude` 2.1.228.
+    /// must be offered that name — passing it `claude-fable-5-1` returns a terminal
+    /// model error. Values captured from `claude` 2.1.228.
     #[test]
     fn test_normalize_model_names_keeps_older_fable_on_older_cli() {
         let models = normalize_model_names(vec![

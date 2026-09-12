@@ -68,6 +68,24 @@ async fn deterministic_checkpoint_is_bounded_redacted_and_provider_independent()
         .await
         .unwrap();
 
+    let mut session = manager.get_session(&session_id, false).await.unwrap();
+    session.extension_data.set_extension_state(
+        "acp_prompt_run",
+        "v1",
+        serde_json::json!("completed"),
+    );
+    session.extension_data.set_extension_state(
+        "enabled_extensions",
+        "v0",
+        serde_json::json!({"names": ["developer"]}),
+    );
+    manager
+        .update(&session_id)
+        .extension_data(session.extension_data)
+        .apply()
+        .await
+        .unwrap();
+
     let builder = SessionHandoffBuilder::new(&manager);
     let first = builder
         .build(
@@ -93,6 +111,32 @@ async fn deterministic_checkpoint_is_bounded_redacted_and_provider_independent()
         .unwrap();
 
     assert_eq!(first.coverage.source_hash, second.coverage.source_hash);
+
+    let mut changed_session = manager.get_session(&session_id, false).await.unwrap();
+    changed_session.extension_data.set_extension_state(
+        "enabled_extensions",
+        "v0",
+        serde_json::json!({"names": ["developer", "memory"]}),
+    );
+    manager
+        .update(&session_id)
+        .extension_data(changed_session.extension_data)
+        .apply()
+        .await
+        .unwrap();
+    let changed = builder
+        .build(
+            &session_id,
+            "anthropic",
+            "claude-sonnet",
+            128_000,
+            ProviderCapabilities::gosling_managed(),
+            SessionHandoffTriggerDto::ProviderFailure,
+        )
+        .await
+        .unwrap();
+    assert_ne!(first.coverage.source_hash, changed.coverage.source_hash);
+
     assert!(first.coverage.estimated_tokens <= 12_800);
     assert_eq!(
         first

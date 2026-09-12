@@ -417,6 +417,28 @@ pub(crate) fn safe_handoff_message_summary(message: &Message) -> String {
     format!("[{}]: {}", item.role, item.content)
 }
 
+fn canonical_json_bytes<T: serde::Serialize + ?Sized>(value: &T) -> Result<Vec<u8>> {
+    fn sort_objects(value: serde_json::Value) -> serde_json::Value {
+        match value {
+            serde_json::Value::Object(object) => serde_json::Value::Object(
+                object
+                    .into_iter()
+                    .map(|(key, value)| (key, sort_objects(value)))
+                    .collect::<BTreeMap<_, _>>()
+                    .into_iter()
+                    .collect(),
+            ),
+            serde_json::Value::Array(values) => {
+                serde_json::Value::Array(values.into_iter().map(sort_objects).collect())
+            }
+            other => other,
+        }
+    }
+
+    let value = sort_objects(serde_json::to_value(value)?);
+    Ok(serde_json::to_vec(&value)?)
+}
+
 pub struct SessionHandoffBuilder<'a> {
     session_manager: &'a SessionManager,
 }
@@ -461,11 +483,14 @@ impl<'a> SessionHandoffBuilder<'a> {
         hasher.update(&[0]);
         hasher.update(target_model.as_bytes());
         hasher.update(&target_context_limit.to_le_bytes());
-        hasher.update(&serde_json::to_vec(&target_capabilities)?);
-        hasher.update(&serde_json::to_vec(&session)?);
-        hasher.update(&serde_json::to_vec(&summary)?);
-        hasher.update(&serde_json::to_vec(&facts)?);
-        hasher.update(&serde_json::to_vec(&artifacts)?);
+        // Preview and confirmation load the session independently. Hash a
+        // canonical value so randomized HashMap iteration cannot invalidate an
+        // otherwise unchanged preview.
+        hasher.update(&canonical_json_bytes(&target_capabilities)?);
+        hasher.update(&canonical_json_bytes(&session)?);
+        hasher.update(&canonical_json_bytes(&summary)?);
+        hasher.update(&canonical_json_bytes(&facts)?);
+        hasher.update(&canonical_json_bytes(&artifacts)?);
         for operation in &operations {
             hasher.update(operation.operation_id.as_bytes());
             hasher.update(&[0]);
@@ -477,7 +502,7 @@ impl<'a> SessionHandoffBuilder<'a> {
         }
         for (row_id, message) in &rows {
             hasher.update(&row_id.to_le_bytes());
-            hasher.update(&serde_json::to_vec(message)?);
+            hasher.update(&canonical_json_bytes(message)?);
         }
 
         let latest_user = rows.iter().rev().find(|(_, message)| {
@@ -907,6 +932,37 @@ pub async fn conversation_for_pending_handoff(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde::ser::SerializeMap;
+
+    struct OrderedEntries<'a>(&'a [(&'a str, u8)]);
+
+    impl serde::Serialize for OrderedEntries<'_> {
+        fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            let mut map = serializer.serialize_map(Some(self.0.len()))?;
+            for (key, value) in self.0 {
+                map.serialize_entry(key, value)?;
+            }
+            map.end()
+        }
+    }
+
+    #[test]
+    fn canonical_json_ignores_map_iteration_order() {
+        let first = OrderedEntries(&[("acp_prompt_run.v1", 1), ("enabled_extensions.v0", 2)]);
+        let reversed = OrderedEntries(&[("enabled_extensions.v0", 2), ("acp_prompt_run.v1", 1)]);
+
+        assert_ne!(
+            serde_json::to_vec(&first).unwrap(),
+            serde_json::to_vec(&reversed).unwrap()
+        );
+        assert_eq!(
+            canonical_json_bytes(&first).unwrap(),
+            canonical_json_bytes(&reversed).unwrap()
+        );
+    }
 
     #[test]
     fn redacts_common_secret_shapes_and_bounds_text() {

@@ -40,6 +40,10 @@ pub(crate) fn error_from_event(provider_name: &str, parsed: &Value) -> ProviderE
         .and_then(|e| e.as_str())
         .or_else(|| parsed.get("message").and_then(|m| m.as_str()))
         .unwrap_or("Unknown error");
+    error_from_message(provider_name, error_msg)
+}
+
+pub(crate) fn error_from_message(provider_name: &str, error_msg: &str) -> ProviderError {
     if error_msg.contains("context window exceeded") {
         ProviderError::ContextLengthExceeded(error_msg.to_string())
     } else {
