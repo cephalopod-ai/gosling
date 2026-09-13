@@ -7,6 +7,7 @@ export interface SlashCommandContext {
 export type SlashCommandResult =
   | { handled: true; message?: string }
   | { handled: true; overlay: "diff"; content: string; truncated: boolean }
+  | { handled: true; exit: true }
   | { handled: false };
 
 export interface SlashCommand {
@@ -72,9 +73,47 @@ const diffCommand: SlashCommand = {
   },
 };
 
+const helpCommand: SlashCommand = {
+  name: "help",
+  description: "show commands and keys",
+  run: () => ({ handled: true, message: helpText() }),
+};
+
+const exitCommand: SlashCommand = {
+  name: "exit",
+  description: "quit gosling",
+  run: () => ({ handled: true, exit: true }),
+};
+
 const COMMANDS: Record<string, SlashCommand> = {
   diff: diffCommand,
+  help: helpCommand,
+  exit: exitCommand,
 };
+
+const ALIASES: Record<string, string> = {
+  "?": "help",
+  quit: "exit",
+};
+
+function helpText(): string {
+  const commands = listSlashCommands()
+    .map((cmd) => `- /${cmd.name} — ${cmd.description}`)
+    .join("\n");
+  return [
+    "**Commands** (handled locally, never sent to the model)",
+    "",
+    commands,
+    "- /quit, /? — aliases for /exit and /help",
+    "",
+    "**Keys**",
+    "",
+    "- esc / ctrl+c — cancel the running turn; when idle, quit",
+    "- ctrl+c twice — quit while a turn is running",
+    "- ctrl+p provider · ctrl+m model · ctrl+e extensions",
+    "- shift+↑↓ turn history · ↑↓ scroll or select tool calls",
+  ].join("\n");
+}
 
 export function tryRunSlashCommand(
   input: string,
@@ -82,9 +121,17 @@ export function tryRunSlashCommand(
 ): SlashCommandResult {
   const trimmed = input.trim();
   if (!trimmed.startsWith("/")) return { handled: false };
-  const name = trimmed.slice(1).split(/\s+/)[0]?.toLowerCase() ?? "";
-  const cmd = COMMANDS[name];
-  if (!cmd) return { handled: false };
+  const token = trimmed.split(/\s+/)[0] ?? "";
+  // `/usr/bin/foo is failing` is a prompt about a path, not a command.
+  if (token.indexOf("/", 1) !== -1) return { handled: false };
+  const typed = token.slice(1).toLowerCase();
+  const cmd = COMMANDS[ALIASES[typed] ?? typed];
+  if (!cmd) {
+    return {
+      handled: true,
+      message: `unknown command ${token} — type /help for the list of commands`,
+    };
+  }
   return cmd.run(ctx);
 }
 

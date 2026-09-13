@@ -585,6 +585,7 @@ function App({
   const isProcessingRef = useRef(false);
   const promptActiveRef = useRef(false);
   const cancelRequestedRef = useRef(false);
+  const runSlashCommandRef = useRef<(raw: string) => boolean>(() => false);
 
   // Only run the animation tick when something is actually animating:
   // the splash gosling while the banner is up, or the spinner while loading.
@@ -758,6 +759,7 @@ function App({
     while (queueRef.current.length > 0) {
       const next = queueRef.current.shift()!;
       setQueuedMessages([...queueRef.current]);
+      if (next.startsWith("/") && runSlashCommandRef.current(next)) continue;
       await executePrompt(next);
     }
     isProcessingRef.current = false;
@@ -925,6 +927,10 @@ function App({
         cwd: sessionCwdRef.current,
       });
       if (!result.handled) return false;
+      if ("exit" in result) {
+        exit();
+        return true;
+      }
       if ("overlay" in result && result.overlay === "diff") {
         setOverlay({
           screen: "diff",
@@ -933,11 +939,19 @@ function App({
         });
         return true;
       }
+      // A local turn added now would become the last turn and receive the
+      // running prompt's streamed reply, so show it once the prompt ends.
+      if (promptActiveRef.current) {
+        queueRef.current.push(raw);
+        setQueuedMessages([...queueRef.current]);
+        return true;
+      }
       addLocalTurn(raw, "message" in result ? result.message : undefined);
       return true;
     },
-    [addLocalTurn],
+    [addLocalTurn, exit],
   );
+  runSlashCommandRef.current = runSlashCommand;
 
   const handleSubmit = useCallback(
     (value: string) => {
