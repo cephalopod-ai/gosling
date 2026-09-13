@@ -84,6 +84,19 @@ impl ToolInspectionManager {
         self.inspectors.push(inspector);
     }
 
+    /// Replaces the registered inspector with the same name in place, keeping
+    /// inspection order; adds it when no inspector of that name exists.
+    pub fn replace_inspector(&mut self, inspector: Box<dyn ToolInspector>) {
+        match self
+            .inspectors
+            .iter_mut()
+            .find(|existing| existing.name() == inspector.name())
+        {
+            Some(existing) => *existing = inspector,
+            None => self.inspectors.push(inspector),
+        }
+    }
+
     /// Runs enabled inspectors in order. Failures become mandatory approval results
     /// for every request in the batch, including in Auto mode.
     pub async fn inspect_tools(

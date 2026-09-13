@@ -624,6 +624,12 @@ impl Agent {
         }
     }
 
+    /// Limits consecutive identical tool calls (e.g. `--max-tool-repetitions`).
+    pub fn set_max_tool_repetitions(&mut self, max_repetitions: u32) {
+        self.tool_inspection_manager
+            .replace_inspector(Box::new(RepetitionInspector::new(Some(max_repetitions))));
+    }
+
     pub async fn shutdown(&self) {
         self.extension_manager.shutdown().await;
     }

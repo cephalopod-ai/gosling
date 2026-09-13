@@ -1596,6 +1596,43 @@ async fn frontend_tool_execution_uses_the_durable_operation_ledger() -> Result<(
 }
 
 #[tokio::test]
+async fn max_tool_repetitions_replaces_the_default_limit_in_place() -> Result<()> {
+    let mut agent = Agent::new();
+    let names_before = agent.tool_inspection_manager.inspector_names();
+    agent.set_max_tool_repetitions(2);
+    assert_eq!(
+        agent.tool_inspection_manager.inspector_names(),
+        names_before
+    );
+
+    let call = CallToolRequestParams::new("tree").with_arguments(rmcp::object!({"path": "."}));
+    let mut denied = Vec::new();
+    for id in ["one", "two", "three"] {
+        let request = ToolRequest {
+            id: id.into(),
+            tool_call: Ok(call.clone()),
+            metadata: None,
+            tool_meta: None,
+        };
+        let results = agent
+            .tool_inspection_manager
+            .inspect_tools("session", &[request], &[], GoslingMode::Auto)
+            .await?;
+        if results.iter().any(|result| {
+            result.inspector_name == "repetition"
+                && matches!(
+                    result.action,
+                    crate::tool_inspection::InspectionAction::Deny
+                )
+        }) {
+            denied.push(id);
+        }
+    }
+    assert_eq!(denied, vec!["three"]);
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_tool_inspection_manager_has_all_inspectors() -> Result<()> {
     let agent = Agent::new();
 

@@ -502,7 +502,10 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
     gosling::posthog::set_session_context("cli", session_config.resume);
 
     let config = Config::global();
-    let agent: Agent = Agent::new();
+    let mut agent: Agent = Agent::new();
+    if let Some(max_repetitions) = session_config.max_tool_repetitions {
+        agent.set_max_tool_repetitions(max_repetitions);
+    }
 
     if session_config.container.is_some() {
         agent.set_container(session_config.container.clone()).await;
