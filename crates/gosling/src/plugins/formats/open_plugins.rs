@@ -1,8 +1,9 @@
 //! Open Plugins format adapter (<https://open-plugins.com>).
 
 use crate::plugins::{
-    collect_skill_candidate, copy_dir_all, write_install_metadata, FormatNotSupported,
-    ImportedSkill, PluginFormat, PluginInstall, PluginInstallOptions, SkillCandidate,
+    collect_skill_candidate, copy_dir_all, staging_dir_in, write_install_metadata,
+    FormatNotSupported, ImportedSkill, PluginFormat, PluginInstall, PluginInstallOptions,
+    SkillCandidate,
 };
 use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Utc};
@@ -86,26 +87,31 @@ fn install_from_manifest(
     let skills = find_agent_skills(checkout_dir, manifest.skills.as_ref())?;
     validate_mcp_servers(checkout_dir, manifest.mcp_servers.as_ref())?;
 
-    copy_dir_all(checkout_dir, &destination)?;
+    let staging = staging_dir_in(install_root)?;
+    let staged = staging.path().join(&plugin_name);
+    copy_dir_all(checkout_dir, &staged)?;
 
     let mut imported_skills = Vec::new();
     for skill in skills {
         let namespaced_name = namespaced_component_name(&plugin_name, &skill.name);
-        let installed_skill_dir = destination.join(&skill.relative_directory);
-        rewrite_skill_name(&installed_skill_dir.join("SKILL.md"), &namespaced_name)?;
+        rewrite_skill_name(
+            &staged.join(&skill.relative_directory).join("SKILL.md"),
+            &namespaced_name,
+        )?;
         imported_skills.push(ImportedSkill {
             name: namespaced_name,
-            directory: installed_skill_dir,
+            directory: destination.join(&skill.relative_directory),
         });
     }
 
     write_install_metadata(
-        &destination,
+        &staged,
         source,
         FORMAT,
         options.auto_update,
         last_update_check,
     )?;
+    fs::rename(&staged, &destination)?;
 
     imported_skills.sort_by(|a, b| a.name.cmp(&b.name));
 
@@ -531,6 +537,63 @@ mod tests {
             fs::read_to_string(installed.directory.join("skills/audit/SKILL.md"))
                 .unwrap()
                 .contains("name: test-plugin:audit")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn interrupted_install_leaves_nothing_behind_and_can_be_retried() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let install_root = tempfile::tempdir().unwrap();
+        let repo = tempfile::tempdir().unwrap();
+        fs::write(
+            repo.path().join("plugin.json"),
+            r#"{"name":"test-plugin","version":"1.0.0"}"#,
+        )
+        .unwrap();
+        let skill_dir = repo.path().join("skills").join("audit");
+        fs::create_dir_all(&skill_dir).unwrap();
+        fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: audit\ndescription: Audit code\n---\nDo an audit.",
+        )
+        .unwrap();
+        let unreadable = repo.path().join("zz-unreadable");
+        fs::write(&unreadable, "data").unwrap();
+        fs::set_permissions(&unreadable, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+        let install = || {
+            install_from_manifest(
+                "https://example.invalid/test-plugin.git",
+                repo.path(),
+                install_root.path(),
+                &PluginInstallOptions::default(),
+                None,
+            )
+        };
+
+        install().unwrap_err();
+        assert_eq!(
+            fs::read_dir(install_root.path()).unwrap().count(),
+            0,
+            "a failed install must not leave a plugin or staging directory"
+        );
+
+        fs::set_permissions(&unreadable, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let installed = install().unwrap();
+        assert_eq!(
+            installed.skills[0].directory,
+            install_root.path().join("test-plugin/skills/audit")
+        );
+        assert!(installed
+            .directory
+            .join(crate::plugins::INSTALL_METADATA)
+            .is_file());
+        assert_eq!(
+            fs::read_dir(install_root.path()).unwrap().count(),
+            1,
+            "a successful install leaves only the plugin directory"
         );
     }
 

@@ -14,6 +14,7 @@ use std::process::Command;
 use tracing::warn;
 
 const INSTALL_METADATA: &str = ".gosling-plugin-install.json";
+const STAGING_DIR_PREFIX: &str = ".gosling-plugin-staging-";
 const AUTO_UPDATE_INTERVAL_HOURS: i64 = 24;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -389,6 +390,15 @@ fn write_install_metadata(
         serde_json::to_string_pretty(&metadata)?,
     )?;
     Ok(())
+}
+
+/// Plugins are assembled in a staging directory beside their final location and
+/// renamed into place once complete, so an interrupted install never leaves a
+/// partial plugin that discovery would load and a retry would refuse.
+pub(in crate::plugins) fn staging_dir_in(install_root: &Path) -> Result<tempfile::TempDir> {
+    Ok(tempfile::Builder::new()
+        .prefix(&format!("{STAGING_DIR_PREFIX}{}-", std::process::id()))
+        .tempdir_in(install_root)?)
 }
 
 fn replace_plugin_dir(source: &Path, destination: &Path) -> Result<()> {

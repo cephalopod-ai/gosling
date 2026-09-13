@@ -1,6 +1,7 @@
 use crate::plugins::{
-    collect_skill_candidate, copy_dir_all, write_install_metadata, FormatNotSupported,
-    ImportedSkill, PluginFormat, PluginInstall, PluginInstallOptions, SkillCandidate,
+    collect_skill_candidate, copy_dir_all, staging_dir_in, write_install_metadata,
+    FormatNotSupported, ImportedSkill, PluginFormat, PluginInstall, PluginInstallOptions,
+    SkillCandidate,
 };
 use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Utc};
@@ -51,14 +52,17 @@ pub(in crate::plugins) fn try_install_from_manifest_at_root(
         );
     }
 
-    copy_dir_all(checkout_dir, &destination)?;
+    let staging = staging_dir_in(install_root)?;
+    let staged = staging.path().join(&manifest.name);
+    copy_dir_all(checkout_dir, &staged)?;
     write_install_metadata(
-        &destination,
+        &staged,
         source,
         "gemini",
         options.auto_update,
         last_update_check,
     )?;
+    fs::rename(&staged, &destination)?;
 
     Ok(PluginInstall {
         name: manifest.name,
@@ -155,6 +159,42 @@ mod tests {
             .join(crate::plugins::INSTALL_METADATA)
             .is_file());
         assert_eq!(installed.directory, install_root.path().join("test-plugin"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn interrupted_install_leaves_nothing_behind() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let install_root = tempfile::tempdir().unwrap();
+        let repo = tempfile::tempdir().unwrap();
+        fs::write(
+            repo.path().join(MANIFEST),
+            r#"{"name":"test-plugin","version":"1.0.0"}"#,
+        )
+        .unwrap();
+        let skill_dir = repo.path().join("skills").join("audit");
+        fs::create_dir_all(&skill_dir).unwrap();
+        fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: audit\ndescription: Audit code\n---\nDo an audit.",
+        )
+        .unwrap();
+        let unreadable = repo.path().join("zz-unreadable");
+        fs::write(&unreadable, "data").unwrap();
+        fs::set_permissions(&unreadable, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+        try_install_from_manifest_at_root(
+            "https://example.invalid/repo.git",
+            repo.path(),
+            install_root.path(),
+            &PluginInstallOptions::default(),
+            None,
+        )
+        .unwrap_err();
+
+        fs::set_permissions(&unreadable, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert_eq!(fs::read_dir(install_root.path()).unwrap().count(), 0);
     }
 
     #[test]
