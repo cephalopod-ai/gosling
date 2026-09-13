@@ -13,8 +13,15 @@ pub(super) fn negotiate_protocol_version(
     requested: ProtocolVersion,
 ) -> Result<ProtocolVersion, agent_client_protocol::Error> {
     if requested != ProtocolVersion::LATEST {
+        // The ACP schema deserializes every string protocolVersion as legacy
+        // version 0, so the original value is no longer available here.
+        let legacy_note = if requested == ProtocolVersion::V0 {
+            " (numeric 0 or a legacy string protocolVersion; send the number 1)"
+        } else {
+            ""
+        };
         return Err(agent_client_protocol::Error::invalid_params().data(format!(
-            "Unsupported ACP protocol version {requested}; expected {}",
+            "Unsupported ACP protocol version {requested}{legacy_note}; expected {}",
             ProtocolVersion::LATEST
         )));
     }

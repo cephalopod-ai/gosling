@@ -1329,6 +1329,19 @@ fn protocol_negotiation_accepts_latest_and_rejects_legacy_fallback() {
     assert!(error
         .to_string()
         .contains("Unsupported ACP protocol version 0"));
+    assert!(error.to_string().contains("legacy string protocolVersion"));
+
+    let string_version: ProtocolVersion = serde_json::from_value(serde_json::json!("1")).unwrap();
+    let error = negotiate_protocol_version(string_version).unwrap_err();
+    assert!(error.to_string().contains("send the number 1"), "{error}");
+
+    let error = negotiate_protocol_version(serde_json::from_value(serde_json::json!(2)).unwrap())
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains("Unsupported ACP protocol version 2; expected 1"),
+        "{error}"
+    );
 }
 
 #[tokio::test]
