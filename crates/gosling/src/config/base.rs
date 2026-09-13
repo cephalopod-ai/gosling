@@ -628,6 +628,13 @@ impl Config {
         self.write_path().to_string_lossy().to_string()
     }
 
+    /// Reads skip a config file that fails to parse, so a caller about to act on
+    /// the stored configuration (and its secrets) must check it first rather
+    /// than proceed against defaults.
+    pub fn check_write_config_parses(&self) -> Result<(), ConfigError> {
+        self.load_write_config().map(|_| ())
+    }
+
     pub(crate) fn lock_extension_transaction(&self) -> Result<std::fs::File, ConfigError> {
         let target_path = self.config_write_target_path()?;
         if let Some(parent) = target_path.parent() {

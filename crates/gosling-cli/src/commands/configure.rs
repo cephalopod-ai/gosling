@@ -34,14 +34,20 @@ use std::io::IsTerminal;
 const MULTISELECT_VISIBILITY_HINT: &str = "<";
 
 pub async fn handle_configure() -> anyhow::Result<()> {
+    let config = Config::global();
+    if let Err(e) = config.check_write_config_parses() {
+        anyhow::bail!(
+            "Cannot configure: {} could not be parsed ({e}). Fix or move the file, then run 'gosling configure' again.",
+            config.path()
+        );
+    }
+
     if !std::io::stdin().is_terminal() {
         anyhow::bail!(
             "gosling configure requires an interactive terminal.\n\
              If you installed via 'curl ... | bash', run 'gosling configure' separately after installation."
         );
     }
-
-    let config = Config::global();
 
     if !config.exists() {
         handle_first_time_setup(config).await

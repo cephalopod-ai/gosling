@@ -277,3 +277,24 @@ fn project_tracking_records_session_runs_not_other_commands() {
     let entry = &tracker["projects"][project_path.to_str().unwrap()];
     assert_eq!(entry["last_session_id"], serde_json::Value::String(id));
 }
+
+#[test]
+fn configure_refuses_a_config_file_it_cannot_parse() {
+    let env = Env::new();
+    let config_file = env.root.path().join("config").join("config.yaml");
+    let valid = env.gosling(env.root.path(), &["configure"]);
+    assert!(!valid.status.success());
+    assert!(String::from_utf8_lossy(&valid.stderr).contains("requires an interactive terminal"));
+
+    std::fs::write(
+        &config_file,
+        "GOSLING_PROVIDER: openai\n  GOSLING_MODEL: [gpt-4o\n",
+    )
+    .unwrap();
+    let broken = env.gosling(env.root.path(), &["configure"]);
+    let stderr = String::from_utf8_lossy(&broken.stderr);
+    assert!(!broken.status.success());
+    assert!(stderr.contains("could not be parsed"), "{stderr}");
+    assert!(stderr.contains(config_file.to_str().unwrap()), "{stderr}");
+    assert_eq!(env.mock.chat_requests.load(Ordering::SeqCst), 0);
+}
