@@ -216,7 +216,7 @@ fn update_plugin_at_root(
     }
 
     fs::create_dir_all(install_root)?;
-    let temp_dir = tempfile::tempdir_in(install_root)?;
+    let temp_dir = staging_dir_in(install_root)?;
     let checkout_dir = temp_dir.path().join("checkout");
     clone_git_repo(&metadata.source, &checkout_dir)?;
 
@@ -395,10 +395,46 @@ fn write_install_metadata(
 /// Plugins are assembled in a staging directory beside their final location and
 /// renamed into place once complete, so an interrupted install never leaves a
 /// partial plugin that discovery would load and a retry would refuse.
+///
+/// Staging directories are named after the owning process id so one left by a
+/// killed install or update can be removed once that process is gone.
 pub(in crate::plugins) fn staging_dir_in(install_root: &Path) -> Result<tempfile::TempDir> {
+    remove_abandoned_staging_dirs(install_root);
     Ok(tempfile::Builder::new()
         .prefix(&format!("{STAGING_DIR_PREFIX}{}-", std::process::id()))
         .tempdir_in(install_root)?)
+}
+
+fn remove_abandoned_staging_dirs(install_root: &Path) {
+    let Ok(entries) = fs::read_dir(install_root) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let owner_pid = entry
+            .file_name()
+            .to_str()
+            .and_then(|name| name.strip_prefix(STAGING_DIR_PREFIX))
+            .and_then(|rest| rest.split('-').next())
+            .and_then(|pid| pid.parse::<u32>().ok());
+        let Some(owner_pid) = owner_pid else {
+            continue;
+        };
+        let is_real_dir = entry.file_type().is_ok_and(|file_type| file_type.is_dir());
+        if !is_real_dir || owner_pid == std::process::id() || staging_owner_is_running(owner_pid) {
+            continue;
+        }
+        let _ = fs::remove_dir_all(entry.path());
+    }
+}
+
+#[cfg(unix)]
+fn staging_owner_is_running(pid: u32) -> bool {
+    crate::subprocess::process_is_running(pid)
+}
+
+#[cfg(not(unix))]
+fn staging_owner_is_running(_pid: u32) -> bool {
+    true
 }
 
 fn replace_plugin_dir(source: &Path, destination: &Path) -> Result<()> {
@@ -599,6 +635,48 @@ mod tests {
             redact_source_credentials("https://TOKEN@github.com/owner/repo.git"),
             "https://github.com/owner/repo.git"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn abandoned_staging_dirs_are_removed_on_next_install() {
+        let install_root = tempfile::tempdir().unwrap();
+        let mut exited = Command::new("true").spawn().unwrap();
+        let dead_pid = exited.id();
+        exited.wait().unwrap();
+        let mut running = Command::new("sleep").arg("30").spawn().unwrap();
+
+        let abandoned = install_root
+            .path()
+            .join(format!("{STAGING_DIR_PREFIX}{dead_pid}-abc123"));
+        fs::create_dir_all(abandoned.join("checkout")).unwrap();
+        fs::write(abandoned.join("checkout/big.bin"), "partial").unwrap();
+        let in_use = install_root
+            .path()
+            .join(format!("{STAGING_DIR_PREFIX}{}-def456", running.id()));
+        fs::create_dir_all(&in_use).unwrap();
+        let unrelated = install_root.path().join(".tmpUnrelated");
+        fs::create_dir_all(&unrelated).unwrap();
+
+        let repo = tempfile::tempdir().unwrap();
+        write_gemini_plugin(repo.path(), "1.0.0", "Audit code");
+        let installed = install_from_checkout_at_root(
+            "https://example.invalid/test-plugin.git",
+            repo.path(),
+            install_root.path(),
+            &PluginInstallOptions::default(),
+            None,
+        );
+        running.kill().unwrap();
+        running.wait().unwrap();
+
+        assert!(installed.unwrap().directory.is_dir());
+        assert!(
+            !abandoned.exists(),
+            "dead owner's staging dir must be removed"
+        );
+        assert!(in_use.is_dir(), "a live owner's staging dir must be kept");
+        assert!(unrelated.is_dir(), "unrelated directories must be kept");
     }
 
     #[test]
