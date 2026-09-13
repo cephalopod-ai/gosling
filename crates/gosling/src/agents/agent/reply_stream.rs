@@ -282,7 +282,7 @@ impl Agent {
                     )
                     .await;
 
-                let mut stream = Self::stream_response_from_provider(
+                let (mut stream, stream_setup_failed) = match Self::stream_response_from_provider(
                     active_provider.clone(),
                     active_model_config.clone(),
                     &session_config.id,
@@ -290,7 +290,13 @@ impl Agent {
                     &provider_messages,
                     &tools,
                     &toolshim_tools,
-                ).await?;
+                ).await {
+                    Ok(stream) => (stream, false),
+                    Err(error) => {
+                        let failed: crate::providers::base::MessageStream = Box::pin(stream::once(async move { Err(error) }));
+                        (failed, true)
+                    }
+                };
                 last_assistant_text.clear();
 
                 let current_turn_tool_count = conversation.messages().iter()
@@ -954,7 +960,11 @@ impl Agent {
                         // provider again from the same conversation. Once a tool has
                         // run this arm is skipped — replaying it could repeat a side
                         // effect — and the error falls through to the arms below.
+                        // Setup failures are also skipped: the provider's own retry
+                        // policy already covered them, and nesting both multiplied
+                        // requests per turn.
                         Err(ref provider_err) if no_tools_called
+                            && !stream_setup_failed
                             && mid_stream_retries < MAX_MID_STREAM_RETRIES
                             && should_retry(provider_err, &RetryConfig::default()) => {
                             #[cfg(feature = "telemetry")]

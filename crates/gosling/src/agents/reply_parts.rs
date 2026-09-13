@@ -350,8 +350,6 @@ impl Agent {
         let toolshim_tools = toolshim_tools.to_owned();
         let provider = provider.clone();
 
-        // Capture errors during stream creation and return them as part of the stream
-        // so they can be handled by the existing error handling logic in the agent
         let model_config = model_config
             .with_default_thinking_effort(Config::global().get_gosling_thinking_effort());
         debug!("WAITING_LLM_STREAM_START");
@@ -367,17 +365,11 @@ impl Agent {
         .await;
         debug!("WAITING_LLM_STREAM_END");
 
-        // If there was an error creating the stream, return a stream that yields that error
+        // Setup errors are returned separately from in-stream errors: providers
+        // already apply their own retry policy while establishing the stream.
         let mut stream = match stream_result {
             Ok(s) => s,
-            Err(e) => {
-                let enhanced_error = enhance_model_error(e, &provider, config.toolshim).await;
-                // Return a stream that immediately yields the error
-                // This allows the error to be caught by existing error handling in agent.rs
-                return Ok(Box::pin(try_stream! {
-                    yield Err(enhanced_error)?;
-                }));
-            }
+            Err(e) => return Err(enhance_model_error(e, &provider, config.toolshim).await),
         };
 
         Ok(Box::pin(try_stream! {

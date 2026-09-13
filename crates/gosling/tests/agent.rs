@@ -2776,6 +2776,115 @@ mod tests {
             Ok(())
         }
 
+        /// Fails while establishing the stream, as a provider does once its own
+        /// `with_retry` budget for a 429 or connect error is exhausted.
+        struct SetupFailureProvider {
+            agent_turn_calls: AtomicUsize,
+        }
+
+        #[async_trait]
+        impl Provider for SetupFailureProvider {
+            async fn stream(
+                &self,
+                _model_config: &ModelConfig,
+                _system_prompt: &str,
+                messages: &[Message],
+                _tools: &[Tool],
+            ) -> Result<MessageStream, ProviderError> {
+                let is_agent_turn = messages
+                    .iter()
+                    .any(|message| message.as_concat_text().trim_end().ends_with(USER_TEXT));
+                if is_agent_turn {
+                    self.agent_turn_calls.fetch_add(1, Ordering::SeqCst);
+                }
+                Err(ProviderError::RateLimitExceeded {
+                    details: "too many requests".to_string(),
+                    retry_delay: None,
+                })
+            }
+
+            fn get_name(&self) -> &str {
+                "mock-setup-failure"
+            }
+        }
+
+        // GSL-PT-20260912-B-2: provider retries were nested inside the agent's
+        // mid-stream retries (16 requests for one 429 turn), each labelled
+        // "The model's response was interrupted".
+        #[tokio::test]
+        async fn a_stream_that_fails_to_start_is_not_re_issued_by_the_agent() -> Result<()> {
+            let temp_dir = tempfile::tempdir()?;
+            let session_manager = Arc::new(SessionManager::new(temp_dir.path().join("data")));
+            let permission_manager =
+                Arc::new(PermissionManager::new(temp_dir.path().join("config")));
+            let agent = Agent::with_config(AgentConfig::new(
+                session_manager,
+                permission_manager,
+                GoslingMode::default(),
+                true,
+                GoslingPlatform::GoslingCli,
+            ));
+            let provider = Arc::new(SetupFailureProvider {
+                agent_turn_calls: AtomicUsize::new(0),
+            });
+            let session = agent
+                .config
+                .session_manager
+                .create_session(
+                    PathBuf::default(),
+                    "stream-setup-failure".to_string(),
+                    SessionType::Hidden,
+                    GoslingMode::default(),
+                )
+                .await?;
+            agent
+                .update_provider(
+                    provider.clone(),
+                    ModelConfig::new("mock-model"),
+                    &session.id,
+                )
+                .await?;
+            let session_config = SessionConfig {
+                id: session.id.clone(),
+                max_turns: Some(4),
+                compacted_context: false,
+                tail_limit: None,
+            };
+
+            let reply_stream = agent
+                .reply(Message::user().with_text(USER_TEXT), session_config, None)
+                .await?;
+            tokio::pin!(reply_stream);
+            let mut texts = Vec::new();
+            let mut terminal_errors = Vec::new();
+            while let Some(event) = reply_stream.next().await {
+                if let AgentEvent::Message(message) = event? {
+                    terminal_errors.extend(message.metadata.terminal_error.clone());
+                    texts.extend(message.content.iter().filter_map(|content| {
+                        content
+                            .as_system_notification()
+                            .map(|notification| notification.msg.clone())
+                    }));
+                    texts.push(message.as_concat_text());
+                }
+            }
+
+            assert_eq!(provider.agent_turn_calls.load(Ordering::SeqCst), 1);
+            assert!(
+                !texts.iter().any(|text| text.contains("interrupted")),
+                "a request that never started must not be reported as interrupted: {texts:?}"
+            );
+            assert!(
+                texts
+                    .iter()
+                    .any(|text| text.contains("Rate limit exceeded")),
+                "{texts:?}"
+            );
+            assert_eq!(terminal_errors.len(), 1, "{terminal_errors:?}");
+
+            Ok(())
+        }
+
         #[tokio::test]
         async fn exhausted_transient_retries_switch_to_the_turn_local_fallback() -> Result<()> {
             let outcome = run_reply_with_failures(false, "provider-failover", usize::MAX).await?;
