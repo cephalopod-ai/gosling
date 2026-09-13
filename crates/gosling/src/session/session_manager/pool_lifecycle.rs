@@ -17,11 +17,12 @@ use anyhow::Result;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{Pool, Sqlite};
 use std::collections::HashSet;
-use std::fs;
+use std::fs::{self, File, OpenOptions};
 use std::path::{Path, PathBuf};
 use tracing::warn;
 
 static FIRST_INIT_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+const INIT_LOCK_FILE: &str = ".sessions-init.lock";
 
 #[cfg(unix)]
 fn prepare_session_directory_with<F>(path: &Path, set_permissions: F) -> std::io::Result<()>
@@ -45,6 +46,34 @@ fn prepare_session_directory(path: &Path) -> std::io::Result<()> {
     {
         fs::create_dir_all(path)
     }
+}
+
+fn open_init_lock(session_dir: &Path) -> std::io::Result<File> {
+    let mut options = OpenOptions::new();
+    options.read(true).write(true).create(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let lock = options.open(session_dir.join(INIT_LOCK_FILE))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        lock.set_permissions(fs::Permissions::from_mode(0o600))?;
+    }
+    Ok(lock)
+}
+
+async fn acquire_cross_process_init_lock(session_dir: PathBuf) -> Result<File> {
+    tokio::task::spawn_blocking(move || {
+        let lock = open_init_lock(&session_dir)?;
+        fs2::FileExt::lock_exclusive(&lock)?;
+        Ok::<File, std::io::Error>(lock)
+    })
+    .await
+    .map_err(|error| anyhow::anyhow!("session database initialization lock task failed: {error}"))?
+    .map_err(Into::into)
 }
 
 impl SessionStorage {
@@ -84,10 +113,9 @@ impl SessionStorage {
     pub(crate) async fn pool(&self) -> Result<&Pool<Sqlite>> {
         self.initialized
             .get_or_try_init(|| async {
-                // Separate stores for the same database (one per ACP connection)
-                // otherwise race SQLite's first-open WAL switch and schema
-                // creation, which fails fast with "database is locked" instead
-                // of honoring busy_timeout.
+                // The in-process mutex orders ACP connections; the file lock
+                // extends that ordering to concurrent Gosling processes before
+                // SQLite switches WAL mode or creates/migrates the schema.
                 let _init_guard = FIRST_INIT_LOCK.lock().await;
                 prepare_session_directory(&self.session_dir).map_err(|error| {
                     anyhow::anyhow!(
@@ -95,6 +123,8 @@ impl SessionStorage {
                         self.session_dir
                     )
                 })?;
+                let _process_init_guard =
+                    acquire_cross_process_init_lock(self.session_dir.clone()).await?;
                 // Propagate probe failures (e.g. SQLITE_BUSY past the timeout
                 // while another process holds the write lock). Treating an
                 // error as "no schema" would stamp an existing older DB with
@@ -162,5 +192,17 @@ mod tests {
         .unwrap_err();
 
         assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
+    }
+
+    #[tokio::test]
+    async fn initialization_lock_file_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = tempfile::tempdir().unwrap();
+        let storage = SessionStorage::create(temp.path()).await.unwrap();
+        let lock_path = storage.session_dir.join(INIT_LOCK_FILE);
+        let mode = fs::metadata(lock_path).unwrap().permissions().mode() & 0o777;
+
+        assert_eq!(mode, 0o600);
     }
 }
