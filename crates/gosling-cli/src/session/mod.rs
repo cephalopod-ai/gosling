@@ -1515,12 +1515,34 @@ impl CliSession {
                 return Ok(());
             }
 
-            self.agent
-                .config
-                .session_manager
-                .truncate_conversation_from_message(&self.session_id, message_id)
-                .await?;
-            remove_local_turn(&mut self.messages, message_id);
+            let turn_tool_request_ids = turn_tool_request_ids(&self.messages, message_id);
+            if interrupt && !turn_tool_request_ids.is_empty() {
+                // A dispatched tool may already have had side effects, and its ledger row
+                // outlives a truncation: recovery would re-insert its request and in-doubt
+                // response with no preceding user prompt. Keep the turn and answer every
+                // request so the stored history stays well-formed.
+                let session_manager = &self.agent.config.session_manager;
+                for request_id in &turn_tool_request_ids {
+                    session_manager
+                        .cancel_undispatched_tool_requests(&self.session_id, request_id)
+                        .await?;
+                }
+                session_manager
+                    .recover_tool_operations(&self.session_id)
+                    .await?;
+                self.messages = session_manager
+                    .get_session(&self.session_id, true)
+                    .await?
+                    .conversation
+                    .unwrap_or_default();
+            } else {
+                self.agent
+                    .config
+                    .session_manager
+                    .truncate_conversation_from_message(&self.session_id, message_id)
+                    .await?;
+                remove_local_turn(&mut self.messages, message_id);
+            }
 
             let assistant_msg =
                 Message::assistant().with_text("Yes — what would you like me to do?");
@@ -1854,6 +1876,19 @@ fn remove_local_turn(conversation: &mut Conversation, message_id: &str) -> bool 
         conversation.pop();
     }
     true
+}
+
+fn turn_tool_request_ids(conversation: &Conversation, message_id: &str) -> Vec<String> {
+    conversation
+        .messages()
+        .iter()
+        .skip_while(|message| message.id.as_deref() != Some(message_id))
+        .flat_map(|message| message.content.iter())
+        .filter_map(|content| match content {
+            MessageContent::ToolRequest(request) => Some(request.id.clone()),
+            _ => None,
+        })
+        .collect()
 }
 
 async fn persist_cancelled_tool_response(
@@ -2809,6 +2844,106 @@ mod tests {
             .as_ref()
             .expect_err("cancelled tool response should be an error");
         assert!(error.message.contains("Tool call cancelled by user"));
+    }
+
+    async fn interrupted_cli_session(
+        temp: &tempfile::TempDir,
+        turn: &[Message],
+    ) -> (CliSession, Arc<gosling::session::SessionManager>, String) {
+        let manager = Arc::new(gosling::session::SessionManager::new(temp.path().into()));
+        let agent = Agent::with_config(gosling::agents::AgentConfig::new(
+            manager.clone(),
+            Arc::new(gosling::config::PermissionManager::new(temp.path().into())),
+            GoslingMode::Auto,
+            true,
+            gosling::agents::GoslingPlatform::GoslingCli,
+        ));
+        let session = manager
+            .create_session(
+                temp.path().into(),
+                "Interrupted turn".into(),
+                gosling::session::SessionType::User,
+                GoslingMode::Auto,
+            )
+            .await
+            .unwrap();
+        let mut cli = CliSession::new(
+            agent,
+            session.id.clone(),
+            false,
+            None,
+            None,
+            "text".into(),
+            false,
+        )
+        .await;
+        for message in turn {
+            manager.add_message(&session.id, message).await.unwrap();
+            cli.messages.push(message.clone());
+        }
+        (cli, manager, session.id)
+    }
+
+    #[tokio::test]
+    async fn interrupting_a_tool_turn_keeps_the_prompt_and_answers_the_request() {
+        let temp = tempfile::tempdir().unwrap();
+        let prompt = Message::user()
+            .with_text("run the slow tool")
+            .with_id("turn");
+        let request = Message::assistant().with_generated_id().with_tool_request(
+            "slow-request",
+            Ok(rmcp::model::CallToolRequestParams::new("slow_wait")),
+        );
+        let (mut cli, manager, session_id) =
+            interrupted_cli_session(&temp, &[prompt, request]).await;
+
+        cli.handle_interrupted_messages(true, true, Some("turn"))
+            .await
+            .unwrap();
+
+        let stored = manager
+            .get_session(&session_id, true)
+            .await
+            .unwrap()
+            .conversation
+            .unwrap();
+        let messages = stored.messages();
+        assert_eq!(messages[0].as_concat_text(), "run the slow tool");
+        assert!(messages.iter().any(|message| message
+            .content
+            .iter()
+            .filter_map(MessageContent::as_tool_response)
+            .any(|response| response.id == "slow-request")));
+        assert_eq!(cli.messages.messages()[0].id.as_deref(), Some("turn"));
+    }
+
+    #[tokio::test]
+    async fn interrupting_a_text_turn_still_removes_it() {
+        let temp = tempfile::tempdir().unwrap();
+        let before = Message::user().with_text("earlier").with_id("earlier");
+        let prompt = Message::user()
+            .with_text("long answer please")
+            .with_id("turn");
+        let partial = Message::assistant().with_text("partial").with_id("partial");
+        let (mut cli, manager, session_id) =
+            interrupted_cli_session(&temp, &[before, prompt, partial]).await;
+
+        cli.handle_interrupted_messages(true, true, Some("turn"))
+            .await
+            .unwrap();
+
+        let stored = manager
+            .get_session(&session_id, true)
+            .await
+            .unwrap()
+            .conversation
+            .unwrap();
+        let texts: Vec<String> = stored
+            .messages()
+            .iter()
+            .map(Message::as_concat_text)
+            .collect();
+        assert_eq!(texts, vec!["earlier".to_string()]);
     }
 
     #[test_case(
