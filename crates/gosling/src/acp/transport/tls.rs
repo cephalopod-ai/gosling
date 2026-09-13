@@ -1,5 +1,5 @@
 use crate::config::paths::Paths;
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use rcgen::{CertificateParams, DnType, KeyPair, SanType};
 use std::path::Path;
 
@@ -55,22 +55,36 @@ fn sha256_fingerprint(der: &[u8]) -> String {
 }
 
 pub async fn from_pem_files(cert_path: &Path, key_path: &Path) -> Result<TlsSetup> {
-    let cert_pem = std::fs::read(cert_path)?;
-    let key_pem = std::fs::read(key_path)?;
+    let cert_pem = std::fs::read(cert_path)
+        .with_context(|| format!("cannot read TLS certificate {}", cert_path.display()))?;
+    let key_pem = std::fs::read(key_path)
+        .with_context(|| format!("cannot read TLS private key {}", key_path.display()))?;
 
-    let der = pem::parse(&cert_pem)?.into_contents();
+    let der = pem::parse(&cert_pem)
+        .with_context(|| format!("invalid PEM in TLS certificate {}", cert_path.display()))?
+        .into_contents();
     let fingerprint = sha256_fingerprint(&der);
-    println!("GOSLINGD_CERT_FINGERPRINT={fingerprint}");
+    let load_context = || {
+        format!(
+            "cannot load TLS certificate {} with private key {}",
+            cert_path.display(),
+            key_path.display()
+        )
+    };
 
     #[cfg(feature = "rustls-tls")]
     let config = {
         let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
-        axum_server::tls_rustls::RustlsConfig::from_pem(cert_pem, key_pem.clone()).await?
+        axum_server::tls_rustls::RustlsConfig::from_pem(cert_pem, key_pem.clone())
+            .await
+            .with_context(load_context)?
     };
 
     #[cfg(feature = "native-tls")]
-    let config = axum_server::tls_openssl::OpenSSLConfig::from_pem(&cert_pem, &key_pem)?;
+    let config = axum_server::tls_openssl::OpenSSLConfig::from_pem(&cert_pem, &key_pem)
+        .with_context(load_context)?;
 
+    println!("GOSLINGD_CERT_FINGERPRINT={fingerprint}");
     Ok(TlsSetup {
         config,
         fingerprint,
@@ -176,4 +190,66 @@ pub async fn self_signed_config() -> Result<TlsSetup> {
         config,
         fingerprint,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn write_pair(dir: &Path, cert: &str, key: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+        let cert_path = dir.join("server.pem");
+        let key_path = dir.join("server.key");
+        std::fs::write(&cert_path, cert).unwrap();
+        std::fs::write(&key_path, key).unwrap();
+        (cert_path, key_path)
+    }
+
+    #[tokio::test]
+    async fn pem_file_errors_name_the_file_and_its_role() {
+        let temp = tempfile::tempdir().unwrap();
+        let (cert, key_pair) = generate_self_signed_cert().unwrap();
+        let (cert_path, key_path) = write_pair(temp.path(), &cert.pem(), &key_pair.serialize_pem());
+
+        let missing = temp.path().join("missing.pem");
+        let error = format!(
+            "{:#}",
+            from_pem_files(&missing, &key_path).await.err().unwrap()
+        );
+        assert!(
+            error.contains("TLS certificate") && error.contains("missing.pem"),
+            "{error}"
+        );
+
+        let error = format!(
+            "{:#}",
+            from_pem_files(&cert_path, &missing).await.err().unwrap()
+        );
+        assert!(
+            error.contains("TLS private key") && error.contains("missing.pem"),
+            "{error}"
+        );
+
+        let malformed = temp.path().join("malformed.pem");
+        std::fs::write(&malformed, "not a certificate").unwrap();
+        let error = format!(
+            "{:#}",
+            from_pem_files(&malformed, &key_path).await.err().unwrap()
+        );
+        assert!(
+            error.contains("TLS certificate") && error.contains("malformed.pem"),
+            "{error}"
+        );
+
+        let error = format!(
+            "{:#}",
+            from_pem_files(&cert_path, &malformed).await.err().unwrap()
+        );
+        assert!(
+            error.contains("private key") && error.contains("malformed.pem"),
+            "{error}"
+        );
+
+        let setup = from_pem_files(&cert_path, &key_path).await.unwrap();
+        assert_eq!(setup.fingerprint, sha256_fingerprint(cert.der()));
+    }
 }
