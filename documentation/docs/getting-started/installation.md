@@ -14,8 +14,8 @@ import { PanelLeft } from 'lucide-react';
 # Install gosling
 
 :::info Source and download versions
-As of 2026-09-08, the current source/local-build version is `v1.2.2`; see the
-[build notes](../release-notes/v1.2.2.md). A local version bump does not publish
+As of 2026-09-13, the current source candidate is `v1.2.5`; see the
+[candidate notes](../release-notes/v1.2.5.md). A local build or installation does not publish
 download assets. Check the [published release](https://github.com/cephalopod-ai/gosling/releases/latest),
 the downloaded artifact, and the installed version before assuming a feature is available.
 :::

@@ -88,6 +88,13 @@ removed, while CLI session selection was consolidated behind one resolver. Auto-
 honors its threshold-relative reduction budget for short and tool-heavy sessions, and Desktop
 distinguishes the active-context estimate from last-request usage.
 
+The 2026-09-13 audit-repair follow-up makes `doctor` verify the configured provider, preserves an
+honest durable record for cancelled turns, keeps `--no-session` prompts and responses ephemeral,
+deduplicates repeated subagent activity, and preserves structured recovery detail in Desktop.
+Recent append-only memories remain available beyond the bounded read window, research completion
+checks stay fail-closed, fresh session databases initialize safely across processes, and session
+import/handoff storage avoids unnecessary whole-store or per-row work.
+
 ## What's included
 
 - **Workspace-aware Desktop chats** - workspace rows filter the chat list without changing the default for future chats. Starting a chat from a workspace action preselects that workspace, while the global New Chat flow preselects the active/default workspace and still allows a per-chat override.
@@ -127,9 +134,23 @@ The Rust core owns agent execution, provider contracts, permissions, session per
 
 ## Release validation status
 
-The current validation reference is the [2026-08-15 live playtest](docs/cloud/2026-08-15-live-all-scenarios-playtest.md): 58 pass, 5 fail, 47 blocked across all 110 scenario cards. Blocked is dominated by Desktop cards, which had no GUI driver — that is missing coverage, not a pass. The [2026-08-15 audit](docs/cloud/2026-08-15-master-report.md) and its [repair campaign](docs/logs/session/2026-08-16-audit-repair-campaign.md) record what was found and what has been fixed since.
+The current validation reference is the
+[2026-09-13 live playtest](docs/cloud/2026-09-13-live-all-scenarios-playtest.md): 55 pass, 31
+partial, 7 fail, 12 blocked, and 22 not executed across all 127 scenario cards. The later
+[consolidated audit repair](docs/cloud/2026-09-13-consolidated-audit-repair.md) reconciled that run
+with an independent dataflow audit: 13 findings were repaired, four remain explicit design or
+evidence decisions, and one was rejected under ADR-0018. Focused live replays and broad source
+regressions passed, but the complete 127-card suite and signed installed-app matrix were not rerun.
 
-Current source candidate: `v1.2.5`. See the [v1.2.5 release notes](documentation/docs/release-notes/v1.2.5.md) for Full Session Handoff continuity, Safe-by-default crash recovery, multiline prompt composition, output-preview repairs, and the ACP-only architecture cleanup since `v1.2.4`. It has not been tagged or published. The latest published GitHub release is named `v1.2.4` and is attached to the historical `release_v1.2.4` tag; the matching annotated `v1.2.4` tag identifies the same source commit but has no release object. These tags are preserved rather than moved. The maintainer-owned installed-Desktop, signing, artifact, and publication gates remain open in the [release checklist](RELEASE_CHECKLIST.md).
+Current source candidate: `v1.2.5`. See the
+[v1.2.5 release notes](documentation/docs/release-notes/v1.2.5.md) for Full Session Handoff
+continuity, Safe-by-default crash recovery, multiline prompt composition, output-preview repairs,
+the ACP-only architecture cleanup, and the 2026-09-13 audit repairs since `v1.2.4`. It has not been
+tagged or published. The latest published GitHub release is named `v1.2.4` and is attached to the
+historical `release_v1.2.4` tag; the matching annotated `v1.2.4` tag identifies the same source
+commit but has no release object. These tags are preserved rather than moved. Local packaging and
+installation do not complete the maintainer-owned signing, artifact, clean-machine, or publication
+gates in the [release checklist](RELEASE_CHECKLIST.md).
 
 ## Known limits
 

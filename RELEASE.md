@@ -5,8 +5,10 @@ gosling releases are built and published by GitHub Actions from version tags. Pr
 ## Current release target
 
 The current source candidate is **v1.2.5**; see the
-[candidate notes](documentation/docs/release-notes/v1.2.5.md). It contains the
-eight commits after `v1.2.4` and has not been tagged, packaged, or published.
+[candidate notes](documentation/docs/release-notes/v1.2.5.md). It includes the
+2026-09-13 [consolidated audit repairs](docs/cloud/2026-09-13-consolidated-audit-repair.md) and has
+not been tagged or published. A local package or installation is validation evidence only; it is
+not a published release artifact.
 Release versions increment the single-digit
 patch component and carry at 9: `v1.2.1` through `v1.2.9`, then `v1.3.0`, and
 `v1.9.9` carries to `v2.0.0`.

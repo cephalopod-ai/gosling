@@ -1,7 +1,11 @@
 # Test ledger
 
+Last focused refresh: 2026-09-13 consolidated audit repair. Older rows retain their original
+point-in-time scope rather than being rewritten as current evidence.
+
 | Test area | Command / evidence | Last known result | Coverage meaning | Gaps |
 |---|---|---|---|---|
+| 2026-09-13 consolidated audit repair | See `docs/cloud/2026-09-13-consolidated-audit-repair.md` | 13 findings repaired; Rust format and all-target Clippy passed; complete CLI suite passed; every non-baseline/non-keychain-order core target passed; 593 other Rust and 1,321 Desktop tests passed | Covers the repaired cancellation, stateless-run, subagent, memory, research, database-init, handoff/import, doctor, and Desktop error paths | Five documented baseline failures remain; four macOS Keychain suite-order cases pass only in isolation; literal workspace run is blocked by `gosling-test-support`; no full 127-card or signed-app replay |
 | Rust formatting | source bin/activate-hermit && cargo fmt --all -- --check | passed on 2026-08-27 | Rust style is clean. | Does not validate behavior. |
 | Rust lint | source bin/activate-hermit && cargo clippy --all-targets -- -D warnings | passed | All-target clippy is clean. | Does not include external release artifacts. |
 | Rust core baseline | source bin/activate-hermit && cargo test -p gosling --lib | passed: 1,747 tests on 2026-08-27 | Core library behavior, including durable session leases and import quarantine, passes after Tagteam removal. | External services and installed artifacts are separate evidence. |
