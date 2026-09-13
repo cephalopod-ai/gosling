@@ -339,6 +339,9 @@ fn handle_slash_command(input: &str) -> Option<InputResult> {
                 .to_string();
             if model.is_empty() {
                 Some(InputResult::Model(None))
+            } else if model.contains(char::is_whitespace) {
+                println!("Model names cannot contain spaces or line breaks. Usage: /model <name>");
+                Some(InputResult::Retry)
             } else {
                 Some(InputResult::Model(Some(model)))
             }
@@ -617,6 +620,14 @@ mod tests {
         } else {
             panic!("Expected Model");
         }
+        assert!(matches!(
+            handle_slash_command("/model fixture-small\n/model fixture-model"),
+            Some(InputResult::Retry)
+        ));
+        assert!(matches!(
+            handle_slash_command("/model gpt 4"),
+            Some(InputResult::Retry)
+        ));
 
         // Test unknown commands
         assert!(handle_slash_command("/unknown").is_none());
