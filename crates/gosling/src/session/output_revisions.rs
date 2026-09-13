@@ -231,7 +231,7 @@ pub(crate) fn markdown_body(path: &Path, bytes: &[u8]) -> Vec<u8> {
     bytes.to_vec()
 }
 
-fn is_markdown(path: &Path) -> bool {
+pub(crate) fn is_markdown(path: &Path) -> bool {
     path.extension()
         .and_then(|value| value.to_str())
         .is_some_and(|ext| ext.eq_ignore_ascii_case("md") || ext.eq_ignore_ascii_case("markdown"))

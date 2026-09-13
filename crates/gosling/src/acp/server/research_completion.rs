@@ -1,4 +1,5 @@
 use crate::session::artifacts::DiscoveredArtifact;
+use crate::session::output_revisions::{is_markdown, markdown_body};
 use crate::session::research;
 use crate::session::{
     DeepResearchState, ExtensionState, SessionArtifact, SessionArtifactProvenance,
@@ -481,9 +482,7 @@ fn has_identical_report_pair(output_files: &[PathBuf], library_files: &[PathBuf]
             .iter()
             .filter(|candidate| candidate.file_name() == Some(name))
         {
-            if candidate.metadata()?.len() == output.metadata()?.len()
-                && sha256_file(candidate)? == output_hash
-            {
+            if sha256_file(candidate)? == output_hash {
                 return Ok(true);
             }
         }
@@ -524,12 +523,22 @@ fn is_deliverable(path: &Path) -> bool {
     research::is_deliverable(path)
 }
 
+/// Hashes a deliverable's report content. Gosling appends an output-history
+/// footer to Markdown it observes being written into Session Outputs, so a
+/// Library copy written independently never carries it; the footer is excluded
+/// so the pair compares the report the model actually wrote.
 fn sha256_file(path: &PathBuf) -> Result<[u8; 32]> {
     let mut file = File::open(path)?;
     if file.metadata()?.len() > MAX_RESEARCH_DELIVERABLE_BYTES {
         bail!("a reported research deliverable exceeds the 100 MB verification limit");
     }
     let mut hash = Sha256::new();
+    if is_markdown(path) {
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes)?;
+        hash.update(markdown_body(path, &bytes));
+        return Ok(hash.finalize().into());
+    }
     let mut buffer = vec![0; HASH_BUFFER_SIZE];
     loop {
         let read = file.read(&mut buffer)?;
@@ -624,6 +633,49 @@ mod tests {
             &HashSet::new(),
         )
         .unwrap();
+    }
+
+    /// Gosling annotates the Outputs copy with an output-history footer when
+    /// the model writes it with a file tool; a Library copy written the same
+    /// way has no footer. (Observed in playtest GSL-PT-20260912-H-1.)
+    #[test]
+    fn output_history_footer_does_not_break_report_pair_identity() {
+        let root = tempfile::tempdir().unwrap();
+        let outputs = root.path().join("outputs");
+        let library = root.path().join("library");
+        fs::create_dir_all(&outputs).unwrap();
+        fs::create_dir_all(&library).unwrap();
+        let output = outputs.join("report.md");
+        let copy = library.join("report.md");
+        let body = b"# Report\n\nbody\n";
+        let annotated = crate::session::output_revisions::annotated_snapshot(&output, body, &[]);
+        assert_ne!(annotated.as_slice(), body.as_slice());
+        fs::write(&output, annotated).unwrap();
+        fs::write(&copy, body).unwrap();
+        let state = DeepResearchState {
+            library_path: library.to_string_lossy().into_owned(),
+            output_paths: vec![outputs.to_string_lossy().into_owned()],
+        };
+        let assistant_text = format!("Reports: {} and {}", output.display(), copy.display());
+
+        verify_artifact_pairs(
+            &state,
+            &[artifact(&output), artifact(&copy)],
+            &assistant_text,
+            run_started_at(),
+            &HashSet::new(),
+        )
+        .unwrap();
+
+        fs::write(&copy, "# Report\n\nchanged body\n").unwrap();
+        assert!(verify_artifact_pairs(
+            &state,
+            &[artifact(&output), artifact(&copy)],
+            &assistant_text,
+            run_started_at(),
+            &HashSet::new(),
+        )
+        .is_err());
     }
 
     #[test]
