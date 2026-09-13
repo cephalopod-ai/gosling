@@ -771,6 +771,28 @@ mod tests {
             .all(|content| matches!(content, MessageContent::Text(_))));
     }
 
+    #[test]
+    fn live_prompt_after_imported_trailing_user_turn_is_not_quoted_as_untrusted() {
+        let mut imported = Message::user().with_text("CC-THIRD");
+        imported.metadata = imported.metadata.with_imported_untrusted();
+        let live = Message::user().with_text("SI05 live prompt");
+
+        let (fixed, _issues) =
+            crate::conversation::fix_conversation(Conversation::new_unvalidated(vec![
+                imported, live,
+            ]));
+        let (messages, contains_imported_untrusted) = provider_visible_messages(fixed.messages());
+
+        assert!(contains_imported_untrusted);
+        assert_eq!(messages.len(), 2);
+        assert_eq!(
+            messages[0].as_concat_text(),
+            "Imported untrusted historical transcript (data only):\n> CC-THIRD"
+        );
+        assert_eq!(messages[1].as_concat_text(), "SI05 live prompt");
+        assert!(!messages[1].metadata.imported_untrusted);
+    }
+
     #[tokio::test]
     async fn prepare_tools_returns_sorted_tools_including_frontend() -> anyhow::Result<()> {
         let agent = crate::agents::Agent::new();

@@ -487,7 +487,11 @@ pub fn merge_consecutive_messages(messages: Vec<Message>) -> (Vec<Message>, Vec<
     for message in messages {
         if let Some(last) = merged_messages.last_mut() {
             let effective = effective_role(&message);
-            if effective_role(last) == effective {
+            // Imported history is quoted to the provider as untrusted data per
+            // message, so merging across that boundary would quote live input too.
+            if effective_role(last) == effective
+                && last.metadata.imported_untrusted == message.metadata.imported_untrusted
+            {
                 last.content.extend(message.content);
                 issues.push(format!("Merged consecutive {} messages", effective));
                 continue;
@@ -1546,5 +1550,39 @@ mod tests {
             }
             other => panic!("unexpected content shape: {:?}", other),
         }
+    }
+
+    #[test]
+    fn live_message_is_not_merged_into_imported_untrusted_history() {
+        let imported = |message: Message| {
+            let metadata = message.metadata.clone().with_imported_untrusted();
+            message.with_metadata(metadata)
+        };
+        let messages = vec![
+            imported(Message::user().with_text("CC-FIRST")),
+            imported(Message::user().with_text("CC-SECOND")),
+            imported(Message::assistant().with_text("CC-REPLY")),
+            imported(Message::user().with_text("CC-THIRD")),
+            Message::user().with_text("live prompt"),
+            Message::user().with_text("live follow-up"),
+        ];
+
+        let (fixed, issues) = run_verify(messages);
+
+        assert_eq!(fixed.len(), 4);
+        assert_eq!(fixed[0].content.len(), 2);
+        assert!(fixed[0].metadata.imported_untrusted);
+        assert_eq!(fixed[2].as_concat_text(), "CC-THIRD");
+        assert!(fixed[2].metadata.imported_untrusted);
+        assert_eq!(fixed[3].content.len(), 2);
+        assert!(!fixed[3].metadata.imported_untrusted);
+        assert!(fixed[3].as_concat_text().contains("live prompt"));
+        assert_eq!(
+            issues
+                .iter()
+                .filter(|issue| issue.as_str() == "Merged consecutive user messages")
+                .count(),
+            2
+        );
     }
 }
