@@ -583,6 +583,8 @@ function App({
   const sentInitialPrompt = useRef(false);
   const queueRef = useRef<string[]>([]);
   const isProcessingRef = useRef(false);
+  const promptActiveRef = useRef(false);
+  const cancelRequestedRef = useRef(false);
 
   // Only run the animation tick when something is actually animating:
   // the splash gosling while the banner is up, or the spinner while loading.
@@ -723,6 +725,8 @@ function App({
       setLoading(true);
       setStatus("thinking…");
       streamBuf.current = "";
+      promptActiveRef.current = true;
+      cancelRequestedRef.current = false;
 
       try {
         const result = await client.prompt({
@@ -740,6 +744,8 @@ function App({
         setStatus(`error`);
         appendError(errorMsg);
       } finally {
+        promptActiveRef.current = false;
+        cancelRequestedRef.current = false;
         setLoading(false);
       }
     },
@@ -957,6 +963,43 @@ function App({
     [loading, sendPrompt, runSlashCommand],
   );
 
+  const pendingPermissionRef = useRef(pendingPermission);
+  pendingPermissionRef.current = pendingPermission;
+
+  // The first esc/ctrl+c during a turn sends `session/cancel` so the server
+  // can close the turn cleanly; quitting mid-turn instead killed the ACP
+  // child and left the session's lease and tool request dangling. A second
+  // press while the cancel is pending quits.
+  const interrupt = useCallback(() => {
+    const client = clientRef.current;
+    const sid = sessionIdRef.current;
+    if (
+      !client ||
+      !sid ||
+      !promptActiveRef.current ||
+      cancelRequestedRef.current
+    ) {
+      exit();
+      return;
+    }
+    cancelRequestedRef.current = true;
+    queueRef.current = [];
+    setQueuedMessages([]);
+    setStatus("cancelling…");
+    const pending = pendingPermissionRef.current;
+    if (pending) {
+      setPendingPermission(null);
+      pending.resolve({ outcome: { outcome: "cancelled" } });
+    }
+    client
+      .cancel({ sessionId: sid })
+      .catch((e: unknown) => appendError(formatError(e)));
+  }, [exit, appendError]);
+
+  useInput((ch, key) => {
+    if (ch === "c" && key.ctrl) interrupt();
+  });
+
   const PAD_X = 2;
   const PAD_TOP = 0;
   const PAD_BOTTOM = 0;
@@ -1089,9 +1132,10 @@ function App({
     (ch, key) => {
       if (toolCallExpanded) return;
 
-      if (key.escape || (ch === "c" && key.ctrl)) {
-        if (key.escape && pastedFull !== null) return;
-        exit();
+      if (key.escape) {
+        if (pastedFull !== null) return;
+        interrupt();
+        return;
       }
 
       if (!loading && sessionIdRef.current) {
@@ -1511,6 +1555,7 @@ async function main() {
   // Interactive TUI mode
   const { waitUntilExit } = render(
     <App serverConnection={serverConnection} initialPrompt={cli.flags.text} />,
+    { exitOnCtrlC: false },
   );
 
   await waitUntilExit();
