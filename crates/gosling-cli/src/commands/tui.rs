@@ -1,7 +1,9 @@
 use anyhow::{anyhow, Context, Result};
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+const TUI_SCRIPT_ENV: &str = "GOSLING_TUI_SCRIPT";
 const TUI_NPM_SPEC_ENV: &str = "GOSLING_TUI_NPM_SPEC";
 const TUI_REL_PATH: &str = "ui/text/dist/tui.js";
 const DEFAULT_NPM_SPEC: &str = "@repo-makeover/gosling@latest";
@@ -57,12 +59,42 @@ fn is_gosling_workspace_root(dir: &Path) -> bool {
         .is_ok_and(|member| member.lines().any(|l| l.trim() == "name = \"gosling\""))
 }
 
-fn resolve_source() -> TuiSource {
+fn script_override(value: Option<OsString>) -> Result<Option<PathBuf>> {
+    let Some(value) = value.filter(|v| !v.is_empty()) else {
+        return Ok(None);
+    };
+    let path = PathBuf::from(value);
+    if !path.is_file() {
+        return Err(anyhow!(
+            "{TUI_SCRIPT_ENV} is set to {}, which is not an existing file",
+            path.display()
+        ));
+    }
+    Ok(Some(path))
+}
+
+fn resolve_source() -> Result<TuiSource> {
+    if let Some(script) = script_override(std::env::var_os(TUI_SCRIPT_ENV))? {
+        return Ok(TuiSource::LocalScript(script));
+    }
     if let Some(script) = find_local_script() {
-        return TuiSource::LocalScript(script);
+        return Ok(TuiSource::LocalScript(script));
     }
     let spec = std::env::var(TUI_NPM_SPEC_ENV).unwrap_or_else(|_| DEFAULT_NPM_SPEC.to_string());
-    TuiSource::Npx(spec)
+    Ok(TuiSource::Npx(spec))
+}
+
+fn launch_error(source: &TuiSource, descriptor: &str, err: std::io::Error) -> anyhow::Error {
+    if err.kind() == std::io::ErrorKind::NotFound {
+        let program = match source {
+            TuiSource::LocalScript(_) => "node",
+            TuiSource::Npx(_) => "npx",
+        };
+        return anyhow!(
+            "`{program}` was not found on PATH; `gosling tui` needs Node.js installed to run ({descriptor})"
+        );
+    }
+    anyhow!("failed to exec TUI ({descriptor}): {err}")
 }
 
 fn build_command(source: &TuiSource, args: &[String]) -> Result<Command> {
@@ -86,7 +118,7 @@ fn build_command(source: &TuiSource, args: &[String]) -> Result<Command> {
 }
 
 pub fn handle_tui(args: Vec<String>) -> Result<()> {
-    let source = resolve_source();
+    let source = resolve_source()?;
 
     let gosling_binary = std::env::current_exe()
         .context("could not determine current gosling executable to expose as GOSLING_BINARY")?;
@@ -103,14 +135,14 @@ pub fn handle_tui(args: Vec<String>) -> Result<()> {
     {
         use std::os::unix::process::CommandExt;
         let err = cmd.exec();
-        Err(anyhow!("failed to exec TUI ({descriptor}): {err}"))
+        Err(launch_error(&source, &descriptor, err))
     }
 
     #[cfg(not(unix))]
     {
         let status = cmd
             .status()
-            .with_context(|| format!("failed to run `{descriptor}`"))?;
+            .map_err(|err| launch_error(&source, &descriptor, err))?;
         if !status.success() {
             std::process::exit(status.code().unwrap_or(1));
         }
@@ -121,6 +153,67 @@ pub fn handle_tui(args: Vec<String>) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn script_override_uses_an_existing_script() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = dir.path().join("tui.js");
+        std::fs::write(&script, "").unwrap();
+        assert_eq!(
+            script_override(Some(script.clone().into_os_string())).unwrap(),
+            Some(script)
+        );
+    }
+
+    #[test]
+    fn script_override_rejects_a_missing_script() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("missing/tui.js");
+        let err = script_override(Some(missing.into_os_string())).unwrap_err();
+        assert!(err.to_string().contains("GOSLING_TUI_SCRIPT"), "{err}");
+    }
+
+    #[test]
+    fn script_override_unset_or_empty_falls_through() {
+        assert_eq!(script_override(None).unwrap(), None);
+        assert_eq!(script_override(Some(OsString::new())).unwrap(), None);
+    }
+
+    #[test]
+    fn launch_error_names_the_missing_runtime() {
+        let local = TuiSource::LocalScript(PathBuf::from("tui.js"));
+        let err = launch_error(
+            &local,
+            "node tui.js",
+            std::io::Error::from(std::io::ErrorKind::NotFound),
+        );
+        assert!(
+            err.to_string().contains("`node` was not found on PATH"),
+            "{err}"
+        );
+
+        let npx = TuiSource::Npx(DEFAULT_NPM_SPEC.to_string());
+        let err = launch_error(
+            &npx,
+            "npx",
+            std::io::Error::from(std::io::ErrorKind::NotFound),
+        );
+        assert!(
+            err.to_string().contains("`npx` was not found on PATH"),
+            "{err}"
+        );
+
+        let err = launch_error(
+            &local,
+            "node tui.js",
+            std::io::Error::from(std::io::ErrorKind::PermissionDenied),
+        );
+        assert!(
+            err.to_string()
+                .starts_with("failed to exec TUI (node tui.js)"),
+            "{err}"
+        );
+    }
 
     #[test]
     fn is_gosling_workspace_root_rejects_directory_with_no_cargo_toml() {
