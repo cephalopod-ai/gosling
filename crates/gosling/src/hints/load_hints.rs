@@ -21,7 +21,13 @@ pub fn get_context_filenames() -> Vec<String> {
     use crate::config::{Config, ConfigError};
 
     match Config::global().get_param::<Vec<String>>("CONTEXT_FILE_NAMES") {
-        Ok(filenames) => filenames,
+        Ok(filenames) => {
+            let mut seen = HashSet::new();
+            filenames
+                .into_iter()
+                .filter(|name| seen.insert(name.clone()))
+                .collect()
+        }
         Err(ConfigError::NotFound(_)) => default_context_filenames(),
         Err(error) => {
             eprintln!(
@@ -382,6 +388,19 @@ mod tests {
         std::env::remove_var("CONTEXT_FILE_NAMES");
 
         assert_eq!(filenames, default_context_filenames());
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn duplicate_context_file_names_load_each_file_once() {
+        std::env::set_var(
+            "CONTEXT_FILE_NAMES",
+            r#"["AGENTS.md", "CLAUDE.md", "AGENTS.md"]"#,
+        );
+        let filenames = get_context_filenames();
+        std::env::remove_var("CONTEXT_FILE_NAMES");
+
+        assert_eq!(filenames, vec!["AGENTS.md", "CLAUDE.md"]);
     }
 
     #[test]
