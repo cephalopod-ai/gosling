@@ -22,6 +22,9 @@ pub struct InstallArgs {
 }
 
 pub async fn handle_install(args: InstallArgs) -> Result<()> {
+    if args.name.trim().is_empty() {
+        bail!("extension name must not be empty");
+    }
     let env_pairs = parse_key_values(&args.envs, "--env")?;
     let secret_pairs = parse_secret_values(&args.secrets)?;
 
@@ -75,6 +78,18 @@ pub async fn handle_install(args: InstallArgs) -> Result<()> {
     let previous = get_all_extensions()
         .into_iter()
         .find(|existing| existing.config.key() == key);
+    if let Some(previous) = &previous {
+        let previous_name = previous.config.name();
+        if !same_extension_name(&previous_name, &entry.config.name()) {
+            bail!(
+                "extension name '{}' maps to key '{}', which is already used by extension '{}'; remove it first with `gosling mcp remove {}` or choose a different name",
+                entry.config.name(),
+                key,
+                previous_name,
+                key
+            );
+        }
+    }
     let existed = previous.is_some();
     let secret_updates = secret_pairs
         .iter()
@@ -89,6 +104,10 @@ pub async fn handle_install(args: InstallArgs) -> Result<()> {
         Config::global().path()
     );
     Ok(())
+}
+
+fn same_extension_name(existing: &str, requested: &str) -> bool {
+    existing.trim().eq_ignore_ascii_case(requested.trim())
 }
 
 pub fn handle_remove(name: &str) -> Result<()> {

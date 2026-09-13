@@ -356,6 +356,62 @@ fn install_from_goose_rejects_missing_entry() {
 }
 
 #[test]
+fn install_rejects_empty_and_whitespace_names() {
+    let root = TempDir::new().unwrap();
+    for name in ["", "   "] {
+        let output = gosling(&root, &["mcp", "install", name, "--cmd", "server"]);
+        assert!(!output.status.success(), "name {name:?} must be rejected");
+        assert!(String::from_utf8_lossy(&output.stderr).contains("must not be empty"));
+    }
+    assert!(!root.path().join("config").join("config.yaml").exists());
+}
+
+#[test]
+fn install_refuses_to_replace_a_different_extension_with_the_same_key() {
+    let root = TempDir::new().unwrap();
+    let first = gosling(
+        &root,
+        &["mcp", "install", "ünï-工具", "--cmd", "first-server"],
+    );
+    assert!(
+        first.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+
+    let second = gosling(
+        &root,
+        &["mcp", "install", "ÿnÿ-日本", "--cmd", "second-server"],
+    );
+    assert!(!second.status.success(), "colliding name must be refused");
+    assert!(
+        String::from_utf8_lossy(&second.stderr).contains("already used by extension 'ünï-工具'")
+    );
+    let extensions = read_extensions(&root);
+    let entry = extensions.get("_n_-__").expect("first extension kept");
+    assert_eq!(entry.get("name").unwrap().as_str(), Some("ünï-工具"));
+    assert_eq!(entry.get("cmd").unwrap().as_str(), Some("first-server"));
+
+    let reinstall = gosling(
+        &root,
+        &["mcp", "install", "ünï-工具", "--cmd", "updated-server"],
+    );
+    assert!(
+        reinstall.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&reinstall.stderr)
+    );
+    assert!(String::from_utf8_lossy(&reinstall.stdout).contains("Updated extension '_n_-__'"));
+    assert_eq!(
+        read_extensions(&root)
+            .get("_n_-__")
+            .and_then(|entry| entry.get("cmd"))
+            .and_then(Value::as_str),
+        Some("updated-server")
+    );
+}
+
+#[test]
 fn remove_deletes_configured_extension() {
     let root = TempDir::new().unwrap();
     write_config(
