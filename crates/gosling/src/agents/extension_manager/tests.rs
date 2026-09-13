@@ -1821,3 +1821,67 @@ async fn tool_parked_on_the_write_gate_does_not_deadlock_the_dispatching_task() 
         .unwrap();
     assert_ne!(result.is_error, Some(true));
 }
+
+#[cfg(unix)]
+async fn wait_until_exited(pid: u32) -> bool {
+    for _ in 0..60 {
+        if !crate::subprocess::process_is_running(pid) {
+            return true;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    false
+}
+
+#[cfg(unix)]
+async fn read_pid_file(path: &Path) -> u32 {
+    for _ in 0..100 {
+        if let Some(pid) = std::fs::read_to_string(path)
+            .ok()
+            .and_then(|raw| raw.trim().parse().ok())
+        {
+            return pid;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    panic!("extension never wrote {}", path.display());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn abandoned_stdio_startup_kills_the_extension_process_group() {
+    let temp_dir = tempdir().unwrap();
+    let pid_file = temp_dir.path().join("grandchild.pid");
+    let mut command = Command::new("sh");
+    command
+        .arg("-c")
+        .arg("sleep 60 & echo $! > \"$1\"; wait")
+        .arg("sh")
+        .arg(&pid_file);
+    let provider: SharedProvider = Arc::new(Mutex::new(None));
+    let working_dir = temp_dir.path().to_path_buf();
+
+    let startup = child_process_client(
+        command,
+        &Some(60),
+        provider,
+        &working_dir,
+        None,
+        "gosling-test".to_string(),
+        GoslingMcpClientCapabilities {
+            mcpui: false,
+            host_info: None,
+        },
+    );
+    let pid_file_for_wait = pid_file.clone();
+    let (abandoned, grandchild) = tokio::join!(
+        tokio::time::timeout(Duration::from_millis(1500), startup),
+        read_pid_file(&pid_file_for_wait)
+    );
+    assert!(abandoned.is_err(), "startup should still be waiting");
+
+    assert!(
+        wait_until_exited(grandchild).await,
+        "process {grandchild} launched by the abandoned extension is still running"
+    );
+}

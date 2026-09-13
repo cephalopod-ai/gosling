@@ -184,7 +184,17 @@ async fn load_extensions(
     spinner.start(get_message(&waiting_ids));
 
     let mut failed: Vec<(usize, anyhow::Error)> = Vec::new();
-    while let Some(result) = set.join_next().await {
+    let mut shutdown = crate::signal::shutdown_signal();
+    while let Some(result) = tokio::select! {
+        result = set.join_next() => result,
+        _ = &mut shutdown, if !set.is_empty() => {
+            // Dropping the startup tasks kills extension processes still
+            // initializing; exiting straight from the signal would orphan them.
+            set.shutdown().await;
+            spinner.clear();
+            process::exit(130);
+        }
+    } {
         match result {
             Ok((id, Ok(_))) => {
                 waiting_ids.remove(&id);
