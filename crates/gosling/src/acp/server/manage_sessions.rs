@@ -1,5 +1,8 @@
 use super::*;
 
+static SYSTEM_PROMPT_EXTRAS_PERSIST_LOCK: tokio::sync::Mutex<()> =
+    tokio::sync::Mutex::const_new(());
+
 impl GoslingAcpAgent {
     pub(super) async fn on_update_working_dir(
         &self,
@@ -299,6 +302,9 @@ impl GoslingAcpAgent {
                         agent_client_protocol::Error::invalid_params()
                             .data("key cannot be empty for append mode")
                     })?;
+                // Persistence is a read-modify-write of the whole extras map,
+                // so concurrent appends would otherwise drop each other's keys.
+                let _persist_guard = SYSTEM_PROMPT_EXTRAS_PERSIST_LOCK.lock().await;
                 if req.text.trim().is_empty() {
                     agent.remove_system_prompt_extra(key).await;
                 } else {

@@ -1581,3 +1581,60 @@ fn test_custom_output_revision_history_export_and_restore() {
         .is_err());
     });
 }
+
+#[test]
+#[serial]
+fn test_concurrent_system_prompt_appends_persist_every_key() {
+    write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
+    run_test(async move {
+        let openai = OpenAiFixture::new(vec![], Arc::new(IgnoreSessionId)).await;
+        let mut conn = AcpServerConnection::new(TestConnectionConfig::default(), openai).await;
+        let SessionData { session, .. } = conn.new_session().await.unwrap();
+        let session_id = session.session_id().0.to_string();
+
+        let append = |key: String, text: &'static str| {
+            let cx = conn.cx().clone();
+            let session_id = session_id.clone();
+            async move {
+                send_custom(
+                    &cx,
+                    "_gosling/unstable/session/system-prompt/set",
+                    serde_json::json!({
+                        "sessionId": session_id,
+                        "mode": "append",
+                        "key": key,
+                        "text": text,
+                    }),
+                )
+                .await
+            }
+        };
+        let keys: Vec<String> = (0..20).map(|i| format!("dr03-k{i:02}")).collect();
+        for result in
+            futures::future::join_all(keys.iter().map(|key| append(key.clone(), "extra"))).await
+        {
+            result.expect("append should succeed");
+        }
+        append("dr03-k00".to_string(), "")
+            .await
+            .expect("empty append should remove the key");
+
+        let exported = send_custom(
+            conn.cx(),
+            "_gosling/unstable/session/export",
+            serde_json::json!({ "sessionId": session_id }),
+        )
+        .await
+        .expect("export should succeed");
+        let data: serde_json::Value =
+            serde_json::from_str(exported["data"].as_str().unwrap()).unwrap();
+        let extras = data["extension_data"]["system_prompt_extras.v1"].to_string();
+        for key in &keys[1..] {
+            assert!(extras.contains(key.as_str()), "{key} missing from {extras}");
+        }
+        assert!(
+            !extras.contains("dr03-k00"),
+            "removed key persisted: {extras}"
+        );
+    });
+}
