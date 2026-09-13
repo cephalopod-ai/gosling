@@ -147,7 +147,7 @@ fn load_hints_from_directory(
 
     let git_root = find_git_root(working_dir);
     let import_boundary = git_root.unwrap_or(working_dir);
-    let gitignore = Gitignore::empty();
+    let gitignore = build_gitignore(working_dir);
 
     let mut directories: Vec<PathBuf> = directory
         .ancestors()
@@ -955,6 +955,41 @@ End of hints"#;
         tracker.record_tool_arguments(&Some(args), &project_root);
         let hints = tracker.load_new_hints(&project_root);
         assert!(hints.is_empty());
+    }
+
+    #[test]
+    fn tracker_subdirectory_hints_skip_gitignored_imports() {
+        let temp_dir = TempDir::new().unwrap();
+        let project_root = temp_dir.path().to_path_buf();
+        let subdir = project_root.join("nested");
+        fs::create_dir_all(&subdir).unwrap();
+        fs::create_dir(project_root.join(".git")).unwrap();
+        fs::write(project_root.join(".gitignore"), "*.env\n").unwrap();
+        fs::write(project_root.join("secret.env"), "ROOT_SECRET=abc").unwrap();
+        fs::write(subdir.join("sub-secret.env"), "SUB_SECRET=def").unwrap();
+        fs::write(subdir.join("allowed.md"), "allowed nested content").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(
+            project_root.join("secret.env"),
+            project_root.join("link-secret.txt"),
+        )
+        .unwrap();
+        fs::write(
+            subdir.join(GOSLING_HINTS_FILENAME),
+            "@allowed.md @sub-secret.env @../link-secret.txt",
+        )
+        .unwrap();
+
+        let mut tracker = SubdirectoryHintTracker::new();
+        let args: serde_json::Map<String, serde_json::Value> =
+            serde_json::from_str(r#"{"path": "nested/foo.rs"}"#).unwrap();
+        tracker.record_tool_arguments(&Some(args), &project_root);
+        let hints = tracker.load_new_hints(&project_root);
+
+        assert_eq!(hints.len(), 1);
+        assert!(hints[0].1.contains("allowed nested content"));
+        assert!(!hints[0].1.contains("SUB_SECRET"));
+        assert!(!hints[0].1.contains("ROOT_SECRET"));
     }
 }
 
