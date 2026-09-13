@@ -305,7 +305,7 @@ scenario (or an explicit not-applicable/blocked note):
 | CX-02 | 15 | Nested context loads only when scoped |
 | CX-03 | 15 | Custom context filenames and ordering |
 | CX-04 | 15 | Ignored and sensitive files stay out of context |
-| CX-05 | 15 | Persistent instructions refresh between turns |
+| CX-05 | 15 | Project hints refresh between turns |
 | CX-06 | 15 | `GOSLING_PATH_ROOT` provides complete isolation |
 | CX-07 | 15 | `--no-session` leaves no resumable history |
 | CX-08 | 15 | Instruction file and stdin boundaries |

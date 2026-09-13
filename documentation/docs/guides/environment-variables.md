@@ -183,8 +183,6 @@ These variables control how gosling manages conversation sessions and context.
 | `GOSLING_AUTO_COMPACT_REDUCTION` | Fraction of threshold usage removed by [auto-compaction](/docs/guides/sessions/smart-context-management#automatic-compaction) in a single pass, instead of always fully collapsing the eligible history | Float in [0.0, 1.0) (0.0 always fully collapses) | 0.15 |
 | `GOSLING_COMPACT_PROTECT_LAST_N_TURNS` | Preferred number of most-recent turns [auto-compaction keeps verbatim when the reduction budget permits](/docs/guides/sessions/smart-context-management#automatic-compaction) | Integer (e.g., 0, 5, 20) | 10 |
 | `GOSLING_TOOL_CALL_CUTOFF` | Number of tool calls to keep in full detail before summarizing older tool outputs to help maintain efficient context usage  | Integer (e.g., 5, 10, 20) | 10 |
-| `GOSLING_MOIM_MESSAGE_TEXT` | Injects persistent text into gosling's [working memory](/docs/guides/context-engineering/using-persistent-instructions) every turn. Useful for behavioral guardrails or persistent reminders. | Any text string | Not set |
-| `GOSLING_MOIM_MESSAGE_FILE` | Path to a file whose contents are injected into gosling's [working memory](/docs/guides/context-engineering/using-persistent-instructions) every turn. Supports `~/`. Max 64 KB per file. | File path | Not set |
 
 **Examples**
 
@@ -253,12 +251,6 @@ export GOSLING_COMPACT_PROTECT_LAST_N_TURNS=20
 
 # Keep more tool calls in full detail (useful for debugging or verbose workflows)
 export GOSLING_TOOL_CALL_CUTOFF=20
-
-# Inject a persistent reminder into gosling's working memory every turn
-export GOSLING_MOIM_MESSAGE_TEXT="IMPORTANT: Always run tests before committing changes."
-
-# Load persistent instructions from a file (supports ~/)
-export GOSLING_MOIM_MESSAGE_FILE="~/.gosling/guardrails.md"
 ```
 
 ### Model Context Limit Overrides

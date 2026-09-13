@@ -38,13 +38,13 @@ model prose alone is not enough where a tool or protocol trace can corroborate.
 - Expected: fake secret never appears through automatic context; explicit access follows tool permissions and ignored-file policy with a visible action; denial leaks neither content nor partial value.
 - Observe: diagnostics/export/logs for the fake marker.
 
-### CX-05 — Persistent instructions refresh between turns
-- Goal: persistent instructions are re-read while session-start hints remain snapshot/lazy scoped as documented.
+### CX-05 — Project hints refresh between turns
+- Goal: project hint files are re-read for the next turn without restarting the session.
 - Category: persistence / settings
-- Preconditions: configured persistent instruction sentinel `PERSIST-A` and project hint sentinel `HINT-A` in a new session.
-- Steps: get one response; edit persistent instruction to `PERSIST-B` and hint to `HINT-B`; send another turn without restart; start a new session.
-- Expected: existing session uses `PERSIST-B` on the next turn; existing hint behavior matches documented snapshot/lazy semantics and is not silently half-reloaded; new session uses both B values.
-- Observe: deleted or temporarily malformed instruction file produces a named warning without erasing the session.
+- Preconditions: project hint sentinel `HINT-A` in a new session.
+- Steps: get one response; edit the hint to `HINT-B`; send another turn without restart; start a new session.
+- Expected: the existing session uses `HINT-B` on the next turn and is not silently half-reloaded; a new session uses `HINT-B`.
+- Observe: deleted or temporarily malformed hint file produces a named warning without erasing the session.
 
 ### CX-06 — `GOSLING_PATH_ROOT` provides complete isolation
 - Goal: the root override contains every gosling-owned state write for a pass.

@@ -170,10 +170,6 @@ const config: Config = {
             to: "/docs/guides/config-files",
           },
           {
-            from: "/docs/guides/using-persistent-instructions",
-            to: "/docs/guides/context-engineering/using-persistent-instructions",
-          },
-          {
             from: "/docs/guides/subagents",
             to: "/docs/guides/context-engineering/subagents",
           },
