@@ -116,11 +116,13 @@ impl Agent {
         session: &Session,
         conversation_bound: bool,
     ) -> (String, Result<ToolCallResult, ErrorData>) {
-        let input_summary = serde_json::json!({
-            "tool": tool_call.name,
-            "arguments": tool_call.arguments,
-        });
-        tracing::Span::current().record("input", tracing::field::display(&input_summary));
+        if crate::providers::utils::local_transcript_persistence_enabled() {
+            let input_summary = serde_json::json!({
+                "tool": tool_call.name,
+                "arguments": tool_call.arguments,
+            });
+            tracing::Span::current().record("input", tracing::field::display(&input_summary));
+        }
 
         let operation_id = match self
             .config

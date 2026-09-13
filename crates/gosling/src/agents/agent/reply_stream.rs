@@ -1395,7 +1395,9 @@ impl Agent {
                 tokio::task::yield_now().await;
             }
 
-            if !last_assistant_text.is_empty() {
+            if !last_assistant_text.is_empty()
+                && crate::providers::utils::local_transcript_persistence_enabled()
+            {
                 tracing::Span::current().record("trace_output", last_assistant_text.as_str());
             }
 

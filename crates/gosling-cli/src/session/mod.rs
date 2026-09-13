@@ -123,13 +123,15 @@ pub enum RunMode {
 struct HistoryManager {
     history_file: PathBuf,
     old_history_file: PathBuf,
+    enabled: bool,
 }
 
 impl HistoryManager {
-    fn new() -> Self {
+    fn new(enabled: bool) -> Self {
         Self {
             history_file: Paths::state_dir().join("history.txt"),
             old_history_file: Paths::config_dir().join("history.txt"),
+            enabled,
         }
     }
 
@@ -137,6 +139,9 @@ impl HistoryManager {
         &self,
         editor: &mut rustyline::Editor<GoslingCompleter, rustyline::history::DefaultHistory>,
     ) {
+        if !self.enabled {
+            return;
+        }
         if let Some(parent) = self.history_file.parent() {
             if !parent.exists() {
                 if let Err(e) = std::fs::create_dir_all(parent) {
@@ -157,6 +162,9 @@ impl HistoryManager {
         &self,
         editor: &mut rustyline::Editor<GoslingCompleter, rustyline::history::DefaultHistory>,
     ) {
+        if !self.enabled {
+            return;
+        }
         if let Err(err) = editor.save_history(&self.history_file) {
             eprintln!("Warning: Failed to save command history: {}", err);
         } else if self.old_history_file.exists() {
@@ -178,6 +186,13 @@ pub struct CliSession {
     edit_mode: Option<EditMode>,
     output_format: String,
     stats: bool,
+    persist_local_state: bool,
+    _ephemeral_state: Option<EphemeralSessionState>,
+}
+
+struct EphemeralSessionState {
+    _session_dir: tempfile::TempDir,
+    _transcript_suppression: gosling::providers::utils::LocalTranscriptSuppressionGuard,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -276,7 +291,21 @@ impl CliSession {
             edit_mode,
             output_format,
             stats,
+            persist_local_state: true,
+            _ephemeral_state: None,
         }
+    }
+
+    pub(super) fn use_ephemeral_state(
+        &mut self,
+        session_dir: tempfile::TempDir,
+        transcript_suppression: gosling::providers::utils::LocalTranscriptSuppressionGuard,
+    ) {
+        self.persist_local_state = false;
+        self._ephemeral_state = Some(EphemeralSessionState {
+            _session_dir: session_dir,
+            _transcript_suppression: transcript_suppression,
+        });
     }
 
     pub fn session_id(&self) -> &String {
@@ -514,7 +543,7 @@ impl CliSession {
         self.update_completion_cache().await?;
 
         let mut editor = self.create_editor()?;
-        let history_manager = HistoryManager::new();
+        let history_manager = HistoryManager::new(self.persist_local_state);
         history_manager.load(&mut editor);
 
         loop {
@@ -693,14 +722,16 @@ impl CliSession {
                 history.save(editor);
                 self.push_message(Message::user().with_text(content));
 
-                if let Err(e) = crate::project_tracker::update_project_tracker(
-                    Some(content),
-                    Some(&self.session_id),
-                ) {
-                    eprintln!(
-                        "Warning: Failed to update project tracker with instruction: {}",
-                        e
-                    );
+                if self.persist_local_state {
+                    if let Err(e) = crate::project_tracker::update_project_tracker(
+                        Some(content),
+                        Some(&self.session_id),
+                    ) {
+                        eprintln!(
+                            "Warning: Failed to update project tracker with instruction: {}",
+                            e
+                        );
+                    }
                 }
 
                 let _provider = self.agent.provider().await?;

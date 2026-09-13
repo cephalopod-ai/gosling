@@ -3,12 +3,12 @@ use crate::cli::StreamableHttpOptions;
 use super::output;
 use super::CliSession;
 use console::style;
-use gosling::agents::{Agent, Container, ExtensionError};
+use gosling::agents::{Agent, AgentConfig, Container, ExtensionError, GoslingPlatform};
 use gosling::config::extensions::name_to_key;
 use gosling::config::{
     resolve_extensions_for_new_session, resolve_extensions_for_new_session_for_cwd,
 };
-use gosling::config::{Config, ExtensionConfig, GoslingMode};
+use gosling::config::{Config, ExtensionConfig, GoslingMode, PermissionManager};
 use gosling::model_config::model_config_from_user_config;
 use gosling::providers::create;
 use gosling::session::session_manager::SessionType;
@@ -539,10 +539,34 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
     gosling::posthog::set_session_context("cli", session_config.resume);
 
     let config = Config::global();
-    let mut agent: Agent = Agent::new();
-    if session_config.no_session {
-        agent.config.disable_session_naming = true;
-    }
+    let (mut agent, ephemeral_state) = if session_config.no_session {
+        let session_dir = tempfile::Builder::new()
+            .prefix("gosling-no-session-")
+            .tempdir()
+            .unwrap_or_else(|e| {
+                output::render_error(&format!("Could not create temporary session storage: {e}"));
+                process::exit(1);
+            });
+        let transcript_suppression =
+            gosling::providers::utils::suppress_local_transcript_persistence();
+        let session_manager = Arc::new(gosling::session::SessionManager::new(
+            session_dir.path().to_path_buf(),
+        ));
+        let agent_config = AgentConfig::new(
+            session_manager,
+            PermissionManager::instance(),
+            config.get_gosling_mode().unwrap_or_default(),
+            true,
+            GoslingPlatform::GoslingCli,
+        )
+        .with_code_execution_runtime(config.resolve_gosling_code_execution_runtime());
+        (
+            Agent::with_config(agent_config),
+            Some((session_dir, transcript_suppression)),
+        )
+    } else {
+        (Agent::new(), None)
+    };
     if let Some(max_repetitions) = session_config.max_tool_repetitions {
         agent.set_max_tool_repetitions(max_repetitions);
     }
@@ -689,7 +713,7 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
 
     let debug_mode = session_config.debug || config.get_param("GOSLING_DEBUG").unwrap_or(false);
 
-    let session = CliSession::new(
+    let mut session = CliSession::new(
         Arc::try_unwrap(agent_ptr).unwrap_or_else(|_| panic!("There should be no more references")),
         session_id.clone(),
         debug_mode,
@@ -699,6 +723,10 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
         session_config.stats,
     )
     .await;
+
+    if let Some((session_dir, transcript_suppression)) = ephemeral_state {
+        session.use_ephemeral_state(session_dir, transcript_suppression);
+    }
 
     configure_session_prompts(&session, config, &session_config, &session_id).await;
 

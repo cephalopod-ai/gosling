@@ -8,6 +8,7 @@ use serde_json::Value;
 use std::error::Error;
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::OnceLock;
 use std::time::Duration;
 use uuid::Uuid;
@@ -228,6 +229,27 @@ pub const LOGS_TO_KEEP: usize = 10;
 pub const LLM_LOG_SESSION_ID_KEY: &str = "session_id";
 
 static INIT_LOGGER: OnceLock<Result<()>> = OnceLock::new();
+static LOCAL_TRANSCRIPT_SUPPRESSIONS: AtomicUsize = AtomicUsize::new(0);
+
+/// Process-wide so provider calls spawned by tools and subagents cannot escape a
+/// `--no-session` run's retention boundary when Tokio task-local context is lost.
+pub struct LocalTranscriptSuppressionGuard;
+
+pub fn suppress_local_transcript_persistence() -> LocalTranscriptSuppressionGuard {
+    LOCAL_TRANSCRIPT_SUPPRESSIONS.fetch_add(1, Ordering::AcqRel);
+    LocalTranscriptSuppressionGuard
+}
+
+pub fn local_transcript_persistence_enabled() -> bool {
+    LOCAL_TRANSCRIPT_SUPPRESSIONS.load(Ordering::Acquire) == 0
+}
+
+impl Drop for LocalTranscriptSuppressionGuard {
+    fn drop(&mut self) {
+        let previous = LOCAL_TRANSCRIPT_SUPPRESSIONS.fetch_sub(1, Ordering::AcqRel);
+        debug_assert!(previous > 0);
+    }
+}
 
 pub fn init_gosling_request_log() -> Result<()> {
     INIT_LOGGER
@@ -276,8 +298,19 @@ struct FileLogHandle {
     logs_to_keep: usize,
 }
 
+struct SuppressedLogHandle;
+
+impl RequestLogHandle for SuppressedLogHandle {
+    fn write(&mut self, _s: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
+        Ok(())
+    }
+}
+
 impl RequestLogger for RequestLog {
     fn start(&self) -> Result<Box<dyn RequestLogHandle>, Box<dyn Error + Send + Sync>> {
+        if !local_transcript_persistence_enabled() {
+            return Ok(Box::new(SuppressedLogHandle));
+        }
         let logs_dir = Paths::in_state_dir("logs");
         fs_err::create_dir_all(&logs_dir)?;
         restrict_to_owner(&logs_dir);

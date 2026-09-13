@@ -4,6 +4,7 @@ use std::path::Path;
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 use tempfile::TempDir;
 
 struct MockProvider {
@@ -52,40 +53,63 @@ fn serve(mut stream: TcpStream, chat_requests: &AtomicUsize) {
     let _ = reader.read_exact(&mut body);
     let body = String::from_utf8_lossy(&body);
 
-    let (content_type, payload) = if request_line.contains("/chat/completions") {
+    let (status, content_type, payload) = if request_line.contains("/chat/completions") {
         chat_requests.fetch_add(1, Ordering::SeqCst);
-        if body.contains("\"stream\":true") {
+        if body.contains("CX07-NO-SESSION-CANCELLED-20260913") {
+            std::thread::sleep(Duration::from_secs(10));
+            (
+                "200 OK",
+                "application/json",
+                "{\"id\":\"late\",\"choices\":[]}".to_string(),
+            )
+        } else if body.contains("CX07-NO-SESSION-FAILURE-20260913") {
+            (
+                "400 Bad Request",
+                "application/json",
+                "{\"error\":{\"message\":\"forced provider failure\"}}".to_string(),
+            )
+        } else if body.contains("\"stream\":true") {
             let chunk = |delta: &str, finish: &str| {
                 format!(
                     "data: {{\"id\":\"r\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"gpt-4o\",\"choices\":[{{\"index\":0,\"delta\":{delta},\"finish_reason\":{finish}}}]}}\n\n"
                 )
             };
+            let response_text = if body.contains("CX07-NO-SESSION-SUCCESS-20260913") {
+                "CX07-NO-SESSION-RESPONSE-20260913"
+            } else {
+                "MOCK-REPLY"
+            };
+            let response_delta = serde_json::json!({
+                "role": "assistant",
+                "content": response_text,
+            })
+            .to_string();
             (
+                "200 OK",
                 "text/event-stream",
                 format!(
                     "{}{}data: [DONE]\n\n",
-                    chunk(
-                        "{\"role\":\"assistant\",\"content\":\"MOCK-REPLY\"}",
-                        "null"
-                    ),
+                    chunk(&response_delta, "null"),
                     chunk("{}", "\"stop\"")
                 ),
             )
         } else {
             (
+                "200 OK",
                 "application/json",
                 "{\"id\":\"r\",\"object\":\"chat.completion\",\"created\":0,\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"MOCK-REPLY\"},\"finish_reason\":\"stop\"}]}".to_string(),
             )
         }
     } else {
         (
+            "200 OK",
             "application/json",
             "{\"object\":\"list\",\"data\":[]}".to_string(),
         )
     };
     let _ = write!(
         stream,
-        "HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
+        "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
         payload.len()
     );
 }
@@ -173,6 +197,26 @@ fn banner_session_id(output: &Output) -> String {
         .to_string()
 }
 
+fn files_containing(root: &Path, marker: &[u8]) -> Vec<std::path::PathBuf> {
+    let mut matches = Vec::new();
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return matches;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            matches.extend(files_containing(&path, marker));
+        } else if std::fs::read(&path).is_ok_and(|contents| {
+            contents
+                .windows(marker.len())
+                .any(|window| window == marker)
+        }) {
+            matches.push(path);
+        }
+    }
+    matches
+}
+
 #[test]
 fn resume_keeps_the_sessions_stored_permission_mode() {
     let env = Env::new();
@@ -222,8 +266,10 @@ fn resuming_from_another_directory_moves_the_session_to_it() {
 fn no_session_run_leaves_nothing_resumable() {
     let env = Env::new();
     let cwd = env.root.path();
+    let marker = "CX07-NO-SESSION-SUCCESS-20260913";
+    let response_marker = "CX07-NO-SESSION-RESPONSE-20260913";
 
-    let ephemeral = env.run_ok(cwd, &["run", "--no-session", "-t", "secret-ish prompt"]);
+    let ephemeral = env.run_ok(cwd, &["run", "--no-session", "-t", marker]);
     let id = banner_session_id(&ephemeral);
     assert_eq!(
         env.mock.chat_requests.load(Ordering::SeqCst),
@@ -235,11 +281,69 @@ fn no_session_run_leaves_nothing_resumable() {
     assert!(!export.status.success());
     let resume = env.gosling(cwd, &["run", "-r", "--session-id", &id, "-t", "probe"]);
     assert!(!resume.status.success());
+    assert_eq!(
+        files_containing(env.root.path(), marker.as_bytes()),
+        Vec::<std::path::PathBuf>::new(),
+        "--no-session prompt bytes must not remain anywhere in the durable path root"
+    );
+    assert_eq!(
+        files_containing(env.root.path(), response_marker.as_bytes()),
+        Vec::<std::path::PathBuf>::new(),
+        "--no-session response bytes must not remain anywhere in the durable path root"
+    );
 
     let kept = env.run_ok(cwd, &["run", "-n", "kept", "-t", "hi"]);
     assert_eq!(
         env.export(&banner_session_id(&kept))["name"],
         serde_json::Value::String("kept".to_string())
+    );
+}
+
+#[test]
+fn failed_no_session_run_leaves_no_prompt_bytes() {
+    let env = Env::new();
+    let marker = "CX07-NO-SESSION-FAILURE-20260913";
+
+    let failed = env.gosling(env.root.path(), &["run", "--no-session", "-t", marker]);
+
+    assert!(!failed.status.success());
+    assert_eq!(
+        files_containing(env.root.path(), marker.as_bytes()),
+        Vec::<std::path::PathBuf>::new(),
+        "failed --no-session prompt bytes must not remain in the durable path root"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn cancelled_no_session_run_leaves_no_prompt_bytes() {
+    let env = Env::new();
+    let marker = "CX07-NO-SESSION-CANCELLED-20260913";
+    let mut child = env
+        .command(env.root.path(), &["run", "--no-session", "-t", marker])
+        .spawn()
+        .unwrap();
+
+    for _ in 0..500 {
+        if env.mock.chat_requests.load(Ordering::SeqCst) > 0 {
+            break;
+        }
+        if let Some(status) = child.try_wait().unwrap() {
+            panic!("--no-session child exited before reaching the provider: {status}");
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(env.mock.chat_requests.load(Ordering::SeqCst) > 0);
+    unsafe {
+        libc::kill(child.id() as libc::pid_t, libc::SIGINT);
+    }
+    let status = child.wait().unwrap();
+
+    assert!(!status.success());
+    assert_eq!(
+        files_containing(env.root.path(), marker.as_bytes()),
+        Vec::<std::path::PathBuf>::new(),
+        "cancelled --no-session prompt bytes must not remain in the durable path root"
     );
 }
 

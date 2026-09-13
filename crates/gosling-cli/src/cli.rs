@@ -2086,15 +2086,6 @@ async fn handle_run_command(
         ))
     };
 
-    if run_behavior.no_session {
-        if let Err(e) = SessionManager::instance()
-            .delete_session(session.session_id())
-            .await
-        {
-            eprintln!("Warning: Failed to discard the --no-session session: {e}");
-        }
-    }
-
     result
 }
 

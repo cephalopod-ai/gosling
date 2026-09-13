@@ -116,8 +116,10 @@ impl Agent {
             .await?;
 
         let message_text_for_trace = user_message.as_concat_text();
-        tracing::Span::current().record("user_message", message_text_for_trace.as_str());
-        tracing::Span::current().record("trace_input", message_text_for_trace.as_str());
+        if crate::providers::utils::local_transcript_persistence_enabled() {
+            tracing::Span::current().record("user_message", message_text_for_trace.as_str());
+            tracing::Span::current().record("trace_input", message_text_for_trace.as_str());
+        }
 
         for content in &user_message.content {
             if let MessageContent::ActionRequired(action_required) = content {
