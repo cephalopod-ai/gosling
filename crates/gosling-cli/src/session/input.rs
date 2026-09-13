@@ -5,6 +5,8 @@ use gosling::config::{Config, GoslingMode};
 use rustyline::Editor;
 use shlex;
 use std::collections::HashMap;
+#[cfg(unix)]
+use std::io::IsTerminal;
 use std::sync::Arc;
 use strum::VariantNames;
 
@@ -131,6 +133,21 @@ pub fn get_input(
         }
     }
 
+    #[cfg(unix)]
+    if std::io::stdin().is_terminal() {
+        match take_typeahead(libc::STDIN_FILENO) {
+            Some(Typeahead::Line(line)) => {
+                println!("> {line}");
+                if !line.trim().is_empty() {
+                    editor.add_history_entry(line.as_str())?;
+                }
+                return Ok(parse_inline_input(&line));
+            }
+            Some(Typeahead::Eof) => return Ok(InputResult::Exit),
+            None => {}
+        }
+    }
+
     let completion_cache = editor
         .helper()
         .map(|h| h.completion_cache.clone())
@@ -165,6 +182,52 @@ pub fn get_input(
     }
 
     Ok(parse_inline_input(&input))
+}
+
+#[cfg(unix)]
+#[derive(Debug, PartialEq)]
+enum Typeahead {
+    Line(String),
+    Eof,
+}
+
+/// Takes one line the user finished typing while no prompt was active.
+///
+/// Between prompts the terminal is in canonical mode, where the line discipline has already
+/// turned Enter into `\n`. Left in the queue, rustyline would read that byte as the Ctrl+J
+/// newline binding and merge it with the next line, so a complete line is consumed here and
+/// submitted as if Enter had been pressed at the prompt. Partial lines stay queued for rustyline.
+#[cfg(unix)]
+fn take_typeahead(fd: libc::c_int) -> Option<Typeahead> {
+    // SAFETY: `termios` is plain data and `tcgetattr` only writes into it.
+    let mut termios: libc::termios = unsafe { std::mem::zeroed() };
+    if unsafe { libc::tcgetattr(fd, &mut termios) } != 0 || termios.c_lflag & libc::ICANON == 0 {
+        return None;
+    }
+
+    let mut poll_fd = libc::pollfd {
+        fd,
+        events: libc::POLLIN,
+        revents: 0,
+    };
+    // SAFETY: one valid pollfd and a zero timeout.
+    if unsafe { libc::poll(&mut poll_fd, 1, 0) } <= 0 || poll_fd.revents & libc::POLLIN == 0 {
+        return None;
+    }
+
+    let mut buffer = [0u8; 4096];
+    // SAFETY: the buffer is valid for `buffer.len()` bytes; canonical mode returns at most one line.
+    let read = unsafe { libc::read(fd, buffer.as_mut_ptr().cast(), buffer.len()) };
+    match read {
+        0 => Some(Typeahead::Eof),
+        n if n > 0 => {
+            let line = String::from_utf8_lossy(&buffer[..n as usize]);
+            Some(Typeahead::Line(
+                line.trim_end_matches(['\r', '\n']).to_string(),
+            ))
+        }
+        _ => None,
+    }
 }
 
 fn parse_inline_input(input: &str) -> InputResult {
@@ -443,6 +506,50 @@ fn print_editor_help() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn test_typeahead_lines_are_submitted_one_at_a_time() {
+        let (mut master, mut slave) = (0, 0);
+        // SAFETY: both out-pointers are valid; name, termios and winsize are optional.
+        let opened = unsafe {
+            libc::openpty(
+                &mut master,
+                &mut slave,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        };
+        assert_eq!(opened, 0);
+        let write = |bytes: &[u8]| {
+            // SAFETY: `bytes` is valid for its length and `master` is open.
+            let written = unsafe { libc::write(master, bytes.as_ptr().cast(), bytes.len()) };
+            assert_eq!(written, bytes.len() as isize);
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        };
+
+        assert_eq!(take_typeahead(slave), None);
+
+        write(b"first\r/exit\r");
+        assert_eq!(
+            take_typeahead(slave),
+            Some(Typeahead::Line("first".to_string()))
+        );
+        let Some(Typeahead::Line(exit)) = take_typeahead(slave) else {
+            panic!("expected the second typed-ahead line");
+        };
+        assert!(matches!(parse_inline_input(&exit), InputResult::Exit));
+
+        write(b"unfinished");
+        assert_eq!(take_typeahead(slave), None);
+
+        // SAFETY: both descriptors came from openpty above.
+        unsafe {
+            libc::close(slave);
+            libc::close(master);
+        }
+    }
 
     #[test]
     fn test_handle_slash_command() {
