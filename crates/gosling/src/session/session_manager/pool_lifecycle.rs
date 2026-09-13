@@ -21,6 +21,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tracing::warn;
 
+static FIRST_INIT_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 #[cfg(unix)]
 fn prepare_session_directory_with<F>(path: &Path, set_permissions: F) -> std::io::Result<()>
 where
@@ -82,6 +84,11 @@ impl SessionStorage {
     pub(crate) async fn pool(&self) -> Result<&Pool<Sqlite>> {
         self.initialized
             .get_or_try_init(|| async {
+                // Separate stores for the same database (one per ACP connection)
+                // otherwise race SQLite's first-open WAL switch and schema
+                // creation, which fails fast with "database is locked" instead
+                // of honoring busy_timeout.
+                let _init_guard = FIRST_INIT_LOCK.lock().await;
                 prepare_session_directory(&self.session_dir).map_err(|error| {
                     anyhow::anyhow!(
                         "cannot secure session database directory {:?}: {error}",

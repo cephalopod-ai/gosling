@@ -631,3 +631,32 @@ async fn acp_cors_allows_additional_configured_origins() {
         Some("app://localhost")
     );
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+async fn concurrent_connections_on_a_fresh_root_all_create_agents() {
+    for _ in 0..10 {
+        let dir = tempfile::tempdir().unwrap();
+        let server = Arc::new(AcpServer::new(AcpServerFactoryConfig {
+            builtins: vec![],
+            state_dir: dir.path().join("state"),
+            data_dir: dir.path().join("data"),
+            platform_data_dir: dir.path().join("data"),
+            config_dir: dir.path().join("config"),
+            gosling_platform: GoslingPlatform::GoslingCli,
+            additional_source_roots: Vec::new(),
+            shell_runtime: Default::default(),
+        }));
+        let connections: Vec<_> = (0..4)
+            .map(|_| {
+                let server = Arc::clone(&server);
+                tokio::spawn(async move { server.create_agent().await.map(|_| ()) })
+            })
+            .collect();
+        for connection in connections {
+            connection
+                .await
+                .unwrap()
+                .expect("every concurrent connection must create its agent");
+        }
+    }
+}
