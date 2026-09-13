@@ -1,5 +1,28 @@
 # TODO
 
+## 2026-09-13 consolidated audit repair
+
+- [x] **GSL-PT-20260913-001/002/003/004/005** — Repair provider-aware doctor checks,
+      cancellation history, duplicate subagent activity, `--no-session` retention, and Desktop
+      JSON-RPC error detail from the live playtest.
+- [x] **AUD-DAT-002/003/004/005/006/007/009/011** — Repair bounded memory recency,
+      fail-closed research checks, truncation usage, cancellation polling, cross-process database
+      initialization, import lookup, and handoff metadata updates from the dataflow audit.
+- [x] **AUD-DAT-008** — Close as verified not a defect: ADR-0018 intentionally retains
+      canonical-path output revision history independently of chat deletion.
+- [ ] **AUD-DAT-001** — Decide whether memory recall must be workspace-scoped, then specify
+      migration and compatibility behavior. Current cross-session recall is documented, but the
+      cross-workspace privacy risk remains High.
+- [ ] **GSL-PT-20260913-006** — Add credential ownership/shared-reference metadata before deleting
+      secrets during extension removal; prove that shared secrets survive removal of one consumer.
+- [ ] **AUD-DAT-010** — Decide whether to remove legacy session columns, with a migration and
+      fresh/upgraded schema-parity coverage rather than a fresh-schema-only edit.
+- [ ] **AUD-DAT-012** — Measure workspace lock contention and approve a coherent async store
+      boundary before replacing ADR-0001's required cross-process file lock behavior.
+
+See the [canonical reconciliation and repair report](cloud/2026-09-13-consolidated-audit-repair.md)
+and [campaign execution log](logs/session/2026-09-13-consolidated-audit-repair-campaign.md).
+
 ## 2026-09-09 provider-managed compaction ownership
 
 - [ ] **CMP-OWN-001** — Suppress gosling's `<compaction>` remaining-token line when the active

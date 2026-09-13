@@ -1,6 +1,6 @@
 # Active TODO ledger
 
-Date: 2026-08-27
+Date: 2026-09-13
 
 [`docs/TODO.md`](../TODO.md) is the canonical backlog. This mirror contains
 only items that are still active, partial, blocked, or externally gated.
@@ -8,6 +8,10 @@ Completed work remains in the canonical backlog and session logs.
 
 | ID | Status | Priority | Area | Source | Opened | Last evidence | Exit criteria |
 |---|---|---|---|---|---|---|---|
+| AUD-DAT-001 | needs-decision | P0 | Context privacy | `docs/TODO.md` | 2026-09-13 | 2026-09-13 | Approve workspace-memory scope and migration semantics, then prove isolation and intended recall compatibility. |
+| GSL-PT-20260913-006 | needs-design | P3 | Credential lifecycle | `docs/TODO.md` | 2026-09-13 | 2026-09-13 | Record secret ownership/shared references and prove extension removal cannot delete another consumer's credential. |
+| AUD-DAT-010 | needs-decision | P3 | Session schema | `docs/TODO.md` | 2026-09-13 | 2026-09-13 | Approve a legacy-column migration and prove fresh/upgraded schema parity. |
+| AUD-DAT-012 | needs-evidence | P3 | Workspace concurrency | `docs/TODO.md` | 2026-09-13 | 2026-09-13 | Measure lock contention and approve/test an async boundary without weakening ADR-0001 cross-process locking. |
 | ARC-GSL-002 | needs-decision | P1 | Provider architecture | `docs/TODO.md` | 2026-08-15 | 2026-08-27 | Move conversation-domain ownership only through an approved cross-crate architecture change. |
 | ARC-GSL-003/004/005 | needs-decision | P1 | Architecture | `docs/TODO.md` | 2026-08-26 | 2026-08-27 | Complete the provider-port, MCP dependency, and process-global-state architecture pass. |
 | CMP-GSL-004 | blocked | P1 | Governance | `docs/TODO.md` | 2026-08-26 | 2026-08-27 | Run a successful fresh Giles scan before promoting or changing advisory `.giles` evidence. |

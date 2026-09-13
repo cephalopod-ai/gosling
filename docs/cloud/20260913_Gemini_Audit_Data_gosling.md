@@ -362,3 +362,18 @@ This independent, clean-slate audit covers the primary runtime execution and dat
   git status --short
   ```
   Only the documentation record `docs/cloud/20260913_Gemini_Audit_Data_gosling.md` has been added.
+
+## 9. Disposition Addendum — 2026-09-13
+
+This report remains the immutable independent-audit record. The later
+[consolidated audit repair](2026-09-13-consolidated-audit-repair.md) revalidated each finding
+against current source and repository contracts.
+
+- Repaired: AUD-DAT-002, AUD-DAT-003, AUD-DAT-004, AUD-DAT-005, AUD-DAT-006, AUD-DAT-007,
+  AUD-DAT-009, and AUD-DAT-011.
+- AUD-DAT-003 was reduced from High to Low hardening because the primary ACP completion verifier
+  already failed closed; only the secondary nudge helper assumed success on inventory error.
+- AUD-DAT-008 was rejected as a defect because ADR-0018 intentionally retains revision history by
+  canonical output path independently of chat deletion.
+- AUD-DAT-001, AUD-DAT-010, and AUD-DAT-012 remain explicit architecture, migration, or evidence
+  decisions and are tracked in `docs/TODO.md`.

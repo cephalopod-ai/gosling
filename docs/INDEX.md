@@ -47,6 +47,9 @@ for the relationship to cephalopod-ai/gosling.
 - [build/](build/) — build documentation
 - [build/context-compaction-failsafe-plan.md](build/context-compaction-failsafe-plan.md) — recurring oversized-session compaction repair plan and acceptance criteria
 - [cloud/](cloud/) — audit and playtest reports (not cloud-hosting runbooks)
+- [cloud/2026-09-13-consolidated-audit-repair.md](cloud/2026-09-13-consolidated-audit-repair.md) — canonical reconciliation, disposition, repair commits, validation, and remaining decisions for both 2026-09-13 audits
+- [cloud/2026-09-13-live-all-scenarios-playtest.md](cloud/2026-09-13-live-all-scenarios-playtest.md) — historical 2026-09-13 live playtest report, with a disposition addendum linking to the repair campaign
+- [cloud/20260913_Gemini_Audit_Data_gosling.md](cloud/20260913_Gemini_Audit_Data_gosling.md) — historical Gemini architecture/dataflow audit, with corrected severity and disposition addendum
 - [cloud/2026-09-08-recent-work-independent-audit.md](cloud/2026-09-08-recent-work-independent-audit.md) — 2026-09-08 independent multi-lens audit of the last ~20 commits (revisions, compaction, artifacts, permission chrome); no security scan
 - [cloud/2026-09-08-system-surface-audit.md](cloud/2026-09-08-system-surface-audit.md) — 2026-09-08 independent multi-lens system, reliability, and dataflow surface audit
 - [cloud/2026-09-08-evening-audit-repair.md](cloud/2026-09-08-evening-audit-repair.md) — independent audits and repairs of today's changes, including revision custody, compaction outcomes, workflow state, and contract drift; no security scan

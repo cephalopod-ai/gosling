@@ -239,3 +239,15 @@ harness limitation and means installed-bundle lifecycle/signing behavior was not
    queued-writer, external-provider, and invalid-extension modes.
 5. Run a signed packaged Desktop pass for native dialogs, external backend, notification, Trash,
    clipboard, and multi-window cards.
+
+## Disposition addendum — 2026-09-13
+
+This report remains the immutable playtest record. The later
+[consolidated audit repair](2026-09-13-consolidated-audit-repair.md) reconciled it with the Gemini
+dataflow audit and source contracts.
+
+- GSL-PT-20260913-001 through GSL-PT-20260913-005 were repaired and regression-tested.
+- GSL-PT-20260913-006 remains an explicit credential-ownership design item; deleting an
+  extension's referenced secret is unsafe until shared ownership can be represented.
+- The repair campaign replayed the repaired paths and ran broad source regressions, but did not
+  perform another complete 127-card or signed installed-application pass.
