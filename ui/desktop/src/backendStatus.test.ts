@@ -30,7 +30,8 @@ describe('checkBackendStatus', () => {
         expectAbortSignal(init);
         return new Response(null, { status: 200 });
       }
-      if (url === 'https://example.com/gosling/acp?token=test-secret') {
+      if (url === 'https://example.com/gosling/acp') {
+        expect(init?.headers).toEqual({ 'X-Secret-Key': 'test-secret' });
         expectAbortSignal(init);
         return new Response(null, { status: 406 });
       }
@@ -49,18 +50,20 @@ describe('checkBackendStatus', () => {
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(fetch.mock.calls.map(([input]) => fetchInputUrl(input))).toEqual([
       'https://example.com/gosling/status',
-      'https://example.com/gosling/acp?token=test-secret',
+      'https://example.com/gosling/acp',
     ]);
+    expect(fetch.mock.calls.some(([input]) => fetchInputUrl(input).includes('token='))).toBe(false);
   });
 
   it('fails immediately when the ACP auth probe rejects the secret', async () => {
     const onEvent = vi.fn();
-    const fetch = vi.fn(async (input: FetchInput) => {
+    const fetch = vi.fn(async (input: FetchInput, init?: FetchInit) => {
       const url = fetchInputUrl(input);
       if (url === 'https://example.com/status') {
         return new Response(null, { status: 200 });
       }
-      if (url === 'https://example.com/acp?token=wrong-secret') {
+      if (url === 'https://example.com/acp') {
+        expect(init?.headers).toEqual({ 'X-Secret-Key': 'wrong-secret' });
         return new Response(null, { status: 401 });
       }
 
@@ -92,7 +95,7 @@ describe('checkBackendStatus', () => {
           expectAbortSignal(init);
           return Promise.resolve(new Response(null, { status: 200 }));
         }
-        if (url === 'https://example.com/acp?token=test-secret') {
+        if (url === 'https://example.com/acp') {
           const signal = expectAbortSignal(init);
           acpSignals.push(signal);
           return new Promise<Response>((_, reject) => {

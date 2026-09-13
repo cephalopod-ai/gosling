@@ -51,7 +51,7 @@ export const checkBackendStatus = async ({
 }: CheckBackendStatusParams): Promise<boolean> => {
   const deadline = Date.now() + HEALTHCHECK_TIMEOUT_MS;
   const statusUrl = statusHttpUrlFromHttpBase(baseUrl);
-  const acpUrl = acpHttpUrlFromHttpBase(baseUrl, serverSecret);
+  const acpUrl = acpHttpUrlFromHttpBase(baseUrl);
   options.onEvent?.('healthcheck_start', {
     timeoutMs: HEALTHCHECK_TIMEOUT_MS,
     intervalMs: HEALTHCHECK_INTERVAL_MS,
@@ -71,7 +71,11 @@ export const checkBackendStatus = async ({
         },
       });
       if (response.ok) {
-        const authResponse = await fetchWithTimeout(fetch, acpUrl);
+        const authResponse = await fetchWithTimeout(fetch, acpUrl, {
+          headers: {
+            'X-Secret-Key': serverSecret,
+          },
+        });
         // GET /acp without an SSE Accept header returns 406 after auth succeeds.
         if (authResponse.status === 406) {
           options.onEvent?.('healthcheck_success', { attempt });
