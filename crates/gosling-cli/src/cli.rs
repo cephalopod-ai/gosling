@@ -2006,7 +2006,7 @@ async fn handle_run_command(
     })
     .await;
 
-    if run_behavior.interactive {
+    let result = if run_behavior.interactive {
         session.interactive(input_config.contents).await
     } else if let Some(contents) = input_config.contents {
         let session_start = std::time::Instant::now();
@@ -2026,7 +2026,18 @@ async fn handle_run_command(
         Err(anyhow::anyhow!(
             "no text provided for prompt in headless mode"
         ))
+    };
+
+    if run_behavior.no_session {
+        if let Err(e) = SessionManager::instance()
+            .delete_session(session.session_id())
+            .await
+        {
+            eprintln!("Warning: Failed to discard the --no-session session: {e}");
+        }
     }
+
+    result
 }
 
 fn handle_plugin_subcommand(command: PluginCommand) -> Result<()> {

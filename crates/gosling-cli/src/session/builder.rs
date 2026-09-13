@@ -304,6 +304,13 @@ async fn resolve_session_id(
     } else if session_config.resume {
         if let Some(ref session_id) = session_config.session_id {
             match session_manager.get_session(session_id, false).await {
+                Ok(session) if session.session_type == SessionType::Hidden => {
+                    output::render_error(&format!(
+                        "Cannot resume session {} - it is an internal session that is not resumable",
+                        style(session_id).cyan()
+                    ));
+                    process::exit(1);
+                }
                 Ok(_) => session_id.clone(),
                 Err(_) => {
                     output::render_error(&format!(
@@ -523,6 +530,9 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
 
     let config = Config::global();
     let mut agent: Agent = Agent::new();
+    if session_config.no_session {
+        agent.config.disable_session_naming = true;
+    }
     if let Some(max_repetitions) = session_config.max_tool_repetitions {
         agent.set_max_tool_repetitions(max_repetitions);
     }

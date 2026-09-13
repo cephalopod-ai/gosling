@@ -217,3 +217,28 @@ fn resuming_from_another_directory_moves_the_session_to_it() {
     assert!(String::from_utf8_lossy(&moved.stderr).contains("Staying in current directory"));
     assert_eq!(env.export(&id)["working_dir"], dir_b.to_str().unwrap());
 }
+
+#[test]
+fn no_session_run_leaves_nothing_resumable() {
+    let env = Env::new();
+    let cwd = env.root.path();
+
+    let ephemeral = env.run_ok(cwd, &["run", "--no-session", "-t", "secret-ish prompt"]);
+    let id = banner_session_id(&ephemeral);
+    assert_eq!(
+        env.mock.chat_requests.load(Ordering::SeqCst),
+        1,
+        "a --no-session run must not make a title-generation request"
+    );
+
+    let export = env.gosling(cwd, &["session", "export", "--session-id", &id]);
+    assert!(!export.status.success());
+    let resume = env.gosling(cwd, &["run", "-r", "--session-id", &id, "-t", "probe"]);
+    assert!(!resume.status.success());
+
+    let kept = env.run_ok(cwd, &["run", "-n", "kept", "-t", "hi"]);
+    assert_eq!(
+        env.export(&banner_session_id(&kept))["name"],
+        serde_json::Value::String("kept".to_string())
+    );
+}
