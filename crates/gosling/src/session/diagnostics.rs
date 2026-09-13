@@ -2,11 +2,12 @@ use crate::config::base::Config;
 use crate::config::extensions::get_enabled_extensions;
 use crate::config::paths::Paths;
 use crate::prompt_template::list_templates;
-use crate::providers::utils::LOGS_TO_KEEP;
+use crate::providers::utils::{LLM_LOG_SESSION_ID_KEY, LOGS_TO_KEEP};
 use crate::session::SessionManager;
+use gosling_providers::secret_redaction::redact_secrets;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::PathBuf;
 use utoipa::ToSchema;
 
@@ -193,6 +194,37 @@ fn recent_llm_log_paths() -> Vec<PathBuf> {
     }
 }
 
+const LLM_LOG_SESSION_LINE_MAX_BYTES: u64 = 4096;
+
+fn llm_log_session_id(path: &std::path::Path) -> Option<String> {
+    let file = fs::File::open(path).ok()?;
+    let mut first_line = String::new();
+    BufReader::new(file.take(LLM_LOG_SESSION_LINE_MAX_BYTES))
+        .read_line(&mut first_line)
+        .ok()?;
+    serde_json::from_str::<serde_json::Value>(&first_line)
+        .ok()?
+        .get(LLM_LOG_SESSION_ID_KEY)?
+        .as_str()
+        .map(String::from)
+}
+
+fn redact_json_strings(value: serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::String(text) => serde_json::Value::String(redact_secrets(&text)),
+        serde_json::Value::Array(values) => {
+            serde_json::Value::Array(values.into_iter().map(redact_json_strings).collect())
+        }
+        serde_json::Value::Object(fields) => serde_json::Value::Object(
+            fields
+                .into_iter()
+                .map(|(key, value)| (key, redact_json_strings(value)))
+                .collect(),
+        ),
+        value => value,
+    }
+}
+
 fn llm_log_index(path: &std::path::Path) -> Option<usize> {
     let name = path
         .file_name()
@@ -293,7 +325,7 @@ pub async fn generate_diagnostics(
     let session = if is_full {
         match session_manager.export_session(session_id).await {
             Ok(session_data) => match serde_json::from_str(&session_data) {
-                Ok(value) => Some(value),
+                Ok(value) => Some(redact_json_strings(value)),
                 Err(e) => {
                     tracing::warn!(
                         "Failed to parse exported session {} for diagnostics: {}",
@@ -327,7 +359,7 @@ pub async fn generate_diagnostics(
     let config = if is_full {
         let config_yaml = if config_path.exists() {
             match read_capped(&config_path, CONFIG_MAX_BYTES) {
-                Ok(content) => Some(content),
+                Ok(content) => Some(redact_secrets(&content)),
                 Err(e) => {
                     errors.push(DiagnosticsError {
                         path: Some(config_path.display().to_string()),
@@ -354,7 +386,7 @@ pub async fn generate_diagnostics(
             match read_tail_capped(&path, SERVER_LOG_TAIL_LINES, SERVER_LOG_MAX_BYTES) {
                 Ok((content, truncated)) => Some(DiagnosticsTextFile {
                     path: path.display().to_string(),
-                    content,
+                    content: redact_secrets(&content),
                     truncated,
                 }),
                 Err(e) => {
@@ -368,12 +400,13 @@ pub async fn generate_diagnostics(
         });
         let llm = recent_llm_log_paths()
             .into_iter()
+            .filter(|path| llm_log_session_id(path).as_deref() == Some(session_id))
             .filter_map(|path| match read_capped(&path, LLM_LOG_MAX_BYTES) {
                 Ok(content) => {
                     let truncated = was_truncated(&content);
                     Some(DiagnosticsTextFile {
                         path: path.display().to_string(),
-                        content,
+                        content: redact_secrets(&content),
                         truncated,
                     })
                 }
@@ -508,6 +541,80 @@ mod tests {
             report.errors
         );
         assert!(report.errors[0].message.contains("export session"));
+    }
+
+    // GSL-PT-20260912-D-4: the bundle carried other sessions' request logs and
+    // unredacted tool secrets.
+    #[tokio::test]
+    async fn full_report_includes_only_the_requested_sessions_logs_redacted() {
+        use crate::config::paths::RuntimePaths;
+        use crate::config::GoslingMode;
+        use crate::conversation::message::Message;
+        use crate::providers::utils::RequestLog;
+        use crate::session::SessionType;
+        use gosling_providers::request_log::RequestLogger;
+
+        let root = TempDir::new().unwrap();
+        let runtime_paths = RuntimePaths::new(
+            root.path().join("config"),
+            root.path().join("data"),
+            root.path().join("state"),
+        );
+        Paths::scope(runtime_paths, async {
+            let session_manager = SessionManager::new(root.path().join("sessions"));
+            let requested = session_manager
+                .create_session(
+                    root.path().to_path_buf(),
+                    "requested".to_string(),
+                    SessionType::User,
+                    GoslingMode::Approve,
+                )
+                .await
+                .unwrap();
+            session_manager
+                .add_message(
+                    &requested.id,
+                    &Message::assistant()
+                        .with_text("tool said ghp_REQUESTEDabcdefghijklmnopqrstuvwxyz0123"),
+                )
+                .await
+                .unwrap();
+
+            let logger = RequestLog::new(LOGS_TO_KEEP).unwrap();
+            for (session_id, line) in [
+                (
+                    Some("other-session".to_string()),
+                    "OTHER-SESSION-MARKER ghp_OTHERabcdefghijklmnopqrstuvwxyz0123",
+                ),
+                (None, "UNSCOPED-MARKER"),
+                (
+                    Some(requested.id.clone()),
+                    "REQUESTED-MARKER ghp_REQUESTEDabcdefghijklmnopqrstuvwxyz0123",
+                ),
+            ] {
+                let mut handle = crate::session_context::with_session_id(session_id, async {
+                    logger.start().unwrap()
+                })
+                .await;
+                handle.write(line).unwrap();
+            }
+
+            let report =
+                generate_diagnostics(&session_manager, &requested.id, DiagnosticsLevel::Full)
+                    .await
+                    .unwrap();
+
+            assert_eq!(report.logs.llm.len(), 1, "{:?}", report.logs.llm);
+            let llm = &report.logs.llm[0].content;
+            assert!(llm.contains("REQUESTED-MARKER [REDACTED]"), "{llm}");
+            let bundle = serde_json::to_string(&report).unwrap();
+            assert!(!bundle.contains("OTHER-SESSION-MARKER"));
+            assert!(!bundle.contains("UNSCOPED-MARKER"));
+            assert!(!bundle.contains("abcdefghijklmnopqrstuvwxyz0123"));
+            assert!(bundle.contains("tool said [REDACTED]"));
+            assert!(report.errors.is_empty(), "{:?}", report.errors);
+        })
+        .await;
     }
 
     /// Summary-level reports never touch the session at all, so no error

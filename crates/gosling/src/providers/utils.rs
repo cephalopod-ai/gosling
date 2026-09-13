@@ -223,6 +223,10 @@ fn unescape_json_values_in_place(value: &mut Value) {
 
 pub const LOGS_TO_KEEP: usize = 10;
 
+/// First line of a request log written inside a session, so diagnostics can
+/// include only the requested session's logs.
+pub const LLM_LOG_SESSION_ID_KEY: &str = "session_id";
+
 static INIT_LOGGER: OnceLock<Result<()>> = OnceLock::new();
 
 pub fn init_gosling_request_log() -> Result<()> {
@@ -282,13 +286,20 @@ impl RequestLogger for RequestLog {
         let temp_name = format!("llm_request.{request_id}.jsonl");
         let temp_path = logs_dir.join(PathBuf::from(temp_name));
 
-        let writer = BufWriter::new(
+        let mut writer = BufWriter::new(
             File::options()
                 .write(true)
                 .create(true)
                 .truncate(true)
                 .open(&temp_path)?,
         );
+        if let Some(session_id) = crate::session_context::current_session_id() {
+            writeln!(
+                writer,
+                "{}",
+                serde_json::json!({ LLM_LOG_SESSION_ID_KEY: session_id })
+            )?;
+        }
 
         Ok(Box::new(FileLogHandle {
             writer: Some(writer),
