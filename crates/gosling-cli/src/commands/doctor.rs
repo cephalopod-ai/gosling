@@ -3,6 +3,7 @@ use std::path::Path;
 
 use gosling::config::Config;
 use gosling::providers::get_from_registry;
+use gosling::providers::provider_test::test_provider_configuration;
 use gosling::session::{config_path, SystemInfo};
 
 pub async fn handle_doctor() -> Result<()> {
@@ -10,16 +11,16 @@ pub async fn handle_doctor() -> Result<()> {
     let system_info = SystemInfo::collect().to_text();
     let provider = config.get_gosling_provider().ok();
     let model = config.get_gosling_model().ok();
+    let problem = setup_problem(provider.as_deref(), model.as_deref()).await;
     let report = render_report(
         &system_info,
         &config_path(),
         provider.as_deref(),
         model.as_deref(),
+        problem.is_none(),
     );
     println!("{report}");
-    setup_problem(provider.as_deref(), model.as_deref())
-        .await
-        .map_or(Ok(()), |problem| Err(anyhow::anyhow!(problem)))
+    problem.map_or(Ok(()), |problem| Err(anyhow::anyhow!(problem)))
 }
 
 async fn setup_problem(provider: Option<&str>, model: Option<&str>) -> Option<String> {
@@ -29,10 +30,13 @@ async fn setup_problem(provider: Option<&str>, model: Option<&str>) -> Option<St
     if let Err(e) = get_from_registry(provider).await {
         return Some(e.to_string());
     }
-    if model.is_none() {
+    let Some(model) = model else {
         return Some("no model configured. Run 'gosling configure' first.".to_string());
-    }
-    None
+    };
+    test_provider_configuration(provider, model, false, None)
+        .await
+        .err()
+        .map(|error| format!("provider check failed for {provider}/{model}: {error}"))
 }
 
 fn render_report(
@@ -40,15 +44,11 @@ fn render_report(
     config_file: &Path,
     provider: Option<&str>,
     model: Option<&str>,
+    provider_verified: bool,
 ) -> String {
-    // "local diagnostics complete" read as a verdict on the whole setup even
-    // though nothing here contacts the provider, so a broken key still exited
-    // 0 with a reassuring line. Report only what was actually inspected, and
-    // say plainly what was not. (REL-GSL-011)
     let status = match (provider, model) {
-        (Some(_), Some(_)) => {
-            "Status: configuration present (not verified — no provider request was made)"
-        }
+        (Some(_), Some(_)) if provider_verified => "Status: provider request verified",
+        (Some(_), Some(_)) => "Status: provider check failed",
         (None, _) => "Status: no provider configured",
         (Some(_), None) => "Status: provider configured but no model selected",
     };
@@ -72,6 +72,7 @@ mod tests {
             Path::new("/tmp/config.yaml"),
             Some("ollama"),
             Some("qwen2.5:latest"),
+            true,
         );
 
         assert!(report.contains("Gosling Doctor"));
@@ -81,15 +82,30 @@ mod tests {
     }
 
     #[test]
-    fn configured_setup_is_not_reported_as_verified() {
-        let report = render_report("info", Path::new("/tmp/config.yaml"), Some("p"), Some("m"));
-        assert!(report.contains("not verified"));
-        assert!(!report.contains("diagnostics complete"));
+    fn configured_setup_reports_the_probe_result() {
+        let verified = render_report(
+            "info",
+            Path::new("/tmp/config.yaml"),
+            Some("p"),
+            Some("m"),
+            true,
+        );
+        let failed = render_report(
+            "info",
+            Path::new("/tmp/config.yaml"),
+            Some("p"),
+            Some("m"),
+            false,
+        );
+        assert!(verified.contains("provider request verified"));
+        assert!(failed.contains("provider check failed"));
     }
 
     #[test]
     fn missing_provider_and_model_are_named() {
-        assert!(render_report("i", Path::new("/c"), None, None).contains("no provider configured"));
-        assert!(render_report("i", Path::new("/c"), Some("p"), None).contains("no model selected"));
+        assert!(render_report("i", Path::new("/c"), None, None, false)
+            .contains("no provider configured"));
+        assert!(render_report("i", Path::new("/c"), Some("p"), None, false)
+            .contains("no model selected"));
     }
 }
