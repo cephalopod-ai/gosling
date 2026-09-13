@@ -143,18 +143,22 @@ async fn handle_manual_provider_setup(config: &Config) -> anyhow::Result<()> {
         Ok(false) => {
             let _ = config.clear();
             println!(
-                "\n  {}: We did not save your config, inspect your credentials\n   and run '{}' again to ensure gosling can connect",
+                "\n  {}: No provider was activated. Credentials you entered may already be in secret storage;\n   inspect them and run '{}' again to ensure gosling can connect",
                 style("Warning").yellow().italic(),
                 style("gosling configure").cyan()
             );
+            anyhow::bail!(PROVIDER_NOT_CONFIGURED);
         }
         Err(e) => {
             let _ = config.clear();
             print_manual_config_error(&e);
+            anyhow::bail!(PROVIDER_NOT_CONFIGURED);
         }
     }
     Ok(())
 }
+
+const PROVIDER_NOT_CONFIGURED: &str = "provider configuration did not complete";
 
 fn print_manual_config_error(e: &anyhow::Error) {
     match e.downcast_ref::<ConfigError>() {
@@ -195,7 +199,7 @@ fn print_manual_config_error(e: &anyhow::Error) {
         }
         _ => {
             println!(
-                "\n  {} {} \n  We did not save your config, inspect your credentials\n   and run '{}' again to ensure gosling can connect",
+                "\n  {} {} \n  No provider was activated. Credentials you entered may already be in secret storage;\n   inspect them and run '{}' again to ensure gosling can connect",
                 style("Error").red().italic(),
                 e,
                 style("gosling configure").cyan()
@@ -280,7 +284,13 @@ async fn handle_existing_config() -> anyhow::Result<()> {
         "add" => configure_extensions_dialog().await,
         "remove" => remove_extension_dialog(),
         "settings" => configure_settings_dialog().await,
-        "providers" => configure_provider_dialog().await.map(|_| ()),
+        "providers" => {
+            if configure_provider_dialog().await? {
+                Ok(())
+            } else {
+                anyhow::bail!("{PROVIDER_NOT_CONFIGURED}; the active provider was not changed")
+            }
+        }
         "custom_providers" => configure_custom_provider_dialog().await,
         _ => unreachable!(),
     }
@@ -606,7 +616,7 @@ async fn configure_single_key(
                             "Would you like to set {}? (optional)",
                             key.name
                         ))
-                        .initial_value(true)
+                        .initial_value(false)
                         .interact()?
                         {
                             let value: String =
