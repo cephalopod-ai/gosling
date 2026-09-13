@@ -653,10 +653,20 @@ impl GoslingAcpAgent {
             .create_provider(provider_id, Vec::new(), None)
             .await
             .internal_err_ctx("Failed to initialize provider for model validation")?;
-        let supported_models = provider
-            .fetch_supported_models()
-            .await
-            .internal_err_ctx("Failed to fetch provider models for validation")?;
+        // A failing model listing cannot prove the model is unavailable; the
+        // provider request itself reports a named error if the model is wrong.
+        let supported_models = match provider.fetch_supported_models().await {
+            Ok(models) => models,
+            Err(error) => {
+                tracing::warn!(
+                    provider_id,
+                    model_id,
+                    %error,
+                    "Model listing failed; accepting unverified model"
+                );
+                return Ok(());
+            }
+        };
         if !supported_models.iter().any(|model| model == model_id) {
             return Err(agent_client_protocol::Error::invalid_params().data(format!(
                 "Model '{model_id}' is not available for provider '{provider_id}'"

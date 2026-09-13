@@ -1351,6 +1351,87 @@ fn test_developer_fs_requests_use_acp_session_id() {
     });
 }
 
+struct FailingModelListProvider;
+
+#[async_trait::async_trait]
+impl Provider for FailingModelListProvider {
+    fn get_name(&self) -> &str {
+        "openai"
+    }
+
+    async fn stream(
+        &self,
+        _model_config: &ModelConfig,
+        _system: &str,
+        _messages: &[gosling::conversation::message::Message],
+        _tools: &[rmcp::model::Tool],
+    ) -> Result<MessageStream, ProviderError> {
+        unimplemented!()
+    }
+
+    async fn fetch_supported_models(&self) -> Result<Vec<String>, ProviderError> {
+        Err(ProviderError::ServerError(
+            "fixture models endpoint down".to_string(),
+        ))
+    }
+}
+
+async fn new_session_with_unlisted_model(
+    provider_factory: AcpProviderFactory,
+) -> anyhow::Result<SessionData<common_tests::fixtures::server::AcpServerSession>> {
+    let openai = OpenAiFixture::new(vec![], Arc::new(EnforceSessionId::default())).await;
+    let mut conn = AcpServerConnection::new(
+        TestConnectionConfig {
+            provider_factory: Some(provider_factory),
+            current_model: "fixture/custom-unlisted-v1".to_string(),
+            ..Default::default()
+        },
+        openai,
+    )
+    .await;
+    conn.new_session().await
+}
+
+#[test]
+#[serial]
+fn test_new_session_accepts_unverified_model_when_model_listing_fails() {
+    write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
+    run_test(async move {
+        let provider_factory: AcpProviderFactory =
+            Arc::new(|_provider_name, _extensions, _working_dir| {
+                Box::pin(async move { Ok(Arc::new(FailingModelListProvider) as Arc<dyn Provider>) })
+            });
+        new_session_with_unlisted_model(provider_factory)
+            .await
+            .expect("session/new must not fail because the model listing failed");
+    });
+}
+
+#[test]
+#[serial]
+fn test_new_session_rejects_model_missing_from_successful_listing() {
+    write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
+    run_test(async move {
+        let provider_factory: AcpProviderFactory =
+            Arc::new(|provider_name, _extensions, _working_dir| {
+                Box::pin(async move {
+                    Ok(Arc::new(MockProvider {
+                        name: provider_name,
+                        recommended_models: vec![],
+                        supported_models: vec!["listed-model".to_string()],
+                    }) as Arc<dyn Provider>)
+                })
+            });
+        let Err(error) = new_session_with_unlisted_model(provider_factory).await else {
+            panic!("an unlisted model must still be rejected when listing succeeds");
+        };
+        assert!(
+            format!("{error:?}").contains("is not available for provider"),
+            "unexpected error: {error:?}"
+        );
+    });
+}
+
 #[test]
 #[serial]
 fn test_custom_provider_supported_models_lists_raw_provider_models() {
