@@ -1424,3 +1424,35 @@ fn hide_interrupted_reply_from_agent(messages: Conversation) -> Conversation {
         message.with_visibility(user_visible, false)
     }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agents::subagent_handler::{
+        create_tool_notification, should_forward_subagent_tool_notification,
+    };
+
+    #[tokio::test]
+    async fn combined_tool_streams_forward_one_rebroadcast_subagent_notification() {
+        let tool_call = CallToolRequestParams::new("developer__shell".to_string());
+        let notification = create_tool_notification(
+            &MessageContent::tool_request("subagent-request", Ok(tool_call)),
+            "subagent-session",
+        )
+        .unwrap();
+        let tool_streams = (0..3)
+            .map(|_| stream::iter(vec![ToolStreamItem::<()>::Message(notification.clone())]))
+            .collect::<Vec<_>>();
+        let mut combined = stream::select_all(tool_streams);
+        let mut seen = HashSet::new();
+        let mut forwarded = 0;
+
+        while let Some(ToolStreamItem::Message(notification)) = combined.next().await {
+            if should_forward_subagent_tool_notification(&mut seen, &notification) {
+                forwarded += 1;
+            }
+        }
+
+        assert_eq!(forwarded, 1);
+    }
+}
