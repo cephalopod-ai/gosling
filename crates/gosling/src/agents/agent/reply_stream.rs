@@ -684,12 +684,10 @@ impl Agent {
                                     let mut tool_persistence_error = None;
 
                                     loop {
-                                        if is_token_cancelled(&cancel_token) {
-                                            break;
-                                        }
-
                                         tokio::select! {
                                             biased;
+
+                                            _ = crate::utils::wait_for_cancellation(&cancel_token) => break,
 
                                             tool_item = combined.next() => {
                                                 match tool_item {
@@ -752,7 +750,6 @@ impl Agent {
                                                 }
                                             }
 
-                                            _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {}
                                         }
                                     }
 

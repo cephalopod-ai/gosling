@@ -1213,6 +1213,16 @@ impl SessionManager {
             .await
     }
 
+    pub async fn truncate_conversation_after_message(
+        &self,
+        session_id: &str,
+        message_id: &str,
+    ) -> Result<()> {
+        self.storage
+            .truncate_conversation_after_message(session_id, message_id)
+            .await
+    }
+
     async fn system_generated_name_update(
         &self,
         id: &str,
@@ -2489,6 +2499,20 @@ mod tests {
         .unwrap();
         set_message_timestamp(&sm, &session.id, "next-prompt", timestamp).await;
 
+        let current_usage = Usage::new(Some(8_000), Some(500), Some(8_500))
+            .with_cache_tokens(Some(2_000), Some(1_000));
+        let accumulated_usage = Usage::new(Some(24_000), Some(1_500), Some(25_500))
+            .with_cache_tokens(Some(6_000), Some(3_000));
+        sm.update(&session.id)
+            .usage(current_usage)
+            .context_usage_estimated(true)
+            .last_request_tokens(Some(8_500))
+            .accumulated_usage(accumulated_usage)
+            .accumulated_cost(Some(1.25))
+            .apply()
+            .await
+            .unwrap();
+
         sm.truncate_conversation_from_message(&session.id, "terminal-history")
             .await
             .unwrap();
@@ -2498,6 +2522,54 @@ mod tests {
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].id.as_deref(), Some("assistant"));
         assert_eq!(messages[0].as_concat_text(), "assistant reply");
+        assert_eq!(reloaded.usage, Usage::default());
+        assert!(!reloaded.context_usage_estimated);
+        assert_eq!(reloaded.last_request_tokens, None);
+        assert_eq!(reloaded.accumulated_usage, accumulated_usage);
+        assert_eq!(reloaded.accumulated_cost, Some(1.25));
+    }
+
+    #[tokio::test]
+    async fn test_truncate_conversation_resets_only_current_usage() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let session = sm
+            .create_session(
+                temp_dir.path().to_path_buf(),
+                "Timestamp truncation".to_string(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        sm.add_message(
+            &session.id,
+            &Message::user().with_text("remove me").with_generated_id(),
+        )
+        .await
+        .unwrap();
+
+        let current_usage = Usage::new(Some(3_000), Some(200), Some(3_200));
+        let accumulated_usage = Usage::new(Some(9_000), Some(600), Some(9_600));
+        sm.update(&session.id)
+            .usage(current_usage)
+            .context_usage_estimated(true)
+            .last_request_tokens(Some(3_200))
+            .accumulated_usage(accumulated_usage)
+            .accumulated_cost(Some(0.75))
+            .apply()
+            .await
+            .unwrap();
+
+        sm.truncate_conversation(&session.id, 0).await.unwrap();
+
+        let reloaded = sm.get_session(&session.id, true).await.unwrap();
+        assert!(reloaded.conversation.unwrap().is_empty());
+        assert_eq!(reloaded.usage, Usage::default());
+        assert!(!reloaded.context_usage_estimated);
+        assert_eq!(reloaded.last_request_tokens, None);
+        assert_eq!(reloaded.accumulated_usage, accumulated_usage);
+        assert_eq!(reloaded.accumulated_cost, Some(0.75));
     }
 
     #[tokio::test]

@@ -54,6 +54,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
 const GOSLING_PLANNER_CONTEXT_LIMIT: &str = "GOSLING_PLANNER_CONTEXT_LIMIT";
+const CANCELLED_TURN_NOTICE: &str = "Run cancelled by user before completion.";
 
 #[derive(Serialize, Deserialize, Debug)]
 struct JsonOutput {
@@ -1538,7 +1539,7 @@ impl CliSession {
             if !interactive {
                 if interrupt {
                     let notice = Message::assistant()
-                        .with_text("Run cancelled by user before completion.")
+                        .with_text(CANCELLED_TURN_NOTICE)
                         .with_generated_id();
                     self.messages.push(notice.clone());
                     self.agent
@@ -1550,26 +1551,42 @@ impl CliSession {
                 return Ok(());
             }
 
-            let turn_tool_request_ids = turn_tool_request_ids(&self.messages, message_id);
-            if interrupt && !turn_tool_request_ids.is_empty() {
-                // A dispatched tool may already have had side effects, and its ledger row
-                // outlives a truncation: recovery would re-insert its request and in-doubt
-                // response with no preceding user prompt. Keep the turn and answer every
-                // request so the stored history stays well-formed.
+            if interrupt {
                 let session_manager = &self.agent.config.session_manager;
-                for request_id in &turn_tool_request_ids {
+                let turn_tool_request_ids = turn_tool_request_ids(&self.messages, message_id);
+                if turn_tool_request_ids.is_empty() {
                     session_manager
-                        .cancel_undispatched_tool_requests(&self.session_id, request_id)
+                        .truncate_conversation_after_message(&self.session_id, message_id)
+                        .await?;
+                } else {
+                    // A dispatched tool may already have had side effects, and its ledger row
+                    // outlives a truncation: recovery would re-insert its request and in-doubt
+                    // response with no preceding user prompt. Keep the turn and answer every
+                    // request so the stored history stays well-formed.
+                    for request_id in &turn_tool_request_ids {
+                        session_manager
+                            .cancel_undispatched_tool_requests(&self.session_id, request_id)
+                            .await?;
+                    }
+                    session_manager
+                        .recover_tool_operations(&self.session_id)
                         .await?;
                 }
-                session_manager
-                    .recover_tool_operations(&self.session_id)
-                    .await?;
                 self.messages = session_manager
                     .get_session(&self.session_id, true)
                     .await?
                     .conversation
                     .unwrap_or_default();
+                let notice = Message::assistant()
+                    .with_text(CANCELLED_TURN_NOTICE)
+                    .with_generated_id();
+                session_manager
+                    .add_message(&self.session_id, &notice)
+                    .await?;
+                self.messages.push(notice.clone());
+                if self.output_format == "text" {
+                    output::render_message(&notice, self.debug);
+                }
             } else {
                 self.agent
                     .config
@@ -1577,13 +1594,12 @@ impl CliSession {
                     .truncate_conversation_from_message(&self.session_id, message_id)
                     .await?;
                 remove_local_turn(&mut self.messages, message_id);
-            }
-
-            let assistant_msg =
-                Message::assistant().with_text("Yes — what would you like me to do?");
-            self.push_message(assistant_msg.clone());
-            if self.output_format == "text" {
-                output::render_message(&assistant_msg, self.debug);
+                let assistant_msg =
+                    Message::assistant().with_text("Yes — what would you like me to do?");
+                self.push_message(assistant_msg.clone());
+                if self.output_format == "text" {
+                    output::render_message(&assistant_msg, self.debug);
+                }
             }
             return Ok(());
         }
@@ -3026,11 +3042,23 @@ mod tests {
             .iter()
             .filter_map(MessageContent::as_tool_response)
             .any(|response| response.id == "slow-request")));
+        assert_eq!(
+            messages.last().map(Message::as_concat_text).as_deref(),
+            Some(CANCELLED_TURN_NOTICE)
+        );
         assert_eq!(cli.messages.messages()[0].id.as_deref(), Some("turn"));
+        assert_eq!(
+            cli.messages
+                .messages()
+                .last()
+                .map(Message::as_concat_text)
+                .as_deref(),
+            Some(CANCELLED_TURN_NOTICE)
+        );
     }
 
     #[tokio::test]
-    async fn interrupting_a_text_turn_still_removes_it() {
+    async fn interrupting_a_text_turn_preserves_the_prompt_and_records_cancellation() {
         let temp = tempfile::tempdir().unwrap();
         let before = Message::user().with_text("earlier").with_id("earlier");
         let prompt = Message::user()
@@ -3055,7 +3083,22 @@ mod tests {
             .iter()
             .map(Message::as_concat_text)
             .collect();
-        assert_eq!(texts, vec!["earlier".to_string()]);
+        assert_eq!(
+            texts,
+            vec![
+                "earlier".to_string(),
+                "long answer please".to_string(),
+                "Run cancelled by user before completion.".to_string(),
+            ]
+        );
+        assert_eq!(
+            cli.messages
+                .messages()
+                .iter()
+                .map(Message::as_concat_text)
+                .collect::<Vec<_>>(),
+            texts
+        );
     }
 
     #[test_case(

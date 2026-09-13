@@ -51,6 +51,29 @@ fn relevant_search_snippet(text: &str, query: &str) -> String {
 }
 
 impl SessionStorage {
+    async fn reset_current_usage_in_tx(
+        tx: &mut sqlx::Transaction<'_, Sqlite>,
+        session_id: &str,
+    ) -> Result<()> {
+        sqlx::query(
+            r#"
+            UPDATE sessions
+            SET total_tokens = NULL,
+                input_tokens = NULL,
+                output_tokens = NULL,
+                cache_read_tokens = NULL,
+                cache_write_tokens = NULL,
+                context_usage_estimated = FALSE,
+                last_request_tokens = NULL
+            WHERE id = ?
+            "#,
+        )
+        .bind(session_id)
+        .execute(&mut **tx)
+        .await?;
+        Ok(())
+    }
+
     pub(super) async fn get_conversation(&self, session_id: &str) -> Result<Conversation> {
         let pool = self.pool().await?;
         let rows = sqlx::query_as::<_, (String, String, i64, Option<String>, Option<String>)>(
@@ -662,6 +685,7 @@ impl SessionStorage {
             .bind(session_id)
             .execute(&mut *tx)
             .await?;
+        Self::reset_current_usage_in_tx(&mut tx, session_id).await?;
 
         tx.commit().await?;
         Ok(())
@@ -702,6 +726,49 @@ impl SessionStorage {
                 .bind(session_id)
                 .execute(&mut *tx)
                 .await?;
+            Self::reset_current_usage_in_tx(&mut tx, session_id).await?;
+        }
+
+        tx.commit().await?;
+        Ok(())
+    }
+
+    pub(super) async fn truncate_conversation_after_message(
+        &self,
+        session_id: &str,
+        message_id: &str,
+    ) -> Result<()> {
+        let _write_guard = self.acquire_write_guard().await;
+        let pool = self.pool().await?;
+        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+
+        let boundary = sqlx::query_as::<_, (i64, i64)>(
+            "SELECT id, created_timestamp FROM messages WHERE session_id = ? AND message_id = ? ORDER BY created_timestamp, id LIMIT 1",
+        )
+        .bind(session_id)
+        .bind(message_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+
+        if let Some((boundary_id, boundary_timestamp)) = boundary {
+            sqlx::query(
+                "DELETE FROM messages WHERE session_id = ? AND (created_timestamp > ? OR (created_timestamp = ? AND id > ?))",
+            )
+            .bind(session_id)
+            .bind(boundary_timestamp)
+            .bind(boundary_timestamp)
+            .bind(boundary_id)
+            .execute(&mut *tx)
+            .await?;
+            sqlx::query("DELETE FROM session_summary_facts WHERE session_id = ?")
+                .bind(session_id)
+                .execute(&mut *tx)
+                .await?;
+            sqlx::query("DELETE FROM session_summaries WHERE session_id = ?")
+                .bind(session_id)
+                .execute(&mut *tx)
+                .await?;
+            Self::reset_current_usage_in_tx(&mut tx, session_id).await?;
         }
 
         tx.commit().await?;
