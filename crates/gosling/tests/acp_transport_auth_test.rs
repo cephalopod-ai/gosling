@@ -632,6 +632,63 @@ async fn acp_cors_allows_additional_configured_origins() {
     );
 }
 
+#[tokio::test]
+async fn acp_http_requests_from_disallowed_origins_are_forbidden() {
+    let dir = tempfile::tempdir().unwrap();
+    let router = test_router(false, &dir);
+
+    for (method, origin) in [
+        (Method::POST, "http://evil.com"),
+        (Method::POST, "http://localhost.evil.com"),
+        (Method::GET, "https://evil.example"),
+        (Method::DELETE, "null"),
+    ] {
+        let status = send(&router, method.clone(), "/acp", &[("Origin", origin)]).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{method} {origin}");
+    }
+}
+
+#[tokio::test]
+async fn acp_http_requests_from_allowed_or_absent_origins_still_reach_acp() {
+    let dir = tempfile::tempdir().unwrap();
+    let loopback = test_router(false, &dir);
+    for headers in [
+        vec![],
+        vec![("Origin", "http://localhost:5173")],
+        vec![("Origin", "http://[::1]:5173")],
+    ] {
+        let status = send(&loopback, Method::GET, "/acp", &headers).await;
+        assert_eq!(status, StatusCode::NOT_ACCEPTABLE, "{headers:?}");
+    }
+
+    let packaged_desktop = test_router_with_origins(
+        false,
+        &dir,
+        vec![
+            HeaderValue::from_static("null"),
+            HeaderValue::from_static("file://"),
+        ],
+    );
+    let status = send(
+        &packaged_desktop,
+        Method::GET,
+        "/acp",
+        &[("Origin", "null")],
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_ACCEPTABLE);
+
+    let authenticated = test_authenticated_acp_router(&dir);
+    let status = send(
+        &authenticated,
+        Method::GET,
+        "/acp",
+        &[("Origin", "null"), ("x-secret-key", SECRET)],
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_ACCEPTABLE);
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
 async fn concurrent_connections_on_a_fresh_root_all_create_agents() {
     for _ in 0..10 {

@@ -115,11 +115,21 @@ fn is_websocket_upgrade(request: &Request) -> bool {
             .is_some_and(|value| value.eq_ignore_ascii_case("websocket"))
 }
 
-async fn enforce_websocket_origin(
+async fn enforce_acp_origin(
     State(policy): State<AcpOriginPolicy>,
     mut request: Request,
     next: Next,
 ) -> Result<Response, StatusCode> {
+    // CORS headers only stop a browser from reading the response; the ACP
+    // method would still run, so a disallowed Origin is refused outright.
+    if request.method() != Method::OPTIONS && !is_websocket_upgrade(&request) {
+        if let Some(origin) = request.headers().get(header::ORIGIN) {
+            if !policy.origin_allowed(origin) {
+                return Err(StatusCode::FORBIDDEN);
+            }
+        }
+    }
+
     if is_websocket_upgrade(&request) {
         // SEC-GOS-011 asked for this to fail closed when `Origin` is absent.
         // It deliberately does not: the WebSocket spec requires browsers to
@@ -188,7 +198,7 @@ fn create_acp_router_inner(server: Arc<AcpServer>, policy: AcpOriginPolicy) -> R
         .into_router()
         .layer(axum::middleware::from_fn_with_state(
             policy,
-            enforce_websocket_origin,
+            enforce_acp_origin,
         ))
 }
 
