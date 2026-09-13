@@ -612,8 +612,20 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
             process::exit(1);
         });
 
+    let session_mode = if session_config.resume {
+        session_manager
+            .get_session(&session_id, false)
+            .await
+            .map(|session| session.gosling_mode)
+            .unwrap_or_else(|e| {
+                output::render_error(&format!("Failed to read session metadata: {}", e));
+                process::exit(1);
+            })
+    } else {
+        agent.config.gosling_mode
+    };
     agent
-        .update_gosling_mode(agent.config.gosling_mode, &session_id)
+        .update_gosling_mode(session_mode, &session_id)
         .await
         .unwrap_or_else(|e| {
             output::render_error(&format!("Failed to set session mode: {}", e));
