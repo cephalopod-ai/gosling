@@ -1,6 +1,7 @@
 use crate::conversation::message::{Message, MessageContent, ProviderMetadata};
 use crate::conversation::token_usage::{ProviderUsage, Usage};
 use crate::errors::ProviderError;
+use crate::http_status::is_context_length_exceeded_message;
 use crate::images::{convert_image, detect_image_path, load_image_file, ImageFormat};
 use crate::json::{parse_tool_arguments, truncation_error_message};
 use crate::mcp_utils::extract_text_from_resource;
@@ -165,6 +166,26 @@ struct StreamingPayload {
 #[derive(Deserialize)]
 struct StreamingError {
     message: Option<String>,
+    code: Option<Value>,
+    r#type: Option<Value>,
+}
+
+impl StreamingError {
+    fn into_provider_error(self) -> ProviderError {
+        let marks_context_limit = [&self.code, &self.r#type]
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .any(|value| value.contains("context_length_exceeded"));
+        let message = self
+            .message
+            .unwrap_or_else(|| "Unknown server error".to_string());
+        if marks_context_limit || is_context_length_exceeded_message(&message) {
+            ProviderError::ContextLengthExceeded(message)
+        } else {
+            ProviderError::ServerError(message)
+        }
+    }
 }
 
 fn extract_content_and_signature(
@@ -1203,11 +1224,7 @@ fn parse_streaming_chunk(line: &str) -> Result<StreamingChunk, ProviderError> {
     })?;
 
     if let Some(error) = payload.error {
-        return Err(ProviderError::ServerError(
-            error
-                .message
-                .unwrap_or_else(|| "Unknown server error".to_string()),
-        ));
+        return Err(error.into_provider_error());
     }
 
     if payload.object.as_deref() == Some("error") {
@@ -1888,6 +1905,37 @@ mod tests {
 
         assert_eq!(
             error,
+            ProviderError::ServerError("capacity unavailable".to_string())
+        );
+    }
+
+    #[test]
+    fn streaming_chunk_classifies_in_band_context_length_errors() {
+        let by_code = parse_streaming_chunk(
+            r#"{"error":{"message":"This model's maximum context length is 8192 tokens.","type":"invalid_request_error","code":"context_length_exceeded"}}"#,
+        )
+        .unwrap_err();
+        assert_eq!(
+            by_code,
+            ProviderError::ContextLengthExceeded(
+                "This model's maximum context length is 8192 tokens.".to_string()
+            )
+        );
+
+        let by_message =
+            parse_streaming_chunk(r#"{"error":{"message":"prompt is too long","code":400}}"#)
+                .unwrap_err();
+        assert!(matches!(
+            by_message,
+            ProviderError::ContextLengthExceeded(_)
+        ));
+
+        let unrelated = parse_streaming_chunk(
+            r#"{"error":{"message":"capacity unavailable","type":"server_error","code":"overloaded"}}"#,
+        )
+        .unwrap_err();
+        assert_eq!(
+            unrelated,
             ProviderError::ServerError("capacity unavailable".to_string())
         );
     }
