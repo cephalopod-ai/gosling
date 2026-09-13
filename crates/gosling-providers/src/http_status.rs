@@ -7,6 +7,7 @@
 use std::time::{Duration, SystemTime};
 
 use crate::errors::ProviderError;
+use crate::secret_redaction::redact_secrets;
 use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
 use futures::StreamExt;
 use reqwest::header::{HeaderMap, RETRY_AFTER};
@@ -185,6 +186,21 @@ pub fn is_context_length_exceeded_message(text: &str) -> bool {
     mentions_prompt_input_tokens && mentions_limit && mentions_overflow
 }
 
+/// Provider error bodies are shown to the user, persisted in the session and
+/// forwarded over ACP. Some providers echo the rejected credential or other
+/// secret-shaped values back, so they are redacted and bounded first.
+const MAX_PROVIDER_ERROR_CHARS: usize = 2_000;
+
+fn redact_provider_error_text(text: &str) -> String {
+    let redacted = redact_secrets(text);
+    if redacted.chars().count() <= MAX_PROVIDER_ERROR_CHARS {
+        return redacted;
+    }
+    let mut truncated: String = redacted.chars().take(MAX_PROVIDER_ERROR_CHARS).collect();
+    truncated.push('…');
+    truncated
+}
+
 pub fn map_http_error_to_provider_error(
     status: StatusCode,
     payload: Option<Value>,
@@ -200,7 +216,13 @@ pub fn map_http_error_to_provider_error(
                     .and_then(|m| m.as_str())
                     .map(String::from)
             })
-            .unwrap_or_else(|| payload.as_ref().map(|p| p.to_string()).unwrap_or_default())
+            .map(|message| redact_provider_error_text(&message))
+            .unwrap_or_else(|| {
+                payload
+                    .as_ref()
+                    .map(|p| redact_provider_error_text(&p.to_string()))
+                    .unwrap_or_default()
+            })
     };
 
     let error = match status {
@@ -245,9 +267,12 @@ pub fn map_http_error_to_provider_error(
 
     if !status.is_success() {
         tracing::warn!(
-            "Provider request failed with status: {}. Payload: {:?}. Returning error: {:?}",
+            "Provider request failed with status: {}. Payload: {}. Returning error: {:?}",
             status,
-            payload,
+            payload
+                .as_ref()
+                .map(|p| redact_provider_error_text(&p.to_string()))
+                .unwrap_or_default(),
             error
         );
     }
@@ -458,6 +483,82 @@ mod tests {
                 "expected generic bad request for: {message}"
             );
         }
+    }
+
+    // GSL-PT-20260912-B-13: provider error bodies were echoed verbatim.
+    #[test]
+    fn provider_error_bodies_redact_secret_shapes_and_keep_status_and_message() {
+        let url = "http://127.0.0.1/v1/chat/completions";
+        let server = map_http_error_to_provider_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Some(
+                json!({"error": {"message": "upstream exploded; debug token sk-live-SECRETSECRET1234567890abcdef leaked", "type": "server_error"}}),
+            ),
+            url,
+        );
+        let ProviderError::ServerError(message) = server else {
+            panic!("expected a server error, got {server:?}");
+        };
+        assert!(
+            !message.contains("SECRETSECRET1234567890abcdef"),
+            "{message}"
+        );
+        assert!(message.contains("500 Internal Server Error"), "{message}");
+        assert!(message.contains("upstream exploded; debug token [REDACTED] leaked"));
+
+        let auth = map_http_error_to_provider_error(
+            StatusCode::UNAUTHORIZED,
+            Some(
+                json!({"error": {"message": "Incorrect API key provided: sk-invalid-playtest-key.", "code": "invalid_api_key"}}),
+            ),
+            url,
+        );
+        let ProviderError::Authentication(message) = auth else {
+            panic!("expected an authentication error, got {auth:?}");
+        };
+        assert!(!message.contains("invalid-playtest-key"), "{message}");
+        assert!(message.contains("401 Unauthorized"));
+        assert!(message.contains("Incorrect API key provided: [REDACTED]"));
+
+        let unstructured = map_http_error_to_provider_error(
+            StatusCode::BAD_GATEWAY,
+            Some(
+                json!({"detail": format!("ghp_abcdefghijklmnopqrstuvwxyz0123 {}", "x".repeat(10_000))}),
+            ),
+            url,
+        );
+        let message = unstructured.to_string();
+        assert!(!message.contains("ghp_abcdefghijklmnopqrstuvwxyz0123"));
+        assert!(message.chars().count() < MAX_PROVIDER_ERROR_CHARS + 200);
+    }
+
+    #[test]
+    fn ordinary_provider_error_messages_are_unchanged() {
+        let error = map_http_error_to_provider_error(
+            StatusCode::BAD_REQUEST,
+            Some(
+                json!({"error": {"message": "This model's maximum context length is 8192 tokens."}}),
+            ),
+            "http://127.0.0.1/v1",
+        );
+        assert_eq!(
+            error,
+            ProviderError::ContextLengthExceeded(
+                "This model's maximum context length is 8192 tokens.".to_string()
+            )
+        );
+        let error = map_http_error_to_provider_error(
+            StatusCode::TOO_MANY_REQUESTS,
+            Some(json!({"error": {"message": "fixture rate limit"}})),
+            "http://127.0.0.1/v1",
+        );
+        assert_eq!(
+            error,
+            ProviderError::RateLimitExceeded {
+                details: "fixture rate limit".to_string(),
+                retry_delay: None
+            }
+        );
     }
 
     #[tokio::test]

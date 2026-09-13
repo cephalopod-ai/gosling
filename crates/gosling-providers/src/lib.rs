@@ -18,6 +18,7 @@ pub mod openai_compatible;
 pub mod permission;
 pub mod request_log;
 pub mod retry;
+pub mod secret_redaction;
 pub mod thinking;
 pub mod transport_policy;
 pub mod utils;
