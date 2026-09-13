@@ -575,6 +575,37 @@ describe('ArtifactPane', () => {
     expect(screen.getByRole('tab', { name: 'Outputs 2' })).toBeInTheDocument();
   });
 
+  it('re-checks repository membership once artifact capabilities reach Electron', async () => {
+    let capabilitiesApplied = false;
+    classifyArtifactRepositories.mockImplementation(async (paths: string[]) =>
+      capabilitiesApplied
+        ? { repositoryPaths: paths, unavailablePaths: [] }
+        : { repositoryPaths: [], unavailablePaths: paths }
+    );
+    render(
+      <IntlTestWrapper>
+        <ArtifactWorkbenchProvider>
+          <Harness />
+        </ArtifactWorkbenchProvider>
+      </IntlTestWrapper>
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Load mixed outputs' }));
+    fireEvent.click(screen.getByRole('switch', { name: 'Hide repository files' }));
+    expect(
+      await screen.findByText('Some files could not be checked and remain visible.')
+    ).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Outputs 2' })).toBeInTheDocument();
+
+    capabilitiesApplied = true;
+    act(() => window.dispatchEvent(new Event(ARTIFACT_TIMESTAMPS_REFRESH_EVENT)));
+
+    expect(await screen.findByText('2 hidden')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Outputs 0' })).toBeInTheDocument();
+    expect(
+      screen.queryByText('Some files could not be checked and remain visible.')
+    ).not.toBeInTheDocument();
+  });
+
   it('discards a repository check that completes after changing sessions', async () => {
     let resolveCheck!: (result: { repositoryPaths: string[]; unavailablePaths: string[] }) => void;
     classifyArtifactRepositories.mockImplementationOnce(

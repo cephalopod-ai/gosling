@@ -393,6 +393,7 @@ export function ArtifactPane() {
   const [previewRevision, setPreviewRevision] = useState(0);
   const [copyingContents, setCopyingContents] = useState(false);
   const [titleRefresh, setTitleRefresh] = useState(0);
+  const [artifactCapabilityRevision, setArtifactCapabilityRevision] = useState(0);
   const [titleCache, setTitleCache] = useState<Record<string, { revision: string; title: string }>>(
     {}
   );
@@ -513,6 +514,14 @@ export function ArtifactPane() {
   );
 
   useEffect(() => {
+    // Exact-file capabilities are applied asynchronously after a session change; paths checked
+    // before they land come back unavailable, so re-check once Electron has them.
+    const refresh = () => setArtifactCapabilityRevision((value) => value + 1);
+    window.addEventListener(ARTIFACT_TIMESTAMPS_REFRESH_EVENT, refresh);
+    return () => window.removeEventListener(ARTIFACT_TIMESTAMPS_REFRESH_EVENT, refresh);
+  }, []);
+
+  useEffect(() => {
     if (!hideRepositoryFiles) return;
     let cancelled = false;
     const filePaths = extensionMatchedArtifacts.map((artifact) => artifact.resolvedPath);
@@ -539,7 +548,7 @@ export function ArtifactPane() {
     return () => {
       cancelled = true;
     };
-  }, [extensionMatchedArtifacts, hideRepositoryFiles]);
+  }, [extensionMatchedArtifacts, hideRepositoryFiles, artifactCapabilityRevision]);
 
   const currentClassification =
     repositoryClassification?.artifacts === extensionMatchedArtifacts
