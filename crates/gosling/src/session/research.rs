@@ -169,7 +169,14 @@ pub async fn turn_wrote_output_deliverable(
     }
     let inventory = match list_all_artifacts(session_manager, session_id).await {
         Ok(artifacts) => artifacts,
-        Err(_) => return true,
+        Err(error) => {
+            tracing::warn!(
+                session_id,
+                %error,
+                "Research artifact inventory is unavailable; checking output folders directly"
+            );
+            return !deliverables_written_since(&output_roots, since, final_text).is_empty();
+        }
     };
     let seen: HashSet<PathBuf> = inventory
         .iter()
@@ -218,6 +225,58 @@ pub fn topic_folder_name(session_name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn artifact_limit_does_not_claim_a_missing_deliverable_exists() {
+        let root = tempfile::tempdir().unwrap();
+        let output = root.path().join("outputs");
+        std::fs::create_dir_all(&output).unwrap();
+        let session_manager = SessionManager::new(root.path().join("state"));
+        let session = session_manager
+            .create_session(
+                root.path().to_path_buf(),
+                "research".into(),
+                crate::session::SessionType::User,
+                crate::config::GoslingMode::Auto,
+            )
+            .await
+            .unwrap();
+        let artifacts = (0..=MAX_RESEARCH_ARTIFACTS)
+            .map(|index| crate::session::artifacts::DiscoveredArtifact {
+                display_path: format!("artifact-{index}.txt"),
+                resolved_path: root
+                    .path()
+                    .join(format!("artifact-{index}.txt"))
+                    .to_string_lossy()
+                    .into_owned(),
+                base_working_dir: root.path().to_string_lossy().into_owned(),
+                workspace_id: None,
+                mime_type: Some("text/plain".into()),
+                relation: crate::session::SessionArtifactRelation::Created,
+                provenance: crate::session::SessionArtifactProvenance::BuiltInTool,
+                source_id: None,
+            })
+            .collect::<Vec<_>>();
+        session_manager
+            .upsert_session_artifacts(&session.id, &artifacts)
+            .await
+            .unwrap();
+
+        let state = DeepResearchState {
+            library_path: root.path().join("library").to_string_lossy().into_owned(),
+            output_paths: vec![output.to_string_lossy().into_owned()],
+        };
+        assert!(
+            !turn_wrote_output_deliverable(
+                &session_manager,
+                &session.id,
+                &state,
+                Utc::now() - chrono::Duration::seconds(1),
+                "",
+            )
+            .await
+        );
+    }
 
     #[test]
     fn topic_folder_names_are_filesystem_safe_and_bounded() {

@@ -291,13 +291,8 @@ fn verify_artifact_pairs(
     if !library_root.is_dir() {
         bail!("the Research Library is unavailable");
     }
-    let output_roots = state
-        .output_paths
-        .iter()
-        .map(std::fs::canonicalize)
-        .collect::<std::io::Result<Vec<_>>>()
-        .context("a workspace output folder is unavailable")?;
-    if output_roots.is_empty() || output_roots.iter().any(|root| !root.is_dir()) {
+    let output_roots = research::canonical_dirs(&state.output_paths);
+    if output_roots.is_empty() {
         bail!("a workspace output folder is unavailable");
     }
 
@@ -598,6 +593,36 @@ mod tests {
             &state,
             &[artifact(&output), artifact(&copy)],
             &assistant_text,
+            run_started_at(),
+            &HashSet::new(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn verifier_ignores_an_unavailable_secondary_output_root() {
+        let root = tempfile::tempdir().unwrap();
+        let outputs = root.path().join("outputs");
+        let missing = root.path().join("missing-output");
+        let library = root.path().join("library");
+        fs::create_dir_all(&outputs).unwrap();
+        fs::create_dir_all(&library).unwrap();
+        let output = outputs.join("report.md");
+        let copy = library.join("report.md");
+        fs::write(&output, "verified report").unwrap();
+        fs::write(&copy, "verified report").unwrap();
+        let state = DeepResearchState {
+            library_path: library.to_string_lossy().into_owned(),
+            output_paths: vec![
+                outputs.to_string_lossy().into_owned(),
+                missing.to_string_lossy().into_owned(),
+            ],
+        };
+
+        verify_artifact_pairs(
+            &state,
+            &[artifact(&output), artifact(&copy)],
+            "",
             run_started_at(),
             &HashSet::new(),
         )
