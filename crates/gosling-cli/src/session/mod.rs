@@ -1023,6 +1023,16 @@ impl CliSession {
         Ok(())
     }
 
+    async fn clear_conversation_history(&mut self) -> Result<()> {
+        self.agent
+            .config
+            .session_manager
+            .replace_conversation(&self.session_id, &Conversation::default())
+            .await?;
+        self.messages.clear();
+        Ok(())
+    }
+
     async fn plan_with_reasoner_model(
         &mut self,
         plan_messages: Conversation,
@@ -1031,11 +1041,19 @@ impl CliSession {
     ) -> Result<(), anyhow::Error> {
         let plan_prompt = self.agent.get_plan_prompt(&self.session_id).await?;
         output::show_thinking();
-        let (plan_response, _usage) = gosling::session_context::with_session_id(
+        let plan_result = gosling::session_context::with_session_id(
             Some(self.session_id.clone()),
             reasoner.complete(&model_config, &plan_prompt, plan_messages.messages(), &[]),
         )
-        .await?;
+        .await;
+        let (plan_response, _usage) = match plan_result {
+            Ok(response) => response,
+            Err(e) => {
+                output::hide_thinking();
+                output::render_error(&format!("Planning failed: {e}"));
+                return Ok(());
+            }
+        };
         output::render_message(&plan_response, self.debug);
         output::hide_thinking();
         let planner_response_type = classify_planner_response(
@@ -1067,6 +1085,11 @@ impl CliSession {
                     }
                 };
                 if should_act {
+                    if let Err(e) = self.clear_conversation_history().await {
+                        output::render_error(&format!("Failed to clear message history: {e}"));
+                        self.push_message(plan_response);
+                        return Ok(());
+                    }
                     output::render_act_on_plan();
                     self.run_mode = RunMode::Normal;
                     // set gosling mode: auto if that isn't already the case
@@ -1076,8 +1099,6 @@ impl CliSession {
                         config.set_gosling_mode(GoslingMode::Auto).unwrap();
                     }
 
-                    // clear the messages before acting on the plan
-                    self.messages.clear();
                     // add the plan response as a user message
                     let plan_message = Message::user().with_text(plan_response.as_concat_text());
                     self.push_message(plan_message);
@@ -2853,7 +2874,7 @@ mod tests {
         assert!(error.message.contains("Tool call cancelled by user"));
     }
 
-    async fn interrupted_cli_session(
+    async fn cli_session_with_messages(
         temp: &tempfile::TempDir,
         turn: &[Message],
     ) -> (CliSession, Arc<gosling::session::SessionManager>, String) {
@@ -2891,6 +2912,61 @@ mod tests {
         (cli, manager, session.id)
     }
 
+    struct FailingProvider;
+
+    #[async_trait::async_trait]
+    impl Provider for FailingProvider {
+        fn get_name(&self) -> &str {
+            "failing"
+        }
+
+        async fn stream(
+            &self,
+            _model_config: &gosling_providers::model::ModelConfig,
+            _system: &str,
+            _messages: &[Message],
+            _tools: &[rmcp::model::Tool],
+        ) -> Result<gosling_providers::base::MessageStream, gosling_providers::errors::ProviderError>
+        {
+            Err(gosling_providers::errors::ProviderError::RequestFailed(
+                "The model `bogus-planner` does not exist".to_string(),
+            ))
+        }
+    }
+
+    #[tokio::test]
+    async fn planner_failure_keeps_the_interactive_session_in_plan_mode() {
+        let temp = tempfile::tempdir().unwrap();
+        let (mut cli, _manager, _session_id) = cli_session_with_messages(&temp, &[]).await;
+        cli.run_mode = RunMode::Plan;
+
+        let result = cli
+            .plan_with_reasoner_model(
+                Conversation::new_unvalidated(vec![Message::user().with_text("make a plan")]),
+                Arc::new(FailingProvider),
+                gosling_providers::model::ModelConfig::new("bogus-planner"),
+            )
+            .await;
+
+        assert!(result.is_ok(), "planner errors must not end the session");
+        assert!(matches!(cli.run_mode, RunMode::Plan));
+    }
+
+    #[tokio::test]
+    async fn clearing_history_for_a_plan_clears_the_stored_conversation() {
+        let temp = tempfile::tempdir().unwrap();
+        let earlier = Message::user()
+            .with_text("PM04-T1 hello")
+            .with_id("earlier");
+        let (mut cli, manager, session_id) = cli_session_with_messages(&temp, &[earlier]).await;
+
+        cli.clear_conversation_history().await.unwrap();
+
+        let stored = manager.get_session(&session_id, true).await.unwrap();
+        assert!(stored.conversation.unwrap_or_default().is_empty());
+        assert!(cli.messages.is_empty());
+    }
+
     #[tokio::test]
     async fn interrupting_a_tool_turn_keeps_the_prompt_and_answers_the_request() {
         let temp = tempfile::tempdir().unwrap();
@@ -2902,7 +2978,7 @@ mod tests {
             Ok(rmcp::model::CallToolRequestParams::new("slow_wait")),
         );
         let (mut cli, manager, session_id) =
-            interrupted_cli_session(&temp, &[prompt, request]).await;
+            cli_session_with_messages(&temp, &[prompt, request]).await;
 
         cli.handle_interrupted_messages(true, true, Some("turn"))
             .await
@@ -2933,7 +3009,7 @@ mod tests {
             .with_id("turn");
         let partial = Message::assistant().with_text("partial").with_id("partial");
         let (mut cli, manager, session_id) =
-            interrupted_cli_session(&temp, &[before, prompt, partial]).await;
+            cli_session_with_messages(&temp, &[before, prompt, partial]).await;
 
         cli.handle_interrupted_messages(true, true, Some("turn"))
             .await
