@@ -1430,3 +1430,29 @@ fn terminal_message_metadata_maps_to_prompt_failure() {
     let error = serde_json::to_value(prompt_error_from_message(&credits).unwrap()).unwrap();
     assert_eq!(error["data"]["reason"], "credits_exhausted");
 }
+
+#[test]
+fn failed_tool_call_content_carries_the_error_message() {
+    let failed: ToolResult<CallToolResult> = Err(rmcp::model::ErrorData::invalid_params(
+        "missing required argument: path",
+        None,
+    ));
+    let content = build_tool_call_content(&failed);
+    assert_eq!(content.len(), 1);
+    let ToolCallContent::Content(content) = &content[0] else {
+        panic!("expected content block, got {content:?}");
+    };
+    let ContentBlock::Text(text) = &content.content else {
+        panic!("expected text block, got {content:?}");
+    };
+    assert_eq!(text.text, "missing required argument: path");
+
+    let succeeded: ToolResult<CallToolResult> =
+        Ok(CallToolResult::success(vec![RmcpContent::text("ok")]));
+    let content = build_tool_call_content(&succeeded);
+    assert_eq!(content.len(), 1);
+    let ToolCallContent::Content(content) = &content[0] else {
+        panic!("expected content block, got {content:?}");
+    };
+    assert!(matches!(&content.content, ContentBlock::Text(text) if text.text == "ok"));
+}

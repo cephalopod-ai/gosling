@@ -250,7 +250,9 @@ pub(super) fn build_tool_call_content(
                 RawContent::Audio(_) | RawContent::ResourceLink(_) => None,
             })
             .collect(),
-        Err(_) => Vec::new(),
+        Err(error) => vec![ToolCallContent::Content(Content::new(ContentBlock::Text(
+            TextContent::new(error.message.to_string()),
+        )))],
     }
 }
 
