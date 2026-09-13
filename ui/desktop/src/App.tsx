@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { IpcRendererEvent } from 'electron';
 import {
   HashRouter,
+  Navigate,
   Routes,
   Route,
   useNavigate,
@@ -609,6 +610,7 @@ export function AppInner() {
               <Route path="skills" element={<SkillsRoute />} />
               <Route path="permission" element={<PermissionRoute />} />
             </Route>
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </div>
       </div>

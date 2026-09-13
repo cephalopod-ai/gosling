@@ -117,12 +117,14 @@ vi.mock('./components/AnnouncementModal', () => ({
 const mockNavigate = vi.fn();
 const mockSearchParams = new URLSearchParams();
 const mockSetSearchParams = vi.fn();
+const mockNavigateElement = vi.fn((_props: { to: string; replace?: boolean }) => null);
 
 // Mock react-router-dom to avoid HashRouter issues in tests
 vi.mock('react-router-dom', () => ({
   HashRouter: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   Routes: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   Route: ({ element }: { element: React.ReactNode }) => element,
+  Navigate: (props: { to: string; replace?: boolean }) => mockNavigateElement(props),
   useNavigate: () => mockNavigate,
   useLocation: () => ({ state: null, pathname: '/' }),
   useSearchParams: () => [mockSearchParams, mockSetSearchParams],
@@ -241,6 +243,22 @@ describe('App Component - Brand New State', () => {
     });
 
     expect(screen.getByText(/^Welcome to gosling/)).toBeInTheDocument();
+  });
+
+  it('redirects unknown routes home instead of rendering an empty window', async () => {
+    mockElectron.getConfig.mockReturnValue({
+      GOSLING_DEFAULT_PROVIDER: 'openai',
+      GOSLING_DEFAULT_MODEL: 'gpt-4',
+      GOSLING_ALLOWLIST_WARNING: false,
+    });
+
+    render(<AppInner />, { wrapper: AppInnerTestWrapper });
+
+    await waitFor(() => {
+      expect(mockElectron.reactReady).toHaveBeenCalled();
+    });
+
+    expect(mockNavigateElement).toHaveBeenCalledWith({ to: '/', replace: true });
   });
 
   it('should not redirect when provider is configured', async () => {
