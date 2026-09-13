@@ -1358,6 +1358,11 @@ impl CliSession {
                             terminal_error = Some(e.to_string());
                             cancel_token_clone.cancel();
                             drop(stream);
+                            // Another owner holds the session now: its history is not ours to
+                            // truncate, and the error already tells the user to reload.
+                            if is_turn_lease_lost(&e) {
+                                break;
+                            }
                             if let Err(e) = self
                                 .handle_interrupted_messages(
                                     false,
@@ -1897,6 +1902,10 @@ fn remove_local_turn(conversation: &mut Conversation, message_id: &str) -> bool 
         conversation.pop();
     }
     true
+}
+
+fn is_turn_lease_lost(error: &anyhow::Error) -> bool {
+    error.to_string().starts_with("Session turn lease was lost")
 }
 
 fn turn_tool_request_ids(conversation: &Conversation, message_id: &str) -> Vec<String> {
@@ -2805,6 +2814,16 @@ mod tests {
             .messages()
             .iter()
             .any(|message| message.as_concat_text() == "Conversation cleared"));
+    }
+
+    #[test]
+    fn turn_lease_loss_is_distinguished_from_other_turn_errors() {
+        assert!(is_turn_lease_lost(&anyhow::anyhow!(
+            "Session turn lease was lost; this turn stopped before completion. Reload the session before retrying."
+        )));
+        assert!(!is_turn_lease_lost(&anyhow::anyhow!(
+            "Request failed: connection refused"
+        )));
     }
 
     #[test]
