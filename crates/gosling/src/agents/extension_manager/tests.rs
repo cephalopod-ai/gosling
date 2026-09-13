@@ -1885,3 +1885,56 @@ async fn abandoned_stdio_startup_kills_the_extension_process_group() {
         "process {grandchild} launched by the abandoned extension is still running"
     );
 }
+
+#[cfg(unix)]
+async fn start_stdio_script(script: &str, timeout_secs: u64) -> ExtensionResult<McpClient> {
+    let temp_dir = tempdir().unwrap();
+    let mut command = Command::new("sh");
+    command.arg("-c").arg(script);
+    child_process_client(
+        command,
+        &Some(timeout_secs),
+        Arc::new(Mutex::new(None)),
+        &temp_dir.path().to_path_buf(),
+        None,
+        "gosling-test".to_string(),
+        GoslingMcpClientCapabilities {
+            mcpui: false,
+            host_info: None,
+        },
+    )
+    .await
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn stdio_startup_timeout_is_not_reported_as_process_exit() {
+    let Err(error) = start_stdio_script("echo still-starting >&2; exec sleep 60", 1).await else {
+        panic!("a server that never initializes must not connect");
+    };
+
+    let message = error.to_string();
+    assert!(
+        matches!(error, ExtensionError::InitializeTimeout { seconds: 1, .. }),
+        "{message}"
+    );
+    assert!(!message.contains("quit"), "{message}");
+    assert!(message.contains("within 1s"), "{message}");
+    assert!(message.contains("still-starting"), "{message}");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn stdio_process_that_exits_during_startup_is_reported_as_process_exit() {
+    let Err(error) = start_stdio_script("echo boom >&2; exit 3", 30).await else {
+        panic!("a server that exits must not connect");
+    };
+
+    let message = error.to_string();
+    assert!(matches!(error, ExtensionError::ProcessExit(_)), "{message}");
+    assert!(
+        message.contains("process quit before initialization"),
+        "{message}"
+    );
+    assert!(message.contains("boom"), "{message}");
+}

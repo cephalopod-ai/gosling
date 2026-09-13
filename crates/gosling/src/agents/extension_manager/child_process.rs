@@ -213,9 +213,11 @@ pub(super) async fn child_process_client(
         Ok::<String, std::io::Error>(String::from_utf8_lossy(&captured).into())
     });
 
+    let startup_timeout = Duration::from_secs(resolve_timeout(*timeout));
+    let startup_began = std::time::Instant::now();
     let client_result = McpClient::connect_with_container(
         transport,
-        Duration::from_secs(resolve_timeout(*timeout)),
+        startup_timeout,
         provider,
         docker_container,
         client_name,
@@ -230,6 +232,7 @@ pub(super) async fn child_process_client(
             Ok(client)
         }
         Err(error) => {
+            let timed_out = startup_began.elapsed() >= startup_timeout;
             drop(startup_process_group);
             let stderr_content =
                 match tokio::time::timeout(Duration::from_secs(1), &mut stderr_task).await {
@@ -242,6 +245,12 @@ pub(super) async fn child_process_client(
                         String::new()
                     }
                 };
+            if timed_out {
+                return Err(ExtensionError::InitializeTimeout {
+                    seconds: startup_timeout.as_secs(),
+                    stderr: stderr_content,
+                });
+            }
             Err(ProcessExit::new(stderr_content, error).into())
         }
     }

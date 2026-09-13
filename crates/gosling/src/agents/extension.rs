@@ -18,7 +18,7 @@ pub use crate::agents::platform_extensions::{
 };
 
 #[derive(Error, Debug)]
-#[error("process quit before initialization: stderr = {stderr}")]
+#[error("process quit before initialization ({source}): stderr = {stderr}")]
 pub struct ProcessExit {
     stderr: String,
     #[source]
@@ -54,6 +54,8 @@ pub enum ExtensionError {
     InitializeError(#[from] ClientInitializeError),
     #[error("{0}")]
     ProcessExit(#[from] ProcessExit),
+    #[error("process did not finish initializing within {seconds}s: stderr = {stderr}")]
+    InitializeTimeout { seconds: u64, stderr: String },
 }
 
 pub type ExtensionResult<T> = Result<T, ExtensionError>;
