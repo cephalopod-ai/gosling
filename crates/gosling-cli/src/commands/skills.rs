@@ -1,5 +1,5 @@
 use anyhow::Result;
-use console::{measure_text_width, Term};
+use console::{measure_text_width, style, Term};
 use gosling::skills::list_installed_skills;
 use gosling::token_counter::create_token_counter;
 
@@ -33,6 +33,12 @@ pub async fn handle_skills_list() -> Result<()> {
     let cwd = std::env::current_dir()?;
     let terminal_width = terminal_width();
     let token_counter = create_token_counter().await.map_err(anyhow::Error::msg)?;
+    for problem in gosling::skills::catalog::configured_catalog_problems() {
+        eprintln!(
+            "{}",
+            style(format!("Warning: skipped skill catalog: {problem}")).yellow()
+        );
+    }
     let mut skills = list_installed_skills(Some(&cwd));
     skills.sort_by(|a, b| a.name.cmp(&b.name));
 

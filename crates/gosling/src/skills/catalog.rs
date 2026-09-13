@@ -1,4 +1,4 @@
-use crate::config::Config;
+use crate::config::{Config, ConfigError};
 use anyhow::{bail, Context, Result};
 use gosling_sdk_types::custom_requests::{SourceEntry, SourceType};
 use schemars::JsonSchema;
@@ -93,11 +93,38 @@ pub struct CatalogRouteMatch {
 }
 
 pub fn configured_catalog_paths() -> Vec<PathBuf> {
-    Config::global()
-        .get_gosling_skill_catalogs()
-        .unwrap_or_default()
-        .into_iter()
-        .map(|path| PathBuf::from(&*shellexpand::tilde(&path)))
+    configured_catalog_paths_with_config(Config::global()).unwrap_or_default()
+}
+
+fn configured_catalog_paths_with_config(config: &Config) -> Result<Vec<PathBuf>, ConfigError> {
+    match config.get_gosling_skill_catalogs() {
+        Ok(paths) => Ok(paths
+            .into_iter()
+            .map(|path| PathBuf::from(&*shellexpand::tilde(&path)))
+            .collect()),
+        Err(ConfigError::NotFound(_)) => Ok(Vec::new()),
+        Err(error) => Err(error),
+    }
+}
+
+/// Describes each configured catalog that discovery skips, so user-facing
+/// commands can surface what `load_configured_catalogs` only logs.
+pub fn configured_catalog_problems() -> Vec<String> {
+    configured_catalog_problems_with_config(Config::global())
+}
+
+fn configured_catalog_problems_with_config(config: &Config) -> Vec<String> {
+    let paths = match configured_catalog_paths_with_config(config) {
+        Ok(paths) => paths,
+        Err(error) => {
+            return vec![format!(
+                "GOSLING_SKILL_CATALOGS must be a list of catalog paths: {error}"
+            )]
+        }
+    };
+    paths
+        .iter()
+        .filter_map(|path| load_catalog(path).err().map(|error| format!("{error:#}")))
         .collect()
 }
 
@@ -411,6 +438,60 @@ mod tests {
             }],
             routes: Vec::new(),
         }
+    }
+
+    fn config_with(temp_dir: &TempDir, yaml: &str) -> Config {
+        let config_path = temp_dir.path().join("config.yaml");
+        fs::write(&config_path, yaml).unwrap();
+        Config::new(config_path, "gosling-catalog-test").unwrap()
+    }
+
+    #[test]
+    fn unusable_catalog_configuration_is_described() {
+        let temp_dir = TempDir::new().unwrap();
+
+        let malformed = config_with(&temp_dir, "GOSLING_SKILL_CATALOGS: not-json\n");
+        let problems = configured_catalog_problems_with_config(&malformed);
+        assert_eq!(problems.len(), 1, "{problems:?}");
+        assert!(problems[0].contains("GOSLING_SKILL_CATALOGS must be a list"));
+
+        let missing = config_with(
+            &temp_dir,
+            "GOSLING_SKILL_CATALOGS:\n  - /nonexistent/catalog/index.json\n",
+        );
+        let problems = configured_catalog_problems_with_config(&missing);
+        assert_eq!(problems.len(), 1, "{problems:?}");
+        assert!(
+            problems[0].contains("Could not read skill catalog /nonexistent/catalog/index.json"),
+            "{problems:?}"
+        );
+    }
+
+    #[test]
+    fn usable_or_absent_catalog_configuration_has_no_problems() {
+        let temp_dir = TempDir::new().unwrap();
+        let skill_dir = temp_dir.path().join("skills/plan-example");
+        fs::create_dir_all(&skill_dir).unwrap();
+        fs::write(
+            skill_dir.join("SKILL.md"),
+            "---\nname: plan-example\ndescription: Plan\n---\nPlan carefully.",
+        )
+        .unwrap();
+        let catalog_path = temp_dir.path().join("catalog.json");
+        fs::write(
+            &catalog_path,
+            serde_json::to_string(&synthetic_catalog("skills/plan-example")).unwrap(),
+        )
+        .unwrap();
+
+        let absent = config_with(&temp_dir, "{}\n");
+        assert!(configured_catalog_problems_with_config(&absent).is_empty());
+
+        let valid = config_with(
+            &temp_dir,
+            &format!("GOSLING_SKILL_CATALOGS:\n  - {}\n", catalog_path.display()),
+        );
+        assert!(configured_catalog_problems_with_config(&valid).is_empty());
     }
 
     #[test]
