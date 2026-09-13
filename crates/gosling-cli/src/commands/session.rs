@@ -15,7 +15,7 @@ use regex::Regex;
 use std::fs;
 use std::io::{self, IsTerminal, Write};
 #[cfg(unix)]
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -301,10 +301,7 @@ pub async fn handle_session_export(
         // identifiers. It was written with `fs::write`, i.e. world-readable
         // 0644, while the diagnostics bundle beside it already used 0o600 and
         // warned about its contents. Match that. (IOP-GOS-003)
-        let mut file = create_diagnostics_output_file(&output_path).with_context(|| {
-            format!("Failed to write to output file: {}", output_path.display())
-        })?;
-        file.write_all(output.as_bytes()).with_context(|| {
+        write_owner_only_output_file(&output_path, output.as_bytes()).with_context(|| {
             format!("Failed to write to output file: {}", output_path.display())
         })?;
         println!("Session exported to {}", output_path.display());
@@ -418,14 +415,10 @@ pub async fn handle_diagnostics(session_id: &str, output_path: Option<PathBuf>) 
         PathBuf::from(format!("diagnostics_{}.json", session_id))
     };
 
-    let mut file = create_diagnostics_output_file(&output_file).context(format!(
+    write_owner_only_output_file(&output_file, &diagnostics_data).context(format!(
         "Failed to create output file: {}",
         output_file.display()
     ))?;
-
-    file.write_all(&diagnostics_data)
-        .context("Failed to write diagnostics data")?;
-    file.sync_all().context("Failed to sync diagnostics data")?;
 
     println!("Diagnostics report saved to: {}", output_file.display());
     println!("This report may contain prompts, configuration, and logs. Review it before sharing.");
@@ -433,15 +426,32 @@ pub async fn handle_diagnostics(session_id: &str, output_path: Option<PathBuf>) 
     Ok(())
 }
 
-fn create_diagnostics_output_file(path: &Path) -> io::Result<fs::File> {
-    let mut options = fs::OpenOptions::new();
-    options.write(true).create(true).truncate(true);
+/// Writes to a temp file beside `path` and renames it into place, so an
+/// interrupted write never leaves a truncated file and a symlink at `path`
+/// is refused rather than followed. An existing file that is not writable is
+/// still rejected, as it was when the file was opened in place.
+fn write_owner_only_output_file(path: &Path, contents: &[u8]) -> io::Result<()> {
+    if let Ok(metadata) = fs::symlink_metadata(path) {
+        if metadata.file_type().is_symlink() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "refusing to write through a symbolic link",
+            ));
+        }
+        fs::OpenOptions::new().write(true).open(path)?;
+    }
+    let parent = match path.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent,
+        _ => Path::new("."),
+    };
+    let mut temp = tempfile::NamedTempFile::new_in(parent)?;
     #[cfg(unix)]
-    options.mode(0o600);
-    let file = options.open(path)?;
-    #[cfg(unix)]
-    file.set_permissions(fs::Permissions::from_mode(0o600))?;
-    Ok(file)
+    temp.as_file()
+        .set_permissions(fs::Permissions::from_mode(0o600))?;
+    temp.write_all(contents)?;
+    temp.as_file().sync_all()?;
+    temp.persist(path).map_err(|error| error.error)?;
+    Ok(())
 }
 
 #[cfg(all(test, unix))]
@@ -455,12 +465,57 @@ mod diagnostics_output_tests {
         fs::write(&path, "old").unwrap();
         fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
 
-        create_diagnostics_output_file(&path).unwrap();
+        write_owner_only_output_file(&path, b"new").unwrap();
 
         assert_eq!(
-            fs::metadata(path).unwrap().permissions().mode() & 0o777,
+            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
             0o600
         );
+        assert_eq!(fs::read(&path).unwrap(), b"new");
+    }
+
+    // GSL-PT-20260912-D-8: export truncated the existing file in place and
+    // wrote through a symlink at the destination.
+    #[test]
+    fn output_replaces_existing_file_atomically_and_refuses_symlinks() {
+        use std::os::unix::fs::MetadataExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let existing = dir.path().join("existing.json");
+        fs::write(&existing, "OLD").unwrap();
+        let old_inode = fs::metadata(&existing).unwrap().ino();
+
+        write_owner_only_output_file(&existing, b"NEW").unwrap();
+
+        assert_eq!(fs::read(&existing).unwrap(), b"NEW");
+        assert_ne!(fs::metadata(&existing).unwrap().ino(), old_inode);
+
+        let target = dir.path().join("target.txt");
+        fs::write(&target, "TARGET").unwrap();
+        let link = dir.path().join("link.md");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+
+        assert!(write_owner_only_output_file(&link, b"NEW").is_err());
+        assert_eq!(fs::read(&target).unwrap(), b"TARGET");
+        assert!(fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+    }
+
+    #[test]
+    fn output_still_rejects_unwritable_files_and_directories() {
+        let dir = tempfile::tempdir().unwrap();
+        let read_only = dir.path().join("read-only.json");
+        fs::write(&read_only, "OLD").unwrap();
+        fs::set_permissions(&read_only, fs::Permissions::from_mode(0o444)).unwrap();
+
+        assert!(write_owner_only_output_file(&read_only, b"NEW").is_err());
+        assert_eq!(fs::read(&read_only).unwrap(), b"OLD");
+
+        assert!(write_owner_only_output_file(dir.path(), b"NEW").is_err());
+        assert!(write_owner_only_output_file(&dir.path().join("missing/x.json"), b"NEW").is_err());
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
     }
 }
 
