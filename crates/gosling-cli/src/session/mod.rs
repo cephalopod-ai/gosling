@@ -663,7 +663,7 @@ impl CliSession {
                     None => {
                         output::render_error(
                             "No editor found. Set one with:\n  \
-                                 gosling configure set gosling_prompt_editor \"vim\"\n  \
+                                 GOSLING_PROMPT_EDITOR=vim in your environment or config.yaml\n  \
                                  or set $VISUAL or $EDITOR in your shell.",
                         );
                     }
@@ -788,6 +788,15 @@ impl CliSession {
 
     async fn handle_gosling_mode(&self, mode: &str) -> Result<()> {
         let config = Config::global();
+        if mode.trim().is_empty() {
+            let session = self.get_session().await?;
+            output::gosling_mode_message(&format!(
+                "Current mode: '{}'. Usage: /mode <name> (one of: {})",
+                session.gosling_mode,
+                GoslingMode::VARIANTS.join(", ")
+            ));
+            return Ok(());
+        }
         let mode = match GoslingMode::from_str(&mode.to_lowercase()) {
             Ok(mode) => mode,
             Err(_) => {

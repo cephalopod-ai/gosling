@@ -327,6 +327,7 @@ fn handle_slash_command(input: &str) -> Option<InputResult> {
         s if s.starts_with(CMD_BUILTIN) => Some(InputResult::AddBuiltin(
             s.get(CMD_BUILTIN.len()..).unwrap_or("").to_string(),
         )),
+        "/mode" => Some(InputResult::GoslingMode(String::new())),
         s if s.starts_with(CMD_MODE) => Some(InputResult::GoslingMode(
             s.get(CMD_MODE.len()..).unwrap_or("").to_string(),
         )),
@@ -499,10 +500,10 @@ fn print_editor_help() {
   /edit opens your configured editor for composing prompts.
   Use '/edit some text' to pre-fill the editor with initial text.
   Previous conversation is included as markdown headings for context.
-  Configure editor: gosling configure set gosling_prompt_editor \"vim\"
-  Falls back to $VISUAL or $EDITOR if gosling_prompt_editor is not set.
-  When gosling_prompt_editor is set, the editor is used for every prompt by default.
-  To use inline prompts with on-demand /edit: gosling configure set gosling_prompt_editor_always false"
+  Configure editor: set GOSLING_PROMPT_EDITOR=vim in your environment, or GOSLING_PROMPT_EDITOR: vim in config.yaml
+  Falls back to $VISUAL or $EDITOR if GOSLING_PROMPT_EDITOR is not set.
+  When GOSLING_PROMPT_EDITOR is set, the editor is used for every prompt by default.
+  To use inline prompts with on-demand /edit: set GOSLING_PROMPT_EDITOR_ALWAYS=false"
     );
 }
 
@@ -601,6 +602,15 @@ mod tests {
         } else {
             panic!("Expected AddBuiltin");
         }
+
+        assert!(matches!(
+            handle_slash_command("/mode"),
+            Some(InputResult::GoslingMode(mode)) if mode.is_empty()
+        ));
+        assert!(matches!(
+            handle_slash_command("/mode chat"),
+            Some(InputResult::GoslingMode(mode)) if mode == "chat"
+        ));
 
         // Test model command
         assert!(matches!(
