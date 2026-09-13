@@ -101,9 +101,24 @@ fn compact_protect_last_n_turns() -> usize {
 }
 
 fn auto_compact_reduction() -> f64 {
-    Config::global()
+    let reduction = Config::global()
         .get_param::<f64>("GOSLING_AUTO_COMPACT_REDUCTION")
-        .unwrap_or(DEFAULT_AUTO_COMPACT_REDUCTION)
+        .unwrap_or(DEFAULT_AUTO_COMPACT_REDUCTION);
+
+    // Mirrors the threshold handling: a bad config value falls back to the
+    // default instead of failing every over-threshold reply. ACP preferences
+    // are still rejected at write time.
+    if let Err(error) = validate_compaction_settings(0.0, reduction) {
+        static WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        if !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            tracing::warn!(
+                "GOSLING_AUTO_COMPACT_REDUCTION={reduction} is invalid ({error}); using the default {DEFAULT_AUTO_COMPACT_REDUCTION}"
+            );
+        }
+        return DEFAULT_AUTO_COMPACT_REDUCTION;
+    }
+
+    reduction
 }
 
 fn auto_compact_target_tokens(context_limit: usize, threshold: f64, reduction: f64) -> usize {

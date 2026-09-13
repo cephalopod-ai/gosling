@@ -1469,6 +1469,40 @@ async fn reply_succeeds_when_auto_compact_threshold_env_is_invalid() -> Result<(
     Ok(())
 }
 
+/// GSL-PT-20260912-B-12: an out-of-range `GOSLING_AUTO_COMPACT_REDUCTION` used
+/// to pass straight into validation, so every over-threshold reply failed with
+/// "autoCompactReduction must be at least 0 and less than 1".
+#[tokio::test]
+#[serial]
+async fn invalid_auto_compact_reduction_env_falls_back_to_default() -> Result<()> {
+    let provider = MockCompactionProvider::new();
+    let conversation = Conversation::new_unvalidated(vec![Message::user().with_text("Hello")]);
+    let session = Session {
+        usage: Usage::new(Some(109_900), Some(100), Some(110_000)),
+        model_config: Some(ModelConfig::new("mock-model").with_context_limit(Some(128_000))),
+        ..Session::default()
+    };
+
+    for (configured, expected) in [("-0.5", 0.15), ("1.0", 0.15), ("0.5", 0.5)] {
+        let _env = env_lock::lock_env([
+            ("GOSLING_AUTO_COMPACT_THRESHOLD", Some("0.8")),
+            ("GOSLING_AUTO_COMPACT_REDUCTION", Some(configured)),
+        ]);
+        let check = gosling::context_mgmt::auto_compaction_check(
+            &provider,
+            &conversation,
+            &session,
+            None,
+            None,
+        )
+        .await?
+        .expect("Gosling-owned context produces a usage snapshot");
+        let plan = check.plan.expect("usage is above the 0.8 threshold");
+        assert_eq!(plan.reduction, expected, "configured {configured}");
+    }
+    Ok(())
+}
+
 #[tokio::test]
 #[serial]
 async fn failed_compaction_publishes_terminal_error_for_manual_and_automatic_paths() -> Result<()> {
