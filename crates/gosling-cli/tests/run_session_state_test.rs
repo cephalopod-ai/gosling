@@ -196,3 +196,24 @@ fn resume_keeps_the_sessions_stored_permission_mode() {
         "auto"
     );
 }
+
+#[test]
+fn resuming_from_another_directory_moves_the_session_to_it() {
+    let env = Env::new();
+    let dir_a = env.root.path().join("dir-a");
+    let dir_b = env.root.path().join("dir-b");
+    std::fs::create_dir_all(&dir_a).unwrap();
+    std::fs::create_dir_all(&dir_b).unwrap();
+    let dir_a = dir_a.canonicalize().unwrap();
+    let dir_b = dir_b.canonicalize().unwrap();
+
+    let created = env.run_ok(&dir_a, &["run", "-n", "wd", "-t", "hi"]);
+    let id = banner_session_id(&created);
+
+    env.run_ok(&dir_a, &["run", "-r", "-n", "wd", "-t", "same dir"]);
+    assert_eq!(env.export(&id)["working_dir"], dir_a.to_str().unwrap());
+
+    let moved = env.run_ok(&dir_b, &["run", "-r", "-n", "wd", "-t", "other dir"]);
+    assert!(String::from_utf8_lossy(&moved.stderr).contains("Staying in current directory"));
+    assert_eq!(env.export(&id)["working_dir"], dir_b.to_str().unwrap());
+}

@@ -387,6 +387,26 @@ async fn handle_resumed_session_workdir(agent: &Agent, session_id: &str, interac
             .yellow()
         );
     }
+
+    // Tools resolve paths against the session's stored working_dir, not the
+    // process cwd, so staying put must be persisted to take effect.
+    let effective_workdir = std::env::current_dir().unwrap_or(current_workdir);
+    if effective_workdir != session.working_dir {
+        agent
+            .config
+            .session_manager
+            .update(session_id)
+            .working_dir(effective_workdir)
+            .apply()
+            .await
+            .unwrap_or_else(|e| {
+                output::render_error(&format!(
+                    "Failed to update session working directory: {}",
+                    e
+                ));
+                process::exit(1);
+            });
+    }
 }
 
 async fn collect_extension_configs(
