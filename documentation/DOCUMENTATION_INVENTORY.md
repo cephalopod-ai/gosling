@@ -2,7 +2,7 @@
 
 Run date: 2026-08-23
 
-Focused refresh: 2026-09-13 (v1.2.5 audit-repair, validation, installation-version, and release
+Focused refresh: 2026-09-13 (v1.2.5 audit-repair, validation, local package/install, and release
 references). Other rows retain their original evidence dates; this is not a new full inventory
 audit.
 
@@ -12,7 +12,7 @@ under `docs/`. See `docs/polish/documentation-inventory.md` for the later layout
 
 | Path | Type | Status | Owner/Authority | Last Evidence | Action |
 |---|---|---|---|---|---|
-| `README.md` | Root overview | v1.2.5 source candidate | Repo root | Updated 2026-09-13 | Preserves the dated Goose v1.49.0 / gosling v1.2.3 comparison while identifying v1.2.5 changes, audit-repair validation, compatibility, and release status separately. |
+| `README.md` | Root overview | v1.2.5 source candidate | Repo root | Updated 2026-09-13 | Preserves the dated Goose v1.49.0 / gosling v1.2.3 comparison while identifying v1.2.5 changes, audit-repair validation, local install result, and release status separately. |
 | `CONTRIBUTORS.md` | Attribution boundary | current | Repo root | Created 2026-07-20 | Preserve inherited authorship while explaining the independently maintained fork boundary. |
 | `RELEASE.md` | Release process | v1.2.5 source target | Release owner | Updated 2026-09-13 | Records the canonical tag plan and separates local packaging/installation from publication and updater promotion. |
 | `RELEASE_CHECKLIST.md` | Release gate | active for v1.2.5 | Release owner | Updated 2026-09-09 | Must be completed by the maintainer before publishing the selected candidate. |
@@ -43,7 +43,7 @@ under `docs/`. See `docs/polish/documentation-inventory.md` for the later layout
 | `documentation/docs/release-notes/v1.2.2.md` | Local build notes | preceding local build | Release owner | Updated 2026-09-08 | Outputs repository filter; local macOS build/install evidence is distinct from publication. |
 | `documentation/docs/release-notes/v1.2.3.md` | Local build notes | preceding local build | Release owner | Updated 2026-09-08 | Copy contents, output history, timestamps, workspace readiness, and modal/scratch fixes; scoped validation and local installation. |
 | `documentation/docs/release-notes/v1.2.4.md` | Release notes | published release | Release owner | GitHub readback 2026-09-09 | Published release named v1.2.4 is attached to `release_v1.2.4`; a separate `v1.2.4` tag points to the same source commit. |
-| `documentation/docs/release-notes/v1.2.5.md` | Source-candidate notes | current source candidate | Release owner | Updated 2026-09-13 | Full Session Handoff, Safe crash recovery, multiline composition, output resolution, ACP-only cleanup, and consolidated audit repairs. |
+| `documentation/docs/release-notes/v1.2.5.md` | Source-candidate notes | current source candidate | Release owner | Updated 2026-09-13 | Full Session Handoff, Safe crash recovery, multiline composition, output resolution, ACP-only cleanup, consolidated audit repairs, and bounded local package/install evidence. |
 | `documentation/docs/release-notes/v0.0.6.md` | Release notes | historical | Release archive | Preserved 2026-07-20 | Do not rewrite as current v1.0.0 evidence. |
 | `documentation/docs/tutorials/` | Tutorials | current | Docusaurus docs | Discovered 2026-07-03 | Keep as learning/task-oriented docs. |
 | `documentation/docs/experimental/` | Experimental docs | current | Docusaurus docs | Discovered 2026-07-03 | Keep clearly marked experimental. |
@@ -61,7 +61,7 @@ under `docs/`. See `docs/polish/documentation-inventory.md` for the later layout
 - The 2026-07-03 tracked-file counts in the prior inventory were not recomputed during this focused release-documentation pass.
 - Canonical release-process surfaces are README, `RELEASE.md`, `RELEASE_CHECKLIST.md`, `plan.md`, `docs/TODO.md`, and the release-notes archive.
 - The 2026-07-20 live report executed all 110 scenario cards and retains its original outcome plus a repair-closure appendix; it is linked rather than summarized as a clean full replay.
-- The 2026-08-23 release readback initially found source manifests at `0.1.0`; that pass prepared `1.1.0`. As of 2026-09-13 the source manifests declare `1.2.5`. GitHub's latest release is named `v1.2.4` and is attached to `release_v1.2.4`; preserve that historical tag and distinguish source versions and local installations from downloadable releases.
+- The 2026-08-23 release readback initially found source manifests at `0.1.0`; that pass prepared `1.1.0`. As of 2026-09-13 the source manifests declare `1.2.5`. GitHub's latest release is named `v1.2.4` and is attached to `release_v1.2.4`; preserve that historical tag and distinguish source versions and local installations from downloadable releases. The 2026-09-13 arm64 local package/install passed artifact checks but did not reach a Desktop renderer because startup waited in macOS Keychain.
 
 ## Stale / Conflicting / Unknown Areas
 

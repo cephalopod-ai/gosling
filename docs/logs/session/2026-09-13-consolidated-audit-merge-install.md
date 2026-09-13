@@ -54,6 +54,46 @@ Documentation validation before the application build:
 
 ## Build, install, and verification
 
-Pending. This section must record exact build outputs, rollback locations, hashes, signature
-checks, installed versions, process shutdown/startup, and any runtime acceptance limits before the
-run is closed.
+- `source bin/activate-hermit && just package-ui` completed successfully. pnpm printed expected
+  unsupported-platform warnings for the non-arm64 binary packages while selecting the arm64
+  package.
+- `target/release/gosling`, `ui/desktop/src/bin/gosling`, and the packaged app backend all reported
+  1.2.5 and shared SHA-256
+  `75751874133dd603c1781dc6393d6d452a633188c634ea3e9f9eb137556ddc50`.
+- The packaged bundle reported `CFBundleShortVersionString=1.2.5` and
+  `CFBundleVersion=1.2.5`; `codesign --verify --deep --strict --verbose=2` passed.
+- Rollback copies were created at `/tmp/gosling-install-backup-20260913.npOTjt`. The previous CLI
+  hash remains `6bd721b0797716960c13821f75dc38739b2e0cb611a9080dddafb071f6cf16d5`; the
+  previous installed backend hash remains
+  `6e0a0f9dc435b18ef857ab8504b60587948eb5814dd090b6fc29ed85d4853d73`. The copied app's
+  deep/strict signature verification passed before replacement.
+- The new bundle and CLI were staged and verified before replacement. After installation,
+  `/Users/eric/.local/bin/gosling`, `/Applications/Gosling.app/Contents/Resources/bin/gosling`,
+  and `target/release/gosling` shared the release hash above; all reported 1.2.5. Installed bundle
+  metadata and deep/strict signature verification passed. `gosling --help` exited successfully.
+
+## Installed Desktop smoke limit
+
+Installed UI acceptance is blocked, not passed. A normal launch and a second launch with a fresh
+Electron user-data directory each kept the main/GPU processes alive but produced no renderer,
+Desktop backend, or visible window. The UI inspection hook timed out, and AppleScript observed no
+window. A one-second `sample` of the fresh-profile process showed the main thread waiting in the
+macOS Security `SecItemCopyMatching` Keychain path. This narrows the same no-renderer packaged-app
+limitation already recorded by the 127-card source playtest.
+
+AppleScript quit and a normal TERM did not complete while the process was waiting. Only the two
+smoke-test process trees were killed; the final process check found no installed Gosling app or
+Desktop backend still running. No provider request, updater promotion, notarization, release tag,
+publication, or clean-machine acceptance was attempted.
+
+## Final validation
+
+- `source bin/activate-hermit && cargo fmt --all -- --check` — passed.
+- `source bin/activate-hermit && cargo clippy --all-targets -- -D warnings` — passed.
+- `source ../bin/activate-hermit && npm test` from `documentation/` — 16 passed.
+- `source ../bin/activate-hermit && npm run typecheck` from `documentation/` — passed.
+- `source ../bin/activate-hermit && npm run build` from `documentation/` — passed; 171 Markdown
+  pages exported.
+- `git diff --check` — passed.
+- The required AGENTS documentation-governance marker remains present. `GEMINI.md` is absent, so
+  there is no Gemini marker to validate.

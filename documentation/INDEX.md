@@ -62,7 +62,7 @@ This file is the durable map for the repository's documentation surface.
 - Root `README.md` is the product entry point; `documentation/README.md` is the docs-site build and publishing guide.
 - Session-share deep links are documented with the `gosling://` scheme only. Legacy `goose://` share-link compatibility is not part of the current docs contract.
 - Durable documentation governance artifacts currently live in this directory as point-in-time records rather than a full log/archive program.
-- The current source candidate is `v1.2.5` as of 2026-09-13. The latest published GitHub release is named `v1.2.4` and uses the historical `release_v1.2.4` tag. Local packaging and installation do not complete the separate tagging, signing, clean-machine, publication, or updater-promotion gates; see [the release process](../RELEASE.md).
+- The current source candidate is `v1.2.5` as of 2026-09-13. The latest published GitHub release is named `v1.2.4` and uses the historical `release_v1.2.4` tag. The local arm64 package/install passed version, hash, and ad-hoc signature checks, but UI launch remained blocked in macOS Keychain before renderer creation. Local packaging and installation do not complete the separate tagging, distributable signing/notarization, clean-machine, publication, or updater-promotion gates; see [the release process](../RELEASE.md).
 
 ## follow-up disposition
 

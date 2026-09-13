@@ -140,7 +140,10 @@ partial, 7 fail, 12 blocked, and 22 not executed across all 127 scenario cards. 
 [consolidated audit repair](docs/cloud/2026-09-13-consolidated-audit-repair.md) reconciled that run
 with an independent dataflow audit: 13 findings were repaired, four remain explicit design or
 evidence decisions, and one was rejected under ADR-0018. Focused live replays and broad source
-regressions passed, but the complete 127-card suite and signed installed-app matrix were not rerun.
+regressions passed. A local arm64 Desktop package was rebuilt, ad-hoc signed, hash-verified, and
+installed on 2026-09-13, but its UI launch remained blocked in a macOS Keychain lookup before a
+renderer or backend appeared. The complete 127-card suite and distributable signed/notarized,
+updater, and clean-machine matrix were not rerun.
 
 Current source candidate: `v1.2.5`. See the
 [v1.2.5 release notes](documentation/docs/release-notes/v1.2.5.md) for Full Session Handoff

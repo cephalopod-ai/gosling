@@ -32,7 +32,7 @@ for the relationship to cephalopod-ai/gosling.
 - [polish/documentation-stewardship-report.md](polish/documentation-stewardship-report.md) — latest stewardship gate results and remaining risks
 - [polish/test-ledger.md](polish/test-ledger.md) — current validation commands, results, and evidence limits
 - [logs/](logs/) — retained session evidence and logging conventions
-- [logs/session/2026-09-13-consolidated-audit-merge-install.md](logs/session/2026-09-13-consolidated-audit-merge-install.md) — local fast-forward merge, documentation refresh, release rebuild, and CLI/Desktop reinstall evidence
+- [logs/session/2026-09-13-consolidated-audit-merge-install.md](logs/session/2026-09-13-consolidated-audit-merge-install.md) — local fast-forward merge, documentation refresh, release rebuild, CLI/Desktop reinstall, and installed Keychain-startup limit
 - [logs/session/2026-09-09-v1.2.5-release-documentation.md](logs/session/2026-09-09-v1.2.5-release-documentation.md) — v1.2.5 local version and release-documentation preparation, validation, and open publication gates
 - [adr/](adr/) — architecture decision records
 - [adr/0010-project-shell-consumer-composition.md](adr/0010-project-shell-consumer-composition.md) — accepted project-shell consumer/composition topology
@@ -48,7 +48,7 @@ for the relationship to cephalopod-ai/gosling.
 - [build/](build/) — build documentation
 - [build/context-compaction-failsafe-plan.md](build/context-compaction-failsafe-plan.md) — recurring oversized-session compaction repair plan and acceptance criteria
 - [cloud/](cloud/) — audit and playtest reports (not cloud-hosting runbooks)
-- [cloud/2026-09-13-consolidated-audit-repair.md](cloud/2026-09-13-consolidated-audit-repair.md) — canonical reconciliation, disposition, repair commits, validation, and remaining decisions for both 2026-09-13 audits
+- [cloud/2026-09-13-consolidated-audit-repair.md](cloud/2026-09-13-consolidated-audit-repair.md) — canonical reconciliation, disposition, repair commits, validation, local install addendum, and remaining decisions for both 2026-09-13 audits
 - [cloud/2026-09-13-live-all-scenarios-playtest.md](cloud/2026-09-13-live-all-scenarios-playtest.md) — historical 2026-09-13 live playtest report, with a disposition addendum linking to the repair campaign
 - [cloud/20260913_Gemini_Audit_Data_gosling.md](cloud/20260913_Gemini_Audit_Data_gosling.md) — historical Gemini architecture/dataflow audit, with corrected severity and disposition addendum
 - [cloud/2026-09-08-recent-work-independent-audit.md](cloud/2026-09-08-recent-work-independent-audit.md) — 2026-09-08 independent multi-lens audit of the last ~20 commits (revisions, compaction, artifacts, permission chrome); no security scan

@@ -772,12 +772,27 @@ end to end, unless the operator explicitly accepts a narrower development-only e
 - [x] Preserve the historical v0.0.6 note and audit/playtest evidence as point-in-time records.
 - [x] Preserve the original v1.0.0 preparation record without rewriting its published historical tag.
 
-## v1.1.0 release readiness — 2026-08-23
+## v1.1.0 release readiness — historical 2026-08-23
 
 - [x] Select `v1.1.0` as the next candidate and preserve the noncanonical historical `v1.0.1-optimization-and-workspaces` tag.
 - [x] Align the workspace, lockfile, Desktop package, and OpenAPI version surfaces to `1.1.0`.
-- [ ] Complete every source, documentation, packaged-GUI, signing, checksum, scenario, clean-install, and GitHub-readiness gate in `RELEASE_CHECKLIST.md`.
-- [ ] Tag, publish, verify, and announce `v1.1.0` only after every release gate is complete.
+- [~] This candidate was superseded without publication. Its remaining release gates carry forward
+      to the current source candidate rather than authorizing a historical tag.
+
+## v1.2.5 release readiness — 2026-09-13
+
+- [x] Align workspace, lockfile, Desktop package, README, release notes, and installation guidance
+      to the v1.2.5 source candidate.
+- [x] **PKG-GSL-001** — rebuild the local arm64 release CLI and Desktop package, verify matching
+      hashes/version metadata and the local ad-hoc signature, retain rollback copies, and install
+      both artifacts.
+- [ ] **PKG-GSL-002** — resolve or safely bypass the operator-environment macOS Keychain startup
+      wait, then prove the installed app creates a renderer/backend window and quits cleanly. Both
+      normal and fresh-profile launches blocked in `SecItemCopyMatching` on 2026-09-13.
+- [ ] Complete every remaining source, documentation, distributable signing/notarization,
+      checksum, scenario, updater, clean-install, and GitHub-readiness gate in
+      `RELEASE_CHECKLIST.md`.
+- [ ] Tag, publish, verify, and announce `v1.2.5` only after every release gate is complete.
 
 ## Documentation and CI repair follow-up — 2026-08-27
 

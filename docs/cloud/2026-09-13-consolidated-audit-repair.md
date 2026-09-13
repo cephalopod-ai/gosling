@@ -129,3 +129,23 @@ This campaign did not rerun all 127 live playtest cards after repair. It replaye
 repair paths listed above and ran broad source regressions. The signed/installed Desktop app,
 native dialogs, signing, updater, multi-window behavior, external backend mode, and the source
 playtest's other blocked cards were not revalidated.
+
+## Local integration and installation addendum
+
+Later on 2026-09-13, local `main` fast-forwarded from `829b09054` to repair head `b484255d0`
+without conflicts. The documentation refresh followed at `064fbf6aa`; no remote branch, tag,
+release, or updater state was changed.
+
+`source bin/activate-hermit && just package-ui` rebuilt the arm64 release CLI and Desktop bundle.
+The release binary, packaged backend, installed CLI, and installed backend all had SHA-256
+`75751874133dd603c1781dc6393d6d452a633188c634ea3e9f9eb137556ddc50` and reported 1.2.5.
+The installed bundle reported 1.2.5 for both version fields and passed deep/strict verification of
+its local ad-hoc signature. The prior CLI and app were retained under
+`/tmp/gosling-install-backup-20260913.npOTjt` for rollback.
+
+CLI version and help smoke checks passed. Installed Desktop acceptance did not: both a normal
+launch and a fresh Electron-profile launch created a main/GPU process but no renderer, backend, or
+visible window. A one-second process sample showed the main thread waiting in macOS Security's
+`SecItemCopyMatching` Keychain path. Graceful quit and TERM did not complete while it was waiting,
+so only the smoke-test processes were killed. This corroborates and narrows the packaged-app
+limitation recorded in the source playtest; it is not evidence of a clean installed UI pass.
