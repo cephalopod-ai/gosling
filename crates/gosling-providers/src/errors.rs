@@ -121,10 +121,40 @@ impl ProviderError {
     /// back to a retryable stream decode error for errors that did not
     /// originate as one.
     pub fn from_stream_error(error: anyhow::Error) -> Self {
-        error
-            .downcast()
-            .unwrap_or_else(ProviderError::stream_decode_error)
+        match error.downcast() {
+            Ok(provider_error) => provider_error,
+            Err(error) if is_timeout_in_chain(&error) => ProviderError::NetworkError(
+                "Stream timed out waiting for more data from the provider — check your network connection and try again.".to_string(),
+            ),
+            Err(error) => ProviderError::stream_decode_error(error),
+        }
     }
+}
+
+/// A body read that exceeds the client timeout surfaces through the line
+/// decoder as `LinesCodecError::Io` wrapping `reqwest::Error`. Neither wrapper
+/// exposes the inner error through `source`, so each layer is unwrapped here.
+fn is_timeout_in_chain(error: &anyhow::Error) -> bool {
+    fn io_error_is_timeout(io_error: &std::io::Error) -> bool {
+        io_error.kind() == std::io::ErrorKind::TimedOut
+            || io_error
+                .get_ref()
+                .and_then(|inner| inner.downcast_ref::<reqwest::Error>())
+                .is_some_and(reqwest::Error::is_timeout)
+    }
+
+    error.chain().any(|cause| {
+        if let Some(reqwest_error) = cause.downcast_ref::<reqwest::Error>() {
+            reqwest_error.is_timeout()
+        } else if let Some(tokio_util::codec::LinesCodecError::Io(io_error)) = cause.downcast_ref()
+        {
+            io_error_is_timeout(io_error)
+        } else {
+            cause
+                .downcast_ref::<std::io::Error>()
+                .is_some_and(io_error_is_timeout)
+        }
+    })
 }
 
 fn is_network_error(err: &reqwest::Error) -> bool {
@@ -219,6 +249,64 @@ mod reqwest_error_tests {
             .error_for_status()
             .unwrap_err();
         error.into()
+    }
+
+    // GSL-PT-20260912-B-16: a stalled SSE body was reported as
+    // "Stream decode error: error decoding response body".
+    #[tokio::test]
+    async fn stalled_stream_body_is_reported_as_a_timeout() {
+        use futures::TryStreamExt;
+        use tokio::io::AsyncWriteExt;
+        use tokio_stream::StreamExt;
+        use tokio_util::codec::{FramedRead, LinesCodec};
+        use tokio_util::io::StreamReader;
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = [0u8; 4096];
+            let _ = tokio::io::AsyncReadExt::read(&mut socket, &mut request).await;
+            socket
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ntransfer-encoding: chunked\r\n\r\n9\r\ndata: {}\n\r\n",
+                )
+                .await
+                .unwrap();
+            tokio::time::sleep(Duration::from_secs(5)).await;
+        });
+
+        let response = reqwest::Client::builder()
+            .timeout(Duration::from_millis(300))
+            .build()
+            .unwrap()
+            .get(format!("http://{address}/"))
+            .send()
+            .await
+            .unwrap();
+        let body = response.bytes_stream().map_err(std::io::Error::other);
+        let mut lines = FramedRead::new(StreamReader::new(body), LinesCodec::new())
+            .map_err(anyhow::Error::from);
+
+        let mut classified = None;
+        while let Some(line) = lines.next().await {
+            if let Err(error) = line {
+                classified = Some(ProviderError::from_stream_error(error));
+                break;
+            }
+        }
+        server.abort();
+
+        match classified {
+            Some(ProviderError::NetworkError(message)) => {
+                assert!(message.contains("timed out"), "{message}")
+            }
+            other => panic!("expected a timeout network error, got {other:?}"),
+        }
+        assert!(matches!(
+            ProviderError::from_stream_error(anyhow::anyhow!("bad frame")),
+            ProviderError::NetworkError(message) if message == "Stream decode error: bad frame"
+        ));
     }
 
     #[tokio::test]

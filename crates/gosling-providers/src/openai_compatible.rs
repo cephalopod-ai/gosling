@@ -218,10 +218,7 @@ pub fn stream_openai_compat(
         let message_stream = response_to_streaming_message(framed);
         pin!(message_stream);
         while let Some(message) = message_stream.next().await {
-            let (message, usage) = message.map_err(|e|
-                e.downcast::<ProviderError>()
-                    .unwrap_or_else(ProviderError::stream_decode_error)
-            )?;
+            let (message, usage) = message.map_err(ProviderError::from_stream_error)?;
             log.write(&message, usage.as_ref().map(|f| f.usage).as_ref())?;
             yield (message, usage);
         }
@@ -242,10 +239,7 @@ pub fn stream_responses_compat(
         let message_stream = responses_api_to_streaming_message(framed);
         pin!(message_stream);
         while let Some(message) = message_stream.next().await {
-            let (message, usage) = message.map_err(|e|
-                e.downcast::<ProviderError>()
-                    .unwrap_or_else(ProviderError::stream_decode_error)
-            )?;
+            let (message, usage) = message.map_err(ProviderError::from_stream_error)?;
             log.write(&message, usage.as_ref().map(|f| f.usage).as_ref())?;
             yield (message, usage);
         }
