@@ -10,6 +10,69 @@ use super::*;
 const RESEARCH_AWAITING_REPLY_NOTICE: &str =
     "Deep Research is waiting for your reply. Answer the question above and it will continue and write the report.";
 const RESEARCH_AWAITING_REPLY_REASON: &str = "deep_research_awaiting_reply";
+const RESEARCH_PERMISSION_DENIED_REASON: &str = "deep_research_permission_denied";
+/// Prefix `Agent::handle_denied_tools` puts on the result of a tool call the
+/// permission policy refused.
+const POLICY_DENIED_TOOL_RESULT_PREFIX: &str = "Tool denied by policy:";
+
+/// Tool calls this turn that the permission policy refused. A research turn
+/// that wrote nothing after such a refusal is blocked on a permission, not on
+/// an answer from the operator.
+#[derive(Default)]
+struct PolicyDeniedTools {
+    requested: HashMap<String, String>,
+    denied: Vec<String>,
+}
+
+impl PolicyDeniedTools {
+    fn observe(&mut self, content: &MessageContent) {
+        match content {
+            MessageContent::ToolRequest(request) => {
+                if let Ok(call) = &request.tool_call {
+                    self.requested
+                        .insert(request.id.clone(), call.name.to_string());
+                }
+            }
+            MessageContent::ToolResponse(response) => {
+                let Ok(result) = &response.tool_result else {
+                    return;
+                };
+                let denied_by_policy = result.is_error == Some(true)
+                    && result.content.iter().any(|content| {
+                        content.as_text().is_some_and(|text| {
+                            text.text.starts_with(POLICY_DENIED_TOOL_RESULT_PREFIX)
+                        })
+                    });
+                if !denied_by_policy {
+                    return;
+                }
+                if let Some(name) = self.requested.get(&response.id) {
+                    if !self.denied.contains(name) {
+                        self.denied.push(name.clone());
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn research_notice(&self) -> Option<String> {
+        if self.denied.is_empty() {
+            return None;
+        }
+        let tools = self
+            .denied
+            .iter()
+            .map(|name| format!("`{name}`"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        Some(format!(
+            "Deep Research could not write the report: the permission policy denied this turn's \
+             {tools} tool calls. Give those tools an Always Allow permission, or switch to a mode \
+             that asks for approval, then send your message again."
+        ))
+    }
+}
 
 /// Closes a cancelled turn in history. Without it the cancelled user message
 /// is merged into the next prompt and the model re-executes the cancelled
@@ -311,6 +374,7 @@ impl GoslingAcpAgent {
         let mut terminal_assistant_text = String::new();
         let mut current_assistant_message_ids = HashSet::new();
         let mut latest_context_usage = None;
+        let mut policy_denied_tools = PolicyDeniedTools::default();
 
         loop {
             let event = tokio::select! {
@@ -366,6 +430,7 @@ impl GoslingAcpAgent {
                     };
 
                     for content_item in &message.content {
+                        policy_denied_tools.observe(content_item);
                         if let Some(error) = prompt_error_from_message_content(content_item) {
                             stream_error = Some(error);
                             break;
@@ -511,10 +576,12 @@ impl GoslingAcpAgent {
             .await
             {
                 Ok(research_completion::ResearchOutcome::AwaitingReply) => {
-                    let message = Message::assistant().with_system_notification(
-                        SystemNotificationType::InlineMessage,
-                        RESEARCH_AWAITING_REPLY_NOTICE,
-                    );
+                    let permission_notice = policy_denied_tools.research_notice();
+                    let notice = permission_notice
+                        .as_deref()
+                        .unwrap_or(RESEARCH_AWAITING_REPLY_NOTICE);
+                    let message = Message::assistant()
+                        .with_system_notification(SystemNotificationType::InlineMessage, notice);
                     self.session_manager
                         .add_message(&session_id, &message)
                         .await
@@ -529,14 +596,19 @@ impl GoslingAcpAgent {
                             )?;
                         }
                     }
-                    stream_error = Some(
-                        agent_client_protocol::Error::new(-32603, "Waiting for your reply").data(
-                            serde_json::json!({
+                    stream_error = Some(match &permission_notice {
+                        Some(notice) => agent_client_protocol::Error::new(-32603, notice.clone())
+                            .data(serde_json::json!({
+                                "reason": RESEARCH_PERMISSION_DENIED_REASON,
+                                "message": notice,
+                                "deniedTools": policy_denied_tools.denied,
+                            })),
+                        None => agent_client_protocol::Error::new(-32603, "Waiting for your reply")
+                            .data(serde_json::json!({
                                 "reason": RESEARCH_AWAITING_REPLY_REASON,
                                 "message": RESEARCH_AWAITING_REPLY_NOTICE,
-                            }),
-                        ),
-                    );
+                            })),
+                    });
                 }
                 Ok(research_completion::ResearchOutcome::Verified(notes)) => {
                     for note in notes {
@@ -664,5 +736,62 @@ mod cancelled_turn_tests {
             Message::user().with_text("run it"),
             Message::assistant().with_text("partial"),
         ]));
+    }
+}
+
+#[cfg(test)]
+mod policy_denied_tools_tests {
+    use super::*;
+    use rmcp::model::{CallToolRequestParams, CallToolResult, Content};
+
+    fn request(id: &str, name: &str) -> MessageContent {
+        MessageContent::tool_request(id, Ok(CallToolRequestParams::new(name.to_string())))
+    }
+
+    fn error_response(id: &str, text: &str) -> MessageContent {
+        MessageContent::tool_response(id, Ok(CallToolResult::error(vec![Content::text(text)])))
+    }
+
+    #[test]
+    fn research_notice_names_tools_the_policy_denied_this_turn() {
+        let mut tools = PolicyDeniedTools::default();
+        for content in [
+            request("w1", "write"),
+            error_response(
+                "w1",
+                "Tool denied by policy: Auto mode has no operator to approve this tool; its side \
+                 effects require an explicit user permission",
+            ),
+            request("s1", "shell"),
+            error_response(
+                "s1",
+                "Tool denied by policy: User permission denies this tool",
+            ),
+            request("w2", "write"),
+            error_response("w2", "Tool denied by policy: Auto mode has no operator"),
+        ] {
+            tools.observe(&content);
+        }
+
+        assert_eq!(tools.denied, vec!["write", "shell"]);
+        let notice = tools.research_notice().unwrap();
+        assert!(notice.contains("`write`, `shell`"), "{notice}");
+        assert!(notice.contains("Always Allow"), "{notice}");
+        assert!(!notice.contains("Answer the question above"), "{notice}");
+    }
+
+    #[test]
+    fn ordinary_tool_errors_keep_the_awaiting_reply_status() {
+        let mut tools = PolicyDeniedTools::default();
+        for content in [
+            request("r1", "read"),
+            error_response("r1", "File not found"),
+            MessageContent::text("Which scope should I use?"),
+        ] {
+            tools.observe(&content);
+        }
+
+        assert!(tools.denied.is_empty());
+        assert_eq!(tools.research_notice(), None);
     }
 }
