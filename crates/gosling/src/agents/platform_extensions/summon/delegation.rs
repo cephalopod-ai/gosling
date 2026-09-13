@@ -11,6 +11,26 @@ use super::*;
 /// behave the same.
 const SYNC_DELEGATE_CANCEL_GRACE: Duration = Duration::from_secs(5);
 
+/// Serde collapses `"source": null` and `"source": ""` into an omitted source, which would
+/// silently launch an ad-hoc delegate. The schema forbids both, so they are rejected here while
+/// the key is still distinguishable from an omitted one.
+pub(super) fn reject_present_blank_source(args: &JsonObject) -> Result<(), String> {
+    let blank = match args.get("source") {
+        None => false,
+        Some(serde_json::Value::Null) => true,
+        Some(serde_json::Value::String(source)) => source.trim().is_empty(),
+        Some(_) => false,
+    };
+    if blank {
+        return Err(
+            "Invalid parameters: 'source' must name an existing agent; for an ad-hoc task omit \
+             the 'source' key entirely. No delegate was started."
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
 impl SummonClient {
     pub(super) fn create_delegate_tool(&self) -> Tool {
         let schema = serde_json::json!({
@@ -91,6 +111,10 @@ impl SummonClient {
         cancellation_token: CancellationToken,
     ) -> Result<CallToolResult, String> {
         self.cleanup_completed_tasks().await;
+
+        if let Some(args) = &arguments {
+            reject_present_blank_source(args)?;
+        }
 
         let params: DelegateParams = arguments
             .map(|args| serde_json::from_value::<DelegateParams>(serde_json::Value::Object(args)))

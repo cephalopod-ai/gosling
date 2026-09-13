@@ -729,6 +729,57 @@ You review code."#;
         assert_eq!(params.source.as_deref(), Some("dummy"));
     }
 
+    #[tokio::test]
+    async fn test_delegate_rejects_empty_and_null_source_before_launch() {
+        let client = SummonClient::new(create_test_context()).unwrap();
+        for source in [
+            serde_json::json!(""),
+            serde_json::json!("   "),
+            serde_json::Value::Null,
+        ] {
+            let args = serde_json::json!({
+                "instructions": "research independently",
+                "provider": "openai",
+                "model": "fixture-small",
+                "async": true,
+                "source": source,
+            });
+            let err = client
+                .handle_delegate(
+                    "session-that-must-not-be-read",
+                    args.as_object().cloned(),
+                    CancellationToken::new(),
+                )
+                .await
+                .unwrap_err();
+            assert!(
+                err.contains("'source' must name an existing agent"),
+                "{source}: {err}"
+            );
+            assert!(client.background_tasks.lock().await.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_blank_source_rejection_leaves_omitted_named_and_dummy_sources_alone() {
+        for args in [
+            serde_json::json!({"instructions": "research"}),
+            serde_json::json!({"source": "missing-researcher"}),
+            serde_json::json!({"source": "dummy"}),
+            serde_json::json!({
+                "instructions": "research",
+                "provider": "openai",
+                "model": "fixture-small",
+                "source": "dummy",
+            }),
+        ] {
+            assert!(
+                delegation::reject_present_blank_source(args.as_object().unwrap()).is_ok(),
+                "{args}"
+            );
+        }
+    }
+
     #[test]
     fn test_delegate_mode_disables_tools_for_external_tool_providers() {
         assert_eq!(delegate_mode(false), GoslingMode::Auto);
