@@ -7,6 +7,7 @@ use regex::Regex;
 use crate::{providers::base::Provider, utils::safe_truncate};
 
 pub static MSG_COUNT_FOR_SESSION_NAME_GENERATION: usize = 3;
+const SESSION_NAME_CONTEXT_MAX_CHARS: usize = 4_000;
 
 fn strip_xml_tags(text: &str) -> String {
     static BLOCK_RE: LazyLock<Regex> = LazyLock::new(|| {
@@ -85,13 +86,14 @@ fn get_initial_user_messages(messages: &Conversation) -> Vec<String> {
                 .collect::<Vec<_>>()
                 .join("\n")
         })
+        .map(|text| safe_truncate(&text, SESSION_NAME_CONTEXT_MAX_CHARS))
         .collect()
 }
 
 /// Extracts preprompt context (assistant-audience blocks) from the first user message.
 /// These are content blocks visible to the assistant but not the user.
 fn get_preprompt_context(messages: &Conversation) -> String {
-    messages
+    let context = messages
         .iter()
         .filter(|m| m.role == rmcp::model::Role::User)
         .take(1)
@@ -105,7 +107,8 @@ fn get_preprompt_context(messages: &Conversation) -> String {
             }
         })
         .collect::<Vec<_>>()
-        .join("\n")
+        .join("\n");
+    safe_truncate(&context, SESSION_NAME_CONTEXT_MAX_CHARS)
 }
 
 /// Generate a session name/description based on the conversation history
@@ -172,6 +175,21 @@ pub(crate) async fn generate_session_name(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // GSL-PT-20260912-F-6: a 1 MiB prompt produced a 2 MiB title request.
+    #[test]
+    fn test_session_name_context_is_bounded() {
+        let huge = "x".repeat(1024 * 1024);
+        let conversation = Conversation::new_unvalidated(vec![
+            Message::user().with_text(&huge),
+            Message::user().with_text("list files"),
+        ]);
+
+        let context = get_initial_user_messages(&conversation);
+
+        assert_eq!(context[0].chars().count(), SESSION_NAME_CONTEXT_MAX_CHARS);
+        assert_eq!(context[1], "list files");
+    }
 
     #[test]
     fn test_strip_xml_tags() {

@@ -226,6 +226,14 @@ impl Agent {
                                     )
                                 );
                             }
+                            Err(e) if e.is::<crate::context_mgmt::CompactionNoReductionError>() => {
+                                yield AgentEvent::Message(
+                                    Message::assistant().with_system_notification(
+                                        SystemNotificationType::InlineMessage,
+                                        crate::context_mgmt::auto_compaction_skipped_message(),
+                                    )
+                                );
+                            }
                             Err(e) => {
                                 if is_token_cancelled(&cancel_token) {
                                     break;

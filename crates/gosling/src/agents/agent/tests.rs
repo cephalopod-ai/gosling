@@ -33,6 +33,30 @@ fn auto_compaction_message_describes_proportional_reduction() {
         .contains("toward 600 tokens (60.0%; removing 25% of threshold usage)"));
 }
 
+// GSL-PT-20260912-F-6: 174777 -> 174859 tokens was reported as "Compaction complete".
+#[test]
+fn auto_compaction_completion_does_not_claim_success_without_reduction() {
+    let usage = ContextUsageSnapshot {
+        context_limit: 1_000,
+        current_tokens: 810,
+        last_request_tokens: Some(790),
+        estimated_tokens: 810,
+    };
+    let plan = AutoCompactionPlan {
+        threshold: 0.8,
+        reduction: 0.25,
+        target_tokens: Some(600),
+        tokens_to_remove: Some(210),
+    };
+
+    let grew = auto_compaction_completed_message(&usage, 812, &plan);
+    assert!(grew.starts_with("Compaction finished but did not reduce the active context"));
+    assert!(grew.contains("812 / 1000 tokens (81.2%)"));
+
+    assert!(auto_compaction_completed_message(&usage, 590, &plan)
+        .starts_with("Compaction complete: active context is now estimated at 590"));
+}
+
 #[test]
 fn resolve_use_login_shell_path_defaults_by_platform() {
     assert!(resolve_use_login_shell_path(

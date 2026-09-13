@@ -258,6 +258,14 @@ Just continue the conversation naturally based on the summarized context.";
 #[error("Compaction was saved, but usage metrics could not be updated: {0}")]
 pub(crate) struct CompactionMetricsError(pub anyhow::Error);
 
+#[derive(Debug, thiserror::Error)]
+#[error("only the newest request is eligible, and it is kept verbatim, so summarizing cannot reduce the active context")]
+pub(crate) struct CompactionNoReductionError;
+
+pub(crate) fn auto_compaction_skipped_message() -> String {
+    format!("Auto-compaction skipped: {CompactionNoReductionError}. Continuing with the current context.")
+}
+
 pub(crate) fn auto_compaction_failure_message(error: &anyhow::Error) -> String {
     if error.is::<CompactionMetricsError>() {
         format!("{error}\n\nRefresh the session history before deciding whether to compact again.")
@@ -405,6 +413,17 @@ pub async fn compact_messages(
         Some(split) => &messages[..split],
         None => messages.as_slice(),
     };
+
+    if tokens_to_remove.is_some_and(|budget| budget > 0) && !manual_compact {
+        let preserved_idx = preserved_user_message.as_ref().map(|(idx, _)| *idx);
+        let has_summarizable_history = messages_to_compact
+            .iter()
+            .enumerate()
+            .any(|(idx, msg)| msg.is_agent_visible() && Some(idx) != preserved_idx);
+        if !has_summarizable_history {
+            return Err(CompactionNoReductionError.into());
+        }
+    }
 
     let bands = compact_end
         .map(|split| compaction_bands(&turn_starts, split, protect_last_n.max(1)))
@@ -1867,6 +1886,29 @@ mod tests {
             .unwrap()
             .iter()
             .all(|size| *size < 64 * 1024));
+    }
+
+    #[tokio::test]
+    async fn test_budgeted_compaction_of_only_the_newest_prompt_sends_nothing() {
+        let response_message = Message::assistant().with_text("<mock summary>");
+        let provider = MockProvider::new(response_message, 10_000);
+        let conversation =
+            Conversation::new_unvalidated(vec![Message::user().with_text("x".repeat(40_000))]);
+
+        let result = compact_messages(
+            &provider,
+            &provider.config,
+            "test-session-id",
+            &conversation,
+            false,
+            Some(5_000),
+        )
+        .await;
+
+        assert!(result
+            .expect_err("nothing but the preserved prompt is eligible")
+            .is::<CompactionNoReductionError>());
+        assert!(provider.input_sizes.lock().unwrap().is_empty());
     }
 
     // GSL-PT-20260912-B-9: a history below the old 24 KiB floor was resent

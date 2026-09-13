@@ -1469,6 +1469,81 @@ async fn reply_succeeds_when_auto_compact_threshold_env_is_invalid() -> Result<(
     Ok(())
 }
 
+/// GSL-PT-20260912-F-6: when the newest prompt is the only eligible history,
+/// auto-compaction used to summarize it, restore it verbatim, and announce
+/// "Compaction complete" although the active context grew.
+#[tokio::test]
+#[serial]
+async fn auto_compaction_with_only_the_newest_prompt_is_skipped_honestly() -> Result<()> {
+    let _threshold = pin_auto_compact_threshold();
+    let temp_dir = TempDir::new()?;
+    let agent = Agent::new();
+    let session = setup_test_session_with_usage(
+        &agent,
+        &temp_dir,
+        "noop-compaction-test",
+        Vec::new(),
+        Usage::new(Some(109_900), Some(100), Some(110_000)),
+    )
+    .await?;
+
+    let provider = Arc::new(ThresholdCompactionProvider::for_case1());
+    let saw_compaction = provider.has_seen_compaction.clone();
+    agent
+        .update_provider(provider, ModelConfig::new("mock-model"), &session.id)
+        .await?;
+
+    let session_config = SessionConfig {
+        id: session.id.clone(),
+        max_turns: None,
+        compacted_context: false,
+        tail_limit: None,
+    };
+    let reply_stream = agent
+        .reply(
+            Message::user().with_text("one very large request"),
+            session_config,
+            None,
+        )
+        .await?;
+    tokio::pin!(reply_stream);
+
+    let mut notices = Vec::new();
+    let mut texts = Vec::new();
+    let mut terminal_errors = Vec::new();
+    let mut history_replaced = false;
+    while let Some(event) = reply_stream.next().await {
+        match event? {
+            AgentEvent::Message(message) => {
+                notices.extend(message.content.iter().filter_map(|content| {
+                    content
+                        .as_system_notification()
+                        .map(|notification| notification.msg.clone())
+                }));
+                terminal_errors.extend(message.metadata.terminal_error.clone());
+                texts.push(message.as_concat_text());
+            }
+            AgentEvent::HistoryReplaced(_) => history_replaced = true,
+            _ => {}
+        }
+    }
+
+    assert!(!saw_compaction.load(Ordering::SeqCst));
+    assert!(!history_replaced);
+    assert!(
+        notices
+            .iter()
+            .any(|notice| notice.starts_with("Auto-compaction skipped")),
+        "notices: {notices:?}"
+    );
+    assert!(!notices
+        .iter()
+        .any(|notice| notice.contains("Compaction complete")));
+    assert!(terminal_errors.is_empty(), "{terminal_errors:?}");
+    assert!(texts.iter().any(|text| text == "This is a mock response."));
+    Ok(())
+}
+
 /// GSL-PT-20260912-B-12: an out-of-range `GOSLING_AUTO_COMPACT_REDUCTION` used
 /// to pass straight into validation, so every over-threshold reply failed with
 /// "autoCompactReduction must be at least 0 and less than 1".

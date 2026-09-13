@@ -465,6 +465,14 @@ fn auto_compaction_completed_message(
     after_tokens: usize,
     plan: &AutoCompactionPlan,
 ) -> String {
+    if after_tokens >= before.current_tokens {
+        return format!(
+            "Compaction finished but did not reduce the active context: it is still estimated at {} / {} tokens ({:.1}%).",
+            after_tokens,
+            before.context_limit,
+            usage_percentage(after_tokens, before.context_limit),
+        );
+    }
     match plan.target_tokens {
         Some(target) => format!(
             "Compaction complete: active context is now estimated at {} / {} tokens ({:.1}%). It started at {} tokens; the raw-context target was {} tokens.",

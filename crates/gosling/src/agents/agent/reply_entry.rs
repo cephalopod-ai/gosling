@@ -392,6 +392,15 @@ impl Agent {
                             );
                             compacted_conversation
                         }
+                        Err(e) if e.is::<crate::context_mgmt::CompactionNoReductionError>() => {
+                            yield AgentEvent::Message(
+                                Message::assistant().with_system_notification(
+                                    SystemNotificationType::InlineMessage,
+                                    crate::context_mgmt::auto_compaction_skipped_message(),
+                                )
+                            );
+                            conversation
+                        }
                         Err(e) => {
                             if is_token_cancelled(&cancel_token) {
                                 Self::ensure_turn_not_revoked(&cancel_token, &caller_cancel_token)?;
