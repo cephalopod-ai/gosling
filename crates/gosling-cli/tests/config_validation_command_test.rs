@@ -4,7 +4,11 @@ use tempfile::TempDir;
 fn gosling(root: &TempDir, config: &str) -> Output {
     let config_dir = root.path().join("config");
     std::fs::create_dir_all(&config_dir).unwrap();
-    std::fs::write(config_dir.join("config.yaml"), config).unwrap();
+    std::fs::write(
+        config_dir.join("config.yaml"),
+        format!("GOSLING_PROVIDER: openai\nGOSLING_MODEL: gpt-4o\n{config}"),
+    )
+    .unwrap();
 
     Command::new(env!("CARGO_BIN_EXE_gosling"))
         .arg("doctor")

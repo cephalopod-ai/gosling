@@ -2,19 +2,37 @@ use anyhow::Result;
 use std::path::Path;
 
 use gosling::config::Config;
+use gosling::providers::get_from_registry;
 use gosling::session::{config_path, SystemInfo};
 
 pub async fn handle_doctor() -> Result<()> {
     let config = Config::global();
     let system_info = SystemInfo::collect().to_text();
+    let provider = config.get_gosling_provider().ok();
+    let model = config.get_gosling_model().ok();
     let report = render_report(
         &system_info,
         &config_path(),
-        config.get_gosling_provider().ok().as_deref(),
-        config.get_gosling_model().ok().as_deref(),
+        provider.as_deref(),
+        model.as_deref(),
     );
     println!("{report}");
-    Ok(())
+    setup_problem(provider.as_deref(), model.as_deref())
+        .await
+        .map_or(Ok(()), |problem| Err(anyhow::anyhow!(problem)))
+}
+
+async fn setup_problem(provider: Option<&str>, model: Option<&str>) -> Option<String> {
+    let Some(provider) = provider else {
+        return Some("no provider configured. Run 'gosling configure' first.".to_string());
+    };
+    if let Err(e) = get_from_registry(provider).await {
+        return Some(e.to_string());
+    }
+    if model.is_none() {
+        return Some("no model configured. Run 'gosling configure' first.".to_string());
+    }
+    None
 }
 
 fn render_report(
