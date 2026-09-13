@@ -70,7 +70,8 @@ pub struct AutoCompactionCheck {
 
 const TOOLCALL_SUMMARIZATION_BATCH_SIZE: usize = 10;
 const COMPACTION_MAX_INPUT_BYTES: usize = 192 * 1024;
-const COMPACTION_MIN_INPUT_BYTES: usize = 24 * 1024;
+const COMPACTION_MIN_INPUT_BYTES: usize = 2 * 1024;
+const COMPACTION_BYTE_BUDGET_STEPS: usize = 4;
 const COMPACTION_MAX_INPUT_TOKENS: usize = 60_000;
 const COMPACTION_SUMMARY_TARGET_CHARACTERS: usize = 12_000;
 const HANDOFF_SUMMARY_TARGET_CHARACTERS: usize = 6_000;
@@ -933,17 +934,37 @@ struct CompactionRequestContext<'a> {
     token_counter: &'a crate::token_counter::TokenCounter,
 }
 
+/// Byte budgets tried per tool-pair filtering level. They halve from the
+/// smaller of the global cap and the actual payload, so a history below the
+/// old fixed 24 KiB floor still gets genuinely smaller chunks instead of the
+/// same request repeated at every budget.
+fn compaction_input_byte_budgets(units: &[String]) -> Vec<usize> {
+    let payload_bytes: usize = units.iter().map(|unit| unit.len() + 2).sum();
+    let mut budgets = Vec::with_capacity(COMPACTION_BYTE_BUDGET_STEPS);
+    let mut budget = COMPACTION_MAX_INPUT_BYTES.min(payload_bytes);
+    for _ in 0..COMPACTION_BYTE_BUDGET_STEPS {
+        let clamped = budget.max(COMPACTION_MIN_INPUT_BYTES);
+        if budgets.last() != Some(&clamped) {
+            budgets.push(clamped);
+        }
+        budget /= 2;
+    }
+    budgets
+}
+
+fn compaction_chunks_fingerprint(chunks: &[String]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    chunks.hash(&mut hasher);
+    hasher.finish()
+}
+
 async fn reduce_compaction_units(
     request_context: &CompactionRequestContext<'_>,
-    initial_units: Vec<String>,
+    initial_chunks: Vec<String>,
     max_bytes: usize,
 ) -> Result<(Message, ProviderUsage), (ProviderError, Option<ProviderUsage>)> {
-    let mut chunks = pack_compaction_units(
-        &initial_units,
-        max_bytes,
-        request_context.max_tokens,
-        request_context.token_counter,
-    );
+    let mut chunks = initial_chunks;
     let mut total_usage = None;
 
     for _ in 0..COMPACTION_MAX_REDUCTION_ROUNDS {
@@ -1062,14 +1083,9 @@ async fn do_summarize(
         .await
         .unwrap_or_else(|_| fast_model.context_limit());
     let max_tokens = (main_limit.min(fast_limit) / 3).clamp(1, COMPACTION_MAX_INPUT_TOKENS);
-    let input_byte_budgets = [
-        COMPACTION_MAX_INPUT_BYTES,
-        COMPACTION_MAX_INPUT_BYTES / 2,
-        COMPACTION_MAX_INPUT_BYTES / 4,
-        COMPACTION_MIN_INPUT_BYTES,
-    ];
     let removal_percentages = [0, 10, 25, 50, 100];
     let mut accumulated_usage = None;
+    let mut attempted_payloads = HashSet::new();
     let request_context = CompactionRequestContext {
         provider,
         model_config,
@@ -1089,8 +1105,19 @@ async fn do_summarize(
             units.push("[No agent-visible conversation content]".to_string());
         }
 
-        for max_bytes in input_byte_budgets {
-            match reduce_compaction_units(&request_context, units.clone(), max_bytes).await {
+        for max_bytes in compaction_input_byte_budgets(&units) {
+            let chunks = pack_compaction_units(
+                &units,
+                max_bytes,
+                request_context.max_tokens,
+                request_context.token_counter,
+            );
+            // A context-limit rejection is deterministic for the same payload;
+            // resending it only multiplies provider requests.
+            if !attempted_payloads.insert(compaction_chunks_fingerprint(&chunks)) {
+                continue;
+            }
+            match reduce_compaction_units(&request_context, chunks, max_bytes).await {
                 Ok((message, usage)) => {
                     combine_usage(&mut accumulated_usage, usage);
                     return Ok((
@@ -1825,6 +1852,75 @@ mod tests {
             .unwrap()
             .iter()
             .all(|size| *size < 64 * 1024));
+    }
+
+    // GSL-PT-20260912-B-9: a history below the old 24 KiB floor was resent
+    // unchanged for every byte budget and filtering level (20 requests).
+    #[tokio::test]
+    async fn test_rejected_compaction_does_not_resend_identical_payloads() {
+        let response_message = Message::assistant().with_text("<mock summary>");
+        let provider = MockProvider::new(response_message, 258_400).rejecting_context();
+        let conversation = Conversation::new_unvalidated(turns(8));
+
+        let result = compact_messages(
+            &provider,
+            &provider.config,
+            "test-session-id",
+            &conversation,
+            true,
+            None,
+        )
+        .await;
+
+        assert!(result.is_err());
+        assert_eq!(provider.input_sizes.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_compaction_shrinks_small_histories_below_the_old_floor() {
+        let response_message = Message::assistant().with_text("<mock summary>");
+        let provider = MockProvider::new(response_message, 258_400).with_max_input_bytes(6_000);
+        let messages: Vec<Message> = (0..8)
+            .map(|index| Message::user().with_text(format!("turn{index} {}", "y".repeat(1_600))))
+            .collect();
+        let conversation = Conversation::new_unvalidated(messages);
+
+        let result = compact_messages(
+            &provider,
+            &provider.config,
+            "test-session-id",
+            &conversation,
+            true,
+            None,
+        )
+        .await;
+
+        assert!(
+            result.is_ok(),
+            "smaller chunks fit the provider: {:?}",
+            result.err()
+        );
+        let input_sizes = provider.input_sizes.lock().unwrap();
+        assert!(input_sizes.iter().any(|size| *size > 6_000));
+        assert!(input_sizes.len() < 20, "requests: {input_sizes:?}");
+    }
+
+    #[test]
+    fn test_compaction_byte_budgets_keep_large_history_steps() {
+        let large = vec!["x".repeat(COMPACTION_MAX_INPUT_BYTES * 2)];
+        assert_eq!(
+            compaction_input_byte_budgets(&large),
+            vec![
+                COMPACTION_MAX_INPUT_BYTES,
+                COMPACTION_MAX_INPUT_BYTES / 2,
+                COMPACTION_MAX_INPUT_BYTES / 4,
+                COMPACTION_MAX_INPUT_BYTES / 8,
+            ]
+        );
+        assert_eq!(
+            compaction_input_byte_budgets(&["tiny".to_string()]),
+            vec![COMPACTION_MIN_INPUT_BYTES]
+        );
     }
 
     #[tokio::test]
