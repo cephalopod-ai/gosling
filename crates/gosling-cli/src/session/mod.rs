@@ -1997,6 +1997,11 @@ fn emit_stream_event(event: &StreamEvent) {
     }
 }
 
+// Enter on an untouched menu, or stray typing meant for the chat prompt, must never approve a
+// tool. Cancel is the last item, so arrow-style keys (h/j/k/l) typed by accident reach Deny
+// before any Allow option.
+const TOOL_CONFIRMATION_DEFAULT: Permission = Permission::Cancel;
+
 /// Prompt user for tool call confirmation, returns the Permission selected
 fn prompt_tool_confirmation(security_prompt: &Option<String>) -> Result<Permission> {
     output::hide_thinking();
@@ -2022,6 +2027,7 @@ fn prompt_tool_confirmation(security_prompt: &Option<String>) -> Result<Permissi
                 "Cancel",
                 "Cancel the AI response and tool call",
             )
+            .initial_value(TOOL_CONFIRMATION_DEFAULT)
             .interact()
     } else {
         cliclack::select(prompt)
@@ -2032,6 +2038,7 @@ fn prompt_tool_confirmation(security_prompt: &Option<String>) -> Result<Permissi
                 "Cancel",
                 "Cancel the AI response and tool call",
             )
+            .initial_value(TOOL_CONFIRMATION_DEFAULT)
             .interact()
     };
 
@@ -3010,6 +3017,14 @@ mod tests {
         );
     }
 }
+#[test]
+fn tool_confirmation_menu_defaults_to_a_non_approving_choice() {
+    assert!(!matches!(
+        TOOL_CONFIRMATION_DEFAULT,
+        Permission::AllowOnce | Permission::AlwaysAllow | Permission::AlwaysAllowDomain
+    ));
+}
+
 #[test]
 fn non_interactive_confirmations_are_denied() {
     assert_eq!(
