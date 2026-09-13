@@ -97,27 +97,12 @@ impl GoslingAcpAgent {
             .list_tools(&session.id, None)
             .await
             .internal_err_ctx("Failed to inspect session tools")?;
-        let ungranted_side_effecting_tool_count = if session.gosling_mode == GoslingMode::Auto {
-            tools
-                .iter()
-                .filter(|tool| {
-                    let tool_name = tool.name.as_ref();
-                    crate::permission::tool_class::requires_explicit_grant_in_auto(tool_name)
-                        && self.permission_manager.get_user_permission(tool_name)
-                            != Some(crate::config::permission::PermissionLevel::AlwaysAllow)
-                })
-                .count() as u64
-        } else {
-            0
-        };
-
         Ok(ToolContinuityPreviewDto {
             enabled_extension_names,
             gosling_tool_count: tools.len() as u64,
             authorization_mode: session.gosling_mode.to_string(),
             provider_native_tooling_may_change: source_provider_name != target_provider
                 && (source_executes_tools_outside_gosling || target_executes_tools_outside_gosling),
-            ungranted_side_effecting_tool_count,
             state_hash: tool_state_hash(session, &tools, &self.permission_manager)?,
         })
     }

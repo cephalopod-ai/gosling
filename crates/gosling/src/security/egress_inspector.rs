@@ -405,14 +405,6 @@ impl ToolInspector for EgressInspector {
         "egress"
     }
 
-    /// Egress is exfiltration-shaped: once the bytes leave the machine the
-    /// decision cannot be walked back. Auto downgrading `RequireApproval` to
-    /// `Allow` made an autonomous agent's outbound POST unreviewable, so this
-    /// inspector opts out of the downgrade. (PGR-GSL-001, LLM-GSL-003)
-    fn auto_downgrades_require_approval(&self) -> bool {
-        false
-    }
-
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -951,11 +943,10 @@ PY"#;
         assert!(results.is_empty());
     }
 
-    /// Auto must not silently exfiltrate. This previously asserted `Allow`,
-    /// which made the downgrade in `ToolInspectionManager` look intentional
-    /// (PGR-GSL-001, LLM-GSL-003).
+    /// Autonomous mode does not stop for egress approvals; the other modes
+    /// still ask (see `outbound_egress_requires_approval`).
     #[tokio::test]
-    async fn external_egress_still_requires_approval_in_auto_mode() {
+    async fn external_egress_is_allowed_in_auto_mode() {
         let mut manager = ToolInspectionManager::new();
         manager.add_inspector(Box::new(EgressInspector::new(test_permission_manager())));
         let tool_requests = vec![ToolRequest {
@@ -973,11 +964,7 @@ PY"#;
             .unwrap();
 
         assert_eq!(results.len(), 1);
-        assert!(
-            matches!(results[0].action, InspectionAction::RequireApproval(_)),
-            "auto mode must not downgrade an egress approval to allow, got {:?}",
-            results[0].action
-        );
+        assert_eq!(results[0].action, InspectionAction::Allow);
     }
 
     #[tokio::test]

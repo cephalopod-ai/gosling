@@ -2441,7 +2441,6 @@ export type ToolContinuityPreviewDto = {
     goslingToolCount: number;
     authorizationMode: string;
     providerNativeToolingMayChange: boolean;
-    ungrantedSideEffectingToolCount: number;
     stateHash: string;
 };
 

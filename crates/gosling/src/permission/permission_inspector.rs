@@ -125,8 +125,9 @@ impl ToolInspector for PermissionInspector {
                 }
 
                 // Stored policy precedes mode defaults so delegated Auto calls cannot
-                // bypass a saved restriction. This branch denies AskBefore in Auto;
-                // other inspectors retain their own approval gates. (AOC-ORCH-001)
+                // bypass a saved Never Allow. Autonomous mode never prompts, so a saved
+                // Ask Before is approved there; other inspectors keep their own gates.
+                // (AOC-ORCH-001)
                 let (action, reason) =
                     if let Some(level) = permission_manager.get_user_permission(tool_name) {
                         match level {
@@ -139,10 +140,8 @@ impl ToolInspector for PermissionInspector {
                                 "User permission denies this tool".to_string(),
                             ),
                             PermissionLevel::AskBefore if gosling_mode == GoslingMode::Auto => (
-                                InspectionAction::Deny,
-                                "Auto mode cannot prompt for approval; user permission requires \
-                             approval for this tool, so it is denied"
-                                    .to_string(),
+                                InspectionAction::Allow,
+                                "Autonomous mode approves tools without prompting".to_string(),
                             ),
                             PermissionLevel::AskBefore => (
                                 InspectionAction::RequireApproval(None),
@@ -150,23 +149,10 @@ impl ToolInspector for PermissionInspector {
                             ),
                         }
                     } else if gosling_mode == GoslingMode::Auto {
-                        // Enabling an extension does not grant its side-effecting
-                        // tools to a delegated Auto call; recognized risky names
-                        // still need an explicit permission.
-                        // (SEC-GOS-003, LLM-GSL-001, AOC-GOS-001, NEG-GSL-001)
-                        if tool_class::requires_explicit_grant_in_auto(tool_name) {
-                            (
-                                InspectionAction::Deny,
-                                "Auto mode has no operator to approve this tool; its side effects \
-                                 require an explicit user permission"
-                                    .to_string(),
-                            )
-                        } else {
-                            (
-                                InspectionAction::Allow,
-                                "Auto mode - read-only tool approved".to_string(),
-                            )
-                        }
+                        (
+                            InspectionAction::Allow,
+                            "Autonomous mode approves tools without prompting".to_string(),
+                        )
                     } else if tool_name == MANAGE_EXTENSIONS_TOOL_NAME_COMPLETE {
                         (
                             InspectionAction::RequireApproval(Some(
@@ -230,7 +216,7 @@ impl ToolInspector for PermissionInspector {
                     .as_ref()
                     .map(|tool_call| {
                         judge_read_only_tool_names.contains(&tool_call.name.to_string())
-                            && !tool_class::requires_explicit_grant_in_auto(&tool_call.name)
+                            && !tool_class::has_recognized_side_effects(&tool_call.name)
                     })
                     .unwrap_or(false);
 
@@ -351,7 +337,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn auto_mode_denies_rather_than_hangs_on_ask_before() {
+    async fn auto_mode_approves_a_tool_the_user_marked_ask_before() {
         let pm = Arc::new(PermissionManager::new(tempfile::tempdir().unwrap().keep()));
         pm.update_user_permission("developer__shell", PermissionLevel::AskBefore)
             .unwrap();
@@ -375,10 +361,8 @@ mod tests {
             .await
             .unwrap();
 
-        // Auto mode has nothing that can answer an approval prompt, so this
-        // must not become `RequireApproval` (which would hang forever) or
-        // `Allow` (which would silently bypass the user's policy).
-        assert_eq!(results[0].action, InspectionAction::Deny);
+        // Autonomous mode never prompts; only a saved Never Allow blocks a tool.
+        assert_eq!(results[0].action, InspectionAction::Allow);
     }
 
     #[tokio::test]
@@ -409,17 +393,15 @@ mod tests {
         assert_eq!(results[0].action, InspectionAction::Allow);
     }
 
-    // A delegating parent that merely enabled `developer` must not thereby
-    // hand an unattended child shell and write authority. Without an explicit
-    // user permission these deny in Auto (SEC-GOS-003, AOC-GOS-001).
-    #[test_case("developer__shell"; "auto_denies_ungranted_shell")]
-    #[test_case("developer__edit"; "auto_denies_ungranted_write")]
-    #[test_case("computercontroller__automation_script"; "auto_denies_ungranted_automation_script")]
-    #[test_case("network__http_request"; "auto_denies_ungranted_http_request")]
-    #[test_case("extensionmanager__manage_extensions"; "auto_denies_ungranted_extension_management")]
-    #[test_case("computercontroller__cache"; "auto_denies_ungranted_mixed_risk_cache")]
+    // Autonomous mode edits, creates, deletes and runs commands without asking.
+    #[test_case("developer__shell"; "auto_allows_shell")]
+    #[test_case("developer__edit"; "auto_allows_write")]
+    #[test_case("computercontroller__automation_script"; "auto_allows_automation_script")]
+    #[test_case("network__http_request"; "auto_allows_http_request")]
+    #[test_case("extensionmanager__manage_extensions"; "auto_allows_extension_management")]
+    #[test_case("computercontroller__cache"; "auto_allows_mixed_risk_cache")]
     #[tokio::test]
-    async fn auto_denies_side_effecting_tools_without_an_explicit_grant(tool_name: &str) {
+    async fn auto_allows_side_effecting_tools_without_a_saved_grant(tool_name: &str) {
         let pm = Arc::new(PermissionManager::new(tempfile::tempdir().unwrap().keep()));
         let inspector = new_inspector(pm);
 
@@ -443,15 +425,13 @@ mod tests {
 
         assert_eq!(
             results[0].action,
-            InspectionAction::Deny,
-            "{tool_name} must not be implicitly granted in Auto"
+            InspectionAction::Allow,
+            "{tool_name} must run in Autonomous mode without a prompt"
         );
     }
 
-    // Autonomous work still needs to read. Denying reads too would make Auto
-    // useless, so the gate is scoped to tools with recognized side effects.
     #[tokio::test]
-    async fn auto_still_allows_read_only_tools_without_an_explicit_grant() {
+    async fn auto_allows_read_only_tools_without_a_saved_grant() {
         let pm = Arc::new(PermissionManager::new(tempfile::tempdir().unwrap().keep()));
         let inspector = new_inspector(pm);
 

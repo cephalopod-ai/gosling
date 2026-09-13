@@ -3359,9 +3359,6 @@
   "switchModelModal.typeModelName": {
     "defaultMessage": "Type model name here"
   },
-  "switchModelModal.ungrantedToolsWarning": {
-    "defaultMessage": "{count} side-effecting Gosling tools are not explicitly allowed in Autonomous mode and will remain blocked. Enabling an extension does not authorize its tools."
-  },
   "switchModelModal.useOtherProvider": {
     "defaultMessage": "Use other provider"
   },

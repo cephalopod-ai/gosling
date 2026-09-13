@@ -1090,7 +1090,6 @@ pub struct ToolContinuityPreviewDto {
     pub gosling_tool_count: u64,
     pub authorization_mode: String,
     pub provider_native_tooling_may_change: bool,
-    pub ungranted_side_effecting_tool_count: u64,
     pub state_hash: String,
 }
 

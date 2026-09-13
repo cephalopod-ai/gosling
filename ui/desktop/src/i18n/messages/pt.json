@@ -3653,9 +3653,6 @@
   "switchModelModal.sessionToolContinuity": {
     "defaultMessage": "Session tools: {tools} from {extensions} enabled extensions. Authorization mode remains {mode}."
   },
-  "switchModelModal.ungrantedToolsWarning": {
-    "defaultMessage": "{count} side-effecting Gosling tools are not explicitly allowed in Autonomous mode and will remain blocked. Enabling an extension does not authorize its tools."
-  },
   "alertBox.autoCompactFullTarget": {
     "defaultMessage": "Target: full eligible-history compaction"
   },

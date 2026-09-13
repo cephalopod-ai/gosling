@@ -6541,10 +6541,6 @@
         "providerNativeToolingMayChange": {
           "type": "boolean"
         },
-        "ungrantedSideEffectingToolCount": {
-          "type": "integer",
-          "minimum": 0
-        },
         "stateHash": {
           "type": "string"
         }
@@ -6553,7 +6549,6 @@
         "goslingToolCount",
         "authorizationMode",
         "providerNativeToolingMayChange",
-        "ungrantedSideEffectingToolCount",
         "stateHash"
       ]
     },

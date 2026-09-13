@@ -2153,7 +2153,6 @@ export const zToolContinuityPreviewDto = z.object({
     goslingToolCount: z.number().int().gte(0),
     authorizationMode: z.string(),
     providerNativeToolingMayChange: z.boolean(),
-    ungrantedSideEffectingToolCount: z.number().int().gte(0),
     stateHash: z.string()
 });
 

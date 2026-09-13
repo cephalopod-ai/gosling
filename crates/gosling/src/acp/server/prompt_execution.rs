@@ -68,8 +68,8 @@ impl PolicyDeniedTools {
             .join(", ");
         Some(format!(
             "Deep Research could not write the report: the permission policy denied this turn's \
-             {tools} tool calls. Give those tools an Always Allow permission, or switch to a mode \
-             that asks for approval, then send your message again."
+             {tools} tool calls. Change those tools' Never Allow permission to Always Allow, \
+             then send your message again."
         ))
     }
 }
@@ -759,8 +759,7 @@ mod policy_denied_tools_tests {
             request("w1", "write"),
             error_response(
                 "w1",
-                "Tool denied by policy: Auto mode has no operator to approve this tool; its side \
-                 effects require an explicit user permission",
+                "Tool denied by policy: User permission denies this tool",
             ),
             request("s1", "shell"),
             error_response(
@@ -768,7 +767,10 @@ mod policy_denied_tools_tests {
                 "Tool denied by policy: User permission denies this tool",
             ),
             request("w2", "write"),
-            error_response("w2", "Tool denied by policy: Auto mode has no operator"),
+            error_response(
+                "w2",
+                "Tool denied by policy: User permission denies this tool",
+            ),
         ] {
             tools.observe(&content);
         }

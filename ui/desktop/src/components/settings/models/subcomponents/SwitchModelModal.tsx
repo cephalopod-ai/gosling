@@ -251,11 +251,6 @@ const i18n = defineMessages({
     defaultMessage:
       'Provider-native tools do not transfer between providers and the target may expose a different native tool set. Session-enabled Gosling extensions will remain configured.',
   },
-  ungrantedToolsWarning: {
-    id: 'switchModelModal.ungrantedToolsWarning',
-    defaultMessage:
-      '{count} side-effecting Gosling tools are not explicitly allowed in Autonomous mode and will remain blocked. Enabling an extension does not authorize its tools.',
-  },
   transitionStages: {
     id: 'switchModelModal.transitionStages',
     defaultMessage: 'Preparing checkpoint · Initializing target · Delivering handoff · Activating',
@@ -1185,17 +1180,6 @@ export const SwitchModelModal = ({
                 <div className="mt-2 flex gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-800 dark:text-amber-200">
                   <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                   <span>{intl.formatMessage(i18n.providerNativeToolsWarning)}</span>
-                </div>
-              )}
-
-              {(handoffPreview?.toolContinuity.ungrantedSideEffectingToolCount ?? 0) > 0 && (
-                <div className="mt-2 flex gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-800 dark:text-amber-200">
-                  <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                  <span>
-                    {intl.formatMessage(i18n.ungrantedToolsWarning, {
-                      count: handoffPreview?.toolContinuity.ungrantedSideEffectingToolCount,
-                    })}
-                  </span>
                 </div>
               )}
 

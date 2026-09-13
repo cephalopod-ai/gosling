@@ -97,8 +97,7 @@ Session extension enablement and authorization are separate. Enabled gosling ext
 working-directory scope, and the session authorization mode persist across a transition, but the
 target must still pass normal permission inspection. Provider-native tools are owned by their
 adapter and cannot be transferred to another provider. The preview reports gosling tool and
-extension counts, warns when provider-native tooling may change, and identifies enabled
-side-effecting tools that Autonomous mode cannot run without an explicit stored grant.
+extension counts and warns when provider-native tooling may change.
 
 The target's first response acknowledges the objective, current state, and next safe action. For a
 provider-managed bootstrap, gosling makes a bounded acknowledgement request before committing a

@@ -90,13 +90,10 @@ pub(super) fn resolve_delegate_extensions(
         (Some(role), None) => role,
         (None, Some(requested)) => {
             // No role policy declared, so nothing bounds this list except the
-            // parent's own extensions — the *model* chose it. Since Auto no
-            // longer grants execution or write authority without an explicit
-            // user permission (SEC-GOS-003), the child cannot turn a
-            // model-picked extension into shell or write access on its own.
-            // What remained wrong was that the choice was invisible: record it
-            // so an operator reviewing a session can see an unbounded grant
-            // happened and which extensions it covered. (LLM-GSL-010)
+            // parent's own extensions — the *model* chose it. A delegate runs in
+            // Autonomous mode, so those extensions' tools run without prompting.
+            // Record the choice so an operator reviewing a session can see an
+            // unbounded grant happened and which extensions it covered. (LLM-GSL-010)
             tracing::warn!(
                 security.event_type = "delegate_extensions_unbounded",
                 security.extensions = %requested.join(","),

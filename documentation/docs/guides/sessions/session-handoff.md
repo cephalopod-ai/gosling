@@ -94,9 +94,7 @@ permission prompts still apply.
 The preview distinguishes gosling-managed tools from provider-native tools. Session-enabled
 extensions, working-directory scope, and authorization mode carry across the switch, but a
 provider's native shell, filesystem, or computer-control tools are not transferable and may change
-when the provider changes. Enabling a gosling extension also does not authorize its side effects:
-Autonomous mode still requires an explicit stored grant for protected tools. The preview warns when
-provider-native tooling may change or enabled side-effecting tools lack that grant.
+when the provider changes. The preview warns when provider-native tooling may change.
 
 After activation, old messages stay visible in the chat but are no longer sent as model context. One
 hidden checkpoint becomes the new context boundary. This remains true on later turns and after an

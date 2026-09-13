@@ -104,9 +104,9 @@ pub fn is_egress_tool(name: &str) -> bool {
     matches_name_or_suffix(name, EGRESS_TOOL_NAMES, EGRESS_TOOL_SUFFIXES)
 }
 
-/// Known side-effecting or mixed-action tools that need an explicit permission in Auto.
-/// Enabling their extension alone must not grant that authority. (SEC-GOS-003)
-pub fn requires_explicit_grant_in_auto(name: &str) -> bool {
+/// Known side-effecting or mixed-action tools. Smart Approve never lets the
+/// model's read-only judgment auto-approve these. (SEC-GOS-013)
+pub fn has_recognized_side_effects(name: &str) -> bool {
     is_code_execution_tool(name)
         || is_write_tool(name)
         || is_egress_tool(name)
@@ -150,23 +150,21 @@ mod tests {
     }
 
     #[test]
-    fn auto_grant_gate_covers_execution_and_write_but_not_read() {
-        assert!(requires_explicit_grant_in_auto("shell"));
-        assert!(requires_explicit_grant_in_auto("developer__edit"));
-        assert!(requires_explicit_grant_in_auto(
+    fn side_effect_classification_covers_execution_and_write_but_not_read() {
+        assert!(has_recognized_side_effects("shell"));
+        assert!(has_recognized_side_effects("developer__edit"));
+        assert!(has_recognized_side_effects(
             "computercontroller__automation_script"
         ));
-        assert!(requires_explicit_grant_in_auto("web_fetch"));
-        assert!(requires_explicit_grant_in_auto("network__http_request"));
-        assert!(requires_explicit_grant_in_auto(
+        assert!(has_recognized_side_effects("web_fetch"));
+        assert!(has_recognized_side_effects("network__http_request"));
+        assert!(has_recognized_side_effects(
             "extensionmanager__manage_extensions"
         ));
-        assert!(requires_explicit_grant_in_auto(
-            "platform__manage_extensions"
-        ));
-        assert!(requires_explicit_grant_in_auto("computercontroller__cache"));
-        assert!(!requires_explicit_grant_in_auto("read"));
-        assert!(!requires_explicit_grant_in_auto("developer__read"));
+        assert!(has_recognized_side_effects("platform__manage_extensions"));
+        assert!(has_recognized_side_effects("computercontroller__cache"));
+        assert!(!has_recognized_side_effects("read"));
+        assert!(!has_recognized_side_effects("developer__read"));
     }
 
     #[test]
