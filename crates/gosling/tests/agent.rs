@@ -3009,4 +3009,198 @@ mod tests {
             Ok(())
         }
     }
+
+    mod reused_provider_response_id_tests {
+        use super::*;
+        use async_trait::async_trait;
+        use gosling::agents::{AgentConfig, SessionConfig};
+        use gosling::config::permission::PermissionManager;
+        use gosling::config::GoslingMode;
+        use gosling::conversation::message::{Message, MessageContent};
+        use gosling::providers::base::{MessageStream, Provider, ProviderDef, ProviderMetadata};
+        use gosling::session::session_manager::SessionType;
+        use gosling::session::SessionManager;
+        use gosling_providers::errors::ProviderError;
+        use gosling_providers::formats::openai::response_to_streaming_message;
+        use gosling_providers::model::ModelConfig;
+        use rmcp::model::{Role, Tool};
+        use std::path::PathBuf;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        const REUSED_ID: &str = "chatcmpl-fx";
+
+        /// Streams OpenAI chat-completion chunks that all carry the same response id
+        /// across every call, like some OpenAI-compatible local servers do.
+        struct ReusedIdProvider {
+            call_count: AtomicUsize,
+        }
+
+        impl gosling::providers::base::ProviderDescriptor for ReusedIdProvider {
+            fn metadata() -> ProviderMetadata {
+                ProviderMetadata {
+                    name: "reused-id-mock".to_string(),
+                    display_name: "Reused Id Mock".to_string(),
+                    description: "Mock provider that reuses its response id".to_string(),
+                    default_model: "mock-model".to_string(),
+                    known_models: vec![],
+                    model_doc_link: "".to_string(),
+                    config_keys: vec![],
+                    setup_steps: vec![],
+                    model_selection_hint: None,
+                    fast_model: None,
+                }
+            }
+        }
+
+        impl ProviderDef for ReusedIdProvider {
+            type Provider = Self;
+
+            fn from_env(
+                _extensions: Vec<gosling::config::ExtensionConfig>,
+                _tls_config: Option<gosling::providers::api_client::TlsConfig>,
+            ) -> futures::future::BoxFuture<'static, anyhow::Result<Self>> {
+                unimplemented!()
+            }
+        }
+
+        fn chunk(delta: serde_json::Value, finish_reason: Option<&str>) -> String {
+            let chunk = serde_json::json!({
+                "id": REUSED_ID,
+                "object": "chat.completion.chunk",
+                "created": 1,
+                "model": "mock-model",
+                "choices": [{"index": 0, "delta": delta, "finish_reason": finish_reason}],
+            });
+            format!("data: {chunk}")
+        }
+
+        #[async_trait]
+        impl Provider for ReusedIdProvider {
+            async fn stream(
+                &self,
+                _model_config: &ModelConfig,
+                _system_prompt: &str,
+                _messages: &[Message],
+                _tools: &[Tool],
+            ) -> Result<MessageStream, ProviderError> {
+                let call = self.call_count.fetch_add(1, Ordering::SeqCst);
+                let mut lines = match call {
+                    0 => vec![
+                        chunk(
+                            serde_json::json!({"role": "assistant", "tool_calls": [{
+                                "index": 0,
+                                "id": "call_1",
+                                "type": "function",
+                                "function": {"name": "missing_tool", "arguments": "{}"}
+                            }]}),
+                            None,
+                        ),
+                        chunk(serde_json::json!({}), Some("tool_calls")),
+                    ],
+                    _ => {
+                        let text = format!("reply {call}");
+                        vec![
+                            chunk(
+                                serde_json::json!({"role": "assistant", "content": text}),
+                                None,
+                            ),
+                            chunk(serde_json::json!({}), Some("stop")),
+                        ]
+                    }
+                };
+                lines.push("data: [DONE]".to_string());
+                let stream =
+                    response_to_streaming_message(futures::stream::iter(lines.into_iter().map(Ok)))
+                        .map(|item| item.map_err(ProviderError::stream_decode_error));
+                Ok(Box::pin(stream))
+            }
+
+            fn get_name(&self) -> &str {
+                "reused-id-mock"
+            }
+        }
+
+        async fn run_turn(agent: &Agent, session_id: &str, prompt: &str) -> Result<()> {
+            let session_config = SessionConfig {
+                id: session_id.to_string(),
+                max_turns: Some(3),
+                compacted_context: false,
+                tail_limit: None,
+            };
+            let reply_stream = agent
+                .reply(Message::user().with_text(prompt), session_config, None)
+                .await?;
+            tokio::pin!(reply_stream);
+            while let Some(event) = reply_stream.next().await {
+                event?;
+            }
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn reused_provider_response_id_does_not_overwrite_earlier_assistant_messages(
+        ) -> Result<()> {
+            let temp_dir = tempfile::tempdir()?;
+            let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
+            let agent = Agent::with_config(AgentConfig::new(
+                session_manager.clone(),
+                PermissionManager::instance(),
+                GoslingMode::Auto,
+                true,
+                GoslingPlatform::GoslingCli,
+            ));
+            let session = session_manager
+                .create_session(
+                    PathBuf::default(),
+                    "reused-id".to_string(),
+                    SessionType::Hidden,
+                    GoslingMode::default(),
+                )
+                .await?;
+            agent
+                .update_provider(
+                    Arc::new(ReusedIdProvider {
+                        call_count: AtomicUsize::new(0),
+                    }),
+                    ModelConfig::new("mock-model"),
+                    &session.id,
+                )
+                .await?;
+
+            run_turn(&agent, &session.id, "one").await?;
+            run_turn(&agent, &session.id, "two").await?;
+
+            let messages = session_manager
+                .get_session(&session.id, true)
+                .await?
+                .conversation
+                .expect("should have conversation")
+                .messages()
+                .to_vec();
+            let assistant_messages: Vec<&Message> = messages
+                .iter()
+                .filter(|m| m.role == Role::Assistant)
+                .collect();
+
+            assert_eq!(
+                assistant_messages.len(),
+                3,
+                "expected tool request + reply 1 + reply 2, got {assistant_messages:#?}"
+            );
+            assert!(assistant_messages[0]
+                .content
+                .iter()
+                .any(|c| matches!(c, MessageContent::ToolRequest(_))));
+            assert_eq!(assistant_messages[1].as_concat_text(), "reply 1");
+            assert_eq!(assistant_messages[2].as_concat_text(), "reply 2");
+            assert_eq!(
+                messages.iter().filter(|m| m.role == Role::User).count(),
+                3,
+                "expected prompt one + tool response + prompt two"
+            );
+            assert!(messages.iter().all(|m| m.id.as_deref() != Some(REUSED_ID)));
+
+            Ok(())
+        }
+    }
 }

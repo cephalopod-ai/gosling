@@ -1250,6 +1250,16 @@ fn parse_streaming_chunk(line: &str) -> Result<StreamingChunk, ProviderError> {
     })
 }
 
+/// Some OpenAI-compatible servers repeat one response id for every completion.
+/// Sessions upsert messages by id, so reusing the provider id would overwrite an
+/// earlier reply. Each provider id maps to one local id for the lifetime of a
+/// single stream, so that stream's chunks still coalesce into one message.
+fn stream_message_id(ids: &mut HashMap<String, String>, provider_id: String) -> String {
+    ids.entry(provider_id)
+        .or_insert_with(|| format!("msg_{}", uuid::Uuid::new_v4()))
+        .clone()
+}
+
 pub fn response_to_streaming_message<S>(
     mut stream: S,
 ) -> impl Stream<Item = anyhow::Result<(Option<Message>, Option<ProviderUsage>)>> + 'static
@@ -1283,6 +1293,7 @@ where
         // `finish_reason` — was indistinguishable from a normal completed
         // turn and committed as if it were the whole response.
         let mut saw_done = false;
+        let mut stream_message_ids: HashMap<String, String> = HashMap::new();
 
         'outer: while let Some(response) = stream.next().await {
             let response_str = response?;
@@ -1434,7 +1445,7 @@ where
                         );
 
                         if let Some(id) = chunk.id.clone() {
-                            msg = msg.with_id(id);
+                            msg = msg.with_id(stream_message_id(&mut stream_message_ids, id));
                         }
 
                         yielded_any_content = true;
@@ -1525,7 +1536,7 @@ where
 
                 // Add ID if present
                 if let Some(id) = chunk.id {
-                    msg = msg.with_id(id);
+                    msg = msg.with_id(stream_message_id(&mut stream_message_ids, id));
                 }
 
                 if !msg.content.is_empty() {
@@ -1570,7 +1581,7 @@ where
                     );
 
                     if let Some(id) = chunk.id {
-                        msg = msg.with_id(id);
+                        msg = msg.with_id(stream_message_id(&mut stream_message_ids, id));
                     }
 
                     yielded_any_content = true;
@@ -4846,5 +4857,69 @@ data: [DONE]"#;
                 _ => {}
             }
         }
+    }
+
+    async fn streamed_message_ids(response_lines: &str) -> Vec<Option<String>> {
+        let lines: Vec<String> = response_lines.lines().map(|s| s.to_string()).collect();
+        let messages = response_to_streaming_message(tokio_stream::iter(lines.into_iter().map(Ok)));
+        pin!(messages);
+        let mut ids = Vec::new();
+        while let Some(item) = messages.next().await {
+            if let (Some(message), _) = item.unwrap() {
+                ids.push(message.id);
+            }
+        }
+        ids
+    }
+
+    const REUSED_ID_STREAM: &str = r#"
+data: {"id":"chatcmpl-fx","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"role":"assistant","content":"Hel"},"finish_reason":null}]}
+data: {"id":"chatcmpl-fx","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"lo"},"finish_reason":null}]}
+data: {"id":"chatcmpl-fx","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}
+data: [DONE]
+"#;
+
+    #[tokio::test]
+    async fn streamed_chunks_share_one_message_id_that_is_not_the_provider_id() {
+        let ids = streamed_message_ids(REUSED_ID_STREAM).await;
+
+        assert!(ids.len() >= 2);
+        assert!(ids.iter().all(|id| id == &ids[0]));
+        let id = ids[0]
+            .as_deref()
+            .expect("streamed message should carry an id");
+        assert_ne!(id, "chatcmpl-fx");
+    }
+
+    #[tokio::test]
+    async fn separate_streams_with_a_reused_provider_id_get_distinct_message_ids() {
+        let first = streamed_message_ids(REUSED_ID_STREAM).await;
+        let second = streamed_message_ids(REUSED_ID_STREAM).await;
+
+        assert_ne!(first[0], second[0]);
+    }
+
+    #[tokio::test]
+    async fn distinct_provider_ids_within_one_stream_stay_distinct() {
+        let response_lines = r#"
+data: {"id":"chunk-a","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"one"},"finish_reason":null}]}
+data: {"id":"chunk-b","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"two"},"finish_reason":null}]}
+data: {"id":"chunk-a","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"three"},"finish_reason":null}]}
+data: [DONE]
+"#;
+        let ids = streamed_message_ids(response_lines).await;
+
+        assert_eq!(ids.len(), 3);
+        assert_ne!(ids[0], ids[1]);
+        assert_eq!(ids[0], ids[2]);
+    }
+
+    #[tokio::test]
+    async fn chunks_without_a_provider_id_keep_no_message_id() {
+        let response_lines = r#"
+data: {"object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"anon"},"finish_reason":null}]}
+data: [DONE]
+"#;
+        assert_eq!(streamed_message_ids(response_lines).await, vec![None]);
     }
 }
