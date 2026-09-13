@@ -965,13 +965,26 @@ const createChat = async (
   try {
     externalBackend = getActiveExternalBackend(settings);
   } catch (error) {
-    dialog.showMessageBoxSync({
+    const canDisableExternalBackend = !getExternalBackendUrlFromEnv();
+    const response = dialog.showMessageBoxSync({
       type: 'error',
       title: 'External Backend Misconfigured',
       message: 'The external backend environment is invalid.',
       detail: errorMessage(error),
-      buttons: ['Quit'],
+      buttons: canDisableExternalBackend ? ['Disable External Backend & Retry', 'Quit'] : ['Quit'],
+      defaultId: 0,
+      cancelId: canDisableExternalBackend ? 1 : 0,
     });
+
+    if (canDisableExternalBackend && response === 0) {
+      updateSettings((s) => {
+        if (s.externalGoslingd) {
+          s.externalGoslingd.enabled = false;
+        }
+      });
+      return createChat(app, options);
+    }
+
     app.quit();
     return;
   }
