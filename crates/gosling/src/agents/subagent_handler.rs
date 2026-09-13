@@ -283,8 +283,22 @@ fn get_agent_messages(params: SubagentRunParams) -> AgentMessagesFuture {
             anyhow::bail!("subagent task was cancelled before completing");
         }
 
+        if let Some(error) = terminal_failure(&conversation) {
+            anyhow::bail!("subagent run ended with an error: {error}");
+        }
+
         Ok((conversation, None, failed_extensions))
     })
+}
+
+/// A provider failure that ended the reply is rendered as assistant text for interactive users;
+/// for a delegate it must surface as a failed run, not as the delegate's answer.
+fn terminal_failure(conversation: &Conversation) -> Option<String> {
+    conversation
+        .messages()
+        .iter()
+        .rev()
+        .find_map(|message| message.metadata.terminal_error.clone())
 }
 
 async fn build_subagent_prompt(
@@ -349,7 +363,7 @@ pub fn create_tool_notification(
 #[cfg(test)]
 mod tests {
     use super::{create_tool_notification, SUBAGENT_TOOL_REQUEST_TYPE};
-    use crate::conversation::message::MessageContent;
+    use crate::conversation::message::{Message, MessageContent};
     use rmcp::model::{CallToolRequestParams, ServerNotification};
     use serde_json::json;
 
@@ -427,5 +441,34 @@ mod tests {
             ),
             "[Resolved delegate authority: extensions = developer, summarize]\n\ndone"
         );
+    }
+
+    #[test]
+    fn terminal_provider_failure_fails_the_subagent_run() {
+        let conversation = crate::conversation::Conversation::new_unvalidated(vec![
+            Message::user().with_text("research"),
+            Message::assistant()
+                .with_text(
+                    "Ran into this error: Request failed: fake external provider failure.\n\n\
+                     Please retry if you think this is a transient or recoverable error.",
+                )
+                .with_terminal_error("Request failed: fake external provider failure"),
+        ]);
+        assert_eq!(
+            super::terminal_failure(&conversation).as_deref(),
+            Some("Request failed: fake external provider failure")
+        );
+    }
+
+    #[test]
+    fn completed_and_recovered_subagent_runs_are_not_failures() {
+        let conversation = crate::conversation::Conversation::new_unvalidated(vec![
+            Message::user().with_text("research"),
+            Message::assistant().with_text(
+                "Request failed: blip\n\nContinuing with the tool results already collected.",
+            ),
+            Message::assistant().with_text("final answer"),
+        ]);
+        assert_eq!(super::terminal_failure(&conversation), None);
     }
 }
