@@ -1713,6 +1713,7 @@ impl CliSession {
         // Render each message
         for message in self.messages.iter() {
             output::render_message(message, self.debug);
+            println!();
         }
 
         println!();
