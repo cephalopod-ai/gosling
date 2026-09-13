@@ -2885,6 +2885,95 @@ mod tests {
             Ok(())
         }
 
+        // GSL-PT-20260912-B-4: the last interrupted attempt was stored as a
+        // normal reply and the error notice as agent-visible assistant text, so
+        // the next request replayed "partial + Network error ... resend".
+        #[tokio::test]
+        async fn an_interrupted_reply_that_ends_the_turn_is_not_replayed_to_the_model() -> Result<()>
+        {
+            let temp_dir = tempfile::tempdir()?;
+            let session_manager = Arc::new(SessionManager::new(temp_dir.path().join("data")));
+            let permission_manager =
+                Arc::new(PermissionManager::new(temp_dir.path().join("config")));
+            let agent = Agent::with_config(AgentConfig::new(
+                session_manager,
+                permission_manager,
+                GoslingMode::default(),
+                true,
+                GoslingPlatform::GoslingCli,
+            ));
+            let provider = Arc::new(InterruptedStreamProvider::with_failures(false, usize::MAX));
+            let session = agent
+                .config
+                .session_manager
+                .create_session(
+                    PathBuf::default(),
+                    "interrupted-terminal".to_string(),
+                    SessionType::Hidden,
+                    GoslingMode::default(),
+                )
+                .await?;
+            agent
+                .update_provider(
+                    provider.clone(),
+                    ModelConfig::new("mock-model"),
+                    &session.id,
+                )
+                .await?;
+            let session_config = SessionConfig {
+                id: session.id.clone(),
+                max_turns: Some(4),
+                compacted_context: false,
+                tail_limit: None,
+            };
+
+            let reply_stream = agent
+                .reply(Message::user().with_text(USER_TEXT), session_config, None)
+                .await?;
+            tokio::pin!(reply_stream);
+            let mut terminal_errors = Vec::new();
+            while let Some(event) = reply_stream.next().await {
+                if let AgentEvent::Message(message) = event? {
+                    terminal_errors.extend(message.metadata.terminal_error.clone());
+                }
+            }
+
+            assert_eq!(provider.calls.load(Ordering::SeqCst), 4);
+            assert_eq!(terminal_errors.len(), 1, "{terminal_errors:?}");
+            let stored = agent
+                .config
+                .session_manager
+                .get_session(&session.id, true)
+                .await?
+                .conversation
+                .expect("session has a conversation");
+            let agent_visible: Vec<String> = stored
+                .messages()
+                .iter()
+                .filter(|message| message.is_agent_visible())
+                .map(Message::as_concat_text)
+                .collect();
+            assert_eq!(agent_visible, vec![USER_TEXT.to_string()]);
+            let user_visible: Vec<String> = stored
+                .messages()
+                .iter()
+                .filter(|message| message.is_user_visible())
+                .map(Message::as_concat_text)
+                .collect();
+            assert!(
+                user_visible.iter().any(|text| text.contains(PARTIAL_TEXT)),
+                "{user_visible:?}"
+            );
+            assert!(
+                user_visible
+                    .iter()
+                    .any(|text| text.contains("Please resend your message")),
+                "{user_visible:?}"
+            );
+
+            Ok(())
+        }
+
         #[tokio::test]
         async fn exhausted_transient_retries_switch_to_the_turn_local_fallback() -> Result<()> {
             let outcome = run_reply_with_failures(false, "provider-failover", usize::MAX).await?;

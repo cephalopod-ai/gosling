@@ -1085,6 +1085,7 @@ impl Agent {
                                     {
                                         warn!("Failed to prepare provider recovery checkpoint: {checkpoint_error}");
                                     }
+                                    messages_to_add = hide_interrupted_reply_from_agent(messages_to_add);
                                     yield AgentEvent::Message(failure_message);
                                 }
                             }
@@ -1100,6 +1101,7 @@ impl Agent {
                                 no_tools_called,
                             );
                             if no_tools_called {
+                                messages_to_add = hide_interrupted_reply_from_agent(messages_to_add);
                                 if let Err(checkpoint_error) = self
                                     .persist_provider_failure_checkpoint(
                                         &session_config.id,
@@ -1125,6 +1127,7 @@ impl Agent {
                                 no_tools_called,
                             );
                             if no_tools_called {
+                                messages_to_add = hide_interrupted_reply_from_agent(messages_to_add);
                                 if let Err(checkpoint_error) = self
                                     .persist_provider_failure_checkpoint(
                                         &session_config.id,
@@ -1385,4 +1388,13 @@ impl Agent {
         }.instrument(reply_stream_span));
         Ok(inner)
     }
+}
+
+/// A reply cut off by a terminal provider error stays visible to the user, but
+/// it is not replayed to the model on the next turn as if it were complete.
+fn hide_interrupted_reply_from_agent(messages: Conversation) -> Conversation {
+    Conversation::new_unvalidated(messages.into_iter().map(|message| {
+        let user_visible = message.metadata.user_visible;
+        message.with_visibility(user_visible, false)
+    }))
 }

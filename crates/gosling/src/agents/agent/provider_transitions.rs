@@ -58,9 +58,11 @@ impl Agent {
         model_config: &gosling_providers::model::ModelConfig,
         failure_message: &Message,
     ) -> Result<()> {
+        // The notice is for the user; replaying it would feed the error text
+        // back to the model as assistant speech.
         self.config
             .session_manager
-            .upsert_message(session_id, failure_message)
+            .upsert_message(session_id, &failure_message.clone().user_only())
             .await?;
         let mut snapshot =
             crate::session::handoff::SessionHandoffBuilder::new(&self.config.session_manager)
