@@ -7,7 +7,7 @@
 //! the trailing user message. Both are fully internal — no external
 //! services, no MCP.
 
-use std::io::Read;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::PathBuf;
 
 use rmcp::model::Role;
@@ -130,6 +130,23 @@ impl FileMemorySource {
         // whole put an unbounded allocation on a routine context build
         // (MEM-GSL-002). Read at most the cap; a partial trailing line is
         // dropped by the `from_str` filter below.
+        let file_len = file.metadata().map(|metadata| metadata.len()).unwrap_or(0);
+        let read_from = file_len.saturating_sub(MAX_MEMORY_FILE_BYTES);
+        if read_from > 0 {
+            if file.seek(SeekFrom::Start(read_from - 1)).is_err() {
+                return Vec::new();
+            }
+            let mut previous = [0u8; 1];
+            if file.read_exact(&mut previous).is_err()
+                || file.seek(SeekFrom::Start(read_from)).is_err()
+            {
+                return Vec::new();
+            }
+            if previous[0] != b'\n' {
+                let mut byte = [0u8; 1];
+                while file.read_exact(&mut byte).is_ok() && byte[0] != b'\n' {}
+            }
+        }
         let mut raw = String::new();
         if std::io::Read::by_ref(&mut file)
             .take(MAX_MEMORY_FILE_BYTES)
@@ -365,5 +382,35 @@ mod tests {
         handle.join().unwrap();
         assert_eq!(recalled.len(), 1);
         assert!(recalled[0].content.contains("coordinated memory"));
+    }
+
+    #[test]
+    fn file_source_reads_recent_entries_after_the_size_cap() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("memories.jsonl");
+        let mut file = std::fs::File::create(&path).unwrap();
+        let oversized_old_entry = serde_json::json!({
+            "content": "historical memory ".repeat(
+                (MAX_MEMORY_FILE_BYTES as usize / "historical memory ".len()) + 1
+            ),
+            "source": "old",
+        });
+        writeln!(file, "{oversized_old_entry}").unwrap();
+        writeln!(
+            file,
+            r#"{{"content":"recent quasar launch decision","source":"recent"}}"#
+        )
+        .unwrap();
+
+        let source = FileMemorySource::new(path);
+        let messages = query_messages("what was the recent quasar launch decision?");
+        let recalled = source.retrieve(&MemoryQuery {
+            session_id: "test",
+            messages: &messages,
+            reserved_tokens: 1_000,
+        });
+
+        assert_eq!(recalled.len(), 1);
+        assert_eq!(recalled[0].source, "recent");
     }
 }
