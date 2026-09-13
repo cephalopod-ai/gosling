@@ -13,6 +13,7 @@ use rmcp::model::{
     ServerNotification,
 };
 use serde::Serialize;
+use std::collections::HashSet;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -346,6 +347,7 @@ pub fn create_tool_notification(
                     serde_json::json!({
                         "type": SUBAGENT_TOOL_REQUEST_TYPE,
                         "subagent_id": subagent_id,
+                        "tool_request_id": req.id,
                         "tool_call": {
                             "name": tool_call.name,
                             "arguments": tool_call.arguments
@@ -360,12 +362,38 @@ pub fn create_tool_notification(
     }
 }
 
+pub(crate) fn should_forward_subagent_tool_notification(
+    seen: &mut HashSet<(String, String)>,
+    notification: &ServerNotification,
+) -> bool {
+    let ServerNotification::LoggingMessageNotification(notification) = notification else {
+        return true;
+    };
+    let Some(data) = notification.params.data.as_object() else {
+        return true;
+    };
+    if data.get("type").and_then(|value| value.as_str()) != Some(SUBAGENT_TOOL_REQUEST_TYPE) {
+        return true;
+    }
+    let Some(subagent_id) = data.get("subagent_id").and_then(|value| value.as_str()) else {
+        return true;
+    };
+    let Some(tool_request_id) = data.get("tool_request_id").and_then(|value| value.as_str()) else {
+        return true;
+    };
+    seen.insert((subagent_id.to_string(), tool_request_id.to_string()))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{create_tool_notification, SUBAGENT_TOOL_REQUEST_TYPE};
+    use super::{
+        create_tool_notification, should_forward_subagent_tool_notification,
+        SUBAGENT_TOOL_REQUEST_TYPE,
+    };
     use crate::conversation::message::{Message, MessageContent};
     use rmcp::model::{CallToolRequestParams, ServerNotification};
     use serde_json::json;
+    use std::collections::HashSet;
 
     #[test]
     fn create_tool_notification_for_tool_request() {
@@ -391,6 +419,10 @@ mod tests {
             data.get("subagent_id").and_then(|v| v.as_str()),
             Some("session_1")
         );
+        assert_eq!(
+            data.get("tool_request_id").and_then(|v| v.as_str()),
+            Some("req1")
+        );
         let tool_call = data
             .get("tool_call")
             .and_then(|v| v.as_object())
@@ -405,6 +437,31 @@ mod tests {
     fn create_tool_notification_ignores_non_tool_request() {
         let content = MessageContent::text("hello");
         assert!(create_tool_notification(&content, "session_1").is_none());
+    }
+
+    #[test]
+    fn rebroadcast_subagent_tool_notification_is_forwarded_once() {
+        let tool_call = CallToolRequestParams::new("developer__shell".to_string())
+            .with_arguments(json!({"command": "ls"}).as_object().unwrap().clone());
+        let first = create_tool_notification(
+            &MessageContent::tool_request("req1", Ok(tool_call.clone())),
+            "session_1",
+        )
+        .unwrap();
+        let second = create_tool_notification(
+            &MessageContent::tool_request("req2", Ok(tool_call)),
+            "session_1",
+        )
+        .unwrap();
+        let mut seen = HashSet::new();
+
+        assert!(should_forward_subagent_tool_notification(&mut seen, &first));
+        assert!(!should_forward_subagent_tool_notification(
+            &mut seen, &first
+        ));
+        assert!(should_forward_subagent_tool_notification(
+            &mut seen, &second
+        ));
     }
 
     #[test]

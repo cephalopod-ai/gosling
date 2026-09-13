@@ -5,6 +5,7 @@
 //! Clients: streamed events, retries, tool execution, and terminal behavior remain stable.
 
 use super::*;
+use std::collections::HashSet;
 
 impl Agent {
     async fn inference_metadata_for(
@@ -682,6 +683,7 @@ impl Agent {
                                     let mut combined = stream::select_all(with_id);
                                     let mut all_install_successful = true;
                                     let mut tool_persistence_error = None;
+                                    let mut seen_subagent_tool_notifications = HashSet::new();
 
                                     loop {
                                         tokio::select! {
@@ -742,7 +744,12 @@ impl Agent {
                                                                 }
                                                             }
                                                             ToolStreamItem::Message(msg) => {
-                                                                yield AgentEvent::McpNotification((request_id, msg));
+                                                                if crate::agents::subagent_handler::should_forward_subagent_tool_notification(
+                                                                    &mut seen_subagent_tool_notifications,
+                                                                    &msg,
+                                                                ) {
+                                                                    yield AgentEvent::McpNotification((request_id, msg));
+                                                                }
                                                             }
                                                         }
                                                     }
