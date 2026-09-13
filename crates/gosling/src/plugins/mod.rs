@@ -252,6 +252,7 @@ fn install_from_checkout_at_root(
     options: &PluginInstallOptions,
     last_update_check: Option<DateTime<Utc>>,
 ) -> Result<PluginInstall> {
+    let source = &redact_source_credentials(source);
     match formats::open_plugins::try_install_from_manifest_at_root(
         source,
         checkout_dir,
@@ -275,6 +276,26 @@ fn install_from_checkout_at_root(
         Err(err) if err.is::<FormatNotSupported>() => bail!("No supported plugin format found"),
         Err(err) => Err(err),
     }
+}
+
+/// Git sources may embed credentials (`https://user:token@host/repo`). They are
+/// used for the clone but never echoed or written to install metadata; later
+/// updates rely on git's credential helper instead. Only http(s) usernames are
+/// dropped because an ssh username (`ssh://git@host`) is not a secret.
+fn redact_source_credentials(source: &str) -> String {
+    let Ok(mut url) = url::Url::parse(source) else {
+        return source.to_string();
+    };
+    let has_password = url.password().is_some();
+    let has_http_username = matches!(url.scheme(), "http" | "https") && !url.username().is_empty();
+    if !has_password && !has_http_username {
+        return source.to_string();
+    }
+    let _ = url.set_password(None);
+    if has_http_username {
+        let _ = url.set_username("");
+    }
+    url.to_string()
 }
 
 /// Rejects git's `transport::address` sources.
@@ -526,6 +547,48 @@ mod tests {
                 "{source} must be allowed"
             );
         }
+    }
+
+    #[test]
+    fn source_credentials_are_not_reported_or_persisted() {
+        let install_root = tempfile::tempdir().unwrap();
+        let repo = tempfile::tempdir().unwrap();
+        write_gemini_plugin(repo.path(), "1.0.0", "Audit code");
+
+        let installed = install_from_checkout_at_root(
+            "https://ptuser:SECRETTOKEN123@example.invalid/test-plugin.git",
+            repo.path(),
+            install_root.path(),
+            &PluginInstallOptions::default(),
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(installed.source, "https://example.invalid/test-plugin.git");
+        let metadata = fs::read_to_string(installed.directory.join(INSTALL_METADATA)).unwrap();
+        assert!(!metadata.contains("SECRETTOKEN123"), "{metadata}");
+        assert!(!metadata.contains("ptuser"), "{metadata}");
+    }
+
+    #[test]
+    fn credential_free_sources_are_kept_verbatim() {
+        for source in [
+            "https://github.com/owner/repo.git",
+            "ssh://git@github.com/owner/repo.git",
+            "git@github.com:owner/repo.git",
+            "/tmp/local/plugin",
+            "file:///tmp/local/plugin",
+        ] {
+            assert_eq!(redact_source_credentials(source), source);
+        }
+        assert_eq!(
+            redact_source_credentials("ssh://git:hunter2@github.com/owner/repo.git"),
+            "ssh://git@github.com/owner/repo.git"
+        );
+        assert_eq!(
+            redact_source_credentials("https://TOKEN@github.com/owner/repo.git"),
+            "https://github.com/owner/repo.git"
+        );
     }
 
     #[test]
