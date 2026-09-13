@@ -7,6 +7,7 @@ import React, {
   useRef,
 } from "react";
 import { Box, Text, render, useApp, useInput, useStdout } from "ink";
+import type { Key } from "ink";
 import { MultilineInput } from "ink-multiline-input";
 import meow from "meow";
 import { spawn } from "node:child_process";
@@ -86,58 +87,78 @@ const InputBar = React.memo(function InputBar({
   pastedFull: string | null;
   onPastedFullChange: (v: string | null) => void;
 }) {
-  const prevLenRef = useRef(input.length);
+  // Ink re-subscribes useInput listeners in a passive effect, so the chunks
+  // of a paste can reach a listener whose closure predates the previous
+  // chunk (or belongs to the MultilineInput that paste mode just unmounted).
+  // Handlers therefore read the text and mode from these refs, which are
+  // updated synchronously on every event, rather than from props.
+  const liveInputRef = useRef(input);
+  const pasteModeRef = useRef(pastedFull !== null);
+
+  const appendText = useCallback(
+    (text: string) => {
+      const next = liveInputRef.current + text;
+      liveInputRef.current = next;
+      onPastedFullChange(next);
+      onChange(next);
+    },
+    [onChange, onPastedFullChange],
+  );
+
+  const clearInput = useCallback(() => {
+    liveInputRef.current = "";
+    pasteModeRef.current = false;
+    onPastedFullChange(null);
+    onChange("");
+  }, [onChange, onPastedFullChange]);
 
   const handleChange = useCallback(
     (newValue: string) => {
-      const delta = newValue.length - prevLenRef.current;
-      prevLenRef.current = newValue.length;
+      const delta = newValue.length - liveInputRef.current.length;
+      liveInputRef.current = newValue;
       if (delta >= PASTE_THRESHOLD) {
+        pasteModeRef.current = true;
         onPastedFullChange(newValue);
         onChange(newValue);
       } else {
-        if (pastedFull !== null) onPastedFullChange(null);
+        if (pasteModeRef.current) {
+          pasteModeRef.current = false;
+          onPastedFullChange(null);
+        }
         onChange(newValue);
       }
     },
-    [onChange, pastedFull, onPastedFullChange],
+    [onChange, onPastedFullChange],
   );
 
-  const handleSubmit = useCallback(
-    (value: string) => {
-      prevLenRef.current = 0;
-      onPastedFullChange(null);
-      onSubmit(value);
-    },
-    [onSubmit, onPastedFullChange],
-  );
+  const handleSubmit = useCallback(() => {
+    const value = liveInputRef.current;
+    liveInputRef.current = "";
+    pasteModeRef.current = false;
+    onPastedFullChange(null);
+    onSubmit(value);
+  }, [onSubmit, onPastedFullChange]);
 
-  useInput(
-    (ch, key) => {
+  const handlePasteModeInput = useCallback(
+    (ch: string, key: Key) => {
       if (key.return) {
-        handleSubmit(input);
+        handleSubmit();
         return;
       }
-      if (key.backspace || key.delete) {
-        prevLenRef.current = 0;
-        onPastedFullChange(null);
-        onChange("");
-        return;
-      }
-      if (key.escape) {
-        prevLenRef.current = 0;
-        onPastedFullChange(null);
-        onChange("");
+      if (key.backspace || key.delete || key.escape) {
+        clearInput();
         return;
       }
       if (ch && !key.ctrl && !key.meta) {
-        prevLenRef.current = ch.length;
-        onPastedFullChange(null);
-        onChange(ch);
+        appendText(ch);
       }
     },
-    { isActive: focused && pastedFull !== null },
+    [handleSubmit, clearInput, appendText],
   );
+
+  useInput(handlePasteModeInput, {
+    isActive: focused && pastedFull !== null,
+  });
 
   const isPasteMode = pastedFull !== null;
   const constrainedWidth = Math.max(width, 20);
@@ -199,10 +220,16 @@ const InputBar = React.memo(function InputBar({
                 newline: (key) => key.return && key.ctrl,
               }}
               useCustomInput={(handler, isActive) => {
+                const handlerRef = useRef(handler);
+                handlerRef.current = handler;
                 useInput(
                   (ch, key) => {
                     if (key.shift && (key.upArrow || key.downArrow)) return;
-                    handler(ch, key);
+                    if (pasteModeRef.current) {
+                      handlePasteModeInput(ch, key);
+                      return;
+                    }
+                    handlerRef.current(ch, key);
                   },
                   { isActive },
                 );
