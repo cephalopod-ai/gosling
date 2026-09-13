@@ -1622,7 +1622,7 @@ async fn handle_serve_command(args: ServeCommandArgs) -> Result<()> {
         || tls_cert_path.is_some()
         || tls_key_path.is_some();
 
-    let addr: SocketAddr = format!("{}:{}", host, port).parse()?;
+    let addr = resolve_serve_addr(&host, port).await?;
 
     // Running without ACP authentication is only defensible while the socket
     // is unreachable from off-box. The warning above said "dangerous" but
@@ -1677,14 +1677,66 @@ async fn handle_serve_command(args: ServeCommandArgs) -> Result<()> {
     } else {
         info!("Starting ACP server on http://{}", addr);
         let listener = tokio::net::TcpListener::bind(addr).await?;
-        axum::serve(
+        serve_http_until_shutdown(
             listener,
-            router.into_make_service_with_connect_info::<SocketAddr>(),
+            router,
+            crate::signal::shutdown_signal(),
+            SERVE_SHUTDOWN_GRACE,
         )
-        .with_graceful_shutdown(crate::signal::shutdown_signal())
         .await?;
     }
 
+    Ok(())
+}
+
+const SERVE_SHUTDOWN_GRACE: std::time::Duration = std::time::Duration::from_secs(5);
+
+async fn resolve_serve_addr(host: &str, port: u16) -> Result<std::net::SocketAddr> {
+    if let Ok(addr) = format!("{host}:{port}").parse() {
+        return Ok(addr);
+    }
+    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+        return Ok(std::net::SocketAddr::new(ip, port));
+    }
+    tokio::net::lookup_host((host, port))
+        .await
+        .map_err(|error| anyhow::anyhow!("cannot resolve --host `{host}`: {error}"))?
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("--host `{host}` resolved to no addresses"))
+}
+
+// Graceful shutdown waits for every open connection, and an ACP SSE stream
+// only ends when its client disconnects, so bound the drain like the TLS path.
+async fn serve_http_until_shutdown<S>(
+    listener: tokio::net::TcpListener,
+    router: axum::Router,
+    shutdown: S,
+    grace: std::time::Duration,
+) -> Result<()>
+where
+    S: std::future::Future<Output = ()> + Send + 'static,
+{
+    let (shutdown_started_tx, shutdown_started_rx) = tokio::sync::oneshot::channel();
+    let serve = axum::serve(
+        listener,
+        router.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(async move {
+        shutdown.await;
+        let _ = shutdown_started_tx.send(());
+    });
+    tokio::select! {
+        result = std::future::IntoFuture::into_future(serve) => result?,
+        _ = async {
+            if shutdown_started_rx.await.is_ok() {
+                tokio::time::sleep(grace).await;
+            } else {
+                std::future::pending::<()>().await;
+            }
+        } => {
+            warn!("ACP server connections did not close within {grace:?}; forcing shutdown");
+        }
+    }
     Ok(())
 }
 
@@ -2575,6 +2627,77 @@ mod tests {
         assert_eq!(shell_display_name.as_deref(), Some("Math"));
         assert_eq!(shell_runtime_namespace.as_deref(), Some("math_mcp"));
         assert_eq!(shell_version, "1");
+    }
+
+    #[tokio::test]
+    async fn serve_host_accepts_bare_ipv6_and_localhost() {
+        let bare = resolve_serve_addr("::1", 18920).await.unwrap();
+        assert_eq!(bare, "[::1]:18920".parse().unwrap());
+        let bracketed = resolve_serve_addr("[::1]", 18920).await.unwrap();
+        assert_eq!(bracketed, bare);
+        let ipv4 = resolve_serve_addr("127.0.0.1", 18920).await.unwrap();
+        assert_eq!(ipv4, "127.0.0.1:18920".parse().unwrap());
+        let localhost = resolve_serve_addr("localhost", 18920).await.unwrap();
+        assert!(localhost.ip().is_loopback());
+        assert_eq!(localhost.port(), 18920);
+    }
+
+    #[tokio::test]
+    async fn serve_shutdown_is_bounded_while_a_stream_stays_open() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let router = axum::Router::new().route(
+            "/stream",
+            axum::routing::get(|| async {
+                axum::body::Body::from_stream(futures::stream::pending::<
+                    Result<axum::body::Bytes, std::io::Error>,
+                >())
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+        let server = tokio::spawn(serve_http_until_shutdown(
+            listener,
+            router,
+            async move {
+                let _ = shutdown_rx.await;
+            },
+            std::time::Duration::from_millis(100),
+        ));
+
+        let mut client = tokio::net::TcpStream::connect(addr).await.unwrap();
+        client
+            .write_all(b"GET /stream HTTP/1.1\r\nHost: localhost\r\n\r\n")
+            .await
+            .unwrap();
+        let mut head = [0u8; 12];
+        client.read_exact(&mut head).await.unwrap();
+        assert_eq!(&head, b"HTTP/1.1 200");
+
+        shutdown_tx.send(()).unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(3), server)
+            .await
+            .expect("serve must exit after the shutdown grace period")
+            .unwrap()
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn serve_shutdown_without_open_connections_returns_promptly() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            serve_http_until_shutdown(
+                listener,
+                axum::Router::new(),
+                async {},
+                std::time::Duration::from_secs(30),
+            ),
+        )
+        .await
+        .expect("idle serve must not wait for the grace period")
+        .unwrap();
     }
 
     #[test]
