@@ -3661,5 +3661,11 @@
   },
   "alertBox.autoCompactTarget": {
     "defaultMessage": "Target: {threshold}% → {target}%"
+  },
+  "shortcutRecorder.missingModifier": {
+    "defaultMessage": "Shortcuts must include Command, Control, or Option/Alt."
+  },
+  "shortcutRecorder.reserved": {
+    "defaultMessage": "This shortcut is reserved by the system and cannot be assigned."
   }
 }

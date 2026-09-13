@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { getChatSubmitShortcutText, isChatSubmitShortcut } from './keyboardShortcuts';
+import {
+  getChatSubmitShortcutText,
+  getShortcutAcceleratorProblem,
+  isChatSubmitShortcut,
+} from './keyboardShortcuts';
+import { defaultKeyboardShortcuts } from './settings';
 
 const keyEvent = (
   overrides: Partial<Parameters<typeof isChatSubmitShortcut>[0]> = {}
@@ -34,5 +39,27 @@ describe('isChatSubmitShortcut', () => {
 describe('getChatSubmitShortcutText', () => {
   it('uses the native macOS shortcut label', () => {
     expect(getChatSubmitShortcutText()).toBe('⌘Enter');
+  });
+});
+
+describe('getShortcutAcceleratorProblem', () => {
+  it('rejects accelerators without a Command, Control, or Alt modifier', () => {
+    expect(getShortcutAcceleratorProblem('J')).toBe('missingModifier');
+    expect(getShortcutAcceleratorProblem('Shift+J')).toBe('missingModifier');
+  });
+
+  it('rejects accelerators reserved for quit, window, and editing commands', () => {
+    expect(getShortcutAcceleratorProblem('CommandOrControl+Q')).toBe('reserved');
+    expect(getShortcutAcceleratorProblem('CommandOrControl+W')).toBe('reserved');
+    expect(getShortcutAcceleratorProblem('CommandOrControl+C')).toBe('reserved');
+  });
+
+  it('accepts the default shortcuts and bare function keys', () => {
+    for (const accelerator of Object.values(defaultKeyboardShortcuts)) {
+      expect(getShortcutAcceleratorProblem(accelerator)).toBeNull();
+    }
+    expect(getShortcutAcceleratorProblem('CommandOrControl+Shift+Q')).toBeNull();
+    expect(getShortcutAcceleratorProblem('Alt+J')).toBeNull();
+    expect(getShortcutAcceleratorProblem('F5')).toBeNull();
   });
 });

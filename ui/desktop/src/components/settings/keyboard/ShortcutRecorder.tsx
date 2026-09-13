@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Button } from '../../ui/button';
 import { KeyboardShortcuts } from '../../../utils/settings';
+import { getShortcutAcceleratorProblem } from '../../../utils/keyboardShortcuts';
 import { getShortcutLabel, formatShortcut } from './KeyboardShortcutsSection';
 import { defineMessages, useIntl } from '../../../i18n';
 
@@ -25,6 +26,14 @@ const i18n = defineMessages({
     id: 'shortcutRecorder.conflictWarning',
     defaultMessage:
       'This shortcut is already used by {label}. Saving will reassign it to this action.',
+  },
+  missingModifier: {
+    id: 'shortcutRecorder.missingModifier',
+    defaultMessage: 'Shortcuts must include Command, Control, or Option/Alt.',
+  },
+  reserved: {
+    id: 'shortcutRecorder.reserved',
+    defaultMessage: 'This shortcut is reserved by the system and cannot be assigned.',
   },
 });
 
@@ -147,6 +156,9 @@ export function ShortcutRecorder({
     setConflict(null);
   };
 
+  const acceleratorProblem =
+    !recording && capturedShortcut ? getShortcutAcceleratorProblem(capturedShortcut) : null;
+
   const handleSave = () => {
     onSave(capturedShortcut);
   };
@@ -198,7 +210,7 @@ export function ShortcutRecorder({
           variant="secondary"
           size="sm"
           onClick={handleSave}
-          disabled={!capturedShortcut}
+          disabled={!capturedShortcut || acceleratorProblem !== null}
           className="text-xs"
         >
           {intl.formatMessage(i18n.save)}
@@ -207,7 +219,12 @@ export function ShortcutRecorder({
           {intl.formatMessage(i18n.cancel)}
         </Button>
       </div>
-      {conflict && (
+      {acceleratorProblem && (
+        <div role="alert" className="text-xs text-red-500">
+          {intl.formatMessage(i18n[acceleratorProblem])}
+        </div>
+      )}
+      {conflict && !acceleratorProblem && (
         <div className="text-xs text-yellow-600 flex items-center gap-1">
           <span>⚠️</span>
           <span>

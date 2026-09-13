@@ -44,3 +44,35 @@ export function getNavigationShortcutText(intl?: IntlShape): string {
 export function getSearchShortcutText(): string {
   return isMac() ? '⌘F' : 'Ctrl+F';
 }
+
+export type ShortcutAcceleratorProblem = 'missingModifier' | 'reserved';
+
+// Accelerators the OS or standard Edit/Window menus already own; rebinding them
+// would shadow Quit, Close, Hide, Minimize, or clipboard/undo editing.
+const RESERVED_ACCELERATORS = new Set([
+  'CommandOrControl+Q',
+  'CommandOrControl+W',
+  'CommandOrControl+H',
+  'CommandOrControl+M',
+  'CommandOrControl+A',
+  'CommandOrControl+C',
+  'CommandOrControl+V',
+  'CommandOrControl+X',
+  'CommandOrControl+Z',
+  'CommandOrControl+Shift+Z',
+]);
+
+export function getShortcutAcceleratorProblem(
+  accelerator: string
+): ShortcutAcceleratorProblem | null {
+  const parts = accelerator.split('+');
+  const key = parts[parts.length - 1];
+  const hasPrimaryModifier = parts.includes('CommandOrControl') || parts.includes('Alt');
+  if (!hasPrimaryModifier && !/^F\d{1,2}$/.test(key)) {
+    return 'missingModifier';
+  }
+  if (RESERVED_ACCELERATORS.has(accelerator)) {
+    return 'reserved';
+  }
+  return null;
+}

@@ -299,6 +299,7 @@ const needsRestart = new Set<keyof KeyboardShortcuts>([
   'findNext',
   'findPrevious',
   'alwaysOnTop',
+  'toggleNavigation',
 ]);
 
 export const getShortcutLabel = (
@@ -444,7 +445,10 @@ export default function KeyboardShortcutsSection() {
     await window.electron.setSetting('keyboardShortcuts', newShortcuts);
     setShortcuts(newShortcuts);
     setEditingKey(null);
-    if (needsRestart.has(editingKey)) {
+    if (
+      needsRestart.has(editingKey) ||
+      (conflictingKey && needsRestart.has(conflictingKey as keyof KeyboardShortcuts))
+    ) {
       setShowRestartNotice(true);
     }
   };

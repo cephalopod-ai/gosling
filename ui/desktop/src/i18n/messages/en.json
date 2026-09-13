@@ -3131,8 +3131,14 @@
   "shortcutRecorder.conflictWarning": {
     "defaultMessage": "This shortcut is already used by {label}. Saving will reassign it to this action."
   },
+  "shortcutRecorder.missingModifier": {
+    "defaultMessage": "Shortcuts must include Command, Control, or Option/Alt."
+  },
   "shortcutRecorder.pressShortcut": {
     "defaultMessage": "Press shortcut..."
+  },
+  "shortcutRecorder.reserved": {
+    "defaultMessage": "This shortcut is reserved by the system and cannot be assigned."
   },
   "shortcutRecorder.save": {
     "defaultMessage": "Save"
