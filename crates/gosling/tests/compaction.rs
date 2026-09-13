@@ -15,7 +15,7 @@ use gosling_providers::errors::ProviderError;
 use gosling_providers::model::ModelConfig;
 use rmcp::model::Tool;
 use serial_test::serial;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use tempfile::TempDir;
 
@@ -278,6 +278,7 @@ async fn setup_test_session_with_usage(
 ///   concurrent provider calls like session naming that would otherwise skew the counter.
 struct ThresholdCompactionProvider {
     has_seen_compaction: Arc<AtomicBool>,
+    regular_calls: Arc<AtomicUsize>,
     first_call_total_tokens: i32,
     cancel_during_compaction: Option<tokio_util::sync::CancellationToken>,
     fail_compaction: bool,
@@ -288,6 +289,7 @@ impl ThresholdCompactionProvider {
     fn for_case1() -> Self {
         Self {
             has_seen_compaction: Arc::new(AtomicBool::new(false)),
+            regular_calls: Arc::new(AtomicUsize::new(0)),
             first_call_total_tokens: 5_000,
             cancel_during_compaction: None,
             fail_compaction: false,
@@ -298,6 +300,7 @@ impl ThresholdCompactionProvider {
     fn for_case2() -> Self {
         Self {
             has_seen_compaction: Arc::new(AtomicBool::new(false)),
+            regular_calls: Arc::new(AtomicUsize::new(0)),
             first_call_total_tokens: 110_000, // > 0.8 * 128_000 = 102_400
             cancel_during_compaction: None,
             fail_compaction: false,
@@ -335,6 +338,7 @@ impl Provider for ThresholdCompactionProvider {
             ));
         }
 
+        self.regular_calls.fetch_add(1, Ordering::SeqCst);
         let total = if self.has_seen_compaction.load(Ordering::SeqCst) {
             5_000
         } else {
@@ -1541,6 +1545,166 @@ async fn auto_compaction_with_only_the_newest_prompt_is_skipped_honestly() -> Re
         .any(|notice| notice.contains("Compaction complete")));
     assert!(terminal_errors.is_empty(), "{terminal_errors:?}");
     assert!(texts.iter().any(|text| text == "This is a mock response."));
+    Ok(())
+}
+
+#[derive(Default)]
+struct TurnEvents {
+    texts: Vec<String>,
+    terminal_errors: Vec<String>,
+}
+
+async fn run_turn(agent: &Agent, session_id: &str, prompt: &str) -> Result<TurnEvents> {
+    let session_config = SessionConfig {
+        id: session_id.to_string(),
+        max_turns: None,
+        compacted_context: false,
+        tail_limit: None,
+    };
+    let reply_stream = agent
+        .reply(Message::user().with_text(prompt), session_config, None)
+        .await?;
+    tokio::pin!(reply_stream);
+
+    let mut events = TurnEvents::default();
+    while let Some(event) = reply_stream.next().await {
+        if let AgentEvent::Message(message) = event? {
+            events
+                .terminal_errors
+                .extend(message.metadata.terminal_error.clone());
+            events.texts.push(message.as_concat_text());
+        }
+    }
+    Ok(events)
+}
+
+async fn over_limit_prompt() -> Result<String> {
+    let prompt = (0..80_000)
+        .map(|i| format!("w{i}"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let estimate =
+        gosling::context_mgmt::estimate_conversation_tokens(&Conversation::new_unvalidated(vec![
+            Message::user().with_text(&prompt),
+        ]))
+        .await?;
+    assert!(estimate > 128_000, "prompt estimate {estimate}");
+    Ok(prompt)
+}
+
+fn assert_refused_before_sending(events: &TurnEvents) {
+    assert_eq!(events.terminal_errors.len(), 1, "{:?}", events.texts);
+    assert!(
+        events.terminal_errors[0]
+            .starts_with("This message is too large for mock-model's context window (≈"),
+        "{:?}",
+        events.terminal_errors
+    );
+    assert!(events.terminal_errors[0].contains("of 128000 tokens) and cannot be compacted"));
+    assert!(!events
+        .texts
+        .iter()
+        .any(|text| text == "This is a mock response."));
+}
+
+/// GSL-PT-20260912-F-6: a prompt that alone exceeds the context window was
+/// sent to the provider after auto-compaction was skipped.
+#[tokio::test]
+#[serial]
+async fn over_limit_prompt_that_cannot_be_compacted_is_not_sent() -> Result<()> {
+    let _threshold = pin_auto_compact_threshold();
+    let temp_dir = TempDir::new()?;
+    let agent = Agent::new();
+    let session = setup_test_session_with_usage(
+        &agent,
+        &temp_dir,
+        "over-limit-prompt-test",
+        Vec::new(),
+        Usage::new(None, None, None),
+    )
+    .await?;
+    let provider = Arc::new(ThresholdCompactionProvider::for_case1());
+    let regular_calls = provider.regular_calls.clone();
+    let saw_compaction = provider.has_seen_compaction.clone();
+    agent
+        .update_provider(provider, ModelConfig::new("mock-model"), &session.id)
+        .await?;
+    let prompt = over_limit_prompt().await?;
+
+    let refused = run_turn(&agent, &session.id, &prompt).await?;
+
+    assert_refused_before_sending(&refused);
+    assert_eq!(regular_calls.load(Ordering::SeqCst), 0);
+    assert!(!saw_compaction.load(Ordering::SeqCst));
+
+    let stored = agent
+        .config
+        .session_manager
+        .get_session(&session.id, true)
+        .await?
+        .conversation
+        .expect("conversation");
+    let user_visible: Vec<String> = stored
+        .messages()
+        .iter()
+        .filter(|message| message.is_user_visible())
+        .map(Message::as_concat_text)
+        .collect();
+    assert_eq!(user_visible.len(), 2);
+    assert_eq!(user_visible[0], prompt);
+    assert_eq!(Some(&user_visible[1]), refused.texts.last());
+    assert!(!stored
+        .messages()
+        .iter()
+        .any(|message| message.is_agent_visible() && message.as_concat_text() == prompt));
+
+    let follow_up = run_turn(&agent, &session.id, "a normal follow-up").await?;
+
+    assert!(
+        follow_up.terminal_errors.is_empty(),
+        "{:?}",
+        follow_up.terminal_errors
+    );
+    assert!(follow_up
+        .texts
+        .iter()
+        .any(|text| text == "This is a mock response."));
+    assert!(regular_calls.load(Ordering::SeqCst) >= 1);
+    Ok(())
+}
+
+/// GSL-PT-20260912-F-6: compaction can summarize older history and still
+/// leave an oversized newest prompt over the limit.
+#[tokio::test]
+#[serial]
+async fn over_limit_prompt_still_over_after_compaction_is_not_sent() -> Result<()> {
+    let _threshold = pin_auto_compact_threshold();
+    let temp_dir = TempDir::new()?;
+    let agent = Agent::new();
+    let session = setup_test_session_with_usage(
+        &agent,
+        &temp_dir,
+        "over-limit-after-compaction-test",
+        vec![
+            Message::user().with_text("Hello"),
+            Message::assistant().with_text("Hi there"),
+        ],
+        Usage::new(None, None, None),
+    )
+    .await?;
+    let provider = Arc::new(ThresholdCompactionProvider::for_case1());
+    let regular_calls = provider.regular_calls.clone();
+    let saw_compaction = provider.has_seen_compaction.clone();
+    agent
+        .update_provider(provider, ModelConfig::new("mock-model"), &session.id)
+        .await?;
+    let prompt = over_limit_prompt().await?;
+
+    let refused = run_turn(&agent, &session.id, &prompt).await?;
+
+    assert!(saw_compaction.load(Ordering::SeqCst));
+    assert_refused_before_sending(&refused);
+    assert_eq!(regular_calls.load(Ordering::SeqCst), 0);
     Ok(())
 }
 

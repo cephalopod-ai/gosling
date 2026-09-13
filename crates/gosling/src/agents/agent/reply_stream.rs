@@ -225,8 +225,28 @@ impl Agent {
                                         auto_compaction_completed_message(&auto_compaction.usage, after_tokens, &plan),
                                     )
                                 );
+                                if let Some(exceeded) = crate::context_mgmt::context_window_exceeded(
+                                    &active_model_config.model_name,
+                                    after_tokens,
+                                    auto_compaction.usage.context_limit,
+                                ) {
+                                    yield AgentEvent::Message(
+                                        self.close_oversized_turn(&session_config.id, exceeded, false).await?
+                                    );
+                                    break;
+                                }
                             }
                             Err(e) if e.is::<crate::context_mgmt::CompactionNoReductionError>() => {
+                                if let Some(exceeded) = crate::context_mgmt::context_window_exceeded(
+                                    &active_model_config.model_name,
+                                    auto_compaction.usage.estimated_tokens,
+                                    auto_compaction.usage.context_limit,
+                                ) {
+                                    yield AgentEvent::Message(
+                                        self.close_oversized_turn(&session_config.id, exceeded, false).await?
+                                    );
+                                    break;
+                                }
                                 yield AgentEvent::Message(
                                     Message::assistant().with_system_notification(
                                         SystemNotificationType::InlineMessage,

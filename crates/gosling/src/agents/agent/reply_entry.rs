@@ -5,6 +5,9 @@
 
 use super::*;
 
+const OVERSIZED_TURN_NOTICE: &str =
+    "Run ended before completion: the request did not fit the context window and was not sent.";
+
 impl Agent {
     /// Get a reference count clone to the provider
     pub async fn provider(&self) -> Result<Arc<dyn Provider>, anyhow::Error> {
@@ -390,9 +393,29 @@ impl Agent {
                                     auto_compaction_completed_message(&check.usage, after_tokens, &plan),
                                 )
                             );
+                            if let Some(exceeded) = crate::context_mgmt::context_window_exceeded(
+                                &compact_model_config.model_name,
+                                after_tokens,
+                                check.usage.context_limit,
+                            ) {
+                                yield AgentEvent::Message(
+                                    self.close_oversized_turn(&session_config.id, exceeded, true).await?
+                                );
+                                return;
+                            }
                             compacted_conversation
                         }
                         Err(e) if e.is::<crate::context_mgmt::CompactionNoReductionError>() => {
+                            if let Some(exceeded) = crate::context_mgmt::context_window_exceeded(
+                                &compact_model_config.model_name,
+                                check.usage.estimated_tokens,
+                                check.usage.context_limit,
+                            ) {
+                                yield AgentEvent::Message(
+                                    self.close_oversized_turn(&session_config.id, exceeded, true).await?
+                                );
+                                return;
+                            }
                             yield AgentEvent::Message(
                                 Message::assistant().with_system_notification(
                                     SystemNotificationType::InlineMessage,
@@ -445,6 +468,58 @@ impl Agent {
             "Session turn lease was lost; this turn stopped before completion. Reload the session before retrying."
         );
         Ok(())
+    }
+
+    /// Ends a turn whose request cannot fit the context window before it
+    /// reaches the provider. With `withdraw_newest_prompt`, the prompt that
+    /// could not be compacted is kept for the user but hidden from the model,
+    /// otherwise every later request would carry it and fail the same way.
+    pub(super) async fn close_oversized_turn(
+        &self,
+        session_id: &str,
+        exceeded: crate::context_mgmt::ContextWindowExceededError,
+        withdraw_newest_prompt: bool,
+    ) -> Result<Message> {
+        let session_manager = &self.config.session_manager;
+        if withdraw_newest_prompt {
+            let conversation = session_manager
+                .get_session(session_id, true)
+                .await?
+                .conversation
+                .unwrap_or_default();
+            if let Some(prompt) = conversation
+                .messages()
+                .iter()
+                .rev()
+                .find(|message| crate::context_mgmt::is_turn_start(message))
+            {
+                session_manager
+                    .upsert_message(
+                        session_id,
+                        &prompt
+                            .clone()
+                            .with_visibility(prompt.metadata.user_visible, false),
+                    )
+                    .await?;
+            }
+        }
+        let reason = exceeded.to_string();
+        let failure_message = Message::assistant()
+            .with_text(&reason)
+            .with_terminal_error(reason);
+        session_manager
+            .add_message(session_id, &failure_message.clone().user_only())
+            .await?;
+        session_manager
+            .add_message(
+                session_id,
+                &Message::assistant()
+                    .with_text(OVERSIZED_TURN_NOTICE)
+                    .with_generated_id()
+                    .agent_only(),
+            )
+            .await?;
+        Ok(failure_message)
     }
 
     pub(super) async fn perform_compact(

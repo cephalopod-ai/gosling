@@ -127,7 +127,7 @@ fn auto_compact_target_tokens(context_limit: usize, threshold: f64, reduction: f
 
 /// A turn starts at an agent-visible user message that isn't itself a tool
 /// response delivery (tool responses are represented as Role::User messages).
-fn is_turn_start(msg: &Message) -> bool {
+pub(crate) fn is_turn_start(msg: &Message) -> bool {
     msg.is_agent_visible()
         && matches!(msg.role, rmcp::model::Role::User)
         && !msg
@@ -264,6 +264,29 @@ pub(crate) struct CompactionNoReductionError;
 
 pub(crate) fn auto_compaction_skipped_message() -> String {
     format!("Auto-compaction skipped: {CompactionNoReductionError}. Continuing with the current context.")
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("This message is too large for {model}'s context window (≈{estimated_tokens} of {context_limit} tokens) and cannot be compacted to fit, so it was not sent. Shorten it, split it, or attach it as a file.")]
+pub(crate) struct ContextWindowExceededError {
+    model: String,
+    estimated_tokens: usize,
+    context_limit: usize,
+}
+
+/// The local estimate omits the system prompt and tool schemas, so a request
+/// it places over the limit cannot fit; sending it only spends a provider call
+/// (and, for oversized prompts, many summary calls) on a guaranteed rejection.
+pub(crate) fn context_window_exceeded(
+    model: &str,
+    estimated_tokens: usize,
+    context_limit: usize,
+) -> Option<ContextWindowExceededError> {
+    (context_limit > 0 && estimated_tokens > context_limit).then(|| ContextWindowExceededError {
+        model: model.to_string(),
+        estimated_tokens,
+        context_limit,
+    })
 }
 
 pub(crate) fn auto_compaction_failure_message(error: &anyhow::Error) -> String {
