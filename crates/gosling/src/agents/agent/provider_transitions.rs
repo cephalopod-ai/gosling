@@ -50,6 +50,8 @@ async fn deliver_bootstrap_handoff(
     Ok(())
 }
 
+const PROVIDER_FAILURE_TURN_NOTICE: &str = "Run ended by a provider error before completion.";
+
 impl Agent {
     pub(super) async fn persist_provider_failure_checkpoint(
         &self,
@@ -59,10 +61,22 @@ impl Agent {
         failure_message: &Message,
     ) -> Result<()> {
         // The notice is for the user; replaying it would feed the error text
-        // back to the model as assistant speech.
+        // back to the model as assistant speech. The model still needs the
+        // turn closed, or the failed prompt merges into the next one and is
+        // re-executed as live instruction.
         self.config
             .session_manager
             .upsert_message(session_id, &failure_message.clone().user_only())
+            .await?;
+        self.config
+            .session_manager
+            .add_message(
+                session_id,
+                &Message::assistant()
+                    .with_text(PROVIDER_FAILURE_TURN_NOTICE)
+                    .with_generated_id()
+                    .agent_only(),
+            )
             .await?;
         let mut snapshot =
             crate::session::handoff::SessionHandoffBuilder::new(&self.config.session_manager)

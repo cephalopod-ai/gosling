@@ -2953,7 +2953,13 @@ mod tests {
                 .filter(|message| message.is_agent_visible())
                 .map(Message::as_concat_text)
                 .collect();
-            assert_eq!(agent_visible, vec![USER_TEXT.to_string()]);
+            assert_eq!(
+                agent_visible,
+                vec![
+                    USER_TEXT.to_string(),
+                    "Run ended by a provider error before completion.".to_string()
+                ]
+            );
             let user_visible: Vec<String> = stored
                 .messages()
                 .iter()
