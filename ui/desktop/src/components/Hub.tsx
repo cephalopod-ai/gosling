@@ -40,6 +40,7 @@ import { ResearchInitialInputsDialog } from './research/ResearchInitialInputsDia
 import { ResearchModelTeamSelector } from './research/ResearchModelTeamSelector';
 import { addResearchInitialInputs, resolveSessionLibraryInputs } from '../acp/sessionLibraryInputs';
 import { acpAppendSessionSystemPrompt, acpDeleteSession } from '../acp/sessions';
+import { describeAcpError } from '../acp/errors';
 import {
   buildResearchScientificMethodPrompt,
   RESEARCH_SCIENTIFIC_METHOD_PROMPT_KEY,
@@ -477,12 +478,11 @@ export default function Hub({
           await acpDeleteSession(createdSessionId);
         } catch (cleanupError) {
           console.error('Failed to remove incomplete research session:', cleanupError);
-          cleanupFailure =
-            cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
+          cleanupFailure = describeAcpError(cleanupError);
         }
       }
       console.error('Failed to create session:', error);
-      const detail = error instanceof Error ? error.message : String(error);
+      const detail = describeAcpError(error);
       setSessionCreationError(
         `Could not start the ${isResearch ? 'research session' : 'chat'}: ${detail}${
           cleanupFailure

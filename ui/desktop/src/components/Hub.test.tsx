@@ -289,6 +289,22 @@ describe('Hub workspace selection', () => {
     );
   });
 
+  it('surfaces ACP error data when session creation fails', async () => {
+    const user = userEvent.setup();
+    vi.mocked(createSession).mockRejectedValueOnce({
+      code: -32602,
+      message: 'Invalid params',
+      data: 'primary working folder is unavailable; relink the workspace',
+    });
+    render(<Hub setView={vi.fn()} />, { wrapper: IntlTestWrapper });
+
+    await user.click(screen.getByRole('button', { name: 'Send message' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Could not start the chat: Invalid params: primary working folder is unavailable; relink the workspace'
+    );
+  });
+
   it('scaffolds a tagged research session on the shared new-session flow', async () => {
     configureResearchExtensions();
     const user = userEvent.setup();
