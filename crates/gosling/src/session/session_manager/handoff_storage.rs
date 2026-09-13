@@ -253,22 +253,24 @@ impl SessionStorage {
         snapshot.activated_at = Some(Utc::now().to_rfc3339());
 
         if let Some(covered_through_row_id) = snapshot.coverage.covered_through_row_id {
-            let metadata_rows = sqlx::query_as::<_, (i64, String)>(
-                "SELECT id, metadata_json FROM messages WHERE session_id = ? AND id <= ?",
+            let metadata_rows = sqlx::query_scalar::<_, String>(
+                "SELECT metadata_json FROM messages WHERE session_id = ? AND id <= ?",
             )
             .bind(&snapshot.session_id)
             .bind(covered_through_row_id)
             .fetch_all(&mut *tx)
             .await?;
-            for (row_id, metadata_json) in metadata_rows {
-                let metadata: crate::conversation::message::MessageMetadata =
+            for metadata_json in metadata_rows {
+                let _: crate::conversation::message::MessageMetadata =
                     serde_json::from_str(&metadata_json)?;
-                sqlx::query("UPDATE messages SET metadata_json = ? WHERE id = ?")
-                    .bind(serde_json::to_string(&metadata.with_agent_invisible())?)
-                    .bind(row_id)
-                    .execute(&mut *tx)
-                    .await?;
             }
+            sqlx::query(
+                "UPDATE messages SET metadata_json = json_set(metadata_json, '$.agentVisible', json('false')) WHERE session_id = ? AND id <= ?",
+            )
+            .bind(&snapshot.session_id)
+            .bind(covered_through_row_id)
+            .execute(&mut *tx)
+            .await?;
         }
         if snapshot.delivery_strategy
             != gosling_sdk_types::session_handoff::HandoffDeliveryStrategyDto::NewContext

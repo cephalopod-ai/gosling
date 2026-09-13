@@ -26,6 +26,52 @@ use gosling_sdk_types::session_handoff::{SessionHandoffSnapshotV1Dto, SessionHan
 use std::path::{Path, PathBuf};
 
 impl SessionStorage {
+    async fn imported_session_by_provenance(
+        &self,
+        json_path: &str,
+        value: &str,
+    ) -> Result<Option<Session>> {
+        let session_id = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT id
+            FROM sessions
+            WHERE CASE
+                WHEN json_valid(extension_data) THEN json_extract(extension_data, ?)
+            END = ?
+            ORDER BY updated_at DESC, id DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(json_path)
+        .bind(value)
+        .fetch_optional(self.pool().await?)
+        .await?;
+
+        match session_id {
+            Some(session_id) => self.get_session(&session_id, false).await.map(Some),
+            None => Ok(None),
+        }
+    }
+
+    pub(super) async fn imported_session_by_sha256(
+        &self,
+        source_sha256: &str,
+    ) -> Result<Option<Session>> {
+        self.imported_session_by_provenance(
+            r#"$."import_provenance.v1".source_sha256"#,
+            source_sha256,
+        )
+        .await
+    }
+
+    pub(super) async fn imported_session_by_path(
+        &self,
+        source_path: &str,
+    ) -> Result<Option<Session>> {
+        self.imported_session_by_provenance(r#"$."import_provenance.v1".source_path"#, source_path)
+            .await
+    }
+
     pub(super) async fn export_session(&self, id: &str) -> Result<String> {
         let session = self.get_session(id, true).await?;
         serde_json::to_string_pretty(&session).map_err(Into::into)

@@ -760,6 +760,83 @@ async fn provider_transition_rebases_current_usage_and_preserves_accumulated_usa
 }
 
 #[tokio::test]
+async fn provider_transition_preserves_unknown_message_metadata() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let manager = SessionManager::new(temp_dir.path().to_path_buf());
+    let session_id = source_session(&manager).await;
+    manager
+        .add_message(
+            &session_id,
+            &Message::user().with_text("preserve forward-compatible metadata"),
+        )
+        .await
+        .unwrap();
+
+    let database_url = format!(
+        "sqlite://{}",
+        temp_dir.path().join("sessions/sessions.db").display()
+    );
+    let pool = sqlx::SqlitePool::connect(&database_url).await.unwrap();
+    sqlx::query(
+        "UPDATE messages SET metadata_json = json_set(metadata_json, '$.futureField', 'preserve-me') WHERE session_id = ?",
+    )
+    .bind(&session_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let snapshot = SessionHandoffBuilder::new(&manager)
+        .build(
+            &session_id,
+            "openai",
+            "gpt-4o",
+            128_000,
+            ProviderCapabilities::gosling_managed(),
+            SessionHandoffTriggerDto::UserRequestedSwitch,
+        )
+        .await
+        .unwrap();
+    let prepared = manager
+        .prepare_handoff_snapshot(snapshot, None)
+        .await
+        .unwrap();
+    manager
+        .update_handoff_status(
+            &prepared.snapshot_id,
+            SessionHandoffStatusDto::Activating,
+            None,
+        )
+        .await
+        .unwrap();
+    manager
+        .commit_provider_transition(
+            &prepared.snapshot_id,
+            "openai",
+            ModelConfig::new("gpt-4o"),
+            GoslingMode::Approve,
+        )
+        .await
+        .unwrap();
+
+    let metadata_json: String =
+        sqlx::query_scalar("SELECT metadata_json FROM messages WHERE session_id = ?")
+            .bind(&session_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let metadata: serde_json::Value = serde_json::from_str(&metadata_json).unwrap();
+    assert_eq!(
+        metadata.get("agentVisible"),
+        Some(&serde_json::json!(false))
+    );
+    assert_eq!(metadata.get("userVisible"), Some(&serde_json::json!(true)));
+    assert_eq!(
+        metadata.get("futureField"),
+        Some(&serde_json::json!("preserve-me"))
+    );
+}
+
+#[tokio::test]
 async fn retention_and_session_delete_keep_checkpoint_storage_bounded() {
     let temp_dir = tempfile::tempdir().unwrap();
     let manager = SessionManager::new(temp_dir.path().to_path_buf());

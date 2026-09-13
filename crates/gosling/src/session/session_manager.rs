@@ -1095,17 +1095,12 @@ impl SessionManager {
             .iter()
             .map(|byte| format!("{byte:02x}"))
             .collect::<String>();
-        for session in self.list_all_sessions().await? {
-            let Some(provenance) =
-                super::import_formats::SessionImportProvenance::from_extension_data(
-                    &session.extension_data,
-                )
-            else {
-                continue;
-            };
-            if provenance.source_sha256.as_deref() == Some(&source_sha256) {
-                return Ok(session);
-            }
+        if let Some(session) = self
+            .storage
+            .imported_session_by_sha256(&source_sha256)
+            .await?
+        {
+            return Ok(session);
         }
 
         self.storage
@@ -1138,22 +1133,19 @@ impl SessionManager {
             .map(|byte| format!("{byte:02x}"))
             .collect::<String>();
 
-        for session in self.list_all_sessions().await? {
-            let Some(provenance) =
-                super::import_formats::SessionImportProvenance::from_extension_data(
-                    &session.extension_data,
-                )
-            else {
-                continue;
-            };
-
-            if provenance.source_sha256.as_deref() == Some(&source_sha256) {
-                return Ok(SessionFileImportResult::AlreadyImported(session));
-            }
-
-            if provenance.source_path.as_deref() == Some(source_path_string.as_str()) {
-                return Ok(SessionFileImportResult::SourceChanged(session));
-            }
+        if let Some(session) = self
+            .storage
+            .imported_session_by_sha256(&source_sha256)
+            .await?
+        {
+            return Ok(SessionFileImportResult::AlreadyImported(session));
+        }
+        if let Some(session) = self
+            .storage
+            .imported_session_by_path(&source_path_string)
+            .await?
+        {
+            return Ok(SessionFileImportResult::SourceChanged(session));
         }
 
         let session = self
@@ -4164,6 +4156,46 @@ mod tests {
         };
         assert_eq!(changed.id, imported.id);
         assert_eq!(sm.list_all_sessions().await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn session_import_does_not_deserialize_unrelated_sessions() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let unrelated = sm
+            .create_session(
+                temp_dir.path().to_path_buf(),
+                "Unrelated session".to_string(),
+                SessionType::User,
+                GoslingMode::Approve,
+            )
+            .await
+            .unwrap();
+        sqlx::query("UPDATE sessions SET workspace_context_json = '{malformed' WHERE id = ?")
+            .bind(&unrelated.id)
+            .execute(sm.storage.pool().await.unwrap())
+            .await
+            .unwrap();
+
+        let imported = sm
+            .import_session(
+                r#"{
+                    "id": "20240101_1",
+                    "name": "Imported after unrelated damage",
+                    "working_dir": "/tmp/test",
+                    "created_at": "2024-01-01T00:00:00Z",
+                    "updated_at": "2024-01-01T00:00:00Z",
+                    "extension_data": {},
+                    "message_count": 0
+                }"#,
+                None,
+                temp_dir.path().to_path_buf(),
+                crate::session::import_formats::SessionImportTransport::Json,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(imported.name, "Imported after unrelated damage");
     }
 
     #[tokio::test]
