@@ -73,12 +73,15 @@ pub fn handle_project_default() -> Result<()> {
     let current_dir = std::env::current_dir()?;
     let current_dir_display = current_dir.display();
 
-    let choice = cliclack::select("Choose an option:")
-        .item(
+    let mut select = cliclack::select("Choose an option:");
+    if project.last_session_id.is_some() {
+        select = select.item(
             "resume",
             format!("Resume project with session: {}", short_path),
             "Continue with the previous session",
-        )
+        );
+    }
+    let choice = select
         .item(
             "fresh",
             format!("Resume project with fresh session: {}", short_path),

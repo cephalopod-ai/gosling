@@ -242,3 +242,38 @@ fn no_session_run_leaves_nothing_resumable() {
         serde_json::Value::String("kept".to_string())
     );
 }
+
+#[test]
+fn project_tracking_records_session_runs_not_other_commands() {
+    let env = Env::new();
+    let project_dir = env.root.path().join("project");
+    let elsewhere = env.root.path().join("elsewhere");
+    std::fs::create_dir_all(&project_dir).unwrap();
+    std::fs::create_dir_all(&elsewhere).unwrap();
+
+    let listing = env.run_ok(&elsewhere, &["projects"]);
+    assert_eq!(
+        String::from_utf8_lossy(&listing.stdout).trim(),
+        "No projects found."
+    );
+
+    let run = env.run_ok(&project_dir, &["run", "-t", "hi"]);
+    let id = banner_session_id(&run);
+    env.run_ok(&elsewhere, &["doctor"]);
+
+    let listing = env.run_ok(&elsewhere, &["projects"]);
+    let listing = String::from_utf8_lossy(&listing.stdout);
+    let project_path = project_dir.canonicalize().unwrap();
+    assert!(
+        listing.contains(project_path.to_str().unwrap()),
+        "{listing}"
+    );
+    assert!(!listing.contains("elsewhere"), "{listing}");
+
+    let tracker: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(env.root.path().join("data").join("projects.json")).unwrap(),
+    )
+    .unwrap();
+    let entry = &tracker["projects"][project_path.to_str().unwrap()];
+    assert_eq!(entry["last_session_id"], serde_json::Value::String(id));
+}

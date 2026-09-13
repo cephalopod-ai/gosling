@@ -1848,6 +1848,8 @@ async fn handle_interactive_session(
     })
     .await;
 
+    record_project_session(session.session_id());
+
     if (resume || fork) && history {
         session.render_message_history();
     }
@@ -2006,6 +2008,10 @@ async fn handle_run_command(
     })
     .await;
 
+    if !run_behavior.no_session {
+        record_project_session(session.session_id());
+    }
+
     let result = if run_behavior.interactive {
         session.interactive(input_config.contents).await
     } else if let Some(contents) = input_config.contents {
@@ -2038,6 +2044,12 @@ async fn handle_run_command(
     }
 
     result
+}
+
+fn record_project_session(session_id: &str) {
+    if let Err(e) = crate::project_tracker::update_project_tracker(None, Some(session_id)) {
+        warn!("Warning: Failed to update project tracker: {}", e);
+    }
 }
 
 fn handle_plugin_subcommand(command: PluginCommand) -> Result<()> {
@@ -2120,6 +2132,7 @@ async fn handle_default_session() -> Result<()> {
         stats: false,
     })
     .await;
+    record_project_session(session.session_id());
     session.interactive(None).await
 }
 
@@ -2136,10 +2149,6 @@ pub async fn cli() -> anyhow::Result<()> {
             .await;
     }
     warn_about_invalid_config_values();
-
-    if let Err(e) = crate::project_tracker::update_project_tracker(None, None) {
-        warn!("Warning: Failed to update project tracker: {}", e);
-    }
 
     let command_name = get_command_name(&cli.command);
     tracing::info!(
