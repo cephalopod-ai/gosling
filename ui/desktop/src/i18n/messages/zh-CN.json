@@ -3767,9 +3767,6 @@
   "contextHistory.pinned": {
     "defaultMessage": "Pinned"
   },
-  "contextHistory.previousSummary": {
-    "defaultMessage": "Previous summary"
-  },
   "contextHistory.promptHash": {
     "defaultMessage": "Prompt hash"
   },
@@ -3883,5 +3880,56 @@
   },
   "sessionActionsHeader.viewContextHistory": {
     "defaultMessage": "View Context History"
+  },
+  "contextHistory.comparisonUnavailable": {
+    "defaultMessage": "Summary changes could not be loaded."
+  },
+  "contextHistory.diff.added": {
+    "defaultMessage": "Added"
+  },
+  "contextHistory.diff.detail": {
+    "defaultMessage": "Diff detail"
+  },
+  "contextHistory.diff.lines": {
+    "defaultMessage": "Lines"
+  },
+  "contextHistory.diff.noChanges": {
+    "defaultMessage": "No summary changes."
+  },
+  "contextHistory.diff.removed": {
+    "defaultMessage": "Removed"
+  },
+  "contextHistory.diff.title": {
+    "defaultMessage": "Changes from snapshot #{before} to #{after}"
+  },
+  "contextHistory.diff.unchanged": {
+    "defaultMessage": "Unchanged content hidden"
+  },
+  "contextHistory.diff.words": {
+    "defaultMessage": "Words"
+  },
+  "contextHistory.hideSourceMessages": {
+    "defaultMessage": "Hide source messages"
+  },
+  "contextHistory.loadingComparison": {
+    "defaultMessage": "Loading summary changes…"
+  },
+  "contextHistory.loadingSourceMessages": {
+    "defaultMessage": "Loading source messages…"
+  },
+  "contextHistory.retry": {
+    "defaultMessage": "Retry"
+  },
+  "contextHistory.sourceMessagesShown": {
+    "defaultMessage": "Showing {shown, number} of {total, number} source messages."
+  },
+  "contextHistory.sourceMessagesTitle": {
+    "defaultMessage": "Source messages for snapshot #{generation}"
+  },
+  "contextHistory.sourceMessagesUnavailable": {
+    "defaultMessage": "{count,plural,one{# source message is unavailable because no stable ID was recorded or its transcript row no longer exists.} other{# source messages are unavailable because no stable ID was recorded or their transcript rows no longer exist.}}"
+  },
+  "contextHistory.viewSourceMessages": {
+    "defaultMessage": "View source messages"
   }
 }

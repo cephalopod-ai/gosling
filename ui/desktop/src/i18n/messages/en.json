@@ -560,6 +560,9 @@
   "contextHistory.compare": {
     "defaultMessage": "Compare with previous available"
   },
+  "contextHistory.comparisonUnavailable": {
+    "defaultMessage": "Summary changes could not be loaded."
+  },
   "contextHistory.confirmDelete": {
     "defaultMessage": "This removes the selected summary from Context History. It does not delete the original chat transcript."
   },
@@ -593,6 +596,30 @@
   "contextHistory.description": {
     "defaultMessage": "Walk through the summaries Gosling used to keep long sessions within the model context window."
   },
+  "contextHistory.diff.added": {
+    "defaultMessage": "Added"
+  },
+  "contextHistory.diff.detail": {
+    "defaultMessage": "Diff detail"
+  },
+  "contextHistory.diff.lines": {
+    "defaultMessage": "Lines"
+  },
+  "contextHistory.diff.noChanges": {
+    "defaultMessage": "No summary changes."
+  },
+  "contextHistory.diff.removed": {
+    "defaultMessage": "Removed"
+  },
+  "contextHistory.diff.title": {
+    "defaultMessage": "Changes from snapshot #{before} to #{after}"
+  },
+  "contextHistory.diff.unchanged": {
+    "defaultMessage": "Unchanged content hidden"
+  },
+  "contextHistory.diff.words": {
+    "defaultMessage": "Words"
+  },
   "contextHistory.durable": {
     "defaultMessage": "Saved context"
   },
@@ -605,6 +632,9 @@
   "contextHistory.expires": {
     "defaultMessage": "Expires {date}"
   },
+  "contextHistory.hideSourceMessages": {
+    "defaultMessage": "Hide source messages"
+  },
   "contextHistory.includeExpired": {
     "defaultMessage": "Show expired snapshots still in the grace period"
   },
@@ -613,6 +643,12 @@
   },
   "contextHistory.loading": {
     "defaultMessage": "Loading Context History…"
+  },
+  "contextHistory.loadingComparison": {
+    "defaultMessage": "Loading summary changes…"
+  },
+  "contextHistory.loadingSourceMessages": {
+    "defaultMessage": "Loading source messages…"
   },
   "contextHistory.manual": {
     "defaultMessage": "Manual compaction"
@@ -641,9 +677,6 @@
   "contextHistory.pinned": {
     "defaultMessage": "Pinned"
   },
-  "contextHistory.previousSummary": {
-    "defaultMessage": "Previous summary"
-  },
   "contextHistory.promptHash": {
     "defaultMessage": "Prompt hash"
   },
@@ -659,6 +692,9 @@
   "contextHistory.retained": {
     "defaultMessage": "Retained"
   },
+  "contextHistory.retry": {
+    "defaultMessage": "Retry"
+  },
   "contextHistory.revisionId": {
     "defaultMessage": "Revision ID"
   },
@@ -673,6 +709,15 @@
   },
   "contextHistory.sourceMessages": {
     "defaultMessage": "{count} source messages"
+  },
+  "contextHistory.sourceMessagesShown": {
+    "defaultMessage": "Showing {shown, number} of {total, number} source messages."
+  },
+  "contextHistory.sourceMessagesTitle": {
+    "defaultMessage": "Source messages for snapshot #{generation}"
+  },
+  "contextHistory.sourceMessagesUnavailable": {
+    "defaultMessage": "{count,plural,one{# source message is unavailable because no stable ID was recorded or its transcript row no longer exists.} other{# source messages are unavailable because no stable ID was recorded or their transcript rows no longer exist.}}"
   },
   "contextHistory.summaryHash": {
     "defaultMessage": "Summary hash"
@@ -694,6 +739,9 @@
   },
   "contextHistory.unpin": {
     "defaultMessage": "Unpin"
+  },
+  "contextHistory.viewSourceMessages": {
+    "defaultMessage": "View source messages"
   },
   "contextHistorySettings.capture": {
     "defaultMessage": "Save new snapshots"

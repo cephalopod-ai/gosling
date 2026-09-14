@@ -86,6 +86,13 @@ full summary and provenance for the selected generation, keeping routine
 browsing bounded. Policy changes recalculate expiration for existing unpinned
 rows and reject application when the reviewed database state has changed.
 
+Desktop comparison is derived only after the user enables it. The client loads
+the previous independent snapshot, computes a bounded word- or line-level diff,
+and hides unchanged content; no derived diff is persisted. **View source
+messages** resolves the snapshot's recorded message IDs through the existing
+paged transcript interface only when requested. Missing rows are reported as
+unavailable, and no raw message copy is added to the compaction ledger.
+
 Normal transcript exports and sharing still exclude Context History. Explicit
 CLI export requires a sensitive-data acknowledgement and writes owner-only files.
 Secure physical page reclamation remains outside this decision and requires a

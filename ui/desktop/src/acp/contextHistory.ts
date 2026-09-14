@@ -2,7 +2,14 @@ import type {
   CompactionHistoryPolicyDto,
   CompactionHistoryPurgeMode,
 } from '@repo-makeover/gosling-sdk';
+import type { Message } from '../types/message';
 import { getAcpClient } from './acpConnection';
+import { acpListSessionMessages } from './sessions';
+
+export interface ContextHistorySourceMessages {
+  messages: Message[];
+  unavailableCount: number;
+}
 
 export async function getContextHistory(
   sessionId: string,
@@ -21,6 +28,50 @@ export async function getContextHistory(
 export async function getContextHistoryRevision(sessionId: string, generation: number) {
   const client = await getAcpClient();
   return client.gosling.sessionCompactionsRevision_unstable({ sessionId, generation });
+}
+
+export async function getContextHistorySourceMessages(
+  sessionId: string,
+  sourceMessageIds: string[],
+  sourceMessageCount: number
+): Promise<ContextHistorySourceMessages> {
+  const orderedIds = [...new Set(sourceMessageIds)];
+  if (orderedIds.length === 0) {
+    return { messages: [], unavailableCount: sourceMessageCount };
+  }
+
+  const pendingIds = new Set(orderedIds);
+  const messagesById = new Map<string, Message>();
+  const firstSourceMessageId = orderedIds[0];
+  let beforeCursor: string | null = null;
+
+  do {
+    const page = await acpListSessionMessages(sessionId, beforeCursor);
+    let reachedFirstSourceMessage = false;
+    for (const message of page.messages) {
+      if (!message.id) continue;
+      if (message.id === firstSourceMessageId) {
+        reachedFirstSourceMessage = true;
+      }
+      if (pendingIds.delete(message.id)) {
+        messagesById.set(message.id, message);
+      }
+    }
+
+    beforeCursor = page.nextBeforeCursor;
+    if (pendingIds.size === 0 || reachedFirstSourceMessage) {
+      break;
+    }
+  } while (beforeCursor !== null);
+
+  const messages = orderedIds.flatMap((id) => {
+    const message = messagesById.get(id);
+    return message ? [message] : [];
+  });
+  return {
+    messages,
+    unavailableCount: Math.max(0, sourceMessageCount - messages.length),
+  };
 }
 
 export async function setContextHistoryPinned(

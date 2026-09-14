@@ -88,8 +88,11 @@ Use Context History for a step-by-step walkthrough of how a coding or brainstorm
 session evolved:
 
 - In gosling Desktop, open the session menu and choose **View Context History**. Select a
-  snapshot to read its exact summary, compare it with the previous available snapshot,
-  inspect token reduction and provenance, or pin it.
+  snapshot to read its exact summary, inspect token reduction and provenance, or pin it.
+  Enable **Compare with previous available** for a changes-only walkthrough, then choose
+  a word- or line-level diff; unchanged text stays collapsed. Choose **View source
+  messages** to load the recorded transcript rows on demand. If a row no longer exists or
+  did not have a stable ID when captured, the viewer reports it as unavailable.
 - In the CLI, use `gosling session context-history list --session-id <ID>` and
   `gosling session context-history show --session-id <ID> <GENERATION>`.
 

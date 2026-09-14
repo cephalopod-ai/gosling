@@ -4,20 +4,24 @@ import type {
   CompactionRevisionDto,
   CompactionRevisionListItemDto,
 } from '@repo-makeover/gosling-sdk';
-import { Copy, History, LoaderCircle, Pin, PinOff, Trash2 } from 'lucide-react';
+import { Copy, History, LoaderCircle, MessageSquareText, Pin, PinOff, Trash2 } from 'lucide-react';
 import {
   deleteContextHistoryRevision,
   getContextHistory,
   getContextHistoryRevision,
+  getContextHistorySourceMessages,
   purgeContextHistory,
   setContextHistoryPinned,
 } from '../../acp/contextHistory';
 import { defineMessages, useIntl } from '../../i18n';
+import type { Message } from '../../types/message';
 import { writeTextToClipboard } from '../../utils/clipboard';
 import { errorMessage } from '../../utils/conversionUtils';
 import { Button } from '../ui/button';
 import { ConfirmationModal } from '../ui/ConfirmationModal';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog';
+import { SessionMessages } from '../sessions/SessionViewComponents';
+import { ContextHistoryDiff } from './ContextHistoryDiff';
 
 const i18n = defineMessages({
   title: { id: 'contextHistory.title', defaultMessage: 'Context History' },
@@ -80,7 +84,40 @@ const i18n = defineMessages({
   copied: { id: 'contextHistory.copied', defaultMessage: 'Summary copied' },
   compare: { id: 'contextHistory.compare', defaultMessage: 'Compare with previous available' },
   currentSummary: { id: 'contextHistory.currentSummary', defaultMessage: 'Selected summary' },
-  previousSummary: { id: 'contextHistory.previousSummary', defaultMessage: 'Previous summary' },
+  loadingComparison: {
+    id: 'contextHistory.loadingComparison',
+    defaultMessage: 'Loading summary changes…',
+  },
+  comparisonUnavailable: {
+    id: 'contextHistory.comparisonUnavailable',
+    defaultMessage: 'Summary changes could not be loaded.',
+  },
+  viewSourceMessages: {
+    id: 'contextHistory.viewSourceMessages',
+    defaultMessage: 'View source messages',
+  },
+  hideSourceMessages: {
+    id: 'contextHistory.hideSourceMessages',
+    defaultMessage: 'Hide source messages',
+  },
+  sourceMessagesTitle: {
+    id: 'contextHistory.sourceMessagesTitle',
+    defaultMessage: 'Source messages for snapshot #{generation}',
+  },
+  loadingSourceMessages: {
+    id: 'contextHistory.loadingSourceMessages',
+    defaultMessage: 'Loading source messages…',
+  },
+  sourceMessagesShown: {
+    id: 'contextHistory.sourceMessagesShown',
+    defaultMessage: 'Showing {shown, number} of {total, number} source messages.',
+  },
+  sourceMessagesUnavailable: {
+    id: 'contextHistory.sourceMessagesUnavailable',
+    defaultMessage:
+      '{count, plural, one {# source message is unavailable because no stable ID was recorded or its transcript row no longer exists.} other {# source messages are unavailable because no stable ID was recorded or their transcript rows no longer exist.}}',
+  },
+  retry: { id: 'contextHistory.retry', defaultMessage: 'Retry' },
   provenance: { id: 'contextHistory.provenance', defaultMessage: 'Technical provenance' },
   summaryHash: { id: 'contextHistory.summaryHash', defaultMessage: 'Summary hash' },
   sourceHash: { id: 'contextHistory.sourceHash', defaultMessage: 'Source hash' },
@@ -133,6 +170,14 @@ type PendingAction =
   | { type: 'purge'; mode: CompactionHistoryPurgeMode }
   | null;
 
+interface SourceViewState {
+  revisionId: string;
+  status: 'loading' | 'ready' | 'error';
+  messages: Message[];
+  unavailableCount: number;
+  error: string | null;
+}
+
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
@@ -157,6 +202,8 @@ export function ContextHistoryDialog({
   const [purgedCount, setPurgedCount] = useState(0);
   const [includeExpired, setIncludeExpired] = useState(false);
   const [compare, setCompare] = useState(false);
+  const [comparisonLoading, setComparisonLoading] = useState(false);
+  const [sourceView, setSourceView] = useState<SourceViewState | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -199,15 +246,21 @@ export function ContextHistoryDialog({
   }, [items, selectedGeneration]);
 
   useEffect(() => {
+    setSourceView(null);
+  }, [open, selectedGeneration]);
+
+  useEffect(() => {
     if (!open || selectedGeneration === null) {
       setSelected(null);
       setPrevious(null);
+      setComparisonLoading(false);
       return;
     }
     let canceled = false;
     setError(null);
     setSelected(null);
     setPrevious(null);
+    setComparisonLoading(compare && previousGeneration !== null);
     void getContextHistoryRevision(sessionId, selectedGeneration)
       .then(({ revision }) => {
         if (!canceled) setSelected(revision);
@@ -222,9 +275,13 @@ export function ContextHistoryDialog({
         })
         .catch((reason) => {
           if (!canceled) setError(errorMessage(reason));
+        })
+        .finally(() => {
+          if (!canceled) setComparisonLoading(false);
         });
     } else {
       setPrevious(null);
+      setComparisonLoading(false);
     }
     return () => {
       canceled = true;
@@ -281,6 +338,44 @@ export function ContextHistoryDialog({
       setError(errorMessage(reason));
     } finally {
       setBusy(false);
+    }
+  };
+
+  const loadSourceMessages = async (revision: CompactionRevisionDto) => {
+    setSourceView({
+      revisionId: revision.revisionId,
+      status: 'loading',
+      messages: [],
+      unavailableCount: 0,
+      error: null,
+    });
+    try {
+      const result = await getContextHistorySourceMessages(
+        sessionId,
+        revision.sourceMessageIds,
+        revision.sourceMessageCount
+      );
+      setSourceView((current) =>
+        current?.revisionId === revision.revisionId
+          ? {
+              revisionId: revision.revisionId,
+              status: 'ready',
+              messages: result.messages,
+              unavailableCount: result.unavailableCount,
+              error: null,
+            }
+          : current
+      );
+    } catch (reason) {
+      setSourceView((current) =>
+        current?.revisionId === revision.revisionId
+          ? {
+              ...current,
+              status: 'error',
+              error: errorMessage(reason),
+            }
+          : current
+      );
     }
   };
 
@@ -446,6 +541,25 @@ export function ContextHistoryDialog({
                         </Button>
                         <Button
                           size="sm"
+                          variant="outline"
+                          disabled={busy || selected.sourceMessageCount === 0}
+                          onClick={() => {
+                            if (sourceView?.revisionId === selected.revisionId) {
+                              setSourceView(null);
+                            } else {
+                              void loadSourceMessages(selected);
+                            }
+                          }}
+                        >
+                          <MessageSquareText className="size-4" />
+                          {intl.formatMessage(
+                            sourceView?.revisionId === selected.revisionId
+                              ? i18n.hideSourceMessages
+                              : i18n.viewSourceMessages
+                          )}
+                        </Button>
+                        <Button
+                          size="sm"
                           variant="destructive"
                           disabled={busy}
                           onClick={() =>
@@ -512,6 +626,64 @@ export function ContextHistoryDialog({
                           })}
                         </p>
                       </div>
+                      {sourceView?.revisionId === selected.revisionId && (
+                        <section
+                          aria-labelledby={`context-history-sources-${selected.revisionId}`}
+                          className="space-y-2 rounded border border-border-primary p-3"
+                        >
+                          <h3
+                            id={`context-history-sources-${selected.revisionId}`}
+                            className="text-sm font-medium"
+                          >
+                            {intl.formatMessage(i18n.sourceMessagesTitle, {
+                              generation: selected.generation,
+                            })}
+                          </h3>
+                          {sourceView.status === 'loading' ? (
+                            <p role="status" className="flex items-center gap-2 text-sm">
+                              <LoaderCircle className="size-4 animate-spin" />
+                              {intl.formatMessage(i18n.loadingSourceMessages)}
+                            </p>
+                          ) : sourceView.status === 'error' ? (
+                            <div className="space-y-2">
+                              <p role="alert" className="break-words text-sm text-text-danger">
+                                {sourceView.error}
+                              </p>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => void loadSourceMessages(selected)}
+                              >
+                                {intl.formatMessage(i18n.retry)}
+                              </Button>
+                            </div>
+                          ) : (
+                            <>
+                              <p className="text-xs text-text-secondary">
+                                {intl.formatMessage(i18n.sourceMessagesShown, {
+                                  shown: sourceView.messages.length,
+                                  total: selected.sourceMessageCount,
+                                })}
+                              </p>
+                              {sourceView.unavailableCount > 0 && (
+                                <p role="status" className="text-xs text-text-secondary">
+                                  {intl.formatMessage(i18n.sourceMessagesUnavailable, {
+                                    count: sourceView.unavailableCount,
+                                  })}
+                                </p>
+                              )}
+                              <div className="h-[40vh] min-h-64 overflow-hidden rounded border border-border-primary">
+                                <SessionMessages
+                                  messages={sourceView.messages}
+                                  isLoading={false}
+                                  error={null}
+                                  onRetry={() => void loadSourceMessages(selected)}
+                                />
+                              </div>
+                            </>
+                          )}
+                        </section>
+                      )}
                       <label className="flex items-center gap-2 text-xs">
                         <input
                           type="checkbox"
@@ -521,24 +693,32 @@ export function ContextHistoryDialog({
                         />
                         {intl.formatMessage(i18n.compare)}
                       </label>
-                      <div className={`grid gap-3 ${previous ? 'lg:grid-cols-2' : ''}`}>
-                        {previous && (
-                          <div>
-                            <p className="mb-1 text-xs">
-                              {intl.formatMessage(i18n.previousSummary)}
-                            </p>
-                            <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words rounded bg-background-secondary p-3 text-xs">
-                              {previous.summary}
-                            </pre>
-                          </div>
-                        )}
+                      {compare && previousGeneration !== null ? (
+                        previous ? (
+                          <ContextHistoryDiff
+                            before={previous.summary}
+                            after={selected.summary}
+                            beforeGeneration={previous.generation}
+                            afterGeneration={selected.generation}
+                          />
+                        ) : comparisonLoading ? (
+                          <p role="status" className="flex items-center gap-2 text-sm">
+                            <LoaderCircle className="size-4 animate-spin" />
+                            {intl.formatMessage(i18n.loadingComparison)}
+                          </p>
+                        ) : (
+                          <p className="text-sm text-text-secondary">
+                            {intl.formatMessage(i18n.comparisonUnavailable)}
+                          </p>
+                        )
+                      ) : (
                         <div>
                           <p className="mb-1 text-xs">{intl.formatMessage(i18n.currentSummary)}</p>
                           <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words rounded bg-background-secondary p-3 text-xs">
                             {selected.summary}
                           </pre>
                         </div>
-                      </div>
+                      )}
                       <details className="text-xs text-text-secondary">
                         <summary className="cursor-pointer">
                           {intl.formatMessage(i18n.provenance)}

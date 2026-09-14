@@ -49,3 +49,58 @@ Validation used the repository's pinned Hermit toolchain:
   backups, and filesystem snapshots remains a separate storage-level design.
 - Pinned snapshots can exceed count or byte limits; previews report byte overage and
   cleanup does not silently remove pins.
+
+## Changes-only walkthrough follow-up
+
+Status: verified locally on 2026-09-14
+
+The original discussion identified the lack of a true changes-only view and a
+source-message action as the highest-priority walkthrough gap. That recommendation
+existed only in the discussion, so this dated addendum is its durable closure record:
+open -> closed. The Desktop now computes a bounded word- or line-level diff only
+after comparison is enabled, collapses unchanged content, and loads the source
+messages recorded by a snapshot only after **View source messages** is selected.
+Source loading reuses the existing paged transcript interface, preserves recorded
+message order, stops after reaching the oldest recorded source row, and reports
+unavailable rows. No diff, raw message copy, delta, or ancestor dependency is added
+to `sessions.db`.
+
+Changed surfaces:
+
+- `ui/desktop/src/components/conversation/ContextHistoryDiff.tsx` and focused tests
+- `ui/desktop/src/components/conversation/ContextHistoryDialog.tsx` and focused tests
+- `ui/desktop/src/acp/contextHistory.ts` and focused tests
+- Desktop locale catalogs and source hashes
+- ADR-0021 and the Smart Context Management guide
+
+Validation on the final UI state:
+
+- Focused Context History tests: 11 passed across 3 files.
+- Complete Desktop suite: 1,366 tests passed across 175 files.
+- Desktop TypeScript, ESLint, translation synchronization, and all 15 locale checks passed.
+- Scoped Prettier checks for every touched TypeScript file passed. The repository-wide
+  Prettier check remains nonzero on 51 unrelated pre-existing files; none is part of
+  this change and none was rewritten.
+- Documentation tests: 16 passed; documentation TypeScript and production build passed.
+- `cargo fmt --check` passed; no Rust source or generated ACP contract changed.
+
+Architecture comparison: accepted ADR-0021 and the existing Desktop ACP adapter
+boundary were conformant before the repair. The final change derives presentation
+state from independent snapshots and the existing transcript pager, so the result is
+**no new architecture or contract drift**.
+
+## Revised improvement order
+
+1. Decide and test `/clear` retention semantics. It currently removes the session's
+   entire Context History, including pins; either preserve walkthrough history or make
+   the destructive scope explicit before clearing.
+2. Verify `summary_hash` when reading and exporting snapshots so stored integrity
+   metadata actively detects corruption instead of remaining descriptive.
+3. Make expiration timing explicit in the UI and guide: automatic cleanup is
+   event-driven, so `purge_after` is eligibility time rather than a scheduled deletion.
+4. Rename **Maximum local storage** to **Maximum summary payload** because the cap
+   counts snapshot payload bytes, not SQLite pages, WAL files, indexes, or backups.
+5. Measure real snapshot size and similarity distributions before adding an independent
+   compression codec; retain standalone readability and avoid ancestor chains.
+6. Batch CLI full-history export and startup expiration reconciliation only if measured
+   session sizes show those paths are material bottlenecks.
