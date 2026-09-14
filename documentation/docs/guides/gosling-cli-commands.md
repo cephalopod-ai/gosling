@@ -360,6 +360,54 @@ gosling session export --path ./my-session.jsonl -o exported.md
 
 ---
 
+#### session context-history [command]
+
+Inspect and manage the independent summaries saved after successful context compaction.
+`compactions` is an alias for `context-history`.
+
+**Commands:**
+
+- **`list`**: List snapshot metadata. Use `--include-expired` to include snapshots still
+  in their cleanup grace period; supports `--limit`, `--before`, and `--format text|json`.
+- **`show <GENERATION>`**: Show one exact saved summary as Markdown or JSON.
+- **`export`**: Export one generation or the complete available history as JSON or Markdown.
+  Use `--generation`, `--format`, and `-o, --output` as needed.
+- **`pin <GENERATION>`** / **`unpin <GENERATION>`**: Exempt a snapshot from retention or
+  return it to the configured policy.
+- **`delete <GENERATION>`**: Delete one snapshot.
+- **`prune`**: Delete expired snapshots, or use `--all-unpinned` to delete every unpinned
+  snapshot for the selected session.
+
+Every command accepts the normal session selectors, including `--session-id` and `--name`.
+Destructive and sensitive non-interactive operations require `--yes`.
+
+**Usage:**
+
+```bash
+# Browse metadata, then inspect one exact summary
+gosling session context-history list --session-id 20251108_4
+gosling session context-history show --session-id 20251108_4 3
+
+# Preserve an important walkthrough snapshot
+gosling session context-history pin --session-id 20251108_4 3
+
+# Explicitly export all available Context History
+gosling session context-history export --session-id 20251108_4 \
+  --format json --output context-history.json --yes
+
+# Clean expired snapshots, preserving pins
+gosling session context-history prune --session-id 20251108_4 --yes
+```
+
+:::caution Sensitive local history
+Context History exports can contain sensitive session details. They are separate from normal
+session exports and sharing, and export requires an explicit acknowledgement. Files created
+with `--output` are owner-only. Context History is designed for coding and brainstorming
+walkthroughs, not tamper-proof compliance auditing.
+:::
+
+---
+
 #### session diagnostics [options]
 Generate a comprehensive diagnostics JSON report for troubleshooting issues with a specific session.
 

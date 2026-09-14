@@ -54,6 +54,7 @@ The following settings can be configured at the root level of your config.yaml f
 | `GOSLING_ALLOWLIST` | URL for allowed extensions | Valid URL | None | No |
 | `GOSLING_AUTO_COMPACT_THRESHOLD` | Set the percentage threshold at which gosling [automatically summarizes your session](/docs/guides/sessions/smart-context-management#automatic-compaction). | Float in [0.0, 1.0), excluding 1.0 (disabled at 0.0)| 0.8 | No |
 | `GOSLING_AUTO_COMPACT_REDUCTION` | Fraction of threshold usage removed by [auto-compaction](/docs/guides/sessions/smart-context-management#automatic-compaction) in a single pass, instead of always fully collapsing the eligible history | Float in [0.0, 1.0) (0.0 always fully collapses) | 0.15 | No |
+| `GOSLING_COMPACTION_HISTORY_POLICY` | Capture, expiration, grace, count, and storage limits for [Context History](/docs/guides/sessions/smart-context-management#context-history) | Versioned object; see [Context History policy](#context-history-policy) | 90-day retention, 7-day grace, 100 per session, 256 MiB | No |
 | `SECURITY_PROMPT_ENABLED` | Enable [prompt injection detection](/docs/guides/security/prompt-injection-detection) to identify potentially harmful commands | true/false | true | No |
 | `SECURITY_PROMPT_THRESHOLD` | Sensitivity threshold for prompt injection detection (higher = stricter) | Float between 0.01 and 1.0 | 0.8 | No |
 | `SECURITY_PROMPT_CLASSIFIER_ENABLED` | Enable ML-based prompt injection detection for advanced threat identification | true/false | false | No |
@@ -80,6 +81,15 @@ GOSLING_MODE: "smart_approve"
 GOSLING_CODE_EXECUTION_RUNTIME: "enabled"
 GOSLING_TOOLSHIM: true
 GOSLING_CLI_MIN_PRIORITY: 0.2
+
+# Context History Configuration
+GOSLING_COMPACTION_HISTORY_POLICY:
+  version: 1
+  capture_enabled: true
+  retention_days: 90
+  purge_grace_days: 7
+  max_revisions_per_session: 100
+  max_total_bytes: 268435456
 
 # Search Path Configuration
 GOSLING_SEARCH_PATHS:
@@ -110,6 +120,31 @@ extensions:
     timeout: 300
     type: builtin
 ```
+
+## Context History Policy
+
+`GOSLING_COMPACTION_HISTORY_POLICY` is stored as one versioned object so its retention
+rules are reviewed and applied together. The Desktop exposes the same policy under
+**Settings → App → Context History** and previews its effect on existing unpinned
+snapshots before saving.
+
+| Field | Purpose | Supported value | Default |
+|---|---|---|---|
+| `version` | Policy schema version | `1` | `1` |
+| `capture_enabled` | Save new successful compaction snapshots | Boolean | `true` |
+| `retention_days` | Age at which an unpinned snapshot expires | `null` or 1–3650 days | `90` |
+| `purge_grace_days` | Time an expired snapshot remains recoverable before automatic cleanup | 0–365 days | `7` |
+| `max_revisions_per_session` | Target retained count per session; pins count toward it but are never removed automatically | 1–10000 | `100` |
+| `max_total_bytes` | Global payload budget across all sessions | 1–17179869184 bytes | `268435456` (256 MiB) |
+
+Changing the policy recalculates expiration for existing unpinned snapshots, then applies
+the time, per-session count, and global byte limits. Pinned snapshots remain; if they alone
+exceed the byte budget, the preview reports the excess. `capture_enabled: false` stops new
+snapshots but does not erase existing history.
+
+If `GOSLING_COMPACTION_HISTORY_POLICY` is set in the process environment, it takes
+precedence over `config.yaml` and the Desktop policy controls are read-only. Invalid policy
+objects fail validation rather than silently weakening the configured limits.
 
 ## Extensions Configuration
 

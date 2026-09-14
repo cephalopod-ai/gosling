@@ -14,6 +14,8 @@ import type {
   AddSessionExtensionRequest_unstable,
   AddSessionPlanFeedbackRequest_unstable,
   AddSessionWorkingDirRequest_unstable,
+  ApplyCompactionHistoryPolicyRequest_unstable,
+  ApplyCompactionHistoryPolicyResponse_unstable,
   ApproveSessionPlanRequest_unstable,
   ArchiveSessionRequest_unstable,
   CanonicalModelInfoRequest_unstable,
@@ -49,6 +51,8 @@ import type {
   DefaultsReadRequest_unstable,
   DefaultsReadResponse_unstable,
   DefaultsSaveRequest_unstable,
+  DeleteCompactionRevisionRequest_unstable,
+  DeleteCompactionRevisionResponse_unstable,
   DeleteSessionRequest,
   DeleteSourceRequest_unstable,
   DiagnosticsGetRequest_unstable,
@@ -75,6 +79,8 @@ import type {
   ExportSourceResponse_unstable,
   GetAvailableExtensionsRequest_unstable,
   GetAvailableExtensionsResponse_unstable,
+  GetCompactionRevisionRequest_unstable,
+  GetCompactionRevisionResponse_unstable,
   GetConfigExtensionsRequest_unstable,
   GetConfigExtensionsResponse_unstable,
   GetOutputRevisionRequest_unstable,
@@ -101,6 +107,8 @@ import type {
   ImportSourcesResponse_unstable,
   ListAgentMentionsRequest_unstable,
   ListAgentMentionsResponse_unstable,
+  ListCompactionRevisionsRequest_unstable,
+  ListCompactionRevisionsResponse_unstable,
   ListOutputRevisionsRequest_unstable,
   ListOutputRevisionsResponse_unstable,
   ListPromptsRequest_unstable,
@@ -123,6 +131,8 @@ import type {
   PreferencesReadResponse_unstable,
   PreferencesRemoveRequest_unstable,
   PreferencesSaveRequest_unstable,
+  PreviewCompactionHistoryPolicyRequest_unstable,
+  PreviewCompactionHistoryPolicyResponse_unstable,
   PreviewSessionHandoffRequest_unstable,
   PreviewSessionHandoffResponse_unstable,
   PromptOperationResponse_unstable,
@@ -146,6 +156,10 @@ import type {
   ProviderSetupCatalogListResponse_unstable,
   ProviderSupportedModelsListRequest_unstable,
   ProviderSupportedModelsListResponse_unstable,
+  PurgeCompactionHistoryRequest_unstable,
+  PurgeCompactionHistoryResponse_unstable,
+  ReadCompactionHistoryPolicyRequest_unstable,
+  ReadCompactionHistoryPolicyResponse_unstable,
   ReadResourceRequest_unstable,
   ReadResourceResponse_unstable,
   ReadSessionHandoffCheckpointRequest_unstable,
@@ -166,6 +180,7 @@ import type {
   SearchSessionMessagesResponse_unstable,
   SessionPlanResponse_unstable,
   SessionWorkingDirsResponse_unstable,
+  SetCompactionRevisionPinnedRequest_unstable,
   SetConfigExtensionEnabledRequest_unstable,
   SetSessionSystemPromptRequest_unstable,
   SetSessionWorkingDirRestrictionRequest_unstable,
@@ -227,6 +242,7 @@ import type {
   WorkspaceValidationResponse_unstable,
 } from './types.gen.js';
 import {
+  zApplyCompactionHistoryPolicyResponse_unstable,
   zCanonicalModelInfoResponse_unstable,
   zConfigReadAllResponse_unstable,
   zConfigReadResponse_unstable,
@@ -241,6 +257,7 @@ import {
   zCustomProviderReadResponse_unstable,
   zCustomProviderUpdateResponse_unstable,
   zDefaultsReadResponse_unstable,
+  zDeleteCompactionRevisionResponse_unstable,
   zDiagnosticsGetResponse_unstable,
   zDictationConfigResponse_unstable,
   zDictationTranscribeResponse_unstable,
@@ -252,6 +269,7 @@ import {
   zExportSessionResponse_unstable,
   zExportSourceResponse_unstable,
   zGetAvailableExtensionsResponse_unstable,
+  zGetCompactionRevisionResponse_unstable,
   zGetConfigExtensionsResponse_unstable,
   zGetOutputRevisionResponse_unstable,
   zGetPromptResponse_unstable,
@@ -265,6 +283,7 @@ import {
   zImportSessionResponse_unstable,
   zImportSourcesResponse_unstable,
   zListAgentMentionsResponse_unstable,
+  zListCompactionRevisionsResponse_unstable,
   zListOutputRevisionsResponse_unstable,
   zListPromptsResponse_unstable,
   zListProvidersResponse_unstable,
@@ -275,6 +294,7 @@ import {
   zOnboardingImportApplyResponse_unstable,
   zOnboardingImportScanResponse_unstable,
   zPreferencesReadResponse_unstable,
+  zPreviewCompactionHistoryPolicyResponse_unstable,
   zPreviewSessionHandoffResponse_unstable,
   zPromptOperationResponse_unstable,
   zProviderCatalogListResponse_unstable,
@@ -285,6 +305,8 @@ import {
   zProviderSecretsListResponse_unstable,
   zProviderSetupCatalogListResponse_unstable,
   zProviderSupportedModelsListResponse_unstable,
+  zPurgeCompactionHistoryResponse_unstable,
+  zReadCompactionHistoryPolicyResponse_unstable,
   zReadResourceResponse_unstable,
   zReadSessionHandoffCheckpointResponse_unstable,
   zRecordSessionModelSwitchResponse_unstable,
@@ -1320,6 +1342,102 @@ export class GoslingExtClient {
     return zRestoreOutputRevisionResponse_unstable.parse(
       raw,
     ) as RestoreOutputRevisionResponse_unstable;
+  }
+
+  async sessionCompactionsHistory_unstable(
+    params: ListCompactionRevisionsRequest_unstable,
+  ): Promise<ListCompactionRevisionsResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/session/compactions/history",
+      params,
+    );
+    return zListCompactionRevisionsResponse_unstable.parse(
+      raw,
+    ) as ListCompactionRevisionsResponse_unstable;
+  }
+
+  async sessionCompactionsRevision_unstable(
+    params: GetCompactionRevisionRequest_unstable,
+  ): Promise<GetCompactionRevisionResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/session/compactions/revision",
+      params,
+    );
+    return zGetCompactionRevisionResponse_unstable.parse(
+      raw,
+    ) as GetCompactionRevisionResponse_unstable;
+  }
+
+  async sessionCompactionsPin_unstable(
+    params: SetCompactionRevisionPinnedRequest_unstable,
+  ): Promise<GetCompactionRevisionResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/session/compactions/pin",
+      params,
+    );
+    return zGetCompactionRevisionResponse_unstable.parse(
+      raw,
+    ) as GetCompactionRevisionResponse_unstable;
+  }
+
+  async sessionCompactionsDelete_unstable(
+    params: DeleteCompactionRevisionRequest_unstable,
+  ): Promise<DeleteCompactionRevisionResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/session/compactions/delete",
+      params,
+    );
+    return zDeleteCompactionRevisionResponse_unstable.parse(
+      raw,
+    ) as DeleteCompactionRevisionResponse_unstable;
+  }
+
+  async sessionCompactionsPurge_unstable(
+    params: PurgeCompactionHistoryRequest_unstable,
+  ): Promise<PurgeCompactionHistoryResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/session/compactions/purge",
+      params,
+    );
+    return zPurgeCompactionHistoryResponse_unstable.parse(
+      raw,
+    ) as PurgeCompactionHistoryResponse_unstable;
+  }
+
+  async contextHistoryPolicy_unstable(
+    params: ReadCompactionHistoryPolicyRequest_unstable,
+  ): Promise<ReadCompactionHistoryPolicyResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/context-history/policy",
+      params,
+    );
+    return zReadCompactionHistoryPolicyResponse_unstable.parse(
+      raw,
+    ) as ReadCompactionHistoryPolicyResponse_unstable;
+  }
+
+  async contextHistoryPolicyPreview_unstable(
+    params: PreviewCompactionHistoryPolicyRequest_unstable,
+  ): Promise<PreviewCompactionHistoryPolicyResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/context-history/policy/preview",
+      params,
+    );
+    return zPreviewCompactionHistoryPolicyResponse_unstable.parse(
+      raw,
+    ) as PreviewCompactionHistoryPolicyResponse_unstable;
+  }
+
+  async contextHistoryPolicyApply_unstable(
+    params: ApplyCompactionHistoryPolicyRequest_unstable,
+  ): Promise<ApplyCompactionHistoryPolicyResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/context-history/policy/apply",
+      params,
+    );
+    return zApplyCompactionHistoryPolicyResponse_unstable.parse(
+      raw,
+    ) as ApplyCompactionHistoryPolicyResponse_unstable;
   }
 
   async sessionSummaryGet_unstable(

@@ -192,6 +192,105 @@ fn test_custom_get_tools() {
 
 #[test]
 #[serial]
+fn test_custom_context_history_policy_and_empty_session() {
+    write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
+    run_test(async move {
+        let openai = OpenAiFixture::new(vec![], Arc::new(EnforceSessionId::default())).await;
+        let data_root = tempfile::tempdir().unwrap();
+        let manager = Arc::new(SessionManager::new(data_root.path().to_path_buf()));
+        let mut conn = AcpServerConnection::new(
+            TestConnectionConfig {
+                data_root: data_root.path().to_path_buf(),
+                session_manager: Some(manager),
+                ..Default::default()
+            },
+            openai,
+        )
+        .await;
+
+        let SessionData { session, .. } = conn.new_session().await.unwrap();
+        let session_id = session.session_id().0.to_string();
+        let history = send_custom(
+            conn.cx(),
+            "_gosling/unstable/session/compactions/history",
+            serde_json::json!({ "sessionId": session_id }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(history["revisions"], serde_json::json!([]));
+        assert_eq!(history["totalCount"], 0);
+        assert_eq!(history["purgedCount"], 0);
+
+        let current = send_custom(
+            conn.cx(),
+            "_gosling/unstable/context-history/policy",
+            serde_json::json!({}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(current["policy"]["retentionDays"], 90);
+        assert_eq!(current["policy"]["maxRevisionsPerSession"], 100);
+        assert_eq!(current["stats"]["revisionCount"], 0);
+
+        let proposed = serde_json::json!({
+            "version": 1,
+            "captureEnabled": true,
+            "retentionDays": null,
+            "purgeGraceDays": 14,
+            "maxRevisionsPerSession": 50,
+            "maxTotalBytes": 134217728
+        });
+        let preview = send_custom(
+            conn.cx(),
+            "_gosling/unstable/context-history/policy/preview",
+            serde_json::json!({ "policy": proposed.clone() }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(preview["impact"]["projectedRevisionCount"], 0);
+        let preview_hash = preview["previewHash"].as_str().unwrap();
+
+        let stale = send_custom(
+            conn.cx(),
+            "_gosling/unstable/context-history/policy/apply",
+            serde_json::json!({
+                "policy": proposed.clone(),
+                "expectedPreviewHash": "stale-preview"
+            }),
+        )
+        .await
+        .expect_err("a stale policy preview must be rejected");
+        assert_eq!(
+            serde_json::to_value(stale).unwrap()["data"]["code"],
+            "compaction_history_conflict"
+        );
+        let unchanged = send_custom(
+            conn.cx(),
+            "_gosling/unstable/context-history/policy",
+            serde_json::json!({}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(unchanged["policy"]["retentionDays"], 90);
+
+        let applied = send_custom(
+            conn.cx(),
+            "_gosling/unstable/context-history/policy/apply",
+            serde_json::json!({
+                "policy": proposed,
+                "expectedPreviewHash": preview_hash
+            }),
+        )
+        .await
+        .unwrap();
+        assert!(applied["policy"].get("retentionDays").is_none());
+        assert_eq!(applied["policy"]["purgeGraceDays"], 14);
+        assert_eq!(applied["cleanup"]["deletedCount"], 0);
+    });
+}
+
+#[test]
+#[serial]
 fn test_custom_plan_lifecycle_and_notifications() {
     write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
     run_test(async move {

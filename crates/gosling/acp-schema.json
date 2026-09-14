@@ -6187,6 +6187,655 @@
       "x-side": "agent",
       "x-method": "_gosling/unstable/session/outputs/restore"
     },
+    "ListCompactionRevisionsRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "beforeGeneration": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "limit": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "includeExpired": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "required": [
+        "sessionId"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/session/compactions/history"
+    },
+    "ListCompactionRevisionsResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "revisions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CompactionRevisionListItemDto"
+          }
+        },
+        "nextBeforeGeneration": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "totalCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "purgedCount": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "revisions",
+        "totalCount",
+        "purgedCount"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/session/compactions/history"
+    },
+    "CompactionRevisionListItemDto": {
+      "type": "object",
+      "properties": {
+        "revisionId": {
+          "type": "string"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "trigger": {
+          "$ref": "#/$defs/CompactionTriggerDto"
+        },
+        "effect": {
+          "$ref": "#/$defs/CompactionEffectDto"
+        },
+        "sourceMessageCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "summaryHash": {
+          "type": "string"
+        },
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "selectedModel": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "resolvedModel": {
+          "type": "string"
+        },
+        "estimatedTokensBefore": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "estimatedTokensAfter": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "purgeAfter": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pinnedAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "expired": {
+          "type": "boolean"
+        },
+        "payloadBytes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "revisionId",
+        "generation",
+        "trigger",
+        "effect",
+        "sourceMessageCount",
+        "summaryHash",
+        "resolvedModel",
+        "estimatedTokensBefore",
+        "estimatedTokensAfter",
+        "createdAt",
+        "expired",
+        "payloadBytes"
+      ]
+    },
+    "CompactionTriggerDto": {
+      "type": "string",
+      "enum": [
+        "manual",
+        "automatic_threshold",
+        "overflow_recovery"
+      ]
+    },
+    "CompactionEffectDto": {
+      "type": "string",
+      "enum": [
+        "durable",
+        "temporary"
+      ]
+    },
+    "GetCompactionRevisionRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "sessionId",
+        "generation"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/session/compactions/revision"
+    },
+    "GetCompactionRevisionResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "revision": {
+          "$ref": "#/$defs/CompactionRevisionDto"
+        }
+      },
+      "required": [
+        "revision"
+      ],
+      "x-side": "agent"
+    },
+    "CompactionRevisionDto": {
+      "type": "object",
+      "properties": {
+        "revisionId": {
+          "type": "string"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "trigger": {
+          "$ref": "#/$defs/CompactionTriggerDto"
+        },
+        "effect": {
+          "$ref": "#/$defs/CompactionEffectDto"
+        },
+        "parentRevisionId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "firstSourceMessageId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "lastSourceMessageId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sourceMessageCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sourceHash": {
+          "type": "string"
+        },
+        "summaryHash": {
+          "type": "string"
+        },
+        "promptHash": {
+          "type": "string"
+        },
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "selectedModel": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "resolvedModel": {
+          "type": "string"
+        },
+        "usage": {},
+        "estimatedTokensBefore": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "estimatedTokensAfter": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "purgeAfter": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pinnedAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "expired": {
+          "type": "boolean"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "sourceMessageIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "payloadBytes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "revisionId",
+        "sessionId",
+        "generation",
+        "trigger",
+        "effect",
+        "sourceMessageCount",
+        "sourceHash",
+        "summaryHash",
+        "promptHash",
+        "resolvedModel",
+        "usage",
+        "estimatedTokensBefore",
+        "estimatedTokensAfter",
+        "createdAt",
+        "expired",
+        "summary",
+        "sourceMessageIds",
+        "payloadBytes"
+      ]
+    },
+    "SetCompactionRevisionPinnedRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pinned": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "sessionId",
+        "generation",
+        "pinned"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/session/compactions/pin"
+    },
+    "DeleteCompactionRevisionRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "sessionId",
+        "generation"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/session/compactions/delete"
+    },
+    "DeleteCompactionRevisionResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "deleted": {
+          "type": "boolean"
+        },
+        "purgedCount": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "deleted",
+        "purgedCount"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/session/compactions/delete"
+    },
+    "PurgeCompactionHistoryRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "mode": {
+          "$ref": "#/$defs/CompactionHistoryPurgeMode",
+          "default": "expired"
+        }
+      },
+      "required": [
+        "sessionId"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/session/compactions/purge"
+    },
+    "CompactionHistoryPurgeMode": {
+      "type": "string",
+      "enum": [
+        "expired",
+        "all_unpinned"
+      ]
+    },
+    "PurgeCompactionHistoryResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "deletedCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "deletedBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "remaining": {
+          "$ref": "#/$defs/CompactionHistoryStatsDto"
+        }
+      },
+      "required": [
+        "deletedCount",
+        "deletedBytes",
+        "remaining"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/session/compactions/purge"
+    },
+    "CompactionHistoryStatsDto": {
+      "type": "object",
+      "properties": {
+        "revisionCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pinnedCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "payloadBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pinnedBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "purgedCount": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "revisionCount",
+        "pinnedCount",
+        "payloadBytes",
+        "pinnedBytes",
+        "purgedCount"
+      ]
+    },
+    "ReadCompactionHistoryPolicyRequest_unstable": {
+      "type": "object",
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/context-history/policy"
+    },
+    "ReadCompactionHistoryPolicyResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "policy": {
+          "$ref": "#/$defs/CompactionHistoryPolicyDto"
+        },
+        "stats": {
+          "$ref": "#/$defs/CompactionHistoryStatsDto"
+        },
+        "managedByEnvironment": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "policy",
+        "stats",
+        "managedByEnvironment"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/context-history/policy"
+    },
+    "CompactionHistoryPolicyDto": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "captureEnabled": {
+          "type": "boolean"
+        },
+        "retentionDays": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "purgeGraceDays": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maxRevisionsPerSession": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maxTotalBytes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "version",
+        "captureEnabled",
+        "purgeGraceDays",
+        "maxRevisionsPerSession",
+        "maxTotalBytes"
+      ]
+    },
+    "PreviewCompactionHistoryPolicyRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "policy": {
+          "$ref": "#/$defs/CompactionHistoryPolicyDto"
+        }
+      },
+      "required": [
+        "policy"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/context-history/policy/preview"
+    },
+    "PreviewCompactionHistoryPolicyResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "policy": {
+          "$ref": "#/$defs/CompactionHistoryPolicyDto"
+        },
+        "impact": {
+          "$ref": "#/$defs/CompactionHistoryImpactDto"
+        },
+        "previewHash": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "policy",
+        "impact",
+        "previewHash"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/context-history/policy/preview"
+    },
+    "CompactionHistoryImpactDto": {
+      "type": "object",
+      "properties": {
+        "current": {
+          "$ref": "#/$defs/CompactionHistoryStatsDto"
+        },
+        "wouldExpireCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "wouldPurgeNowCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "wouldRemoveForLimitsCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "projectedRevisionCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "projectedPayloadBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "projectedOverBudgetBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "current",
+        "wouldExpireCount",
+        "wouldPurgeNowCount",
+        "wouldRemoveForLimitsCount",
+        "projectedRevisionCount",
+        "projectedPayloadBytes",
+        "projectedOverBudgetBytes",
+        "warnings"
+      ]
+    },
+    "ApplyCompactionHistoryPolicyRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "policy": {
+          "$ref": "#/$defs/CompactionHistoryPolicyDto"
+        },
+        "expectedPreviewHash": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "policy",
+        "expectedPreviewHash"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/context-history/policy/apply"
+    },
+    "ApplyCompactionHistoryPolicyResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "policy": {
+          "$ref": "#/$defs/CompactionHistoryPolicyDto"
+        },
+        "cleanup": {
+          "$ref": "#/$defs/PurgeCompactionHistoryResponse_unstable"
+        }
+      },
+      "required": [
+        "policy",
+        "cleanup"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/context-history/policy/apply"
+    },
     "GetSessionSummaryRequest_unstable": {
       "type": "object",
       "properties": {
@@ -9861,6 +10510,78 @@
                 {
                   "allOf": [
                     {
+                      "$ref": "#/$defs/ListCompactionRevisionsRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/session/compactions/history",
+                  "title": "ListCompactionRevisionsRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/GetCompactionRevisionRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/session/compactions/revision",
+                  "title": "GetCompactionRevisionRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/SetCompactionRevisionPinnedRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/session/compactions/pin",
+                  "title": "SetCompactionRevisionPinnedRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/DeleteCompactionRevisionRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/session/compactions/delete",
+                  "title": "DeleteCompactionRevisionRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/PurgeCompactionHistoryRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/session/compactions/purge",
+                  "title": "PurgeCompactionHistoryRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ReadCompactionHistoryPolicyRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/context-history/policy",
+                  "title": "ReadCompactionHistoryPolicyRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/PreviewCompactionHistoryPolicyRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/context-history/policy/preview",
+                  "title": "PreviewCompactionHistoryPolicyRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ApplyCompactionHistoryPolicyRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/context-history/policy/apply",
+                  "title": "ApplyCompactionHistoryPolicyRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
                       "$ref": "#/$defs/GetSessionSummaryRequest_unstable"
                     }
                   ],
@@ -10742,6 +11463,62 @@
                         }
                       ],
                       "title": "RestoreOutputRevisionResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ListCompactionRevisionsResponse_unstable"
+                        }
+                      ],
+                      "title": "ListCompactionRevisionsResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/GetCompactionRevisionResponse_unstable"
+                        }
+                      ],
+                      "title": "GetCompactionRevisionResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/DeleteCompactionRevisionResponse_unstable"
+                        }
+                      ],
+                      "title": "DeleteCompactionRevisionResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/PurgeCompactionHistoryResponse_unstable"
+                        }
+                      ],
+                      "title": "PurgeCompactionHistoryResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ReadCompactionHistoryPolicyResponse_unstable"
+                        }
+                      ],
+                      "title": "ReadCompactionHistoryPolicyResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/PreviewCompactionHistoryPolicyResponse_unstable"
+                        }
+                      ],
+                      "title": "PreviewCompactionHistoryPolicyResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ApplyCompactionHistoryPolicyResponse_unstable"
+                        }
+                      ],
+                      "title": "ApplyCompactionHistoryPolicyResponse_unstable"
                     },
                     {
                       "allOf": [

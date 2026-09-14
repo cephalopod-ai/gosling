@@ -6,6 +6,7 @@ import {
   Edit2,
   FileJson,
   Forward,
+  History,
   LoaderCircle,
   ShieldAlert,
 } from 'lucide-react';
@@ -29,6 +30,7 @@ import {
   DropdownMenuTrigger,
 } from './ui/dropdown-menu';
 import { useWorkspace } from '../contexts/WorkspaceContext';
+import { ContextHistoryDialog } from './conversation/ContextHistoryDialog';
 
 const i18n = defineMessages({
   actionsLabel: {
@@ -94,6 +96,10 @@ const i18n = defineMessages({
   viewCheckpoint: {
     id: 'sessionActionsHeader.viewCheckpoint',
     defaultMessage: 'View handoff checkpoint',
+  },
+  viewContextHistory: {
+    id: 'sessionActionsHeader.viewContextHistory',
+    defaultMessage: 'View Context History',
   },
   checkpointTitle: {
     id: 'sessionActionsHeader.checkpointTitle',
@@ -366,6 +372,7 @@ export default function SessionActionsHeader({
   const [jsonDialogTitle, setJsonDialogTitle] = useState('');
   const [isDuplicating, setIsDuplicating] = useState(false);
   const [isHandingOff, setIsHandingOff] = useState(false);
+  const [isContextHistoryOpen, setIsContextHistoryOpen] = useState(false);
   const [fullTextSelection, setFullTextSelection] = useState<FullTextSelection | null>(null);
   const { activeWorkspace } = useWorkspace();
 
@@ -617,6 +624,10 @@ export default function SessionActionsHeader({
               <FileJson className="size-4" />
               {intl.formatMessage(i18n.viewCheckpoint)}
             </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setIsContextHistoryOpen(true)}>
+              <History className="size-4" />
+              {intl.formatMessage(i18n.viewContextHistory)}
+            </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => void handleViewJson()}>
               {isJsonLoading ? (
                 <LoaderCircle className="size-4 animate-spin" />
@@ -686,6 +697,12 @@ export default function SessionActionsHeader({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ContextHistoryDialog
+        sessionId={session.id}
+        open={isContextHistoryOpen}
+        onOpenChange={setIsContextHistoryOpen}
+      />
 
       <Dialog
         open={!!fullTextSelection}

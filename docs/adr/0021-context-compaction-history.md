@@ -1,7 +1,7 @@
 # ADR-0021: Append-only context compaction history
 
 Date: 2026-09-14
-Status: Accepted; core storage and capture implemented, client management surfaces staged
+Status: implemented and locally validated
 Related: ADR-0019, ADR-0020
 
 ## Context
@@ -79,8 +79,14 @@ Independent snapshots make any revision readable, expirable, or pinnable
 without retaining an ancestor chain. The byte cost is bounded and measurable;
 a versioned compression codec may be added if measurement justifies it.
 
-The core migration, atomic capture, pagination primitive, cleanup, and lifecycle
-deletion ship first. Typed ACP operations, preference mutation with impact
-preview, pin/delete/purge controls, CLI export/prune, and the Desktop timeline
-remain a subsequent reviewable changeset. Until those surfaces land, policy is
-read from configuration and history is not exposed by normal exports.
+The core migration, atomic capture, typed ACP operations, policy impact preview,
+pin/delete/purge controls, CLI export/prune, and Desktop timeline and settings
+ship together. List operations return metadata only; a client retrieves the
+full summary and provenance for the selected generation, keeping routine
+browsing bounded. Policy changes recalculate expiration for existing unpinned
+rows and reject application when the reviewed database state has changed.
+
+Normal transcript exports and sharing still exclude Context History. Explicit
+CLI export requires a sensitive-data acknowledgement and writes owner-only files.
+Secure physical page reclamation remains outside this decision and requires a
+separate storage-level design.

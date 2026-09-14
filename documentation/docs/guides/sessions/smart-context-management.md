@@ -77,6 +77,41 @@ or start a new session with the essential context. Switching providers does not
 repair damaged session data—it simply lets a route with different request limits
 perform the same provider-neutral compaction.
 
+### Context History
+
+After a successful manual or automatic compaction, gosling saves the exact compacted
+summary and compact provenance as an independent Context History snapshot. It does not
+duplicate the original transcript, and snapshots do not depend on a chain of deltas, so
+one old snapshot can be inspected or removed without reconstructing the others.
+
+Use Context History for a step-by-step walkthrough of how a coding or brainstorming
+session evolved:
+
+- In gosling Desktop, open the session menu and choose **View Context History**. Select a
+  snapshot to read its exact summary, compare it with the previous available snapshot,
+  inspect token reduction and provenance, or pin it.
+- In the CLI, use `gosling session context-history list --session-id <ID>` and
+  `gosling session context-history show --session-id <ID> <GENERATION>`.
+
+By default, gosling keeps snapshots for 90 days, waits another 7 days before automatic
+cleanup, targets 100 snapshots per session, and limits all snapshot payloads to
+256 MiB. Pinned snapshots are exempt from expiration and automatic cleanup, so pins can
+raise actual usage above either limit. You can
+review and change the policy under **Settings → App → Context History**; gosling previews
+how many existing snapshots would expire or be deleted before applying a change.
+
+Set `retention_days` to `null` to disable time-based expiration. Count and storage limits
+still apply. See [Configuration Files](/docs/guides/config-files#context-history-policy)
+for the complete policy and supported ranges.
+
+:::caution Local walkthrough history
+Context History can contain sensitive session details. It is not tamper-proof or a
+compliance-grade audit log. Deletion removes logical database rows but does not guarantee
+secure erasure from SQLite pages, WAL files, backups, or filesystem snapshots. Normal
+session exports and sharing exclude these snapshots; explicit Context History export
+requires a warning acknowledgement.
+:::
+
 :::tip Customize Compaction
 You can customize how gosling summarizes conversations during compaction by editing the `compaction.md` [prompt template](/docs/guides/context-engineering/prompt-templates).
 :::

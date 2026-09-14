@@ -1075,6 +1075,277 @@ pub struct ListSessionArtifactsResponse {
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
+pub struct CompactionHistoryPolicyDto {
+    pub version: u32,
+    pub capture_enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retention_days: Option<u32>,
+    pub purge_grace_days: u32,
+    pub max_revisions_per_session: u32,
+    pub max_total_bytes: u64,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CompactionTriggerDto {
+    Manual,
+    #[default]
+    AutomaticThreshold,
+    OverflowRecovery,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CompactionEffectDto {
+    #[default]
+    Durable,
+    Temporary,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CompactionRevisionListItemDto {
+    pub revision_id: String,
+    pub generation: u64,
+    pub trigger: CompactionTriggerDto,
+    pub effect: CompactionEffectDto,
+    pub source_message_count: u64,
+    pub summary_hash: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selected_model: Option<String>,
+    pub resolved_model: String,
+    pub estimated_tokens_before: u64,
+    pub estimated_tokens_after: u64,
+    pub created_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub purge_after: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pinned_at: Option<String>,
+    pub expired: bool,
+    pub payload_bytes: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CompactionRevisionDto {
+    pub revision_id: String,
+    pub session_id: String,
+    pub generation: u64,
+    pub trigger: CompactionTriggerDto,
+    pub effect: CompactionEffectDto,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_revision_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_source_message_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_source_message_id: Option<String>,
+    pub source_message_count: u64,
+    pub source_hash: String,
+    pub summary_hash: String,
+    pub prompt_hash: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selected_model: Option<String>,
+    pub resolved_model: String,
+    pub usage: serde_json::Value,
+    pub estimated_tokens_before: u64,
+    pub estimated_tokens_after: u64,
+    pub created_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub purge_after: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pinned_at: Option<String>,
+    pub expired: bool,
+    pub summary: String,
+    pub source_message_ids: Vec<String>,
+    pub payload_bytes: u64,
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CompactionHistoryStatsDto {
+    pub revision_count: u64,
+    pub pinned_count: u64,
+    pub payload_bytes: u64,
+    pub pinned_bytes: u64,
+    pub purged_count: u64,
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CompactionHistoryImpactDto {
+    pub current: CompactionHistoryStatsDto,
+    pub would_expire_count: u64,
+    pub would_purge_now_count: u64,
+    pub would_remove_for_limits_count: u64,
+    pub projected_revision_count: u64,
+    pub projected_payload_bytes: u64,
+    pub projected_over_budget_bytes: u64,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_gosling/unstable/session/compactions/history",
+    response = ListCompactionRevisionsResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ListCompactionRevisionsRequest {
+    pub session_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub before_generation: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<usize>,
+    #[serde(default)]
+    pub include_expired: bool,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ListCompactionRevisionsResponse {
+    pub revisions: Vec<CompactionRevisionListItemDto>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_before_generation: Option<u64>,
+    pub total_count: u64,
+    pub purged_count: u64,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_gosling/unstable/session/compactions/revision",
+    response = GetCompactionRevisionResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct GetCompactionRevisionRequest {
+    pub session_id: String,
+    pub generation: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct GetCompactionRevisionResponse {
+    pub revision: CompactionRevisionDto,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_gosling/unstable/session/compactions/pin",
+    response = GetCompactionRevisionResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct SetCompactionRevisionPinnedRequest {
+    pub session_id: String,
+    pub generation: u64,
+    pub pinned: bool,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_gosling/unstable/session/compactions/delete",
+    response = DeleteCompactionRevisionResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteCompactionRevisionRequest {
+    pub session_id: String,
+    pub generation: u64,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteCompactionRevisionResponse {
+    pub deleted: bool,
+    pub purged_count: u64,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CompactionHistoryPurgeMode {
+    #[default]
+    Expired,
+    AllUnpinned,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_gosling/unstable/session/compactions/purge",
+    response = PurgeCompactionHistoryResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct PurgeCompactionHistoryRequest {
+    pub session_id: String,
+    #[serde(default)]
+    pub mode: CompactionHistoryPurgeMode,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct PurgeCompactionHistoryResponse {
+    pub deleted_count: u64,
+    pub deleted_bytes: u64,
+    pub remaining: CompactionHistoryStatsDto,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_gosling/unstable/context-history/policy",
+    response = ReadCompactionHistoryPolicyResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadCompactionHistoryPolicyRequest {}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadCompactionHistoryPolicyResponse {
+    pub policy: CompactionHistoryPolicyDto,
+    pub stats: CompactionHistoryStatsDto,
+    pub managed_by_environment: bool,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_gosling/unstable/context-history/policy/preview",
+    response = PreviewCompactionHistoryPolicyResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewCompactionHistoryPolicyRequest {
+    pub policy: CompactionHistoryPolicyDto,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewCompactionHistoryPolicyResponse {
+    pub policy: CompactionHistoryPolicyDto,
+    pub impact: CompactionHistoryImpactDto,
+    pub preview_hash: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_gosling/unstable/context-history/policy/apply",
+    response = ApplyCompactionHistoryPolicyResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyCompactionHistoryPolicyRequest {
+    pub policy: CompactionHistoryPolicyDto,
+    pub expected_preview_hash: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyCompactionHistoryPolicyResponse {
+    pub policy: CompactionHistoryPolicyDto,
+    pub cleanup: PurgeCompactionHistoryResponse,
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct OutputContributor {
     pub agent: String,
     pub session_id: String,

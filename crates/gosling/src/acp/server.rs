@@ -101,6 +101,7 @@ mod agent_requests;
 pub use agent_requests::agent_request_schemas;
 mod active_runs;
 mod agent_mentions;
+mod compaction_history;
 mod config;
 mod custom_dispatch;
 mod diagnostics;

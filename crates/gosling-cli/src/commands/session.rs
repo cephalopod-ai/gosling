@@ -3,6 +3,11 @@ use anyhow::{Context, Result};
 
 use cliclack::{confirm, multiselect, select};
 use etcetera::home_dir;
+use gosling::acp::custom_requests::{
+    CompactionEffectDto, CompactionHistoryPurgeMode, CompactionRevisionDto, CompactionTriggerDto,
+    DeleteCompactionRevisionRequest, GetCompactionRevisionRequest, ListCompactionRevisionsRequest,
+    PurgeCompactionHistoryRequest, SetCompactionRevisionPinnedRequest,
+};
 #[cfg(feature = "nostr")]
 use gosling::config::Config;
 #[cfg(feature = "nostr")]
@@ -12,6 +17,7 @@ use gosling::session::{
 };
 use gosling::utils::safe_truncate;
 use regex::Regex;
+use std::fmt::Write as FmtWrite;
 use std::fs;
 use std::io::{self, IsTerminal, Write};
 #[cfg(unix)]
@@ -304,6 +310,309 @@ pub async fn handle_session_export(
     }
 
     Ok(())
+}
+
+pub async fn handle_context_history_list(
+    session_id: String,
+    limit: usize,
+    before_generation: Option<u64>,
+    include_expired: bool,
+    format: String,
+) -> Result<()> {
+    let response = SessionManager::instance()
+        .list_compaction_history(ListCompactionRevisionsRequest {
+            session_id,
+            before_generation,
+            limit: Some(limit),
+            include_expired,
+        })
+        .await?;
+    match format.as_str() {
+        "json" => println!("{}", serde_json::to_string_pretty(&response)?),
+        "text" => {
+            if response.revisions.is_empty() {
+                println!("No context history snapshots found.");
+            } else {
+                for revision in response.revisions {
+                    let state = if revision.pinned_at.is_some() {
+                        "pinned"
+                    } else if revision.expired {
+                        "expired"
+                    } else {
+                        "retained"
+                    };
+                    println!(
+                        "#{}  {}  {}  {} → {} tokens  {}",
+                        revision.generation,
+                        revision.created_at,
+                        state,
+                        revision.estimated_tokens_before,
+                        revision.estimated_tokens_after,
+                        revision.resolved_model
+                    );
+                }
+                if let Some(next) = response.next_before_generation {
+                    println!("More history is available; continue with --before {next}.");
+                }
+            }
+            if response.purged_count > 0 {
+                println!(
+                    "{} snapshot(s) were removed by retention or an explicit action.",
+                    response.purged_count
+                );
+            }
+        }
+        _ => anyhow::bail!("Unsupported format: {format}"),
+    }
+    Ok(())
+}
+
+pub async fn handle_context_history_show(
+    session_id: String,
+    generation: u64,
+    format: String,
+) -> Result<()> {
+    let revision = SessionManager::instance()
+        .get_compaction_history_revision(GetCompactionRevisionRequest {
+            session_id,
+            generation,
+        })
+        .await?
+        .revision;
+    match format.as_str() {
+        "json" => println!("{}", serde_json::to_string_pretty(&revision)?),
+        "markdown" => print!("{}", render_context_history_markdown(&[revision], 0)),
+        _ => anyhow::bail!("Unsupported format: {format}"),
+    }
+    Ok(())
+}
+
+pub async fn handle_context_history_export(
+    session_id: String,
+    generation: Option<u64>,
+    output_path: Option<PathBuf>,
+    format: String,
+    acknowledged: bool,
+) -> Result<()> {
+    if !confirm_context_history_action(
+        acknowledged,
+        "Context History contains model-generated summaries that may include sensitive session details. Export it?",
+    )? {
+        println!("Export cancelled.");
+        return Ok(());
+    }
+    let manager = SessionManager::instance();
+    let (revisions, purged_count) = if let Some(generation) = generation {
+        (
+            vec![
+                manager
+                    .get_compaction_history_revision(GetCompactionRevisionRequest {
+                        session_id: session_id.clone(),
+                        generation,
+                    })
+                    .await?
+                    .revision,
+            ],
+            manager
+                .compaction_history_stats(Some(&session_id))
+                .await?
+                .purged_count,
+        )
+    } else {
+        load_all_context_history(&manager, &session_id).await?
+    };
+    let output = match format.as_str() {
+        "json" => serde_json::to_string_pretty(&serde_json::json!({
+            "schemaVersion": 1,
+            "warning": "This export contains sensitive model-generated context summaries.",
+            "sessionId": session_id,
+            "exportedAt": chrono::Utc::now().to_rfc3339(),
+            "purgedCount": purged_count,
+            "revisions": revisions,
+        }))?,
+        "markdown" => render_context_history_markdown(&revisions, purged_count),
+        _ => anyhow::bail!("Unsupported format: {format}"),
+    };
+    if let Some(path) = output_path {
+        write_owner_only_output_file(&path, output.as_bytes()).with_context(|| {
+            format!("Failed to write Context History export: {}", path.display())
+        })?;
+        println!("Context History exported to {}", path.display());
+        println!("The file is owner-readable only. Review it before sharing.");
+    } else {
+        println!("{output}");
+    }
+    Ok(())
+}
+
+pub async fn handle_context_history_pin(
+    session_id: String,
+    generation: u64,
+    pinned: bool,
+) -> Result<()> {
+    SessionManager::instance()
+        .set_compaction_history_pinned(SetCompactionRevisionPinnedRequest {
+            session_id,
+            generation,
+            pinned,
+        })
+        .await?;
+    println!(
+        "Context History snapshot #{generation} {}.",
+        if pinned { "pinned" } else { "unpinned" }
+    );
+    Ok(())
+}
+
+pub async fn handle_context_history_delete(
+    session_id: String,
+    generation: u64,
+    confirmed: bool,
+) -> Result<()> {
+    if !confirm_context_history_action(
+        confirmed,
+        &format!("Permanently delete Context History snapshot #{generation}?"),
+    )? {
+        println!("Deletion cancelled.");
+        return Ok(());
+    }
+    SessionManager::instance()
+        .delete_compaction_history_revision(DeleteCompactionRevisionRequest {
+            session_id,
+            generation,
+        })
+        .await?;
+    println!("Context History snapshot #{generation} deleted.");
+    Ok(())
+}
+
+pub async fn handle_context_history_prune(
+    session_id: String,
+    all_unpinned: bool,
+    confirmed: bool,
+) -> Result<()> {
+    let description = if all_unpinned {
+        "Delete every unpinned Context History snapshot for this session?"
+    } else {
+        "Delete expired Context History snapshots for this session now?"
+    };
+    if !confirm_context_history_action(confirmed, description)? {
+        println!("Prune cancelled.");
+        return Ok(());
+    }
+    let result = SessionManager::instance()
+        .purge_compaction_history(PurgeCompactionHistoryRequest {
+            session_id,
+            mode: if all_unpinned {
+                CompactionHistoryPurgeMode::AllUnpinned
+            } else {
+                CompactionHistoryPurgeMode::Expired
+            },
+        })
+        .await?;
+    println!(
+        "Deleted {} snapshot(s), reclaiming {} logical byte(s). {} snapshot(s) remain.",
+        result.deleted_count, result.deleted_bytes, result.remaining.revision_count
+    );
+    Ok(())
+}
+
+async fn load_all_context_history(
+    manager: &SessionManager,
+    session_id: &str,
+) -> Result<(Vec<CompactionRevisionDto>, u64)> {
+    let mut revisions = Vec::new();
+    let mut before_generation = None;
+    loop {
+        let page = manager
+            .list_compaction_history(ListCompactionRevisionsRequest {
+                session_id: session_id.to_string(),
+                before_generation,
+                limit: Some(200),
+                include_expired: true,
+            })
+            .await?;
+        let purged_count = page.purged_count;
+        for item in page.revisions {
+            revisions.push(
+                manager
+                    .get_compaction_history_revision(GetCompactionRevisionRequest {
+                        session_id: session_id.to_string(),
+                        generation: item.generation,
+                    })
+                    .await?
+                    .revision,
+            );
+        }
+        let Some(next) = page.next_before_generation else {
+            return Ok((revisions, purged_count));
+        };
+        before_generation = Some(next);
+    }
+}
+
+fn confirm_context_history_action(confirmed: bool, prompt: &str) -> Result<bool> {
+    if confirmed {
+        return Ok(true);
+    }
+    if !io::stdin().is_terminal() {
+        anyhow::bail!(
+            "This action requires an interactive terminal. Re-run with --yes to confirm."
+        );
+    }
+    Ok(confirm(prompt).initial_value(false).interact()?)
+}
+
+fn render_context_history_markdown(
+    revisions: &[CompactionRevisionDto],
+    purged_count: u64,
+) -> String {
+    let mut output = String::from(
+        "# Context History\n\n> This export contains sensitive model-generated context summaries. Review it before sharing.\n\n",
+    );
+    if purged_count > 0 {
+        let _ = writeln!(
+            output,
+            "{purged_count} snapshot(s) were removed; generation gaps are intentional.\n"
+        );
+    }
+    for revision in revisions {
+        let trigger = match revision.trigger {
+            CompactionTriggerDto::Manual => "manual",
+            CompactionTriggerDto::AutomaticThreshold => "automatic threshold",
+            CompactionTriggerDto::OverflowRecovery => "overflow recovery",
+        };
+        let effect = match revision.effect {
+            CompactionEffectDto::Durable => "durable",
+            CompactionEffectDto::Temporary => "temporary",
+        };
+        let retention = if revision.pinned_at.is_some() {
+            "pinned".to_string()
+        } else if revision.expired {
+            "expired".to_string()
+        } else {
+            revision.expires_at.as_ref().map_or_else(
+                || "no time expiry".to_string(),
+                |date| format!("expires {date}"),
+            )
+        };
+        let _ = writeln!(
+            output,
+            "## Snapshot #{}\n\n- Created: {}\n- Trigger: {}\n- Effect: {}\n- Model: {}\n- Context estimate: {} → {} tokens\n- Source messages: {}\n- Retention: {}\n- Summary hash: `{}`\n\n{}\n",
+            revision.generation,
+            revision.created_at,
+            trigger,
+            effect,
+            revision.resolved_model,
+            revision.estimated_tokens_before,
+            revision.estimated_tokens_after,
+            revision.source_message_count,
+            retention,
+            revision.summary_hash,
+            revision.summary
+        );
+    }
+    output
 }
 
 async fn serialize_session_export(

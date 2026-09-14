@@ -68,7 +68,7 @@ use utoipa::ToSchema;
 pub const CURRENT_SCHEMA_VERSION: i32 = 36;
 
 pub use compaction_history_storage::{
-    CompactionHistoryPolicyV1, CompactionRevision, CompactionRevisionDraft,
+    CompactionHistoryError, CompactionHistoryPolicyV1, CompactionRevision, CompactionRevisionDraft,
 };
 
 pub use output_revisions_storage::OutputCapture;
@@ -6234,6 +6234,213 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(next_generation, 3);
+    }
+
+    #[tokio::test]
+    async fn compaction_history_management_preserves_pins_and_reports_purges() {
+        use gosling_sdk_types::custom_requests::{
+            CompactionHistoryPurgeMode, DeleteCompactionRevisionRequest,
+            ListCompactionRevisionsRequest, PurgeCompactionHistoryRequest,
+            SetCompactionRevisionPinnedRequest,
+        };
+
+        let temp_dir = TempDir::new().unwrap();
+        let manager = SessionManager::new(temp_dir.path().to_path_buf());
+        let session = manager
+            .create_session(
+                temp_dir.path().join("workspace"),
+                "Managed compaction ledger".to_string(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        let compacted = Conversation::new_unvalidated(vec![Message::user()
+            .with_text("summary")
+            .with_generated_id()]);
+
+        for summary in ["first summary", "second summary"] {
+            let result = crate::context_mgmt::CompactionResult {
+                conversation: compacted.clone(),
+                usage: gosling_providers::conversation::token_usage::ProviderUsage::new(
+                    "resolved-model".to_string(),
+                    Usage::new(Some(4), Some(2), Some(6)),
+                ),
+                summary: summary.to_string(),
+                source_message_ids: vec![format!("source-{summary}")],
+                source_message_count: 1,
+                source_hash: format!("source-hash-{summary}"),
+                summary_hash: format!("summary-hash-{summary}"),
+                prompt_hash: "prompt".to_string(),
+                estimated_tokens_before: 100,
+                estimated_tokens_after: 20,
+                trigger: crate::context_mgmt::CompactionTrigger::Manual,
+            };
+            let draft = CompactionRevisionDraft::from_result(&session, &result, false, Some(20));
+            manager
+                .commit_compaction(
+                    &session.id,
+                    Some(&compacted),
+                    Usage::new(Some(20), None, Some(20)),
+                    result.usage.usage,
+                    None,
+                    draft,
+                )
+                .await
+                .unwrap();
+        }
+
+        let page = manager
+            .list_compaction_history(ListCompactionRevisionsRequest {
+                session_id: session.id.clone(),
+                limit: Some(1),
+                include_expired: true,
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(page.total_count, 2);
+        assert_eq!(page.revisions[0].generation, 2);
+        assert_eq!(page.next_before_generation, Some(2));
+        let detail = manager
+            .get_compaction_history_revision(
+                gosling_sdk_types::custom_requests::GetCompactionRevisionRequest {
+                    session_id: session.id.clone(),
+                    generation: 2,
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(detail.revision.summary, "second summary");
+
+        manager
+            .set_compaction_history_pinned(SetCompactionRevisionPinnedRequest {
+                session_id: session.id.clone(),
+                generation: 1,
+                pinned: true,
+            })
+            .await
+            .unwrap();
+        manager
+            .set_compaction_history_pinned(SetCompactionRevisionPinnedRequest {
+                session_id: session.id.clone(),
+                generation: 2,
+                pinned: true,
+            })
+            .await
+            .unwrap();
+        let pinned_preview = manager
+            .preview_compaction_history_policy(CompactionHistoryPolicyV1 {
+                max_revisions_per_session: 1,
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert!(pinned_preview
+            .impact
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("per-session count limit")));
+        manager
+            .set_compaction_history_pinned(SetCompactionRevisionPinnedRequest {
+                session_id: session.id.clone(),
+                generation: 2,
+                pinned: false,
+            })
+            .await
+            .unwrap();
+        let purged = manager
+            .purge_compaction_history(PurgeCompactionHistoryRequest {
+                session_id: session.id.clone(),
+                mode: CompactionHistoryPurgeMode::AllUnpinned,
+            })
+            .await
+            .unwrap();
+        assert_eq!(purged.deleted_count, 1);
+        assert_eq!(purged.remaining.revision_count, 1);
+        assert_eq!(purged.remaining.pinned_count, 1);
+
+        let deleted = manager
+            .delete_compaction_history_revision(DeleteCompactionRevisionRequest {
+                session_id: session.id.clone(),
+                generation: 1,
+            })
+            .await
+            .unwrap();
+        assert!(deleted.deleted);
+        assert_eq!(deleted.purged_count, 2);
+    }
+
+    #[tokio::test]
+    async fn compaction_history_policy_preview_matches_applied_cleanup() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = SessionManager::new(temp_dir.path().to_path_buf());
+        let session = manager
+            .create_session(
+                temp_dir.path().join("workspace"),
+                "Expiring compaction ledger".to_string(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        let compacted = Conversation::new_unvalidated(vec![Message::user()
+            .with_text("summary")
+            .with_generated_id()]);
+        let result = crate::context_mgmt::CompactionResult {
+            conversation: compacted.clone(),
+            usage: gosling_providers::conversation::token_usage::ProviderUsage::new(
+                "resolved-model".to_string(),
+                Usage::new(Some(4), Some(2), Some(6)),
+            ),
+            summary: "expiring summary".to_string(),
+            source_message_ids: vec!["source-1".to_string()],
+            source_message_count: 1,
+            source_hash: "source-hash".to_string(),
+            summary_hash: "summary-hash".to_string(),
+            prompt_hash: "prompt-hash".to_string(),
+            estimated_tokens_before: 100,
+            estimated_tokens_after: 20,
+            trigger: crate::context_mgmt::CompactionTrigger::Manual,
+        };
+        let draft = CompactionRevisionDraft::from_result(&session, &result, false, Some(20));
+        manager
+            .commit_compaction(
+                &session.id,
+                Some(&compacted),
+                Usage::new(Some(20), None, Some(20)),
+                result.usage.usage,
+                None,
+                draft,
+            )
+            .await
+            .unwrap();
+        sqlx::query("UPDATE session_compaction_revisions SET created_at = ? WHERE session_id = ?")
+            .bind((Utc::now() - chrono::Duration::days(3)).to_rfc3339())
+            .bind(&session.id)
+            .execute(manager.storage().pool().await.unwrap())
+            .await
+            .unwrap();
+
+        let policy = CompactionHistoryPolicyV1 {
+            retention_days: Some(1),
+            purge_grace_days: 0,
+            ..Default::default()
+        };
+        let preview = manager
+            .preview_compaction_history_policy(policy.clone())
+            .await
+            .unwrap();
+        assert_eq!(preview.impact.would_expire_count, 1);
+        assert_eq!(preview.impact.would_purge_now_count, 1);
+        assert_eq!(preview.impact.projected_revision_count, 0);
+
+        let applied = manager
+            .apply_compaction_history_policy(policy)
+            .await
+            .unwrap();
+        assert_eq!(applied.cleanup.deleted_count, 1);
+        assert_eq!(applied.cleanup.remaining.revision_count, 0);
     }
 
     #[tokio::test]

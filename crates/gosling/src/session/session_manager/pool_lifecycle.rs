@@ -167,11 +167,13 @@ impl SessionStorage {
                     }
                 }
                 let mut cleanup = self.pool.begin_with("BEGIN IMMEDIATE").await?;
-                Self::cleanup_compaction_history_in_tx(
+                let compaction_policy = super::CompactionHistoryPolicyV1::configured_result()?;
+                Self::reconcile_compaction_expiration_in_tx(
                     &mut cleanup,
-                    &super::CompactionHistoryPolicyV1::configured(),
+                    &compaction_policy,
                 )
                 .await?;
+                Self::cleanup_compaction_history_in_tx(&mut cleanup, &compaction_policy).await?;
                 cleanup.commit().await?;
                 Ok::<(), anyhow::Error>(())
             })

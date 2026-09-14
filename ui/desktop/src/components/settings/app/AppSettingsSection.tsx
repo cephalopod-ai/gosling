@@ -21,6 +21,7 @@ import { trackSettingToggled } from '../../../utils/analytics';
 import type { LanguageSetting } from '../../../utils/settings';
 import OutputFileExtensionsSection from './OutputFileExtensionsSection';
 import CrashRecoveryPolicySection from './CrashRecoveryPolicySection';
+import ContextHistorySettings from './ContextHistorySettings';
 
 const i18n = defineMessages({
   appearanceTitle: { id: 'settings.appearance.title', defaultMessage: 'Appearance' },
@@ -354,6 +355,7 @@ export default function AppSettingsSection({ scrollToSection }: AppSettingsSecti
 
   return (
     <div className="space-y-4 pr-4 pb-8 mt-1">
+      <ContextHistorySettings />
       <Card className="rounded-lg">
         <CardHeader className="pb-0">
           <CardTitle className="">{intl.formatMessage(i18n.appearanceTitle)}</CardTitle>

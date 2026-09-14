@@ -188,6 +188,7 @@ These variables control how gosling manages conversation sessions and context.
 | `GOSLING_NO_CODE_TRUNCATION` | Disable code block truncation entirely — all code blocks are shown in full | "1", "true" (case-insensitive) to enable | false |
 | `GOSLING_AUTO_COMPACT_THRESHOLD` | Set the percentage threshold at which gosling [automatically summarizes your session](/docs/guides/sessions/smart-context-management#automatic-compaction). | Float in [0.0, 1.0), excluding 1.0 (disabled at 0.0) | 0.8 |
 | `GOSLING_AUTO_COMPACT_REDUCTION` | Fraction of threshold usage removed by [auto-compaction](/docs/guides/sessions/smart-context-management#automatic-compaction) in a single pass, instead of always fully collapsing the eligible history | Float in [0.0, 1.0) (0.0 always fully collapses) | 0.15 |
+| `GOSLING_COMPACTION_HISTORY_POLICY` | Versioned JSON policy for [Context History](/docs/guides/sessions/smart-context-management#context-history). Environment management makes the Desktop controls read-only. | JSON object; see [Configuration Files](/docs/guides/config-files#context-history-policy) | 90-day retention, 7-day grace, 100 per session, 256 MiB |
 | `GOSLING_COMPACT_PROTECT_LAST_N_TURNS` | Preferred number of most-recent turns [auto-compaction keeps verbatim when the reduction budget permits](/docs/guides/sessions/smart-context-management#automatic-compaction) | Integer (e.g., 0, 5, 20) | 10 |
 | `GOSLING_TOOL_CALL_CUTOFF` | Number of tool calls to keep in full detail before summarizing older tool outputs to help maintain efficient context usage  | Integer (e.g., 5, 10, 20) | 10 |
 
@@ -252,6 +253,9 @@ export GOSLING_AUTO_COMPACT_THRESHOLD=0.6
 
 # With the 60% threshold above, auto-compaction targets 51% usage (60% × 85%)
 export GOSLING_AUTO_COMPACT_REDUCTION=0.15
+
+# Keep Context History indefinitely by age, while retaining count and byte limits
+export GOSLING_COMPACTION_HISTORY_POLICY='{"version":1,"capture_enabled":true,"retention_days":null,"purge_grace_days":7,"max_revisions_per_session":100,"max_total_bytes":268435456}'
 
 # Prefer keeping the last 20 turns verbatim across auto-compaction instead of the default 10
 export GOSLING_COMPACT_PROTECT_LAST_N_TURNS=20

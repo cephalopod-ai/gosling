@@ -749,6 +749,85 @@ impl GoslingAcpAgent {
             .map_err(output_revision_error)
     }
 
+    #[custom_method(ListCompactionRevisionsRequest)]
+    async fn dispatch_list_compaction_revisions(
+        &self,
+        req: ListCompactionRevisionsRequest,
+    ) -> Result<ListCompactionRevisionsResponse, agent_client_protocol::Error> {
+        self.session_manager
+            .list_compaction_history(req)
+            .await
+            .map_err(super::compaction_history::compaction_history_error)
+    }
+
+    #[custom_method(GetCompactionRevisionRequest)]
+    async fn dispatch_get_compaction_revision(
+        &self,
+        req: GetCompactionRevisionRequest,
+    ) -> Result<GetCompactionRevisionResponse, agent_client_protocol::Error> {
+        self.session_manager
+            .get_compaction_history_revision(req)
+            .await
+            .map_err(super::compaction_history::compaction_history_error)
+    }
+
+    #[custom_method(SetCompactionRevisionPinnedRequest)]
+    async fn dispatch_set_compaction_revision_pinned(
+        &self,
+        req: SetCompactionRevisionPinnedRequest,
+    ) -> Result<GetCompactionRevisionResponse, agent_client_protocol::Error> {
+        self.session_manager
+            .set_compaction_history_pinned(req)
+            .await
+            .map_err(super::compaction_history::compaction_history_error)
+    }
+
+    #[custom_method(DeleteCompactionRevisionRequest)]
+    async fn dispatch_delete_compaction_revision(
+        &self,
+        req: DeleteCompactionRevisionRequest,
+    ) -> Result<DeleteCompactionRevisionResponse, agent_client_protocol::Error> {
+        self.session_manager
+            .delete_compaction_history_revision(req)
+            .await
+            .map_err(super::compaction_history::compaction_history_error)
+    }
+
+    #[custom_method(PurgeCompactionHistoryRequest)]
+    async fn dispatch_purge_compaction_history(
+        &self,
+        req: PurgeCompactionHistoryRequest,
+    ) -> Result<PurgeCompactionHistoryResponse, agent_client_protocol::Error> {
+        self.session_manager
+            .purge_compaction_history(req)
+            .await
+            .map_err(super::compaction_history::compaction_history_error)
+    }
+
+    #[custom_method(ReadCompactionHistoryPolicyRequest)]
+    async fn dispatch_read_compaction_history_policy(
+        &self,
+        req: ReadCompactionHistoryPolicyRequest,
+    ) -> Result<ReadCompactionHistoryPolicyResponse, agent_client_protocol::Error> {
+        self.on_read_compaction_history_policy(req).await
+    }
+
+    #[custom_method(PreviewCompactionHistoryPolicyRequest)]
+    async fn dispatch_preview_compaction_history_policy(
+        &self,
+        req: PreviewCompactionHistoryPolicyRequest,
+    ) -> Result<PreviewCompactionHistoryPolicyResponse, agent_client_protocol::Error> {
+        self.on_preview_compaction_history_policy(req).await
+    }
+
+    #[custom_method(ApplyCompactionHistoryPolicyRequest)]
+    async fn dispatch_apply_compaction_history_policy(
+        &self,
+        req: ApplyCompactionHistoryPolicyRequest,
+    ) -> Result<ApplyCompactionHistoryPolicyResponse, agent_client_protocol::Error> {
+        self.on_apply_compaction_history_policy(req).await
+    }
+
     #[custom_method(GetSessionSummaryRequest)]
     async fn dispatch_get_session_summary(
         &self,

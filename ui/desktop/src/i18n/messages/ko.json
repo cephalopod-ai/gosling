@@ -3670,5 +3670,218 @@
   },
   "chat.notification.planReady.title": {
     "defaultMessage": "Plan ready for review."
+  },
+  "contextHistory.automatic": {
+    "defaultMessage": "Automatic compaction"
+  },
+  "contextHistory.boundary": {
+    "defaultMessage": "This is local brainstorming and coding history, not a tamper-proof compliance audit. Summaries may contain sensitive session details."
+  },
+  "contextHistory.cleanExpired": {
+    "defaultMessage": "Clean expired"
+  },
+  "contextHistory.clearUnpinned": {
+    "defaultMessage": "Clear unpinned"
+  },
+  "contextHistory.compare": {
+    "defaultMessage": "Compare with previous available"
+  },
+  "contextHistory.confirmDelete": {
+    "defaultMessage": "This removes the selected summary from Context History. It does not delete the original chat transcript."
+  },
+  "contextHistory.confirmDeleteTitle": {
+    "defaultMessage": "Delete this snapshot?"
+  },
+  "contextHistory.confirmExpired": {
+    "defaultMessage": "Delete every expired, unpinned snapshot for this session now?"
+  },
+  "contextHistory.confirmPurgeTitle": {
+    "defaultMessage": "Clean Context History?"
+  },
+  "contextHistory.confirmUnpinned": {
+    "defaultMessage": "Delete every unpinned snapshot for this session, including snapshots that have not expired?"
+  },
+  "contextHistory.copied": {
+    "defaultMessage": "Summary copied"
+  },
+  "contextHistory.copy": {
+    "defaultMessage": "Copy summary"
+  },
+  "contextHistory.currentSummary": {
+    "defaultMessage": "Selected summary"
+  },
+  "contextHistory.delete": {
+    "defaultMessage": "Delete"
+  },
+  "contextHistory.deleted": {
+    "defaultMessage": "Snapshot deleted."
+  },
+  "contextHistory.description": {
+    "defaultMessage": "Walk through the summaries Gosling used to keep long sessions within the model context window."
+  },
+  "contextHistory.durable": {
+    "defaultMessage": "Saved context"
+  },
+  "contextHistory.empty": {
+    "defaultMessage": "No saved context snapshots yet. New successful compactions will appear here."
+  },
+  "contextHistory.expired": {
+    "defaultMessage": "Expired"
+  },
+  "contextHistory.expires": {
+    "defaultMessage": "Expires {date}"
+  },
+  "contextHistory.includeExpired": {
+    "defaultMessage": "Show expired snapshots still in the grace period"
+  },
+  "contextHistory.loadOlder": {
+    "defaultMessage": "Load older snapshots"
+  },
+  "contextHistory.loading": {
+    "defaultMessage": "Loading Context History…"
+  },
+  "contextHistory.manual": {
+    "defaultMessage": "Manual compaction"
+  },
+  "contextHistory.missingEarlier": {
+    "defaultMessage": "{count, number} snapshot(s) were removed; generation gaps are intentional."
+  },
+  "contextHistory.model": {
+    "defaultMessage": "Model: {model} · Provider: {provider}"
+  },
+  "contextHistory.noExpiry": {
+    "defaultMessage": "No time-based expiration"
+  },
+  "contextHistory.none": {
+    "defaultMessage": "None"
+  },
+  "contextHistory.overflow": {
+    "defaultMessage": "Overflow recovery"
+  },
+  "contextHistory.payloadSize": {
+    "defaultMessage": "Saved payload: {size}"
+  },
+  "contextHistory.pin": {
+    "defaultMessage": "Pin"
+  },
+  "contextHistory.pinned": {
+    "defaultMessage": "Pinned"
+  },
+  "contextHistory.previousSummary": {
+    "defaultMessage": "Previous summary"
+  },
+  "contextHistory.promptHash": {
+    "defaultMessage": "Prompt hash"
+  },
+  "contextHistory.provenance": {
+    "defaultMessage": "Technical provenance"
+  },
+  "contextHistory.purgeAfter": {
+    "defaultMessage": "Eligible for automatic cleanup {date}"
+  },
+  "contextHistory.purged": {
+    "defaultMessage": "Deleted {count} snapshot(s)."
+  },
+  "contextHistory.retained": {
+    "defaultMessage": "Retained"
+  },
+  "contextHistory.revisionId": {
+    "defaultMessage": "Revision ID"
+  },
+  "contextHistory.snapshot": {
+    "defaultMessage": "Snapshot #{generation}"
+  },
+  "contextHistory.sourceHash": {
+    "defaultMessage": "Source hash"
+  },
+  "contextHistory.sourceIds": {
+    "defaultMessage": "Source IDs"
+  },
+  "contextHistory.sourceMessages": {
+    "defaultMessage": "{count} source messages"
+  },
+  "contextHistory.summaryHash": {
+    "defaultMessage": "Summary hash"
+  },
+  "contextHistory.temporary": {
+    "defaultMessage": "Temporary resume context"
+  },
+  "contextHistory.title": {
+    "defaultMessage": "Context History"
+  },
+  "contextHistory.tokenEstimate": {
+    "defaultMessage": "{before, number} → {after, number} tokens"
+  },
+  "contextHistory.tokens": {
+    "defaultMessage": "{before, number} → {after, number} estimated tokens ({removed, number} removed)"
+  },
+  "contextHistory.unknown": {
+    "defaultMessage": "Unknown"
+  },
+  "contextHistory.unpin": {
+    "defaultMessage": "Unpin"
+  },
+  "contextHistorySettings.capture": {
+    "defaultMessage": "Save new snapshots"
+  },
+  "contextHistorySettings.captureDescription": {
+    "defaultMessage": "Record a snapshot after each successful manual or automatic compaction."
+  },
+  "contextHistorySettings.currentUsage": {
+    "defaultMessage": "{count, number} snapshots ({pinned, number} pinned) use {size}. {purged, number} snapshots have been removed."
+  },
+  "contextHistorySettings.description": {
+    "defaultMessage": "Keep compacted summaries for coding and brainstorming walkthroughs while bounding local storage."
+  },
+  "contextHistorySettings.environmentManaged": {
+    "defaultMessage": "This policy is managed by the GOSLING_COMPACTION_HISTORY_POLICY environment variable. Change it in the launching environment."
+  },
+  "contextHistorySettings.expire": {
+    "defaultMessage": "Expire snapshots"
+  },
+  "contextHistorySettings.expireDescription": {
+    "defaultMessage": "Pinned snapshots do not expire."
+  },
+  "contextHistorySettings.graceDays": {
+    "defaultMessage": "Cleanup grace period (days)"
+  },
+  "contextHistorySettings.graceDescription": {
+    "defaultMessage": "Expired snapshots stay recoverable for this long before automatic cleanup."
+  },
+  "contextHistorySettings.loading": {
+    "defaultMessage": "Loading policy…"
+  },
+  "contextHistorySettings.maxPerSession": {
+    "defaultMessage": "Maximum per session"
+  },
+  "contextHistorySettings.maxStorage": {
+    "defaultMessage": "Maximum local storage (MiB)"
+  },
+  "contextHistorySettings.previewImpact": {
+    "defaultMessage": "{expired, number} will be marked expired, {purged, number} will be deleted now, and {limits, number} more will be removed to satisfy count or storage limits. {remaining, number} snapshots will remain."
+  },
+  "contextHistorySettings.retentionDays": {
+    "defaultMessage": "Keep for (days)"
+  },
+  "contextHistorySettings.review": {
+    "defaultMessage": "Review changes"
+  },
+  "contextHistorySettings.reviewMessage": {
+    "defaultMessage": "The new policy applies to existing unpinned snapshots as well as future snapshots."
+  },
+  "contextHistorySettings.reviewTitle": {
+    "defaultMessage": "Apply Context History policy?"
+  },
+  "contextHistorySettings.save": {
+    "defaultMessage": "Apply policy"
+  },
+  "contextHistorySettings.saved": {
+    "defaultMessage": "Policy saved. {count, number} snapshot(s) were cleaned up."
+  },
+  "contextHistorySettings.title": {
+    "defaultMessage": "Context History"
+  },
+  "sessionActionsHeader.viewContextHistory": {
+    "defaultMessage": "View Context History"
   }
 }

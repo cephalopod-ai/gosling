@@ -44,6 +44,7 @@ pub use plans::{
 };
 pub(crate) use session_manager::ToolOperationStart;
 pub use session_manager::{
+    CompactionHistoryError, CompactionHistoryPolicyV1, CompactionRevision, CompactionRevisionDraft,
     Session, SessionArtifactPage, SessionInsights, SessionManager, SessionNameUpdate,
     SessionSummary, SessionSummaryFact, SessionSummaryStatus, SessionType, SessionUpdateBuilder,
     DEFAULT_SESSION_TAIL_LIMIT, MAX_SESSION_MESSAGE_PAGE_LIMIT,

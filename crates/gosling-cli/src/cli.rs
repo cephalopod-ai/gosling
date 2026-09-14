@@ -600,6 +600,93 @@ enum SessionCommand {
         #[arg(short = 'o', long)]
         output: Option<PathBuf>,
     },
+    #[command(
+        name = "context-history",
+        visible_alias = "compactions",
+        about = "Inspect and manage saved context-compaction walkthroughs"
+    )]
+    ContextHistory {
+        #[command(subcommand)]
+        command: ContextHistoryCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum ContextHistoryCommand {
+    #[command(about = "List saved compaction snapshots for a session")]
+    List {
+        #[command(flatten)]
+        identifier: Option<Identifier>,
+        #[arg(long, default_value_t = 50)]
+        limit: usize,
+        #[arg(long)]
+        before: Option<u64>,
+        #[arg(long, help = "Include snapshots past their retention date")]
+        include_expired: bool,
+        #[arg(long, default_value = "text", help = "Output format (text, json)")]
+        format: String,
+    },
+    #[command(about = "Show one saved compaction snapshot")]
+    Show {
+        #[command(flatten)]
+        identifier: Option<Identifier>,
+        #[arg(value_name = "GENERATION")]
+        generation: u64,
+        #[arg(
+            long,
+            default_value = "markdown",
+            help = "Output format (markdown, json)"
+        )]
+        format: String,
+    },
+    #[command(about = "Export compaction snapshots with an explicit sensitive-data warning")]
+    Export {
+        #[command(flatten)]
+        identifier: Option<Identifier>,
+        #[arg(long)]
+        generation: Option<u64>,
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        #[arg(long, default_value = "json", help = "Output format (json, markdown)")]
+        format: String,
+        #[arg(short = 'y', long, help = "Acknowledge the sensitive-data warning")]
+        yes: bool,
+    },
+    #[command(about = "Keep a snapshot beyond retention limits")]
+    Pin {
+        #[command(flatten)]
+        identifier: Option<Identifier>,
+        #[arg(value_name = "GENERATION")]
+        generation: u64,
+    },
+    #[command(about = "Return a pinned snapshot to normal retention")]
+    Unpin {
+        #[command(flatten)]
+        identifier: Option<Identifier>,
+        #[arg(value_name = "GENERATION")]
+        generation: u64,
+    },
+    #[command(about = "Delete one compaction snapshot")]
+    Delete {
+        #[command(flatten)]
+        identifier: Option<Identifier>,
+        #[arg(value_name = "GENERATION")]
+        generation: u64,
+        #[arg(short = 'y', long)]
+        yes: bool,
+    },
+    #[command(about = "Delete expired snapshots or every unpinned snapshot")]
+    Prune {
+        #[command(flatten)]
+        identifier: Option<Identifier>,
+        #[arg(
+            long,
+            help = "Delete every unpinned snapshot, including unexpired history"
+        )]
+        all_unpinned: bool,
+        #[arg(short = 'y', long)]
+        yes: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1800,6 +1887,117 @@ async fn handle_session_subcommand(command: SessionCommand) -> Result<()> {
             };
             crate::commands::session::handle_diagnostics(&session_id, output).await?;
         }
+        SessionCommand::ContextHistory { command } => {
+            handle_context_history_subcommand(command).await?;
+        }
+    }
+    Ok(())
+}
+
+async fn handle_context_history_subcommand(command: ContextHistoryCommand) -> Result<()> {
+    let session_manager = SessionManager::instance();
+    match command {
+        ContextHistoryCommand::List {
+            identifier,
+            limit,
+            before,
+            include_expired,
+            format,
+        } => {
+            let Some(session_id) =
+                resolve_or_prompt_session_id(&session_manager, identifier).await?
+            else {
+                return Ok(());
+            };
+            crate::commands::session::handle_context_history_list(
+                session_id,
+                limit,
+                before,
+                include_expired,
+                format,
+            )
+            .await?;
+        }
+        ContextHistoryCommand::Show {
+            identifier,
+            generation,
+            format,
+        } => {
+            let Some(session_id) =
+                resolve_or_prompt_session_id(&session_manager, identifier).await?
+            else {
+                return Ok(());
+            };
+            crate::commands::session::handle_context_history_show(session_id, generation, format)
+                .await?;
+        }
+        ContextHistoryCommand::Export {
+            identifier,
+            generation,
+            output,
+            format,
+            yes,
+        } => {
+            let Some(session_id) =
+                resolve_or_prompt_session_id(&session_manager, identifier).await?
+            else {
+                return Ok(());
+            };
+            crate::commands::session::handle_context_history_export(
+                session_id, generation, output, format, yes,
+            )
+            .await?;
+        }
+        ContextHistoryCommand::Pin {
+            identifier,
+            generation,
+        } => {
+            let Some(session_id) =
+                resolve_or_prompt_session_id(&session_manager, identifier).await?
+            else {
+                return Ok(());
+            };
+            crate::commands::session::handle_context_history_pin(session_id, generation, true)
+                .await?;
+        }
+        ContextHistoryCommand::Unpin {
+            identifier,
+            generation,
+        } => {
+            let Some(session_id) =
+                resolve_or_prompt_session_id(&session_manager, identifier).await?
+            else {
+                return Ok(());
+            };
+            crate::commands::session::handle_context_history_pin(session_id, generation, false)
+                .await?;
+        }
+        ContextHistoryCommand::Delete {
+            identifier,
+            generation,
+            yes,
+        } => {
+            let Some(session_id) =
+                resolve_or_prompt_session_id(&session_manager, identifier).await?
+            else {
+                return Ok(());
+            };
+            crate::commands::session::handle_context_history_delete(session_id, generation, yes)
+                .await?;
+        }
+        ContextHistoryCommand::Prune {
+            identifier,
+            all_unpinned,
+            yes,
+        } => {
+            let Some(session_id) =
+                resolve_or_prompt_session_id(&session_manager, identifier).await?
+            else {
+                return Ok(());
+            };
+            crate::commands::session::handle_context_history_prune(session_id, all_unpinned, yes)
+                .await?;
+        }
     }
     Ok(())
 }
@@ -2414,6 +2612,49 @@ mod tests {
                 ..
             }) => {}
             _ => panic!("expected confirmed session removal"),
+        }
+    }
+
+    #[test]
+    fn session_context_history_export_parses_sensitive_data_acknowledgement() {
+        let cli = Cli::try_parse_from([
+            "gosling",
+            "session",
+            "context-history",
+            "export",
+            "--session-id",
+            "session-1",
+            "--generation",
+            "7",
+            "--format",
+            "markdown",
+            "--yes",
+        ])
+        .expect("parse failed");
+
+        match cli.command {
+            Some(Command::Session {
+                command:
+                    Some(SessionCommand::ContextHistory {
+                        command:
+                            ContextHistoryCommand::Export {
+                                identifier:
+                                    Some(Identifier {
+                                        session_id: Some(session_id),
+                                        ..
+                                    }),
+                                generation: Some(7),
+                                format,
+                                yes: true,
+                                ..
+                            },
+                    }),
+                ..
+            }) => {
+                assert_eq!(session_id, "session-1");
+                assert_eq!(format, "markdown");
+            }
+            _ => panic!("expected acknowledged Context History export"),
         }
     }
 

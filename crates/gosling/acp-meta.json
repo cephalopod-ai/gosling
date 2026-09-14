@@ -446,6 +446,46 @@
       "responseType": "RestoreOutputRevisionResponse_unstable"
     },
     {
+      "method": "_gosling/unstable/session/compactions/history",
+      "requestType": "ListCompactionRevisionsRequest_unstable",
+      "responseType": "ListCompactionRevisionsResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/session/compactions/revision",
+      "requestType": "GetCompactionRevisionRequest_unstable",
+      "responseType": "GetCompactionRevisionResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/session/compactions/pin",
+      "requestType": "SetCompactionRevisionPinnedRequest_unstable",
+      "responseType": "GetCompactionRevisionResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/session/compactions/delete",
+      "requestType": "DeleteCompactionRevisionRequest_unstable",
+      "responseType": "DeleteCompactionRevisionResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/session/compactions/purge",
+      "requestType": "PurgeCompactionHistoryRequest_unstable",
+      "responseType": "PurgeCompactionHistoryResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/context-history/policy",
+      "requestType": "ReadCompactionHistoryPolicyRequest_unstable",
+      "responseType": "ReadCompactionHistoryPolicyResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/context-history/policy/preview",
+      "requestType": "PreviewCompactionHistoryPolicyRequest_unstable",
+      "responseType": "PreviewCompactionHistoryPolicyResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/context-history/policy/apply",
+      "requestType": "ApplyCompactionHistoryPolicyRequest_unstable",
+      "responseType": "ApplyCompactionHistoryPolicyResponse_unstable"
+    },
+    {
       "method": "_gosling/unstable/session/summary/get",
       "requestType": "GetSessionSummaryRequest_unstable",
       "responseType": "GetSessionSummaryResponse_unstable"

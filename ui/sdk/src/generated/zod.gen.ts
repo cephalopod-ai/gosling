@@ -2080,6 +2080,171 @@ export const zRestoreOutputRevisionResponse_unstable = z.object({
     revision: zOutputRevisionDto
 });
 
+export const zListCompactionRevisionsRequest_unstable = z.object({
+    sessionId: z.string(),
+    beforeGeneration: z.number().int().gte(0).nullish(),
+    limit: z.number().int().gte(0).nullish(),
+    includeExpired: z.boolean().optional().default(false)
+});
+
+export const zCompactionTriggerDto = z.enum([
+    'manual',
+    'automatic_threshold',
+    'overflow_recovery'
+]);
+
+export const zCompactionEffectDto = z.enum(['durable', 'temporary']);
+
+export const zCompactionRevisionListItemDto = z.object({
+    revisionId: z.string(),
+    generation: z.number().int().gte(0),
+    trigger: zCompactionTriggerDto,
+    effect: zCompactionEffectDto,
+    sourceMessageCount: z.number().int().gte(0),
+    summaryHash: z.string(),
+    provider: z.string().nullish(),
+    selectedModel: z.string().nullish(),
+    resolvedModel: z.string(),
+    estimatedTokensBefore: z.number().int().gte(0),
+    estimatedTokensAfter: z.number().int().gte(0),
+    createdAt: z.string(),
+    expiresAt: z.string().nullish(),
+    purgeAfter: z.string().nullish(),
+    pinnedAt: z.string().nullish(),
+    expired: z.boolean(),
+    payloadBytes: z.number().int().gte(0)
+});
+
+export const zListCompactionRevisionsResponse_unstable = z.object({
+    revisions: z.array(zCompactionRevisionListItemDto),
+    nextBeforeGeneration: z.number().int().gte(0).nullish(),
+    totalCount: z.number().int().gte(0),
+    purgedCount: z.number().int().gte(0)
+});
+
+export const zGetCompactionRevisionRequest_unstable = z.object({
+    sessionId: z.string(),
+    generation: z.number().int().gte(0)
+});
+
+export const zCompactionRevisionDto = z.object({
+    revisionId: z.string(),
+    sessionId: z.string(),
+    generation: z.number().int().gte(0),
+    trigger: zCompactionTriggerDto,
+    effect: zCompactionEffectDto,
+    parentRevisionId: z.string().nullish(),
+    firstSourceMessageId: z.string().nullish(),
+    lastSourceMessageId: z.string().nullish(),
+    sourceMessageCount: z.number().int().gte(0),
+    sourceHash: z.string(),
+    summaryHash: z.string(),
+    promptHash: z.string(),
+    provider: z.string().nullish(),
+    selectedModel: z.string().nullish(),
+    resolvedModel: z.string(),
+    usage: z.unknown(),
+    estimatedTokensBefore: z.number().int().gte(0),
+    estimatedTokensAfter: z.number().int().gte(0),
+    createdAt: z.string(),
+    expiresAt: z.string().nullish(),
+    purgeAfter: z.string().nullish(),
+    pinnedAt: z.string().nullish(),
+    expired: z.boolean(),
+    summary: z.string(),
+    sourceMessageIds: z.array(z.string()),
+    payloadBytes: z.number().int().gte(0)
+});
+
+export const zGetCompactionRevisionResponse_unstable = z.object({
+    revision: zCompactionRevisionDto
+});
+
+export const zSetCompactionRevisionPinnedRequest_unstable = z.object({
+    sessionId: z.string(),
+    generation: z.number().int().gte(0),
+    pinned: z.boolean()
+});
+
+export const zDeleteCompactionRevisionRequest_unstable = z.object({
+    sessionId: z.string(),
+    generation: z.number().int().gte(0)
+});
+
+export const zDeleteCompactionRevisionResponse_unstable = z.object({
+    deleted: z.boolean(),
+    purgedCount: z.number().int().gte(0)
+});
+
+export const zCompactionHistoryPurgeMode = z.enum(['expired', 'all_unpinned']);
+
+export const zPurgeCompactionHistoryRequest_unstable = z.object({
+    sessionId: z.string(),
+    mode: zCompactionHistoryPurgeMode.optional().default('expired')
+});
+
+export const zCompactionHistoryStatsDto = z.object({
+    revisionCount: z.number().int().gte(0),
+    pinnedCount: z.number().int().gte(0),
+    payloadBytes: z.number().int().gte(0),
+    pinnedBytes: z.number().int().gte(0),
+    purgedCount: z.number().int().gte(0)
+});
+
+export const zPurgeCompactionHistoryResponse_unstable = z.object({
+    deletedCount: z.number().int().gte(0),
+    deletedBytes: z.number().int().gte(0),
+    remaining: zCompactionHistoryStatsDto
+});
+
+export const zReadCompactionHistoryPolicyRequest_unstable = z.record(z.unknown());
+
+export const zCompactionHistoryPolicyDto = z.object({
+    version: z.number().int().gte(0),
+    captureEnabled: z.boolean(),
+    retentionDays: z.number().int().gte(0).nullish(),
+    purgeGraceDays: z.number().int().gte(0),
+    maxRevisionsPerSession: z.number().int().gte(0),
+    maxTotalBytes: z.number().int().gte(0)
+});
+
+export const zReadCompactionHistoryPolicyResponse_unstable = z.object({
+    policy: zCompactionHistoryPolicyDto,
+    stats: zCompactionHistoryStatsDto,
+    managedByEnvironment: z.boolean()
+});
+
+export const zPreviewCompactionHistoryPolicyRequest_unstable = z.object({
+    policy: zCompactionHistoryPolicyDto
+});
+
+export const zCompactionHistoryImpactDto = z.object({
+    current: zCompactionHistoryStatsDto,
+    wouldExpireCount: z.number().int().gte(0),
+    wouldPurgeNowCount: z.number().int().gte(0),
+    wouldRemoveForLimitsCount: z.number().int().gte(0),
+    projectedRevisionCount: z.number().int().gte(0),
+    projectedPayloadBytes: z.number().int().gte(0),
+    projectedOverBudgetBytes: z.number().int().gte(0),
+    warnings: z.array(z.string())
+});
+
+export const zPreviewCompactionHistoryPolicyResponse_unstable = z.object({
+    policy: zCompactionHistoryPolicyDto,
+    impact: zCompactionHistoryImpactDto,
+    previewHash: z.string()
+});
+
+export const zApplyCompactionHistoryPolicyRequest_unstable = z.object({
+    policy: zCompactionHistoryPolicyDto,
+    expectedPreviewHash: z.string()
+});
+
+export const zApplyCompactionHistoryPolicyResponse_unstable = z.object({
+    policy: zCompactionHistoryPolicyDto,
+    cleanup: zPurgeCompactionHistoryResponse_unstable
+});
+
 /**
  * Return durable compacted summary state for a session.
  */
@@ -3093,6 +3258,14 @@ export const zExtRequest = z.object({
             zListOutputRevisionsRequest_unstable,
             zGetOutputRevisionRequest_unstable,
             zRestoreOutputRevisionRequest_unstable,
+            zListCompactionRevisionsRequest_unstable,
+            zGetCompactionRevisionRequest_unstable,
+            zSetCompactionRevisionPinnedRequest_unstable,
+            zDeleteCompactionRevisionRequest_unstable,
+            zPurgeCompactionHistoryRequest_unstable,
+            zReadCompactionHistoryPolicyRequest_unstable,
+            zPreviewCompactionHistoryPolicyRequest_unstable,
+            zApplyCompactionHistoryPolicyRequest_unstable,
             zGetSessionSummaryRequest_unstable,
             zTruncateSessionConversationRequest_unstable,
             zUpdateSessionProjectRequest_unstable,
@@ -3205,6 +3378,13 @@ export const zExtResponse = z.union([
                 zListOutputRevisionsResponse_unstable,
                 zGetOutputRevisionResponse_unstable,
                 zRestoreOutputRevisionResponse_unstable,
+                zListCompactionRevisionsResponse_unstable,
+                zGetCompactionRevisionResponse_unstable,
+                zDeleteCompactionRevisionResponse_unstable,
+                zPurgeCompactionHistoryResponse_unstable,
+                zReadCompactionHistoryPolicyResponse_unstable,
+                zPreviewCompactionHistoryPolicyResponse_unstable,
+                zApplyCompactionHistoryPolicyResponse_unstable,
                 zGetSessionSummaryResponse_unstable,
                 zHandoffSessionResponse_unstable,
                 zTransitionSessionProviderResponse_unstable,
