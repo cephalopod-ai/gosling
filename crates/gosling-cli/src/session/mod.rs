@@ -9,7 +9,9 @@ pub mod streaming_buffer;
 mod thinking;
 
 use gosling::conversation::Conversation;
-use gosling::session::{NewPlanFeedback, PlanExpectation, PlanSnapshot, PlanStatus};
+use gosling::session::{
+    InteractionPolicy, NewPlanFeedback, PlanExpectation, PlanSnapshot, PlanStatus,
+};
 use std::env;
 use std::str::FromStr;
 use tokio::signal::ctrl_c;
@@ -522,7 +524,7 @@ impl CliSession {
                 })
                 .collect();
 
-            output::run_status_hook("waiting");
+            self.run_status_hook("waiting").await;
             let input = input::get_input(&mut editor, Some(&conversation_strings))?;
             if matches!(input, InputResult::Exit) {
                 break;
@@ -1164,7 +1166,7 @@ impl CliSession {
         }
 
         println!();
-        output::run_status_hook(status);
+        self.run_status_hook(status).await;
         output::show_thinking();
         let start_time = Instant::now();
         let result = self
@@ -1329,6 +1331,36 @@ impl CliSession {
             .await;
         result?;
         Ok(())
+    }
+
+    async fn run_status_hook(&self, status: &str) {
+        match self
+            .agent
+            .config
+            .session_manager
+            .plans()
+            .interaction_policy(&self.session_id)
+            .await
+        {
+            Ok(InteractionPolicy::Normal) => output::run_status_hook(status),
+            Ok(InteractionPolicy::Planning { .. }) => {
+                warn!(
+                    security.event_type = "planning_side_channel_denied",
+                    security.reason = "planning_status_hook_denied",
+                    session.id = self.session_id.as_str(),
+                    "host planning boundary suppressed the configured CLI status hook"
+                );
+            }
+            Err(error) => {
+                warn!(
+                    security.event_type = "planning_side_channel_denied",
+                    security.reason = "planning_state_unavailable",
+                    session.id = self.session_id.as_str(),
+                    error = %error,
+                    "host planning boundary could not verify durable state for the configured CLI status hook"
+                );
+            }
+        }
     }
 
     async fn process_agent_response(
@@ -3406,6 +3438,55 @@ mod tests {
         let snapshot = restarted.require_current_plan().await.unwrap();
         assert_eq!(snapshot.plan.status, PlanStatus::Drafting);
         assert_eq!(snapshot.plan.generation, 1);
+    }
+
+    #[tokio::test]
+    async fn configured_status_hooks_are_suppressed_while_a_plan_is_open() {
+        let temp = tempfile::tempdir().unwrap();
+        let marker = temp.path().join("status-hook-invoked");
+        let hook = format!("printf invoked > \"{}\"; :", marker.display());
+        let _guard = env_lock::lock_env([("GOSLING_STATUS_HOOK", Some(hook.as_str()))]);
+        let (cli, manager, session_id) = cli_session_with_messages(&temp, &[]).await;
+        let provider = PlanningTestProvider::new(false, false);
+
+        assert!(matches!(
+            manager
+                .plans()
+                .interaction_policy(&session_id)
+                .await
+                .unwrap(),
+            InteractionPolicy::Normal
+        ));
+        cli.run_status_hook("normal-test").await;
+        for _ in 0..100 {
+            if marker.exists() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert!(marker.exists(), "the configured status hook must be active");
+        std::fs::remove_file(&marker).unwrap();
+
+        manager
+            .plans()
+            .start_or_resume(&session_id, &provider, Some("planner".to_string()), None)
+            .await
+            .unwrap();
+
+        assert!(matches!(
+            manager
+                .plans()
+                .interaction_policy(&session_id)
+                .await
+                .unwrap(),
+            InteractionPolicy::Planning { .. }
+        ));
+        cli.run_status_hook("planning-test").await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(
+            !marker.exists(),
+            "an open plan must suppress the configured status hook"
+        );
     }
 
     #[tokio::test]

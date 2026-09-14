@@ -91,7 +91,7 @@ impl Agent {
                 session_id,
                 working_dir,
                 additional_working_dirs,
-                &interaction_policy,
+                interaction_policy,
             )
             .await?;
 

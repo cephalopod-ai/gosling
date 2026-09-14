@@ -27,14 +27,17 @@ impl Agent {
 
     pub(super) async fn reply_internal(
         &self,
-        conversation: Conversation,
-        session_config: SessionConfig,
-        session: Session,
-        pending_handoff_snapshot_id: Option<String>,
-        cancel_token: Option<CancellationToken>,
-        implementation_reference: Option<String>,
-        interaction_policy: crate::session::InteractionPolicy,
+        invocation: ReplyInvocation,
     ) -> Result<BoxStream<'_, Result<AgentEvent>>> {
+        let ReplyInvocation {
+            conversation,
+            session_config,
+            session,
+            pending_handoff_snapshot_id,
+            cancel_token,
+            implementation_reference,
+            interaction_policy,
+        } = invocation;
         let context = self
             .prepare_reply_context(
                 &session.id,

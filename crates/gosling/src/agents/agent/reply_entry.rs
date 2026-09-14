@@ -543,15 +543,17 @@ impl Agent {
                 conversation
             };
 
-            let mut reply_stream = self.reply_internal(
-                final_conversation,
-                session_config,
-                session,
-                pending_handoff_snapshot_id,
-                cancel_token.clone(),
-                implementation_reference,
-                interaction_policy,
-            ).await?;
+            let mut reply_stream = self
+                .reply_internal(ReplyInvocation {
+                    conversation: final_conversation,
+                    session_config,
+                    session,
+                    pending_handoff_snapshot_id,
+                    cancel_token: cancel_token.clone(),
+                    implementation_reference,
+                    interaction_policy,
+                })
+                .await?;
             while let Some(event) = reply_stream.next().await {
                 yield event?;
             }

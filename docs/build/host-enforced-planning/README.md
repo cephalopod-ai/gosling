@@ -28,6 +28,7 @@ execution on approval, and independent `/goal` verification.
 | --- | --- |
 | Branch and revision | `main` at `bd064a5168fd4b26016b51ffd6f8d0f10e82dd6e` |
 | Initial worktree | clean |
+| Final validation anchor | the shared `main` branch advanced during validation to `2aab6af43cb87790344a429097c95a332c5313ac`; the final turn-loop lint repair and record reconciliation remain visible in the working tree |
 | Session schema | v34 in `session_manager.rs` |
 | Plan source | 2026-09-13 architectural plan, 1,823 lines, read in full |
 | Toolchain | repository pin `1.92`; activated `rustc 1.92.0`, `cargo 1.92.0` |
@@ -90,7 +91,7 @@ later rollback note.
 | 3. Domain, schema v35, and canonical hashes | complete | fresh/migrated schemas, byte-exact hash fixtures, mutation invalidation, and cross-plan corruption rejection are covered |
 | 4. PlanService transitions and mutation fences | complete | compare-and-swap decisions, immutable turn policy, provider-transition blocking, and stale-state handling are implemented and tested |
 | 5. Bounded workspace helpers | complete | planning reads/search/tree walk use cap-std roots with explicit result, byte, depth, and match bounds |
-| 6. Internal planning capability/readiness | complete | seven typed planning capabilities are host-injected only for eligible planning turns and excluded from ordinary/public extension state |
+| 6. Internal planning capability/readiness | complete | five typed planning capabilities are host-injected only for eligible planning turns and excluded from ordinary/public extension state |
 | 7. Atomic dispatch enforcement and plan-policy corpus | complete | policy revalidation and durable operation begin/replay share one transaction before hooks, prompts, frontend emission, tracing, or side effects |
 | 8. Typed ACP/SDK | complete | get/start/feedback/approve/abandon/export requests and plan notifications are generated, typed, and exercised through ACP |
 | 9. Core continuity and native transfer | complete | copy, fork, import/export, handoff, archive, and deletion preserve or invalidate plan authority according to the accepted contract |
@@ -117,10 +118,14 @@ approvable, or transfer plan authority.
 The current runtime paths are registered without making a shipped or conformance
 claim:
 
+- `desktop.ipc_contract` and ARC-003 cover the shared contract, preload, every
+  main-process handler module, and updater bridge used by the audited Desktop
+  privilege boundary;
 - `core.session_planning` owns the existing plan state, storage, continuity,
-  ACP, and CLI paths;
+  schema/migration diagnostics, ACP, and CLI paths;
 - `security.planning_execution_boundary` owns the existing immutable turn
-  policy, typed capability identity, provider-readiness, and dispatch fences;
+  policy, typed capability identity, provider-readiness, dispatch fences, and
+  every hook, naming, memory, summarizer, and rollup side-effect gate;
 - `desktop.plan_review` owns the typed Desktop plan adapter and first-party
   review controls that bind feedback and decisions to an exact revision;
 - ARC-011 scopes the current enforcement and provider-readiness paths and checks
@@ -163,12 +168,18 @@ Completed evidence includes:
 
 The validation ledger is intentionally qualified:
 
-- the full `gosling` test suite passed in a hermetic path root; its aggregate
-  run excluded one environment-mutating prompt-template case, which passed as
-  an exact isolated test;
-- `cargo clippy --locked --all-targets -- -D warnings`, `cargo build --locked`,
-  the full CLI suite, the full Desktop Vitest suite, focused Electron plan
-  review, documentation build, and targeted ACP/schema checks passed;
+- the full `cargo test --locked` workspace run passed in a hermetic path root:
+  the main library reported 2,105 passed and four intentionally ignored tests,
+  the CLI library reported 273 passed, providers reported 479 passed, and every
+  enabled integration and documentation suite completed without a failure;
+- `cargo fmt --check`, `cargo clippy --locked --all-targets -- -D warnings`, the
+  full CLI suite, the 171-file/1,354-test Desktop Vitest suite, focused Electron
+  plan review, documentation build, and targeted ACP/schema checks passed;
+- the explicit 10,000-message/100-revision planning benchmark passed with
+  `lookup_p95_us=2786` and `mutation_p95_us=2370` on the final coordinator run;
+- Desktop `lint:check` passed type checking, ESLint, 21 localization integrity
+  tests, and 16 catalogs containing 1,224 messages; the 67-test Shell profile
+  suite also passed;
 - `just check-acp-schema` correctly reported that generated ACP files differ
   from `HEAD` because this candidate intentionally changes the schema; two
   consecutive generations produced identical bytes;
@@ -181,9 +192,9 @@ The validation ledger is intentionally qualified:
 - ADR-0020 is accepted before runtime work.
 - Architecture components and ARC-011/ARC-012 now register only existing paths.
   Their active status makes the rules binding for review; component notes state
-  that implementation remains in progress and make no conformance or release
-  claim. The Desktop adapter and review-control paths are registered; final
-  adapter/presentation validation remains pending.
+  that source implementation is present while release conformance remains tied
+  to recorded evidence. The Desktop adapter and review-control paths are
+  registered; final operator presentation acceptance remains pending.
 - The original Workstream-D sequencing is split: D0 fixture infrastructure is
   a Step-1 prerequisite, plan-policy cases co-land with Step 7, and final
   cross-layer coverage remains Step 12.
@@ -200,6 +211,10 @@ The validation ledger is intentionally qualified:
 - The catalog's generic feature-removal repair workflow was rejected as
   structurally inapplicable to this additive feature; the Rust application
   implementation workflow governs code changes.
+- A diff-scoped dependency check confirms that the Grok reference introduced no
+  Grok runtime, provider, authentication, workflow, binary, or package
+  dependency. Pre-existing canonical model-catalog entries are not part of this
+  implementation.
 
 ## Adjacent ChatGPT Codex fallback repair
 

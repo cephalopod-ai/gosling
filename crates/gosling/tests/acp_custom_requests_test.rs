@@ -258,6 +258,35 @@ fn test_custom_plan_lifecycle_and_notifications() {
         assert!(capabilities.contains(&serde_json::json!("session_history_search")));
         assert!(capabilities.contains(&serde_json::json!("session_history_read")));
 
+        for (method, request) in [
+            (
+                "_gosling/unstable/shell/domain/action",
+                serde_json::json!({
+                    "sessionId": session_id,
+                    "generation": 1,
+                    "action": "inspect",
+                    "input": {},
+                }),
+            ),
+            (
+                "_gosling/unstable/shell/domain/action/confirm",
+                serde_json::json!({
+                    "sessionId": session_id,
+                    "generation": 1,
+                    "actionId": "not-dispatched",
+                    "approve": true,
+                }),
+            ),
+        ] {
+            let denied = send_custom(conn.cx(), method, request)
+                .await
+                .expect_err("planning must deny app-direct domain actions before adapter dispatch");
+            let denied = serde_json::to_value(denied).unwrap();
+            assert_eq!(denied["data"]["code"], "planning_capability_denied");
+            assert_eq!(denied["data"]["retryable"], false);
+            assert_eq!(denied["data"]["approvalAvailable"], false);
+        }
+
         send_custom(
             conn.cx(),
             "_gosling/unstable/tools/permissions/set",

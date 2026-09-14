@@ -33,6 +33,36 @@ impl Agent {
         if !self.hook_manager.has_hooks(event) {
             return;
         }
+        match self
+            .config
+            .session_manager
+            .plans()
+            .interaction_policy(session_id)
+            .await
+        {
+            Ok(crate::session::InteractionPolicy::Normal) => {}
+            Ok(crate::session::InteractionPolicy::Planning { .. }) => {
+                tracing::warn!(
+                    security.event_type = "planning_side_channel_denied",
+                    security.reason = "planning_lifecycle_hook_denied",
+                    hook.event = %event,
+                    session.id = session_id,
+                    "host planning boundary suppressed a command-backed lifecycle hook"
+                );
+                return;
+            }
+            Err(error) => {
+                tracing::warn!(
+                    security.event_type = "planning_side_channel_denied",
+                    security.reason = "planning_state_unavailable",
+                    hook.event = %event,
+                    session.id = session_id,
+                    error = %error,
+                    "host planning boundary could not verify durable state for a lifecycle hook"
+                );
+                return;
+            }
+        }
         self.hook_manager
             .emit(event, crate::hooks::HookContext::new(event, session_id))
             .await;

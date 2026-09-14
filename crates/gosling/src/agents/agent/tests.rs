@@ -579,6 +579,9 @@ impl PlanningHooksTestEnv {
     "SessionStart": [
       { "hooks": [{ "type": "command", "command": "sh ${PLUGIN_ROOT}/record.sh" }] }
     ],
+    "SessionEnd": [
+      { "hooks": [{ "type": "command", "command": "sh ${PLUGIN_ROOT}/record.sh" }] }
+    ],
     "UserPromptSubmit": [
       { "hooks": [{ "type": "command", "command": "sh ${PLUGIN_ROOT}/record.sh" }] }
     ],
@@ -2744,6 +2747,9 @@ async fn planning_turn_suppresses_session_prompt_steer_and_stop_hooks() -> Resul
     while let Some(event) = reply.next().await {
         event?;
     }
+    agent
+        .emit_hook(crate::hooks::HookEvent::SessionEnd, &session.id)
+        .await;
 
     let interaction_policy = session_manager
         .plans()
@@ -3053,20 +3059,20 @@ async fn committed_plan_request_review_ends_the_turn_before_trailing_output() ->
         .interaction_policy(&session.id)
         .await?;
     let reply = agent
-        .reply_internal(
+        .reply_internal(ReplyInvocation {
             conversation,
-            SessionConfig {
+            session_config: SessionConfig {
                 id: session.id.clone(),
                 max_turns: Some(3),
                 compacted_context: false,
                 tail_limit: None,
             },
-            session.clone(),
-            None,
-            None,
-            None,
+            session: session.clone(),
+            pending_handoff_snapshot_id: None,
+            cancel_token: None,
+            implementation_reference: None,
             interaction_policy,
-        )
+        })
         .await?;
     tokio::pin!(reply);
     let mut streamed_text = Vec::new();

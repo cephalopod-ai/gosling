@@ -12,13 +12,28 @@ test('plan review remains usable in compact and standard windows', async ({
 }, testInfo) => {
   for (const layout of layouts) {
     await goslingPage.setViewportSize({ width: layout.width, height: layout.height });
-    await goslingPage.goto('http://localhost:5173/plan-review-playtest.html', {
-      // Electron's development connection can remain busy after Vite commits the
-      // dedicated playtest page. The dialog assertion below is the readiness gate.
-      waitUntil: 'commit',
+    await goslingPage.evaluate(() => {
+      document.querySelector('[data-testid="plan-review-playtest-frame"]')?.remove();
+      const frame = document.createElement('iframe');
+      frame.dataset.testid = 'plan-review-playtest-frame';
+      frame.src = new URL('/plan-review-playtest.html', window.location.origin).toString();
+      Object.assign(frame.style, {
+        position: 'fixed',
+        inset: '0',
+        width: '100vw',
+        height: '100vh',
+        border: '0',
+        zIndex: '2147483647',
+      });
+      document.body.append(frame);
     });
+    const frameElement = await goslingPage.waitForSelector(
+      '[data-testid="plan-review-playtest-frame"]'
+    );
+    const playtestPage = await frameElement.contentFrame();
+    if (!playtestPage) throw new Error('Plan review playtest frame did not load');
 
-    const dialog = goslingPage.getByRole('dialog', { name: 'Plan review' });
+    const dialog = playtestPage.getByRole('dialog', { name: 'Plan review' });
     await expect(dialog).toBeVisible();
     await expect(dialog).toHaveAccessibleDescription(
       /Revision 7 · 0123456789 · source through 87 · gpt-5/
@@ -36,19 +51,19 @@ test('plan review remains usable in compact and standard windows', async ({
       fullPage: false,
     });
 
-    const feedback = goslingPage.getByLabel('Feedback');
+    const feedback = playtestPage.getByLabel('Feedback');
     await feedback.scrollIntoViewIfNeeded();
     await expect(feedback).toHaveValue('Retain this draft while the review window is open.');
-    await expect(goslingPage.getByRole('button', { name: 'Request changes' })).toBeVisible();
-    await expect(goslingPage.getByRole('button', { name: 'Approve', exact: true })).toBeVisible();
-    await expect(goslingPage.getByRole('button', { name: 'Approve and implement' })).toBeVisible();
+    await expect(playtestPage.getByRole('button', { name: 'Request changes' })).toBeVisible();
+    await expect(playtestPage.getByRole('button', { name: 'Approve', exact: true })).toBeVisible();
+    await expect(playtestPage.getByRole('button', { name: 'Approve and implement' })).toBeVisible();
 
     await feedback.focus();
     await feedback.press('End');
     await feedback.type(` ${layout.name}`);
-    await goslingPage.getByRole('button', { name: 'Approve', exact: true }).click();
+    await playtestPage.getByRole('button', { name: 'Approve', exact: true }).click();
     await expect
-      .poll(() => goslingPage.evaluate(() => window.planReviewPlaytest.lastAction))
+      .poll(() => playtestPage.evaluate(() => window.planReviewPlaytest.lastAction))
       .toBe('approve');
   }
 });

@@ -259,6 +259,21 @@ pub struct ReplyContext {
     pub interaction_policy: crate::session::InteractionPolicy,
 }
 
+/// Immutable inputs captured for one entry into the provider turn loop.
+///
+/// Keeping these values together makes the planning authority part of the
+/// invocation contract instead of an optional value that callers can rebuild
+/// independently from the conversation or session.
+struct ReplyInvocation {
+    conversation: Conversation,
+    session_config: SessionConfig,
+    session: Session,
+    pending_handoff_snapshot_id: Option<String>,
+    cancel_token: Option<CancellationToken>,
+    implementation_reference: Option<String>,
+    interaction_policy: crate::session::InteractionPolicy,
+}
+
 pub struct ToolCategorizeResult {
     pub frontend_requests: Vec<ToolRequest>,
     pub remaining_requests: Vec<ToolRequest>,

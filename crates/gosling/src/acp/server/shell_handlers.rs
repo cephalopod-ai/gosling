@@ -511,6 +511,8 @@ impl GoslingAcpAgent {
             "DOMAIN_SESSION_UNAVAILABLE",
         )
         .await?;
+        self.require_normal_domain_action_policy(&request.session_id, "domain_action")
+            .await?;
         self.shell_runtime.perform_domain_action(request).await
     }
 
@@ -524,7 +526,57 @@ impl GoslingAcpAgent {
             "DOMAIN_SESSION_UNAVAILABLE",
         )
         .await?;
+        self.require_normal_domain_action_policy(&request.session_id, "domain_action_confirm")
+            .await?;
         self.shell_runtime.confirm_domain_action(request).await
+    }
+
+    async fn require_normal_domain_action_policy(
+        &self,
+        session_id: &str,
+        operation: &str,
+    ) -> Result<(), agent_client_protocol::Error> {
+        match self
+            .session_manager
+            .plans()
+            .interaction_policy(session_id)
+            .await
+        {
+            Ok(crate::session::InteractionPolicy::Normal) => Ok(()),
+            Ok(crate::session::InteractionPolicy::Planning { .. }) => {
+                tracing::warn!(
+                    security.event_type = "planning_side_channel_denied",
+                    security.reason = "planning_capability_denied",
+                    operation,
+                    session.id = session_id,
+                    "host planning boundary denied an app-direct domain action"
+                );
+                Err(
+                    agent_client_protocol::Error::invalid_params().data(serde_json::json!({
+                        "code": "planning_capability_denied",
+                        "retryable": false,
+                        "approvalAvailable": false
+                    })),
+                )
+            }
+            Err(error) => {
+                tracing::warn!(
+                    security.event_type = "planning_side_channel_denied",
+                    security.reason = "planning_state_unavailable",
+                    operation,
+                    session.id = session_id,
+                    error = %error,
+                    "host planning boundary could not verify durable state for an app-direct domain action"
+                );
+                Err(
+                    agent_client_protocol::Error::internal_error().data(serde_json::json!({
+                        "code": "planning_state_unavailable",
+                        "retryable": false,
+                        "approvalAvailable": false
+                    })),
+                )
+            }
+        }
     }
 
     async fn require_active_shell_session(
