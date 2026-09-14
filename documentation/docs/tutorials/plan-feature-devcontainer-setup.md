@@ -40,13 +40,11 @@ This involves coordinating multiple technologies: Docker, MySQL, PHP, Java, devc
 Let's start by having a brainstorming conversation with gosling to clarify our requirements.
 
 :::info Planning in Desktop vs CLI
-The gosling Desktop doesn't have a `/plan` keyword like the CLI. In Desktop, you need to explicitly ask gosling to create a plan:
-
-```
-"Hey gosling, can you create a plan to set up my GitHub repo for Codespaces with automatic Docker startup? Please don't start the actual work yet."
-```
-
-In the CLI, you can enter plan mode with `/plan` and gosling will ask clarifying questions before generating the plan. Unless you specifically ask gosling Desktop to "create a plan", it might jump straight into implementation.
+In the current source candidate, Desktop has a **Plan** control and review dialog. The CLI starts
+the same durable lifecycle with `/plan [prompt]`. Both keep approval separate from implementation;
+Desktop's final packaged and cross-platform acceptance is still pending. See
+[Creating Plans](/docs/guides/context-engineering/creating-plans) for availability, provider, and
+read-data requirements.
 :::
 
 ### Starting the Conversation

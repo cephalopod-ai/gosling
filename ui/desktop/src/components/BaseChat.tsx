@@ -35,11 +35,28 @@ import SessionInfoSummary from './SessionInfoSummary';
 import WorkingDirectoriesMenu from './WorkingDirectoriesMenu';
 import { CredentialProfileSelector } from './bottom_menu/CredentialProfileSelector';
 import { useArtifactWorkbench } from '../contexts/ArtifactWorkbenchContext';
-import { useAcpChatSessionSnapshot } from '../acp/chatSessionStore';
+import {
+  acpChatSessionActions,
+  acpChatSessionStore,
+  useAcpChatSessionSnapshot,
+} from '../acp/chatSessionStore';
 import { useArtifactRouter } from '../contexts/ArtifactRouterContext';
 import ThreadNavigator, { THREAD_TURN_ATTRIBUTE } from './conversation/ThreadNavigator';
 import type { SessionExperience } from '../types/sessionExperience';
 import { SwitchModelModal } from './settings/models/subcomponents/SwitchModelModal';
+import { PlanStatusControl } from './plans/PlanStatusControl';
+import { PlanReviewDialog } from './plans/PlanReviewDialog';
+import {
+  acpAbandonSessionPlan,
+  acpAddSessionPlanFeedback,
+  acpApproveSessionPlan,
+  acpExportSessionPlan,
+  acpStartSessionPlan,
+  approveAndImplementSessionPlan,
+  invalidateAcpSessionPlan,
+  refreshAcpSessionPlan,
+} from '../acp/plans';
+import { describeAcpError, parseAcpPlanError } from '../acp/errors';
 
 const i18n = defineMessages({
   failedToLoadSession: {
@@ -148,7 +165,10 @@ export default function BaseChat({
   const contentClassName = cn('pr-1 pb-10 pt-12', (isMobile || isNavCollapsed) && 'pt-16');
   const { droppedFiles, setDroppedFiles, handleDrop, handleDragOver } = useFileDrop();
   const [isRecoveryModelPickerOpen, setIsRecoveryModelPickerOpen] = useState(false);
+  const [isPlanReviewOpen, setIsPlanReviewOpen] = useState(false);
   const onStreamFinish = useCallback(() => {}, []);
+
+  useEffect(() => setIsPlanReviewOpen(false), [sessionId]);
 
   const {
     session,
@@ -158,6 +178,7 @@ export default function BaseChat({
     chatState,
     updateSession,
     handleSubmit,
+    submitPlanImplementationReference,
     loadOlderMessages,
     loadAllOlderMessages,
     onSteerQueuedMessage,
@@ -300,6 +321,196 @@ export default function BaseChat({
   const sessionModel = session?.model_config?.model_name ?? null;
   const sessionProvider = session?.provider_name ?? null;
   const sessionLoaded = session !== undefined;
+  const plan = acpSessionSnapshot?.plan;
+  const planSnapshot = plan?.snapshot ?? null;
+  const planStatus = planSnapshot?.plan.status;
+  const sessionBusy = chatState !== ChatState.Idle || queueProcessingBlocked;
+
+  useEffect(() => {
+    if (planStatus === 'awaiting_review') setIsPlanReviewOpen(true);
+  }, [planSnapshot?.activeRevision?.id, planStatus]);
+
+  const reportPlanError = useCallback(
+    (error: unknown) => {
+      const parsed = parseAcpPlanError(error);
+      const stale =
+        parsed && ['plan_conflict', 'plan_invalid_transition', 'plan_busy'].includes(parsed.code);
+      acpChatSessionActions.setPlanActionState(
+        sessionId,
+        null,
+        stale ? 'A newer revision exists. Refreshing the plan.' : describeAcpError(error)
+      );
+      if (stale) invalidateAcpSessionPlan(sessionId);
+    },
+    [sessionId]
+  );
+
+  const startPlan = useCallback(async () => {
+    if (!plan || sessionBusy || plan.actionPending) return;
+    acpChatSessionActions.setPlanActionState(sessionId, 'start', 'Starting plan…');
+    try {
+      const response = await acpStartSessionPlan(sessionId, planSnapshot?.plan.generation);
+      acpChatSessionActions.setPlanResponse(sessionId, response);
+      acpChatSessionActions.setPlanActionState(sessionId, null, 'Plan mode started.');
+    } catch (error) {
+      reportPlanError(error);
+    }
+  }, [plan, planSnapshot?.plan.generation, reportPlanError, sessionBusy, sessionId]);
+
+  const submitVisiblePlanPrompt = useCallback(
+    async (text: string) => {
+      await handleSubmit({ msg: text, images: [] });
+      return !acpChatSessionStore.getSnapshot(sessionId)?.promptError;
+    },
+    [handleSubmit, sessionId]
+  );
+
+  const submitExactPlanReference = useCallback(
+    async (text: string) => {
+      await submitPlanImplementationReference(text);
+      return !acpChatSessionStore.getSnapshot(sessionId)?.promptError;
+    },
+    [sessionId, submitPlanImplementationReference]
+  );
+
+  const requestPlanChanges = useCallback(async () => {
+    if (!plan || !planSnapshot?.activeRevision || plan.actionPending || sessionBusy) return;
+    const draft = plan.feedbackDraft;
+    if (!draft.body.trim()) return;
+    acpChatSessionActions.setPlanActionState(sessionId, 'feedback', 'Saving feedback…');
+    try {
+      const lines = planSnapshot.activeRevision.contentMarkdown.split('\n');
+      const firstLine = draft.startLine ?? draft.endLine;
+      const lastLine = draft.endLine ?? draft.startLine;
+      const startLine = firstLine && lastLine ? Math.min(firstLine, lastLine) : null;
+      const endLine = firstLine && lastLine ? Math.max(firstLine, lastLine) : null;
+      const selectedText =
+        startLine && endLine ? lines.slice(startLine - 1, endLine).join('\n') : undefined;
+      const response = await acpAddSessionPlanFeedback(sessionId, planSnapshot, {
+        body: draft.body.trim(),
+        startLine,
+        endLine,
+        selectedText,
+      });
+      acpChatSessionActions.setPlanResponse(sessionId, response);
+      acpChatSessionActions.setPlanFeedbackDraft(sessionId, {
+        body: '',
+        startLine: null,
+        endLine: null,
+        revisionId: null,
+      });
+      setIsPlanReviewOpen(false);
+      const ids = (response.snapshot?.feedback ?? [])
+        .filter((feedback) => !feedback.consumedByRevisionId)
+        .map((feedback) => feedback.id)
+        .join(', ');
+      const started = await submitVisiblePlanPrompt(
+        `Revise the current plan using the saved feedback${ids ? ` (${ids})` : ''}.`
+      );
+      acpChatSessionActions.setPlanActionState(
+        sessionId,
+        null,
+        started
+          ? 'Feedback saved; plan revision started.'
+          : 'Feedback saved; plan revision did not start.'
+      );
+    } catch (error) {
+      reportPlanError(error);
+    }
+  }, [plan, planSnapshot, reportPlanError, sessionBusy, sessionId, submitVisiblePlanPrompt]);
+
+  const approvePlan = useCallback(async () => {
+    if (!plan || !planSnapshot || plan.actionPending || sessionBusy) return;
+    acpChatSessionActions.setPlanActionState(sessionId, 'approve', 'Approving plan…');
+    try {
+      const response = await acpApproveSessionPlan(sessionId, planSnapshot);
+      acpChatSessionActions.setPlanResponse(sessionId, response);
+      acpChatSessionActions.setPlanActionState(
+        sessionId,
+        null,
+        'Plan approved. No implementation was started.'
+      );
+    } catch (error) {
+      reportPlanError(error);
+    }
+  }, [plan, planSnapshot, reportPlanError, sessionBusy, sessionId]);
+
+  const approveAndImplementPlan = useCallback(async () => {
+    if (!plan || !planSnapshot?.activeRevision || plan.actionPending || sessionBusy) return;
+    acpChatSessionActions.setPlanActionState(sessionId, 'approve_and_implement', 'Approving plan…');
+    try {
+      const result = await approveAndImplementSessionPlan({
+        sessionId,
+        snapshot: planSnapshot,
+        onApproved: (response) => {
+          acpChatSessionActions.setPlanResponse(sessionId, response);
+          acpChatSessionActions.setPlanActionState(
+            sessionId,
+            'approve_and_implement',
+            'Plan approved. Starting implementation…'
+          );
+        },
+        submit: submitExactPlanReference,
+      });
+      const response = result.response;
+      acpChatSessionActions.setPlanResponse(sessionId, response);
+      acpChatSessionActions.setPlanActionState(
+        sessionId,
+        null,
+        result.implementationStarted
+          ? 'Plan approved; implementation started.'
+          : result.implementationFailure === 'missing_reference'
+            ? 'Plan approved; the server did not provide an implementation reference.'
+            : 'Plan approved; implementation submission failed.'
+      );
+      if (result.implementationStarted) setIsPlanReviewOpen(false);
+    } catch (error) {
+      const current = acpChatSessionStore.getSnapshot(sessionId)?.plan.snapshot;
+      if (current?.plan.status === 'approved') {
+        acpChatSessionActions.setPlanActionState(
+          sessionId,
+          null,
+          'Plan approved; implementation did not start.'
+        );
+      } else {
+        reportPlanError(error);
+      }
+    }
+  }, [plan, planSnapshot, reportPlanError, sessionBusy, sessionId, submitExactPlanReference]);
+
+  const abandonPlan = useCallback(async () => {
+    if (!plan || !planSnapshot || plan.actionPending || sessionBusy) return;
+    acpChatSessionActions.setPlanActionState(sessionId, 'abandon', 'Abandoning plan…');
+    try {
+      const response = await acpAbandonSessionPlan(sessionId, planSnapshot);
+      acpChatSessionActions.setPlanResponse(sessionId, response);
+      acpChatSessionActions.setPlanActionState(sessionId, null, 'Plan abandoned.');
+      setIsPlanReviewOpen(false);
+    } catch (error) {
+      reportPlanError(error);
+    }
+  }, [plan, planSnapshot, reportPlanError, sessionBusy, sessionId]);
+
+  const exportPlan = useCallback(async () => {
+    if (!plan || !planSnapshot || plan.actionPending) return;
+    acpChatSessionActions.setPlanActionState(sessionId, 'export', 'Preparing Markdown export…');
+    try {
+      const markdown = await acpExportSessionPlan(sessionId, planSnapshot);
+      const response = await window.electron.saveArtifact({
+        source: { type: 'content', encoding: 'utf8', content: markdown },
+        defaultPath: `plan-${planSnapshot.plan.generation}-revision-${planSnapshot.activeRevision?.revision ?? 1}.md`,
+        filters: [{ name: 'Markdown', extensions: ['md'] }],
+        title: 'Export plan',
+      });
+      acpChatSessionActions.setPlanActionState(
+        sessionId,
+        null,
+        response.canceled ? 'Export canceled.' : 'Plan exported.'
+      );
+    } catch (error) {
+      reportPlanError(error);
+    }
+  }, [plan, planSnapshot, reportPlanError, sessionId]);
   const latestInference = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
       const message = messages[i];
@@ -756,6 +967,15 @@ export default function BaseChat({
           </div>
         )}
 
+        {planStatus === 'drafting' ? (
+          <div
+            className="mx-4 mb-2 rounded-md border border-border-primary bg-background-secondary px-3 py-2 text-xs text-text-secondary"
+            role="status"
+          >
+            Planning — can inspect this workspace but cannot edit or run commands.
+          </div>
+        ) : null}
+
         <ChatInputCard
           className={cn(
             'relative z-10 mx-4 mb-4',
@@ -812,8 +1032,50 @@ export default function BaseChat({
             onGoslingModeChange={handleGoslingModeChange}
             latestInference={latestInference}
             {...customChatInputProps}
+            planControl={
+              plan ? (
+                <PlanStatusControl
+                  plan={plan}
+                  disabled={sessionBusy}
+                  onStart={() => void startPlan()}
+                  onOpen={() => setIsPlanReviewOpen(true)}
+                />
+              ) : null
+            }
+            submitDisabled={
+              planStatus === 'awaiting_review' ||
+              Boolean(plan?.loadError) ||
+              Boolean(plan?.invalidated && planSnapshot)
+            }
+            submitDisabledReason={
+              planStatus === 'awaiting_review'
+                ? 'Review, approve, request changes, or abandon the current plan before sending another message.'
+                : plan?.loadError
+                  ? 'Plan state is unavailable. Refresh the session before sending a message.'
+                  : plan?.invalidated && planSnapshot
+                    ? 'A newer plan state is loading.'
+                    : undefined
+            }
           />
         </ChatInputCard>
+
+        {plan ? (
+          <PlanReviewDialog
+            open={isPlanReviewOpen}
+            plan={plan}
+            authorizationMode={session?.gosling_mode ?? 'current mode'}
+            sessionBusy={sessionBusy}
+            onOpenChange={setIsPlanReviewOpen}
+            onDraftChange={(draft) => acpChatSessionActions.setPlanFeedbackDraft(sessionId, draft)}
+            onRequestChanges={() => void requestPlanChanges()}
+            onApprove={() => void approvePlan()}
+            onApproveAndImplement={() => void approveAndImplementPlan()}
+            onAbandon={() => void abandonPlan()}
+            onExport={() => void exportPlan()}
+            onRefresh={() => void refreshAcpSessionPlan(sessionId)}
+            onStartAnother={() => void startPlan()}
+          />
+        ) : null}
 
         {isRecoveryModelPickerOpen && (
           <SwitchModelModal

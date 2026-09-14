@@ -813,6 +813,7 @@ impl SessionStorage {
                     .await?;
                 }
             }
+            35 => Self::create_session_plan_schema(tx).await?,
             _ => {
                 anyhow::bail!("Unknown migration version: {}", version);
             }

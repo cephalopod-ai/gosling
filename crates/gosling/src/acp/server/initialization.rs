@@ -123,6 +123,37 @@ impl GoslingAcpAgent {
         });
     }
 
+    fn spawn_plan_update_notifier(&self) {
+        if !self.supports_gosling_custom_notifications() {
+            return;
+        }
+        let Some(cx) = self.client_cx.get().cloned() else {
+            return;
+        };
+        let mut updates = self.session_manager.plans().subscribe();
+        tokio::spawn(async move {
+            loop {
+                match updates.recv().await {
+                    Ok(update) => {
+                        if cx
+                            .send_notification(plans::plan_update_notification(update))
+                            .is_err()
+                        {
+                            return;
+                        }
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                        warn!(
+                            skipped,
+                            "ACP plan-update subscriber lagged; clients can refresh with plan/get"
+                        );
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
+                }
+            }
+        });
+    }
+
     pub(super) async fn on_initialize(
         &self,
         args: InitializeRequest,
@@ -169,6 +200,7 @@ impl GoslingAcpAgent {
             .mcp_capabilities(McpCapabilities::new().http(true))
             .meta(Some(shell_capabilities_meta(&self.shell_runtime)));
         self.spawn_domain_adapter_status_notifier();
+        self.spawn_plan_update_notifier();
         Ok(InitializeResponse::new(protocol_version)
             .agent_info(Implementation::new("gosling", env!("CARGO_PKG_VERSION")))
             .agent_capabilities(capabilities)

@@ -24,7 +24,7 @@ CLI providers are useful if you:
 - already have a Claude Code, Cursor, or Google Gemini CLI subscription and want to use it through gosling instead of paying per token
 - need session persistence to save, resume, and export conversation history
 - prefer unified commands across different AI providers
-- want to [use multiple models together](#combining-with-planner-models) in your tasks
+- understand their [planning compatibility](#planning-compatibility) before choosing a workflow
 
 ### Benefits
 
@@ -34,7 +34,7 @@ CLI providers are useful if you:
 - **Session organization**: Manage multiple conversation threads
 
 #### Workflow Integration  
-- **Hybrid configurations**: Combine with planning mode and model-specific workflows
+- **Model-specific workflows**: Keep provider-owned features inside the external CLI runtime
 
 #### Interface Consistency
 - **Unified commands**: Use the same `gosling session` interface across all providers
@@ -263,19 +263,13 @@ Once configured, you can start a gosling session using these providers just like
 gosling session
 ```
 
-### Combining with Planner Models
+### Planning compatibility
 
-CLI providers also work well with planning mode when you want one model for strategy and another for execution:
-
-```bash
-# Use Claude Code for execution, OpenAI for planning
-export GOSLING_PROVIDER=claude-code
-export GOSLING_MODEL=default
-export GOSLING_PLANNER_PROVIDER=openai
-export GOSLING_PLANNER_MODEL=gpt-4o
-
-gosling session
-```
+Host-enforced planning requires the provider to return tool requests to gosling for authorization
+and dispatch. A CLI provider that executes tools in its own runtime is rejected for planning; a
+separate `GOSLING_PLANNER_PROVIDER` does not bypass that boundary. Use a compatible active session
+provider for the complete plan lifecycle. See
+[Creating Plans](/docs/guides/context-engineering/creating-plans).
 
 ## Configuration Options
 

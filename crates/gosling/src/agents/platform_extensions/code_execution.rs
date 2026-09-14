@@ -343,7 +343,9 @@ fn create_tool_callback(
     cancellation_token: CancellationToken,
 ) -> CallbackFn {
     Arc::new(move |args: Option<Value>| {
-        let ctx = ctx.clone();
+        let ctx = ctx.clone().with_dispatch_origin(
+            crate::agents::interaction_policy::DispatchOrigin::CodeModeNested,
+        );
         let full_name = full_name.clone();
         let manager = manager.clone();
         let cancellation_token = cancellation_token.clone();

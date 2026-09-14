@@ -96,6 +96,7 @@ impl SessionStorage {
     pub fn new(data_dir: PathBuf) -> Self {
         let session_dir = data_dir.join(SESSIONS_FOLDER);
         let db_path = session_dir.join(DB_NAME);
+        let (plan_updates, _) = tokio::sync::broadcast::channel(128);
         Self {
             pool: Self::create_pool(&db_path),
             initialized: tokio::sync::OnceCell::new(),
@@ -103,6 +104,8 @@ impl SessionStorage {
             session_dir,
             owner_id: uuid::Uuid::new_v4().to_string(),
             active_tool_operations: std::sync::Mutex::new(HashSet::new()),
+            plan_updates,
+            plan_source_hash_cache: std::sync::Mutex::new(std::collections::HashMap::new()),
         }
     }
 

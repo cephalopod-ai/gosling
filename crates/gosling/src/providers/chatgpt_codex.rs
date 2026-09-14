@@ -84,14 +84,6 @@ pub const CHATGPT_CODEX_KNOWN_MODELS: &[ChatGptCodexModelAttrs] = &[
         name: "gpt-5.5",
         reasoning_levels: &["low", "medium", "high", "xhigh"],
     },
-    ChatGptCodexModelAttrs {
-        name: "gpt-5.4",
-        reasoning_levels: &["low", "medium", "high", "xhigh"],
-    },
-    ChatGptCodexModelAttrs {
-        name: "gpt-5.4-mini",
-        reasoning_levels: &["low", "medium", "high", "xhigh"],
-    },
 ];
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1677,6 +1669,15 @@ mod tests {
         .unwrap();
 
         assert!(!jwks_contains_token_kid(&token, &jwks));
+    }
+
+    #[test]
+    fn offline_catalog_omits_models_removed_from_the_chatgpt_codex_route() {
+        let models = known_model_names();
+
+        assert!(models.contains(&CHATGPT_CODEX_DEFAULT_MODEL));
+        assert!(!models.contains(&"gpt-5.4"));
+        assert!(!models.contains(&"gpt-5.4-mini"));
     }
 
     #[test_case(

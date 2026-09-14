@@ -1,6 +1,7 @@
 use super::{
-    map_permission_response, spawn_acp_server_in_process, AcpTestServerSettings, Connection,
-    ModelStateFixture, PermissionDecision, Session, SessionData, TestConnectionConfig, TestOutput,
+    map_permission_response, spawn_acp_server_in_process_with_session_manager,
+    AcpTestServerSettings, Connection, ModelStateFixture, PermissionDecision, Session, SessionData,
+    TestConnectionConfig, TestOutput,
 };
 use agent_client_protocol::schema::v1::{
     ClientCapabilities, CloseSessionRequest, ContentBlock, CreateTerminalRequest,
@@ -15,6 +16,7 @@ use agent_client_protocol::schema::v1::{
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{Agent, Client, ConnectionTo};
 use async_trait::async_trait;
+use gosling::acp::custom_notifications::GoslingSessionNotification;
 use gosling::config::PermissionManager;
 use gosling_test_support::{ExpectedSessionId, IgnoreSessionId};
 use std::sync::{Arc, Mutex};
@@ -28,6 +30,7 @@ pub struct AcpServerConnection {
     cwd: Option<tempfile::TempDir>,
     data_root: std::path::PathBuf,
     updates: Arc<Mutex<Vec<SessionNotification>>>,
+    custom_updates: Arc<Mutex<Vec<GoslingSessionNotification>>>,
     permission: Arc<Mutex<PermissionDecision>>,
     notify: Arc<Notify>,
     permission_manager: Arc<PermissionManager>,
@@ -101,6 +104,26 @@ impl AcpServerConnection {
     pub fn cx(&self) -> &ConnectionTo<Agent> {
         &self.cx
     }
+
+    pub fn custom_session_updates(&self) -> Vec<GoslingSessionNotification> {
+        self.custom_updates.lock().unwrap().drain(..).collect()
+    }
+
+    pub async fn next_custom_session_update(&self) -> Option<GoslingSessionNotification> {
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if let Some(update) = {
+                    let mut updates = self.custom_updates.lock().unwrap();
+                    (!updates.is_empty()).then(|| updates.remove(0))
+                } {
+                    return update;
+                }
+                self.notify.notified().await;
+            }
+        })
+        .await
+        .ok()
+    }
 }
 
 #[async_trait]
@@ -123,23 +146,27 @@ impl Connection for AcpServerConnection {
             false => (config.data_root.clone(), None),
         };
 
-        let (transport, _handle, permission_manager) = spawn_acp_server_in_process(
-            openai.uri(),
-            &config.builtins,
-            data_root.as_path(),
-            config.gosling_mode,
-            config.provider_factory,
-            AcpTestServerSettings {
-                current_model: &config.current_model,
-                code_execution_runtime: config.code_execution_runtime,
-                disable_session_naming: config.disable_session_naming,
-            },
-        )
-        .await;
+        let (transport, _handle, permission_manager) =
+            spawn_acp_server_in_process_with_session_manager(
+                openai.uri(),
+                &config.builtins,
+                data_root.as_path(),
+                config.gosling_mode,
+                config.provider_factory,
+                config.session_manager,
+                AcpTestServerSettings {
+                    current_model: &config.current_model,
+                    code_execution_runtime: config.code_execution_runtime,
+                    disable_session_naming: config.disable_session_naming,
+                },
+            )
+            .await;
 
         let updates = Arc::new(Mutex::new(Vec::new()));
+        let custom_updates = Arc::new(Mutex::new(Vec::new()));
         let notify = Arc::new(Notify::new());
         let permission = Arc::new(Mutex::new(PermissionDecision::Cancel));
+        let custom_notifications = config.custom_notifications;
 
         let mut fs_cap = FileSystemCapabilities::default();
         if config.read_text_file.is_some() {
@@ -151,7 +178,9 @@ impl Connection for AcpServerConnection {
 
         let cx = {
             let updates_clone = updates.clone();
+            let custom_updates_clone = custom_updates.clone();
             let notify_clone = notify.clone();
+            let custom_notify_clone = notify.clone();
             let permission_clone = permission.clone();
             let read_handler = config.read_text_file;
             let write_handler = config.write_text_file;
@@ -165,6 +194,14 @@ impl Connection for AcpServerConnection {
             tokio::spawn(async move {
                 let result = Client
                     .builder()
+                    .on_receive_notification(
+                        async move |notification: GoslingSessionNotification, _cx| {
+                            custom_updates_clone.lock().unwrap().push(notification);
+                            custom_notify_clone.notify_waiters();
+                            Ok(())
+                        },
+                        agent_client_protocol::on_receive_notification!(),
+                    )
                     .on_receive_notification(
                         {
                             let updates = updates_clone.clone();
@@ -279,11 +316,21 @@ impl Connection for AcpServerConnection {
                             let resp = cx
                                 .send_request(
                                     InitializeRequest::new(ProtocolVersion::LATEST)
-                                        .client_capabilities(
-                                            ClientCapabilities::new()
+                                        .client_capabilities({
+                                            let capabilities = ClientCapabilities::new()
                                                 .fs(fs_cap)
-                                                .terminal(terminal.is_some()),
-                                        ),
+                                                .terminal(terminal.is_some());
+                                            if custom_notifications {
+                                                capabilities.meta(serde_json::Map::from_iter([(
+                                                    "gosling".to_string(),
+                                                    serde_json::json!({
+                                                        "customNotifications": true
+                                                    }),
+                                                )]))
+                                            } else {
+                                                capabilities
+                                            }
+                                        }),
                                 )
                                 .block_task()
                                 .await
@@ -318,6 +365,7 @@ impl Connection for AcpServerConnection {
             cwd: config.cwd,
             data_root,
             updates,
+            custom_updates,
             permission,
             notify,
             permission_manager,

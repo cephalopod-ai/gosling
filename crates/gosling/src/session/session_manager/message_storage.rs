@@ -21,7 +21,7 @@ use crate::conversation::Conversation;
 use anyhow::Result;
 use gosling_providers::conversation::token_usage::Usage;
 use rmcp::model::Role;
-use sqlx::{Pool, Sqlite};
+use sqlx::Sqlite;
 use std::collections::HashSet;
 
 const SEARCH_SNIPPET_CHARS: usize = 500;
@@ -51,6 +51,54 @@ fn relevant_search_snippet(text: &str, query: &str) -> String {
 }
 
 impl SessionStorage {
+    async fn stale_open_plan_if_affected_in_tx(
+        tx: &mut sqlx::Transaction<'_, Sqlite>,
+        session_id: &str,
+        affected: bool,
+        reason: &str,
+    ) -> Result<bool> {
+        if !affected {
+            return Ok(false);
+        }
+        Ok(Self::stale_open_plan_in_tx(tx, session_id, reason).await?)
+    }
+
+    async fn stale_open_plan_if_source_changed_in_tx(
+        &self,
+        tx: &mut sqlx::Transaction<'_, Sqlite>,
+        session_id: &str,
+        source_binding: Option<(Option<i64>, String)>,
+        affected_row_id: i64,
+        reason: &str,
+    ) -> Result<bool> {
+        let Some((Some(boundary), expected_hash)) = source_binding else {
+            return Ok(false);
+        };
+        if affected_row_id > boundary {
+            return Ok(false);
+        }
+        let (_, current_hash) = self.current_source_hash_in_tx(tx, session_id).await?;
+        if current_hash == expected_hash {
+            return Ok(false);
+        }
+        Ok(Self::stale_open_plan_in_tx(tx, session_id, reason).await?)
+    }
+
+    async fn publish_stale_plan_update(&self, session_id: &str, staled: bool) {
+        if !staled {
+            return;
+        }
+        match self.plan_snapshot(session_id).await {
+            Ok(Some(snapshot)) => self.publish_plan_update(&snapshot),
+            Ok(None) => {}
+            Err(error) => tracing::warn!(
+                session.id = session_id,
+                plan.error = %error,
+                "plan was staled but its post-commit update could not be published"
+            ),
+        }
+    }
+
     async fn reset_current_usage_in_tx(
         tx: &mut sqlx::Transaction<'_, Sqlite>,
         session_id: &str,
@@ -109,6 +157,27 @@ impl SessionStorage {
             messages.push(message);
         }
 
+        Ok(Conversation::new_unvalidated(messages))
+    }
+
+    pub(super) async fn get_conversation_in_tx(
+        tx: &mut sqlx::Transaction<'_, Sqlite>,
+        session_id: &str,
+    ) -> Result<Conversation> {
+        let rows = sqlx::query_as::<_, (String, String, i64, Option<String>, Option<String>)>(
+            "SELECT role, content_json, created_timestamp, metadata_json, message_id FROM messages WHERE session_id = ? ORDER BY created_timestamp, id",
+        )
+        .bind(session_id)
+        .fetch_all(&mut **tx)
+        .await?;
+        let messages = rows
+            .into_iter()
+            .map(|(role, content, created, metadata, message_id)| {
+                Self::row_to_message(role, content, created, metadata, message_id)
+            })
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .flatten();
         Ok(Conversation::new_unvalidated(messages))
     }
 
@@ -497,23 +566,37 @@ impl SessionStorage {
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
 
-        Self::upsert_message_in_tx(&mut tx, session_id, message).await?;
+        let plan_staled = self
+            .upsert_message_in_tx(&mut tx, session_id, message)
+            .await?;
 
         tx.commit().await?;
+        self.publish_stale_plan_update(session_id, plan_staled)
+            .await;
         Ok(())
     }
 
     pub(super) async fn upsert_message_in_tx(
+        &self,
         tx: &mut sqlx::Transaction<'_, Sqlite>,
         session_id: &str,
         message: &Message,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         let role = role_to_string(&message.role);
         let content_json = serde_json::to_string(&message.content)?;
         let metadata_json = serde_json::to_string(&message.metadata)?;
         let mut updated = false;
+        let mut updated_row_id: Option<i64> = None;
+        let source_binding = Self::open_plan_source_binding_in_tx(tx, session_id).await?;
 
         if let Some(message_id) = message.id.as_deref() {
+            updated_row_id = sqlx::query_scalar(
+                "SELECT id FROM messages WHERE session_id = ? AND message_id = ?",
+            )
+            .bind(session_id)
+            .bind(message_id)
+            .fetch_optional(&mut **tx)
+            .await?;
             let result = sqlx::query(
                 r#"
                 UPDATE messages
@@ -565,7 +648,21 @@ impl SessionStorage {
 
         Self::discover_message_artifacts_in_tx(tx, session_id, message).await?;
 
-        Ok(())
+        let plan_staled = match updated_row_id {
+            Some(row_id) => {
+                self.stale_open_plan_if_source_changed_in_tx(
+                    tx,
+                    session_id,
+                    source_binding,
+                    row_id,
+                    "a message at or before the plan source boundary was edited",
+                )
+                .await?
+            }
+            None => false,
+        };
+
+        Ok(plan_staled)
     }
 
     pub(super) async fn replace_conversation_in_tx(
@@ -613,17 +710,6 @@ impl SessionStorage {
         Ok(())
     }
 
-    async fn replace_conversation_inner(
-        pool: &Pool<Sqlite>,
-        session_id: &str,
-        conversation: &Conversation,
-    ) -> Result<()> {
-        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
-        Self::replace_conversation_in_tx(&mut tx, session_id, conversation).await?;
-        tx.commit().await?;
-        Ok(())
-    }
-
     pub async fn replace_conversation(
         &self,
         session_id: &str,
@@ -631,7 +717,30 @@ impl SessionStorage {
     ) -> Result<()> {
         let _write_guard = self.acquire_write_guard().await;
         let pool = self.pool().await?;
-        Self::replace_conversation_inner(pool, session_id, conversation).await
+        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+        let affected = match Self::open_plan_source_boundary_in_tx(&mut tx, session_id).await? {
+            Some(boundary) => {
+                sqlx::query_scalar::<_, bool>(
+                    "SELECT EXISTS(SELECT 1 FROM messages WHERE session_id = ? AND id <= ?)",
+                )
+                .bind(session_id)
+                .bind(boundary)
+                .fetch_one(&mut *tx)
+                .await?
+            }
+            None => false,
+        };
+        let staled = Self::stale_open_plan_if_affected_in_tx(
+            &mut tx,
+            session_id,
+            affected,
+            "conversation history was cleared or edited",
+        )
+        .await?;
+        Self::replace_conversation_in_tx(&mut tx, session_id, conversation).await?;
+        tx.commit().await?;
+        self.publish_stale_plan_update(session_id, staled).await;
+        Ok(())
     }
 
     /// Like `replace_conversation`, but also applies a `sessions` usage
@@ -651,7 +760,24 @@ impl SessionStorage {
         let _write_guard = self.acquire_write_guard().await;
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+        Self::ensure_compaction_allowed_in_tx(&mut tx, session_id).await?;
+        let source_binding = Self::open_plan_source_binding_in_tx(&mut tx, session_id).await?;
         Self::replace_conversation_in_tx(&mut tx, session_id, conversation).await?;
+        let plan_staled = if let Some((_, expected_hash)) = source_binding {
+            let (_, current_hash) = self.current_source_hash_in_tx(&mut tx, session_id).await?;
+            if current_hash != expected_hash {
+                Self::stale_open_plan_in_tx(
+                    &mut tx,
+                    session_id,
+                    "conversation compaction changed the plan source ledger",
+                )
+                .await?
+            } else {
+                false
+            }
+        } else {
+            false
+        };
         Self::record_usage_in_tx(
             &mut tx,
             session_id,
@@ -661,6 +787,8 @@ impl SessionStorage {
         )
         .await?;
         tx.commit().await?;
+        self.publish_stale_plan_update(session_id, plan_staled)
+            .await;
         Ok(())
     }
 
@@ -672,6 +800,24 @@ impl SessionStorage {
         let _write_guard = self.acquire_write_guard().await;
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+        let affected = match Self::open_plan_source_boundary_in_tx(&mut tx, session_id).await? {
+            Some(boundary) => sqlx::query_scalar::<_, bool>(
+                "SELECT EXISTS(SELECT 1 FROM messages WHERE session_id = ? AND created_timestamp >= ? AND id <= ?)",
+            )
+            .bind(session_id)
+            .bind(timestamp)
+            .bind(boundary)
+            .fetch_one(&mut *tx)
+            .await?,
+            None => false,
+        };
+        let staled = Self::stale_open_plan_if_affected_in_tx(
+            &mut tx,
+            session_id,
+            affected,
+            "conversation history was truncated through the plan source boundary",
+        )
+        .await?;
         sqlx::query("DELETE FROM messages WHERE session_id = ? AND created_timestamp >= ?")
             .bind(session_id)
             .bind(timestamp)
@@ -688,6 +834,7 @@ impl SessionStorage {
         Self::reset_current_usage_in_tx(&mut tx, session_id).await?;
 
         tx.commit().await?;
+        self.publish_stale_plan_update(session_id, staled).await;
         Ok(())
     }
 
@@ -709,6 +856,27 @@ impl SessionStorage {
         .await?;
 
         if let Some((boundary_id, boundary_timestamp)) = boundary {
+            let affects_plan = match Self::open_plan_source_boundary_in_tx(&mut tx, session_id).await?
+            {
+                Some(plan_boundary) => sqlx::query_scalar::<_, bool>(
+                    "SELECT EXISTS(SELECT 1 FROM messages WHERE session_id = ? AND (created_timestamp > ? OR (created_timestamp = ? AND id >= ?)) AND id <= ?)",
+                )
+                .bind(session_id)
+                .bind(boundary_timestamp)
+                .bind(boundary_timestamp)
+                .bind(boundary_id)
+                .bind(plan_boundary)
+                .fetch_one(&mut *tx)
+                .await?,
+                None => false,
+            };
+            let staled = Self::stale_open_plan_if_affected_in_tx(
+                &mut tx,
+                session_id,
+                affects_plan,
+                "conversation history was truncated through the plan source boundary",
+            )
+            .await?;
             sqlx::query(
                 "DELETE FROM messages WHERE session_id = ? AND (created_timestamp > ? OR (created_timestamp = ? AND id >= ?))",
             )
@@ -727,6 +895,9 @@ impl SessionStorage {
                 .execute(&mut *tx)
                 .await?;
             Self::reset_current_usage_in_tx(&mut tx, session_id).await?;
+            tx.commit().await?;
+            self.publish_stale_plan_update(session_id, staled).await;
+            return Ok(());
         }
 
         tx.commit().await?;
@@ -751,6 +922,27 @@ impl SessionStorage {
         .await?;
 
         if let Some((boundary_id, boundary_timestamp)) = boundary {
+            let affects_plan = match Self::open_plan_source_boundary_in_tx(&mut tx, session_id).await?
+            {
+                Some(plan_boundary) => sqlx::query_scalar::<_, bool>(
+                    "SELECT EXISTS(SELECT 1 FROM messages WHERE session_id = ? AND (created_timestamp > ? OR (created_timestamp = ? AND id > ?)) AND id <= ?)",
+                )
+                .bind(session_id)
+                .bind(boundary_timestamp)
+                .bind(boundary_timestamp)
+                .bind(boundary_id)
+                .bind(plan_boundary)
+                .fetch_one(&mut *tx)
+                .await?,
+                None => false,
+            };
+            let staled = Self::stale_open_plan_if_affected_in_tx(
+                &mut tx,
+                session_id,
+                affects_plan,
+                "conversation history was truncated through the plan source boundary",
+            )
+            .await?;
             sqlx::query(
                 "DELETE FROM messages WHERE session_id = ? AND (created_timestamp > ? OR (created_timestamp = ? AND id > ?))",
             )
@@ -769,6 +961,9 @@ impl SessionStorage {
                 .execute(&mut *tx)
                 .await?;
             Self::reset_current_usage_in_tx(&mut tx, session_id).await?;
+            tx.commit().await?;
+            self.publish_stale_plan_update(session_id, staled).await;
+            return Ok(());
         }
 
         tx.commit().await?;
@@ -789,12 +984,13 @@ impl SessionStorage {
         let _write_guard = self.acquire_write_guard().await;
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+        let source_binding = Self::open_plan_source_binding_in_tx(&mut tx, session_id).await?;
 
         // No-op when the row is gone: another writer (session truncation or
         // deletion from the desktop app) may race the background tasks that
         // patch metadata, and losing that race must not abort an agent turn.
-        let Some(current_metadata_json) = sqlx::query_scalar::<_, String>(
-            "SELECT metadata_json FROM messages WHERE message_id = ? AND session_id = ?",
+        let Some((row_id, current_metadata_json)) = sqlx::query_as::<_, (i64, String)>(
+            "SELECT id, metadata_json FROM messages WHERE message_id = ? AND session_id = ?",
         )
         .bind(message_id)
         .bind(session_id)
@@ -819,7 +1015,18 @@ impl SessionStorage {
         .execute(&mut *tx)
         .await?;
 
+        let plan_staled = self
+            .stale_open_plan_if_source_changed_in_tx(
+                &mut tx,
+                session_id,
+                source_binding,
+                row_id,
+                "message visibility at or before the plan source boundary changed",
+            )
+            .await?;
         tx.commit().await?;
+        self.publish_stale_plan_update(session_id, plan_staled)
+            .await;
 
         Ok(())
     }
@@ -841,6 +1048,7 @@ impl SessionStorage {
         let _write_guard = self.acquire_write_guard().await;
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+        let source_binding = Self::open_plan_source_binding_in_tx(&mut tx, session_id).await?;
 
         let rows = sqlx::query_as::<_, (i64, String)>(
             "SELECT id, content_json FROM messages \
@@ -874,7 +1082,18 @@ impl SessionStorage {
                 .bind(row_id)
                 .execute(&mut *tx)
                 .await?;
+            let plan_staled = self
+                .stale_open_plan_if_source_changed_in_tx(
+                    &mut tx,
+                    session_id,
+                    source_binding,
+                    row_id,
+                    "tool metadata at or before the plan source boundary changed",
+                )
+                .await?;
             tx.commit().await?;
+            self.publish_stale_plan_update(session_id, plan_staled)
+                .await;
             return Ok(());
         }
 

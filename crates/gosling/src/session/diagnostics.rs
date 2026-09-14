@@ -88,6 +88,9 @@ pub struct DiagnosticsReport {
     pub config: Option<DiagnosticsConfig>,
     pub extensions: DiagnosticsExtensions,
     pub session: Option<serde_json::Value>,
+    /// Plan lifecycle metadata only. Plan Markdown, feedback bodies, and event
+    /// details are intentionally excluded from diagnostics.
+    pub plan: Option<serde_json::Value>,
     pub logs: DiagnosticsLogs,
     pub prompts: Vec<DiagnosticsPrompt>,
     pub errors: Vec<DiagnosticsError>,
@@ -324,8 +327,13 @@ pub async fn generate_diagnostics(
     // collect successfully.
     let session = if is_full {
         match session_manager.export_session(session_id).await {
-            Ok(session_data) => match serde_json::from_str(&session_data) {
-                Ok(value) => Some(redact_json_strings(value)),
+            Ok(session_data) => match serde_json::from_str::<serde_json::Value>(&session_data) {
+                Ok(mut value) => {
+                    if let Some(object) = value.as_object_mut() {
+                        object.remove(crate::session::session_manager::NATIVE_PLAN_HISTORY_KEY);
+                    }
+                    Some(redact_json_strings(value))
+                }
                 Err(e) => {
                     tracing::warn!(
                         "Failed to parse exported session {} for diagnostics: {}",
@@ -348,6 +356,44 @@ pub async fn generate_diagnostics(
                 errors.push(DiagnosticsError {
                     path: None,
                     message: format!("Failed to export session: {}", e),
+                });
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    let plan = if is_full {
+        match session_manager.plans().snapshot(session_id).await {
+            Ok(Some(snapshot)) => Some(serde_json::json!({
+                "planId": snapshot.plan.id,
+                "generation": snapshot.plan.generation,
+                "status": snapshot.plan.status,
+                "activeRevisionId": snapshot.plan.active_revision_id,
+                "activeRevisionSha256": snapshot
+                    .active_revision
+                    .as_ref()
+                    .map(|revision| &revision.content_sha256),
+                "sourceThroughRowId": snapshot.plan.source_through_row_id,
+                "sourceHash": snapshot.plan.source_hash,
+                "scopeHash": snapshot.plan.scope_hash,
+                "staleReason": snapshot.plan.stale_reason,
+                "derivedFromSessionId": snapshot.plan.derived_from_session_id,
+                "derivedFromPlanId": snapshot.plan.derived_from_plan_id,
+                "feedbackCountInSnapshot": snapshot.feedback.len(),
+                "eventCountInSnapshot": snapshot.recent_events.len(),
+            })),
+            Ok(None) => None,
+            Err(error) => {
+                tracing::warn!(
+                    session.id = session_id,
+                    plan.error = %error,
+                    "failed to read plan metadata for diagnostics"
+                );
+                errors.push(DiagnosticsError {
+                    path: None,
+                    message: format!("Failed to read plan metadata: {error}"),
                 });
                 None
             }
@@ -446,6 +492,7 @@ pub async fn generate_diagnostics(
             enabled: system_info.enabled_extensions,
         },
         session,
+        plan,
         logs,
         prompts,
         errors,
@@ -455,6 +502,7 @@ pub async fn generate_diagnostics(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::session::{NewPlanFeedback, NewPlanRevision, PlanExpectation};
     use tempfile::TempDir;
 
     #[test]
@@ -634,5 +682,82 @@ mod tests {
 
         assert!(report.session.is_none());
         assert!(report.errors.is_empty());
+    }
+
+    #[tokio::test]
+    async fn diagnostics_include_plan_metadata_without_plan_content() {
+        use crate::config::GoslingMode;
+        use crate::conversation::message::Message;
+        use crate::session::SessionType;
+
+        let temp_dir = TempDir::new().unwrap();
+        let session_manager = SessionManager::new(temp_dir.path().join("data"));
+        let session = session_manager
+            .create_session(
+                temp_dir.path().to_path_buf(),
+                "diagnostics plan".to_string(),
+                SessionType::User,
+                GoslingMode::Approve,
+            )
+            .await
+            .unwrap();
+        session_manager
+            .add_message(&session.id, &Message::user().with_text("plan this"))
+            .await
+            .unwrap();
+        let started = session_manager
+            .storage()
+            .start_or_resume_plan(
+                &session.id,
+                Some("test".to_string()),
+                Some("test-model".to_string()),
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+        let revised = session_manager
+            .plans()
+            .update_revision(
+                &session.id,
+                NewPlanRevision {
+                    content_markdown: "PLAN-CONTENT-MUST-NOT-LEAK".to_string(),
+                    expected_generation: started.plan.generation,
+                    expected_parent_revision_id: None,
+                    planner_provider: None,
+                    planner_model: None,
+                },
+            )
+            .await
+            .unwrap();
+        let review = session_manager
+            .plans()
+            .request_review(&session.id, &PlanExpectation::for_snapshot(&revised))
+            .await
+            .unwrap();
+        session_manager
+            .plans()
+            .add_feedback(
+                &session.id,
+                &PlanExpectation::for_snapshot(&review),
+                NewPlanFeedback {
+                    body: "PLAN-FEEDBACK-MUST-NOT-LEAK".to_string(),
+                    start_line: None,
+                    end_line: None,
+                    selected_text: None,
+                },
+            )
+            .await
+            .unwrap();
+
+        let report = generate_diagnostics(&session_manager, &session.id, DiagnosticsLevel::Full)
+            .await
+            .unwrap();
+        assert_eq!(report.plan.as_ref().unwrap()["status"], "drafting");
+        let serialized = serde_json::to_string(&report).unwrap();
+        assert!(!serialized.contains("PLAN-CONTENT-MUST-NOT-LEAK"));
+        assert!(!serialized.contains("PLAN-FEEDBACK-MUST-NOT-LEAK"));
+        assert!(!serialized.contains("feedbackId"));
+        assert!(!serialized.contains(crate::session::session_manager::NATIVE_PLAN_HISTORY_KEY));
     }
 }

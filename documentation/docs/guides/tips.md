@@ -54,5 +54,7 @@ gosling Desktop lets you [customize the sidebar](/docs/guides/desktop-navigation
 ### Keep gosling updated
 Regularly [update](/docs/guides/updating-gosling) gosling to benefit from the latest features, bug fixes, and performance improvements.
 
-### Use a Dedicated Planner Model
-Use [planning mode](/docs/guides/context-engineering/creating-plans) with a dedicated planner model for complex reasoning, while keeping a faster default model for everyday execution.
+### Review a durable plan before implementation
+Use [host-enforced planning](/docs/guides/context-engineering/creating-plans) to gather bounded
+read-only evidence, revise an exact plan, and approve it before starting a separate implementation
+turn with the active session model.

@@ -12,6 +12,23 @@ impl Agent {
         tool_call: CallToolRequestParams,
         cancellation_token: CancellationToken,
     ) -> Result<ToolCallResult, ErrorData> {
+        let interaction_policy = self
+            .config
+            .session_manager
+            .plans()
+            .interaction_policy(session_id)
+            .await
+            .map_err(|error| ErrorData::new(ErrorCode::INTERNAL_ERROR, error.to_string(), None))?;
+        crate::agents::interaction_policy::authorize_tool_execution(
+            self.config.session_manager.as_ref(),
+            Some(self.config.permission_manager.as_ref()),
+            session_id,
+            &interaction_policy,
+            crate::agents::interaction_policy::DispatchOrigin::AppDirect,
+            None,
+            tool_call.name.as_ref(),
+        )
+        .await?;
         let request_id = format!("app_tool_{}", Uuid::new_v4().simple());
         let request = ToolRequest {
             id: request_id.clone(),
@@ -79,7 +96,15 @@ impl Agent {
             .await
             .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None))?;
         let (_, result) = self
-            .dispatch_tool_call(tool_call, request_id, Some(cancellation_token), &session)
+            .dispatch_tool_call_scoped(
+                tool_call,
+                request_id,
+                Some(cancellation_token),
+                &session,
+                false,
+                &interaction_policy,
+                crate::agents::interaction_policy::DispatchOrigin::AppDirect,
+            )
             .await;
         result
     }
@@ -93,8 +118,35 @@ impl Agent {
         cancellation_token: Option<CancellationToken>,
         session: &Session,
     ) -> (String, Result<ToolCallResult, ErrorData>) {
-        self.dispatch_tool_call_scoped(tool_call, request_id, cancellation_token, session, false)
+        let interaction_policy = match self
+            .config
+            .session_manager
+            .plans()
+            .interaction_policy(&session.id)
             .await
+        {
+            Ok(policy) => policy,
+            Err(error) => {
+                return (
+                    request_id,
+                    Err(ErrorData::new(
+                        ErrorCode::INTERNAL_ERROR,
+                        error.to_string(),
+                        None,
+                    )),
+                );
+            }
+        };
+        self.dispatch_tool_call_scoped(
+            tool_call,
+            request_id,
+            cancellation_token,
+            session,
+            false,
+            &interaction_policy,
+            crate::agents::interaction_policy::DispatchOrigin::AgentDirect,
+        )
+        .await
     }
 
     pub(crate) async fn dispatch_conversation_tool_call(
@@ -103,11 +155,21 @@ impl Agent {
         request_id: String,
         cancellation_token: Option<CancellationToken>,
         session: &Session,
+        interaction_policy: &crate::session::InteractionPolicy,
     ) -> (String, Result<ToolCallResult, ErrorData>) {
-        self.dispatch_tool_call_scoped(tool_call, request_id, cancellation_token, session, true)
-            .await
+        self.dispatch_tool_call_scoped(
+            tool_call,
+            request_id,
+            cancellation_token,
+            session,
+            true,
+            interaction_policy,
+            crate::agents::interaction_policy::DispatchOrigin::ModelNative,
+        )
+        .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn dispatch_tool_call_scoped(
         &self,
         tool_call: CallToolRequestParams,
@@ -115,19 +177,65 @@ impl Agent {
         cancellation_token: Option<CancellationToken>,
         session: &Session,
         conversation_bound: bool,
+        interaction_policy: &crate::session::InteractionPolicy,
+        dispatch_origin: crate::agents::interaction_policy::DispatchOrigin,
     ) -> (String, Result<ToolCallResult, ErrorData>) {
-        if crate::providers::utils::local_transcript_persistence_enabled() {
-            let input_summary = serde_json::json!({
-                "tool": tool_call.name,
-                "arguments": tool_call.arguments,
-            });
-            tracing::Span::current().record("input", tracing::field::display(&input_summary));
-        }
+        let tool_name = tool_call.name.to_string();
+        let is_frontend = self.is_frontend_tool(&tool_call.name).await;
+        let mut resolution_error = None;
+        let resolved_tool = if is_frontend
+            || matches!(
+                interaction_policy,
+                crate::session::InteractionPolicy::Planning { .. }
+            ) && !matches!(
+                dispatch_origin,
+                crate::agents::interaction_policy::DispatchOrigin::ModelNative
+            ) {
+            None
+        } else {
+            match self
+                .extension_manager
+                .resolve_tool(&session.id, &tool_name)
+                .await
+            {
+                Ok(identity) => Some(identity),
+                Err(error) => {
+                    resolution_error = Some(error);
+                    None
+                }
+            }
+        };
+        let authorization = match crate::agents::interaction_policy::authorize_tool_execution(
+            self.config.session_manager.as_ref(),
+            Some(self.config.permission_manager.as_ref()),
+            &session.id,
+            interaction_policy,
+            dispatch_origin,
+            resolved_tool
+                .as_ref()
+                .map(|resolved| &resolved.host_identity),
+            &tool_name,
+        )
+        .await
+        {
+            Ok(authorization) => authorization,
+            Err(error) => return (request_id, Err(error)),
+        };
 
         let operation_id = match self
             .config
             .session_manager
-            .begin_tool_operation(&session.id, &request_id, &tool_call, conversation_bound)
+            .authorize_and_begin_tool_operation(
+                &session.id,
+                &request_id,
+                &tool_call,
+                conversation_bound,
+                interaction_policy,
+                matches!(
+                    authorization,
+                    crate::agents::interaction_policy::ExecutionAuthorization::Planning(_)
+                ),
+            )
             .await
         {
             Ok(ToolOperationStart::Execute { operation_id }) => operation_id,
@@ -149,6 +257,18 @@ impl Agent {
                 );
             }
             Err(error) => {
+                if matches!(
+                    interaction_policy,
+                    crate::session::InteractionPolicy::Planning { .. }
+                ) || error.to_string().contains("normal policy is stale")
+                {
+                    return (
+                        request_id,
+                        Err(crate::agents::interaction_policy::atomic_policy_denial(
+                            &tool_name, error,
+                        )),
+                    );
+                }
                 return (
                     request_id,
                     Err(ErrorData::new(
@@ -161,10 +281,23 @@ impl Agent {
         };
         let mut operation_guard =
             ToolOperationGuard::new(self.config.session_manager.clone(), operation_id.clone());
+        let planning = matches!(
+            interaction_policy,
+            crate::session::InteractionPolicy::Planning { .. }
+        );
 
-        if self
-            .hook_manager
-            .has_hooks(crate::hooks::HookEvent::PreToolUse)
+        if crate::providers::utils::local_transcript_persistence_enabled() {
+            let input_summary = serde_json::json!({
+                "tool": tool_call.name,
+                "arguments": tool_call.arguments,
+            });
+            tracing::Span::current().record("input", tracing::field::display(&input_summary));
+        }
+
+        if !planning
+            && self
+                .hook_manager
+                .has_hooks(crate::hooks::HookEvent::PreToolUse)
         {
             let ctx =
                 crate::hooks::HookContext::new(crate::hooks::HookEvent::PreToolUse, &session.id)
@@ -218,12 +351,14 @@ impl Agent {
             .arguments
             .as_ref()
             .map(|a| serde_json::Value::Object(a.clone()));
-        self.emit_pre_tool_extended_hooks(
-            &tool_call.name,
-            tool_input_for_extended.as_ref(),
-            session,
-        )
-        .await;
+        if !planning {
+            self.emit_pre_tool_extended_hooks(
+                &tool_call.name,
+                tool_input_for_extended.as_ref(),
+                session,
+            )
+            .await;
+        }
 
         let output_capture = self
             .config
@@ -236,20 +371,25 @@ impl Agent {
             Some(session.working_dir.clone()),
             Some(request_id.clone()),
         )
-        .with_tool_operation_id(operation_id.clone());
+        .with_tool_operation_id(operation_id.clone())
+        .with_interaction_policy(interaction_policy.clone())
+        .with_dispatch_origin(dispatch_origin);
 
         debug!("WAITING_TOOL_START: {}", tool_call.name);
-        let result: ToolCallResult = if self.is_frontend_tool(&tool_call.name).await {
+        let result: ToolCallResult = if is_frontend {
             ToolCallResult::from(Err(ErrorData::new(
                 ErrorCode::INTERNAL_ERROR,
                 "Frontend tool execution required".to_string(),
                 None,
             )))
+        } else if let Some(error) = resolution_error {
+            ToolCallResult::from(Err(error))
         } else {
             let result = self
                 .extension_manager
-                .dispatch_tool_call(
+                .dispatch_authorized_tool_call(
                     &ctx,
+                    resolved_tool.expect("authorized non-frontend tools have a resolved owner"),
                     tool_call.clone(),
                     cancellation_token.unwrap_or_default(),
                 )
@@ -269,7 +409,11 @@ impl Agent {
 
         debug!("WAITING_TOOL_END: {}", tool_call.name);
 
-        let result = self.with_post_tool_hook(result, &tool_call, session);
+        let result = if planning {
+            result
+        } else {
+            self.with_post_tool_hook(result, &tool_call, session)
+        };
         let session_manager = self.config.session_manager.clone();
         let ToolCallResult {
             result,

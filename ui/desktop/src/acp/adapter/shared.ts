@@ -1,7 +1,7 @@
 import type { ToolCall, ToolCallUpdate } from '@agentclientprotocol/sdk';
 import type { TokenState } from '../../types/chat';
 import type { Message, NotificationEvent } from '../../types/message';
-import type { SessionArtifactDto } from '@repo-makeover/gosling-sdk';
+import type { PlanUpdate, SessionArtifactDto } from '@repo-makeover/gosling-sdk';
 
 export type AcpChatStateChange =
   | { type: 'messages'; messages: Message[] }
@@ -14,6 +14,7 @@ export type AcpChatStateChange =
     }
   | { type: 'localSteerConfirmed'; messageId: string }
   | { type: 'artifactUpserted'; artifact: SessionArtifactDto }
+  | { type: 'planInvalidated'; update: PlanUpdate }
   | { type: 'notification'; notification: NotificationEvent };
 
 export interface AdapterState {

@@ -15,7 +15,17 @@ impl GoslingAcpAgent {
         );
 
         if let Err(error) = &result {
-            tracing::error!(method, error = ?error, "ACP custom request failed");
+            if method.starts_with("_gosling/unstable/session/plan/") {
+                let plan_error_code = error
+                    .data
+                    .as_ref()
+                    .and_then(|data| data.get("code"))
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("plan_request_failed");
+                tracing::error!(method, plan_error_code, "ACP plan request failed");
+            } else {
+                tracing::error!(method, error = ?error, "ACP custom request failed");
+            }
         }
 
         result
@@ -242,6 +252,54 @@ impl GoslingAcpAgent {
         req: SteerSessionRequest,
     ) -> Result<SteerSessionResponse, agent_client_protocol::Error> {
         self.on_steer_session(req).await
+    }
+
+    #[custom_method(GetSessionPlanRequest)]
+    async fn dispatch_get_session_plan(
+        &self,
+        req: GetSessionPlanRequest,
+    ) -> Result<SessionPlanResponse, agent_client_protocol::Error> {
+        self.on_get_session_plan(req).await
+    }
+
+    #[custom_method(StartSessionPlanRequest)]
+    async fn dispatch_start_session_plan(
+        &self,
+        req: StartSessionPlanRequest,
+    ) -> Result<SessionPlanResponse, agent_client_protocol::Error> {
+        self.on_start_session_plan(req).await
+    }
+
+    #[custom_method(AddSessionPlanFeedbackRequest)]
+    async fn dispatch_add_session_plan_feedback(
+        &self,
+        req: AddSessionPlanFeedbackRequest,
+    ) -> Result<SessionPlanResponse, agent_client_protocol::Error> {
+        self.on_add_session_plan_feedback(req).await
+    }
+
+    #[custom_method(ApproveSessionPlanRequest)]
+    async fn dispatch_approve_session_plan(
+        &self,
+        req: ApproveSessionPlanRequest,
+    ) -> Result<SessionPlanResponse, agent_client_protocol::Error> {
+        self.on_approve_session_plan(req).await
+    }
+
+    #[custom_method(AbandonSessionPlanRequest)]
+    async fn dispatch_abandon_session_plan(
+        &self,
+        req: AbandonSessionPlanRequest,
+    ) -> Result<SessionPlanResponse, agent_client_protocol::Error> {
+        self.on_abandon_session_plan(req).await
+    }
+
+    #[custom_method(ExportSessionPlanRequest)]
+    async fn dispatch_export_session_plan(
+        &self,
+        req: ExportSessionPlanRequest,
+    ) -> Result<ExportSessionPlanResponse, agent_client_protocol::Error> {
+        self.on_export_session_plan(req).await
     }
 
     #[custom_method(DiagnosticsGetRequest)]

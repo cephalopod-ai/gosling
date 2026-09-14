@@ -2,11 +2,11 @@ import type { GoslingSessionNotification_unstable } from '@repo-makeover/gosling
 import type { SessionNotification } from '@agentclientprotocol/sdk';
 import { AppEvents } from '../constants/events';
 import { acpChatSessionActions, acpChatSessionStore } from './chatSessionStore';
+import { invalidateAcpSessionPlan } from './plans';
 
 export function handleAcpSessionNotification(notification: SessionNotification): Promise<void> {
-  const sessionNameBeforeNotification = acpChatSessionStore.getSnapshot(
-    notification.sessionId
-  )?.session?.name;
+  const sessionNameBeforeNotification = acpChatSessionStore.getSnapshot(notification.sessionId)
+    ?.session?.name;
   const updatedName =
     notification.update.sessionUpdate === 'session_info_update'
       ? notification.update.title
@@ -28,5 +28,8 @@ export function handleAcpGoslingSessionNotification(
   notification: GoslingSessionNotification_unstable
 ): Promise<void> {
   acpChatSessionActions.applyAcpGoslingSessionNotification(notification);
+  if (notification.update.sessionUpdate === 'plan_update') {
+    invalidateAcpSessionPlan(notification.sessionId);
+  }
   return Promise.resolve();
 }

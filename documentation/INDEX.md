@@ -17,6 +17,7 @@ This file is the durable map for the repository's documentation surface.
 - [quickstart](./docs/quickstart.md)
 - [getting started](./docs/getting-started/)
 - [guides](./docs/guides/)
+- [creating plans](./docs/guides/context-engineering/creating-plans.md)
 - [session handoff](./docs/guides/sessions/session-handoff.md)
 - [workspaces guide](./docs/guides/workspaces.md)
 - [Goose and gosling feature comparison](./docs/guides/goose-comparison.md) — Goose v1.49.0 / gosling v1.2.3, checked 2026-09-08

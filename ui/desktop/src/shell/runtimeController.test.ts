@@ -184,6 +184,12 @@ function harness(
         .fn()
         .mockResolvedValue({ sessionId: 'session-a', workingDir: '/workspace' }),
       resumeSession: vi.fn(),
+      getSessionPlan: vi.fn().mockResolvedValue({
+        status: 'none' as const,
+        generation: null,
+        revisionId: null,
+        revisionSha256: null,
+      }),
       prompt: vi.fn().mockResolvedValue({ stopReason: 'end_turn' }),
       cancel: vi.fn().mockResolvedValue(undefined),
       prepareHandoff: vi.fn(),
@@ -398,6 +404,25 @@ describe('shell runtime controller', () => {
       value.controller.getSessionController()!.resume(1, 'session-saved')
     ).resolves.toMatchObject({ sessionId: 'session-saved', workingDir: '/workspace' });
     expect(connection.resumeSession).toHaveBeenCalledWith('session-saved', '/workspace');
+  });
+
+  it('fails closed when the shell cannot load authoritative plan state', async () => {
+    const value = harness();
+    await value.controller.start();
+    const connection = value.connections[0] as unknown as {
+      getSessionPlan: ReturnType<typeof vi.fn>;
+      prompt: ReturnType<typeof vi.fn>;
+    };
+    connection.getSessionPlan.mockRejectedValueOnce(new Error('plan endpoint unavailable'));
+    const sessions = value.controller.getSessionController()!;
+
+    await expect(sessions.create(1)).resolves.toMatchObject({
+      plan: { status: 'unavailable' },
+    });
+    expect(() =>
+      sessions.submit({ generation: 1, sessionId: 'session-a', text: 'implement it' })
+    ).toThrow('reconnect before submitting');
+    expect(connection.prompt).not.toHaveBeenCalled();
   });
 
   it('projects ACP updates only through the active main-owned session', async () => {

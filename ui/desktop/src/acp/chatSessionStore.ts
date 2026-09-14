@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react';
 import type {
   GoslingSessionNotification_unstable,
+  PlanSnapshotDto,
+  PlanningCapabilityDto,
+  PlanUpdate,
   SessionArtifactDto,
+  SessionPlanResponse_unstable,
 } from '@repo-makeover/gosling-sdk';
 import type { RequestPermissionRequest, SessionNotification } from '@agentclientprotocol/sdk';
 import type { TokenState } from '../types/chat';
@@ -39,6 +43,34 @@ export interface AcpChatSessionSnapshot {
   pendingCancelPromptAttemptId: string | null;
   /** Ids of local steer echoes not yet applied by the agent — see `addPendingLocalSteerMessage`. */
   pendingLocalSteerMessageIds: ReadonlySet<string>;
+  plan: AcpChatPlanState;
+}
+
+export interface AcpPlanFeedbackDraft {
+  body: string;
+  startLine: number | null;
+  endLine: number | null;
+  revisionId: string | null;
+}
+
+export interface AcpChatPlanState {
+  snapshot: PlanSnapshotDto | null;
+  providerSupportsHostEnforcedPlanning: boolean;
+  permittedCapabilities: PlanningCapabilityDto[];
+  loading: boolean;
+  invalidated: boolean;
+  loadError: string | undefined;
+  latestUpdate: PlanUpdate | null;
+  feedbackDraft: AcpPlanFeedbackDraft;
+  actionPending:
+    | 'start'
+    | 'feedback'
+    | 'approve'
+    | 'approve_and_implement'
+    | 'abandon'
+    | 'export'
+    | null;
+  workflowMessage: string | undefined;
 }
 
 export interface AcpPromptError {
@@ -69,6 +101,21 @@ const initialTokenState: TokenState = {
   accumulatedOutputTokens: 0,
   accumulatedTotalTokens: 0,
 };
+
+function initialPlanState(): AcpChatPlanState {
+  return {
+    snapshot: null,
+    providerSupportsHostEnforcedPlanning: false,
+    permittedCapabilities: [],
+    loading: false,
+    invalidated: false,
+    loadError: undefined,
+    latestUpdate: null,
+    feedbackDraft: { body: '', startLine: null, endLine: null, revisionId: null },
+    actionPending: null,
+    workflowMessage: undefined,
+  };
+}
 
 export interface AcpChatSessionStore {
   getSnapshot(sessionId: string): AcpChatSessionSnapshot | undefined;
@@ -108,6 +155,21 @@ export interface AcpChatSessionActions {
 
   setMessages(sessionId: string, messages: Message[]): AcpChatSessionSnapshot;
   setArtifacts(sessionId: string, artifacts: SessionArtifactDto[]): AcpChatSessionSnapshot;
+  startPlanLoad(sessionId: string): AcpChatSessionSnapshot;
+  setPlanResponse(
+    sessionId: string,
+    response: SessionPlanResponse_unstable
+  ): AcpChatSessionSnapshot;
+  failPlanLoad(sessionId: string, error: string): AcpChatSessionSnapshot;
+  setPlanFeedbackDraft(
+    sessionId: string,
+    draft: Partial<AcpPlanFeedbackDraft>
+  ): AcpChatSessionSnapshot;
+  setPlanActionState(
+    sessionId: string,
+    pending: AcpChatPlanState['actionPending'],
+    workflowMessage?: string
+  ): AcpChatSessionSnapshot;
   setHistoryPageState(
     sessionId: string,
     state: {
@@ -226,6 +288,7 @@ function createAcpChatSessionStoreInternal(): AcpChatSessionStoreInternal {
       promptCancellationRestoreState: null,
       pendingUserInputRequestIds: new Set(),
       pendingLocalSteerMessageIds: new Set(),
+      plan: initialPlanState(),
       adapter: createAcpSessionNotificationAdapter(),
     };
     sessionsById.set(sessionId, entry);
@@ -276,6 +339,7 @@ function createAcpChatSessionStoreInternal(): AcpChatSessionStoreInternal {
     entry.sessionLoadError = undefined;
     entry.promptError = undefined;
     entry.chatState = ChatState.LoadingConversation;
+    entry.plan = { ...entry.plan, loading: true, invalidated: true, loadError: undefined };
     return notify(sessionId, entry);
   };
 
@@ -320,6 +384,55 @@ function createAcpChatSessionStoreInternal(): AcpChatSessionStoreInternal {
   const setArtifacts: AcpChatSessionActions['setArtifacts'] = (sessionId, artifacts) => {
     const entry = getOrCreateEntry(sessionId);
     entry.artifacts = deduplicateArtifacts(artifacts);
+    return notify(sessionId, entry);
+  };
+
+  const startPlanLoad: AcpChatSessionActions['startPlanLoad'] = (sessionId) => {
+    const entry = getOrCreateEntry(sessionId);
+    entry.plan = { ...entry.plan, loading: true, invalidated: true, loadError: undefined };
+    return notify(sessionId, entry);
+  };
+
+  const setPlanResponse: AcpChatSessionActions['setPlanResponse'] = (sessionId, response) => {
+    const entry = getOrCreateEntry(sessionId);
+    entry.plan = {
+      ...entry.plan,
+      snapshot: response.snapshot ?? null,
+      providerSupportsHostEnforcedPlanning: response.providerSupportsHostEnforcedPlanning,
+      permittedCapabilities: [...(response.permittedCapabilities ?? [])],
+      loading: false,
+      invalidated: false,
+      loadError: undefined,
+      latestUpdate: null,
+    };
+    return notify(sessionId, entry);
+  };
+
+  const failPlanLoad: AcpChatSessionActions['failPlanLoad'] = (sessionId, error) => {
+    const entry = getOrCreateEntry(sessionId);
+    entry.plan = { ...entry.plan, loading: false, invalidated: true, loadError: error };
+    return notify(sessionId, entry);
+  };
+
+  const setPlanFeedbackDraft: AcpChatSessionActions['setPlanFeedbackDraft'] = (
+    sessionId,
+    draft
+  ) => {
+    const entry = getOrCreateEntry(sessionId);
+    entry.plan = {
+      ...entry.plan,
+      feedbackDraft: { ...entry.plan.feedbackDraft, ...draft },
+    };
+    return notify(sessionId, entry);
+  };
+
+  const setPlanActionState: AcpChatSessionActions['setPlanActionState'] = (
+    sessionId,
+    actionPending,
+    workflowMessage
+  ) => {
+    const entry = getOrCreateEntry(sessionId);
+    entry.plan = { ...entry.plan, actionPending, workflowMessage };
     return notify(sessionId, entry);
   };
 
@@ -633,6 +746,11 @@ function createAcpChatSessionStoreInternal(): AcpChatSessionStoreInternal {
     setSessionLoadError,
     setMessages,
     setArtifacts,
+    startPlanLoad,
+    setPlanResponse,
+    failPlanLoad,
+    setPlanFeedbackDraft,
+    setPlanActionState,
     setHistoryPageState,
     prependMessages,
     addPendingLocalSteerMessage,
@@ -714,6 +832,11 @@ function actionsFromStore(store: AcpChatSessionStoreInternal): AcpChatSessionAct
     setSessionLoadError: store.setSessionLoadError,
     setMessages: store.setMessages,
     setArtifacts: store.setArtifacts,
+    startPlanLoad: store.startPlanLoad,
+    setPlanResponse: store.setPlanResponse,
+    failPlanLoad: store.failPlanLoad,
+    setPlanFeedbackDraft: store.setPlanFeedbackDraft,
+    setPlanActionState: store.setPlanActionState,
     setHistoryPageState: store.setHistoryPageState,
     prependMessages: store.prependMessages,
     addPendingLocalSteerMessage: store.addPendingLocalSteerMessage,
@@ -758,6 +881,18 @@ function applyChatStateChanges(entry: StoreEntry, changes: AcpChatStateChange[])
       case 'artifactUpserted':
         entry.artifacts = deduplicateArtifacts([...entry.artifacts, change.artifact]);
         break;
+      case 'planInvalidated': {
+        const latestUpdate = entry.plan.latestUpdate;
+        entry.plan = {
+          ...entry.plan,
+          invalidated: true,
+          latestUpdate:
+            !latestUpdate || change.update.updatedAt >= latestUpdate.updatedAt
+              ? { ...change.update }
+              : latestUpdate,
+        };
+        break;
+      }
       case 'notification':
         entry.notifications = [...entry.notifications, change.notification];
         break;
@@ -895,6 +1030,29 @@ function snapshotFromEntry(entry: StoreEntry): AcpChatSessionSnapshot {
     activeRunId: entry.activeRunId,
     pendingCancelPromptAttemptId: entry.pendingCancelPromptAttemptId,
     pendingLocalSteerMessageIds: new Set(entry.pendingLocalSteerMessageIds),
+    plan: {
+      ...entry.plan,
+      snapshot: entry.plan.snapshot ? clonePlanSnapshot(entry.plan.snapshot) : null,
+      permittedCapabilities: [...entry.plan.permittedCapabilities],
+      latestUpdate: entry.plan.latestUpdate
+        ? {
+            ...entry.plan.latestUpdate,
+            activeRevision: entry.plan.latestUpdate.activeRevision
+              ? { ...entry.plan.latestUpdate.activeRevision }
+              : entry.plan.latestUpdate.activeRevision,
+          }
+        : null,
+      feedbackDraft: { ...entry.plan.feedbackDraft },
+    },
+  };
+}
+
+function clonePlanSnapshot(snapshot: PlanSnapshotDto): PlanSnapshotDto {
+  return {
+    plan: { ...snapshot.plan },
+    activeRevision: snapshot.activeRevision ? { ...snapshot.activeRevision } : null,
+    feedback: snapshot.feedback?.map((feedback) => ({ ...feedback })) ?? [],
+    recentEvents: snapshot.recentEvents?.map((event) => ({ ...event })) ?? [],
   };
 }
 

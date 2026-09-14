@@ -7,7 +7,47 @@ use std::future::Future;
 use tracing::Instrument;
 
 impl ExtensionManager {
-    pub(super) async fn resolve_tool(
+    async fn host_identity_for_owner(
+        &self,
+        extension_name: &str,
+        actual_tool_name: &str,
+    ) -> Option<crate::agents::interaction_policy::HostToolIdentity> {
+        self.extensions
+            .lock()
+            .await
+            .get(extension_name)
+            .map(|extension| {
+                crate::agents::interaction_policy::HostToolIdentity::from_extension_config(
+                    &extension.config,
+                    actual_tool_name,
+                )
+            })
+    }
+
+    pub(crate) async fn host_identity_for_catalog_tool(
+        &self,
+        tool: &Tool,
+    ) -> Option<crate::agents::interaction_policy::HostToolIdentity> {
+        let owner = get_tool_owner(tool)?;
+        let actual_tool_name = tool
+            .name
+            .strip_prefix(&format!("{owner}__"))
+            .unwrap_or(tool.name.as_ref());
+        self.host_identity_for_owner(&owner, actual_tool_name).await
+    }
+
+    pub(crate) async fn resolve_host_tool_identity(
+        &self,
+        session_id: &str,
+        tool_name: &str,
+    ) -> Result<crate::agents::interaction_policy::HostToolIdentity, ErrorData> {
+        Ok(self
+            .resolve_tool(session_id, tool_name)
+            .await?
+            .host_identity)
+    }
+
+    pub(crate) async fn resolve_tool(
         &self,
         session_id: &str,
         tool_name: &str,
@@ -40,18 +80,44 @@ impl ExtensionManager {
                 .unwrap_or(tool_name)
                 .to_string();
 
-            let client = self.get_server_client(&owner).await.ok_or_else(|| {
-                ErrorData::new(
+            let (client, host_identity, available) = self
+                .extensions
+                .lock()
+                .await
+                .get(&owner)
+                .map(|extension| {
+                    (
+                        extension.get_client(),
+                        crate::agents::interaction_policy::HostToolIdentity::from_extension_config(
+                            &extension.config,
+                            &actual_tool_name,
+                        ),
+                        extension.config.is_tool_available(&actual_tool_name),
+                    )
+                })
+                .ok_or_else(|| {
+                    ErrorData::new(
+                        ErrorCode::RESOURCE_NOT_FOUND,
+                        format!("Extension '{}' not found for tool '{}'", owner, tool_name),
+                        None,
+                    )
+                })?;
+            if !available {
+                return Err(ErrorData::new(
                     ErrorCode::RESOURCE_NOT_FOUND,
-                    format!("Extension '{}' not found for tool '{}'", owner, tool_name),
+                    format!(
+                        "Tool '{}' is not available for extension '{}'",
+                        actual_tool_name, owner
+                    ),
                     None,
-                )
-            })?;
+                ));
+            }
 
             return Ok(ResolvedTool {
                 tool_name: tool.name.to_string(),
                 extension_name: owner,
                 actual_tool_name,
+                host_identity,
                 client,
                 tool_meta: get_tool_meta_value(tool),
                 resource_uri: get_tool_resource_uri(tool),
@@ -64,11 +130,33 @@ impl ExtensionManager {
         // instead of failing a turn on a naming convention.
         if let Some((prefix, actual)) = tool_name.split_once("__") {
             let owner = name_to_key(prefix);
-            if let Some(client) = self.get_server_client(&owner).await {
+            if let Some((client, host_identity, available)) =
+                self.extensions.lock().await.get(&owner).map(|extension| {
+                    (
+                        extension.get_client(),
+                        crate::agents::interaction_policy::HostToolIdentity::from_extension_config(
+                            &extension.config,
+                            actual,
+                        ),
+                        extension.config.is_tool_available(actual),
+                    )
+                })
+            {
+                if !available {
+                    return Err(ErrorData::new(
+                        ErrorCode::RESOURCE_NOT_FOUND,
+                        format!(
+                            "Tool '{}' is not available for extension '{}'",
+                            actual, owner
+                        ),
+                        None,
+                    ));
+                }
                 return Ok(ResolvedTool {
                     tool_name: tool_name.to_string(),
                     extension_name: owner,
                     actual_tool_name: actual.to_string(),
+                    host_identity,
                     client,
                     tool_meta: None,
                     resource_uri: None,
@@ -100,24 +188,40 @@ impl ExtensionManager {
     ) -> Result<ToolCallResult> {
         let tool_name_str = tool_call.name.to_string();
         let resolved = self.resolve_tool(&ctx.session_id, &tool_name_str).await?;
+        let interaction_policy = match &ctx.interaction_policy {
+            Some(policy) => policy.clone(),
+            None => self
+                .context
+                .session_manager
+                .plans()
+                .interaction_policy(&ctx.session_id)
+                .await
+                .map_err(|error| {
+                    ErrorData::new(ErrorCode::INTERNAL_ERROR, error.to_string(), None)
+                })?,
+        };
+        crate::agents::interaction_policy::authorize_tool_execution(
+            self.context.session_manager.as_ref(),
+            None,
+            &ctx.session_id,
+            &interaction_policy,
+            ctx.dispatch_origin,
+            Some(&resolved.host_identity),
+            &tool_name_str,
+        )
+        .await?;
 
-        if let Some(extension) = self.extensions.lock().await.get(&resolved.extension_name) {
-            if !extension
-                .config
-                .is_tool_available(&resolved.actual_tool_name)
-            {
-                return Err(ErrorData::new(
-                    ErrorCode::RESOURCE_NOT_FOUND,
-                    format!(
-                        "Tool '{}' is not available for extension '{}'",
-                        resolved.actual_tool_name, resolved.extension_name
-                    ),
-                    None,
-                )
-                .into());
-            }
-        }
+        self.dispatch_authorized_tool_call(ctx, resolved, tool_call, cancellation_token)
+            .await
+    }
 
+    pub(crate) async fn dispatch_authorized_tool_call(
+        &self,
+        ctx: &ToolCallContext,
+        resolved: ResolvedTool,
+        tool_call: CallToolRequestParams,
+        cancellation_token: CancellationToken,
+    ) -> Result<ToolCallResult> {
         let arguments = tool_call.arguments.clone();
         let client = resolved.client.clone();
         let hydration_client = client.clone();
@@ -157,6 +261,10 @@ impl ExtensionManager {
         if let Some(operation_id) = &ctx.tool_operation_id {
             owned_ctx = owned_ctx.with_tool_operation_id(operation_id.clone());
         }
+        if let Some(interaction_policy) = &ctx.interaction_policy {
+            owned_ctx = owned_ctx.with_interaction_policy(interaction_policy.clone());
+        }
+        owned_ctx = owned_ctx.with_dispatch_origin(ctx.dispatch_origin);
 
         let fut = async move {
             tracing::debug!(

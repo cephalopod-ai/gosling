@@ -124,6 +124,26 @@ describe('ACP chat session lifecycle', () => {
     expect(getSelectedSessionInputs('other-session')).toEqual(['private-notes']);
   });
 
+  it('submits a plan implementation reference as one text block without consuming selected inputs', async () => {
+    const reference =
+      'Implement approved plan plan-1 generation 4 revision revision-7 (sha-7; source source-hash; scope scope-hash). Follow the stored plan exactly; report deviations.';
+    setSessionInputSelected(SESSION_ID, 'notes', true);
+    const message = createUserMessage(reference);
+    acpChatSessionActions.setMessages(SESSION_ID, [message]);
+
+    await acpChatSessionController.submitMessage(SESSION_ID, message, {
+      getCurrentSnapshot: () => acpChatSessionStore.getSnapshot(SESSION_ID),
+      onFinish: vi.fn(),
+      includeSelectedSessionInputs: false,
+    });
+
+    expect(resolveSessionLibraryInputs).not.toHaveBeenCalled();
+    expect(getSelectedSessionInputs(SESSION_ID)).toEqual(['notes']);
+    expect(vi.mocked(acpPromptSession).mock.calls[0][1].content).toEqual([
+      { type: 'text', text: reference },
+    ]);
+  });
+
   it('retains selection and blocks sending when an input cannot be resolved', async () => {
     setSessionInputSelected(SESSION_ID, 'missing-file', true);
     vi.mocked(resolveSessionLibraryInputs).mockRejectedValue(

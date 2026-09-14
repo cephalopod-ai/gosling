@@ -8,6 +8,8 @@ invariants:
       - ui/desktop/src/main.ts
       - ui/desktop/src/preload.ts
       - ui/desktop/src/ipc
+      - ui/desktop/src/main
+      - ui/desktop/src/utils/autoUpdater.ts
     rule: privileged renderer-to-main channels must be declared in a shared contract and preload may expose only handled methods
     checks:
       - no orphaned preload method without a matching main-process handler
@@ -62,6 +64,7 @@ invariants:
       - ui/desktop/scripts
       - ui/desktop/forge.config.ts
       - ui/desktop/vite.shell.renderer.config.mts
+      - ui/shell-kit/src/shell-consumer.js
     rule: consumer manifests may select only a contained renderer and declared capabilities; they cannot select Electron main, preload, arbitrary resources, executable paths, or privileged IPC operations
 
   - id: ARC-009
@@ -75,8 +78,94 @@ invariants:
     title: Shell domain capability is live and server-owned
     status: active
     scope:
+      - crates/gosling/src/acp/domain_adapter.rs
       - crates/gosling/src/acp/shell.rs
       - crates/gosling/src/acp/server/shell_handlers.rs
       - crates/gosling-cli/src/cli.rs
       - crates/gosling-sdk-types/src/shell.rs
     rule: a required domain adapter reaches ready only after Rust-server-owned live descriptor negotiation, bounded supervision, and confirmation enforcement; no named domain crate or native library is linked into generic Gosling
+
+  - id: ARC-011
+    title: Planning authority is host-owned and non-widenable
+    status: active
+    scope:
+      - crates/gosling/src/agents/interaction_policy.rs
+      - crates/gosling/src/agents/agent.rs
+      - crates/gosling/src/agents/agent/extensions.rs
+      - crates/gosling/src/agents/agent/frontend_extensions.rs
+      - crates/gosling/src/agents/agent/hooks.rs
+      - crates/gosling/src/agents/agent/reply_context.rs
+      - crates/gosling/src/agents/agent/reply_entry.rs
+      - crates/gosling/src/agents/agent/reply_stream.rs
+      - crates/gosling/src/agents/agent/provider_transitions.rs
+      - crates/gosling/src/agents/agent/tool_dispatch.rs
+      - crates/gosling/src/agents/extension_manager/tool_dispatch.rs
+      - crates/gosling/src/agents/extension_manager/tool_metadata.rs
+      - crates/gosling/src/agents/extension_manager.rs
+      - crates/gosling/src/agents/extension_manager/lifecycle.rs
+      - crates/gosling/src/agents/moim.rs
+      - crates/gosling/src/agents/platform_extensions/code_execution.rs
+      - crates/gosling/src/agents/platform_extensions/mod.rs
+      - crates/gosling/src/agents/platform_extensions/session_history.rs
+      - crates/gosling/src/agents/platform_extensions/planning.rs
+      - crates/gosling/src/agents/reply_parts.rs
+      - crates/gosling/src/agents/tool_execution.rs
+      - crates/gosling/src/context_mgmt/memory.rs
+      - crates/gosling/src/context_mgmt/summarizer
+      - crates/gosling/src/providers
+      - crates/gosling/src/session/plans.rs
+      - crates/gosling/src/session/diagnostics.rs
+      - crates/gosling/src/session/session_manager.rs
+      - crates/gosling/src/session/session_manager/schema.rs
+      - crates/gosling/src/session/session_manager/migrations.rs
+      - crates/gosling/src/session/session_manager/pool_lifecycle.rs
+      - crates/gosling/src/session/session_manager/plan_storage.rs
+      - crates/gosling/src/session/session_manager/tool_operations.rs
+      - crates/gosling/src/session/session_manager/session_crud.rs
+      - crates/gosling/src/acp/server/plans.rs
+      - crates/gosling/src/workspace/planning_access.rs
+      - crates/gosling/tests/fixtures/planning_dispatch_conformance.json
+    rule: an immutable planning-turn policy and its durable drafting generation form a non-widenable host allowlist; only fixed Gosling-authored capability identities from host-mediated model dispatch may execute, and provider or client metadata, saved permissions, authorization modes, and nested dispatch cannot widen that set
+    checks:
+      - the planning catalog contains only the fixed internal capability identities and the planning extension is neither configurable nor persisted as enabled
+      - frontend, app-direct, agent-direct, code-mode-nested, toolshim, provider-owned, and non-host extension identities are denied during planning
+      - durable status, generation, and capability-policy version are revalidated in the same transaction that begins or replays a tool operation
+      - a planning turn never falls back to Normal after a terminal or concurrent plan-state change, and denial occurs before approval prompts, frontend emission, hooks, raw-argument logging, ledger insertion, or side effects
+      - providers that execute tools outside Gosling are rejected for planning and provider or model transitions are blocked while a plan is open
+
+  - id: ARC-012
+    title: Plan approval binds one immutable revision
+    status: active
+    scope:
+      - crates/gosling/src/session/plans.rs
+      - crates/gosling/src/session/session_manager/plan_storage.rs
+      - crates/gosling/src/session/session_manager/message_storage.rs
+      - crates/gosling/src/session/session_manager/session_crud.rs
+      - crates/gosling/src/session/session_manager/session_transfer.rs
+      - crates/gosling/src/session/session_manager/handoff_storage.rs
+      - crates/gosling/src/agents/agent/reply_context.rs
+      - crates/gosling/src/agents/agent/reply_entry.rs
+      - crates/gosling/src/agents/agent/reply_stream.rs
+      - crates/gosling/src/acp/server/plans.rs
+      - crates/gosling/src/acp/server/fork_session.rs
+      - crates/gosling-sdk-types/src/custom_requests.rs
+      - crates/gosling-sdk-types/src/custom_notifications.rs
+      - crates/gosling-cli/src/session
+      - ui/desktop/src/acp/plans.ts
+      - ui/desktop/src/acp/chatNotifications.ts
+      - ui/desktop/src/acp/chatSessionController.ts
+      - ui/desktop/src/acp/chatSessionStore.ts
+      - ui/desktop/src/acp/adapter/goslingSessionNotifications.ts
+      - ui/desktop/src/components/BaseChat.tsx
+      - ui/desktop/src/components/ChatInput.tsx
+      - ui/desktop/src/components/plans
+      - ui/desktop/src/hooks/useChatSession.ts
+      - ui/desktop/src/hooks/useChatSessionTypes.ts
+    rule: feedback, approval, and implementation references bind the exact current generation, revision identity and content hash, source hash, and scope hash; explicit plan export binds the selected generation, revision identity, content hash, and status but is not a mutating compare-and-swap transition and does not require current source or scope; approval records a decision but neither executes work nor changes authorization mode, and session transfer cannot preserve approval authority
+    checks:
+      - content uses lowercase SHA-256 and source and scope hashes use their versioned length-prefixed canonical encodings
+      - feedback, approval, and implementation reject stale generation, revision, content, source, or scope expectations
+      - explicit export binds the selected generation, revision, content hash, and status without requiring current source or scope compare-and-swap expectations
+      - approval changes only durable plan state; any implementation submission is a separate explicit client action using the approved revision
+      - the optional native plan_history_v1 section is bounded and identity-remapped on import or copy, and every transferred generation is stored as stale history
+      - copy, fork, import, export, provider transition, and scope or history mutation either preserve these semantics atomically or fail closed while a plan is open

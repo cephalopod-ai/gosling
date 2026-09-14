@@ -19,6 +19,7 @@ export interface UseChatSessionResult {
   chatState: ChatState;
   updateSession: (updater: (session: Session) => Session) => void;
   handleSubmit: (input: UserInput) => Promise<void>;
+  submitPlanImplementationReference: (reference: string) => Promise<void>;
   loadOlderMessages: () => Promise<void>;
   loadAllOlderMessages: () => Promise<boolean>;
   onSteerQueuedMessage?: (input: UserInput) => Promise<boolean>;

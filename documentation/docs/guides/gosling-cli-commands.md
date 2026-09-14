@@ -580,11 +580,18 @@ Once you're in an interactive session (via `gosling session` or `gosling run --i
 - **`/?` or `/help`** - Display the help menu
 - **`/builtin <names>`** - Add builtin extensions by name (comma-separated)
 - **`/clear`** - Clear the current chat history
-- **`/endplan`** - Exit plan mode and return to 'normal' gosling mode
+- **`/endplan`** - Leave planning; asks before abandoning a reviewable plan
 - **`/exit` or `/quit`** - Exit the session
 - **`/extension <command>`** - Add a stdio extension (format: ENV1=val1 command args...)
 - **`/mode <name>`** - Set the gosling mode to use ('auto', 'approve', 'chat', 'smart_approve')
-- **`/plan <message_text>`** - Enter 'plan' mode with optional message. Create a plan based on the current messages and ask user if they want to act on it
+- **`/plan [prompt]`** - Start or resume a durable plan and optionally submit one planning prompt
+- **`/plan-status`** - Show the current plan generation, status, revision, and content
+- **`/plan-feedback <text>`** - Record feedback against the exact review revision and request an update
+- **`/plan-comment <start>-<end> <text>`** - Attach line-scoped feedback to the exact review revision
+- **`/plan-approve`** - Approve the exact current revision without starting implementation
+- **`/plan-approve-and-run`** - Approve, then submit a separate implementation turn in the current mode
+- **`/plan-abandon`** - Abandon the current open plan
+- **`/plan-export`** - Print the exact current revision as Markdown with provenance
 - **`/prompt <n> [--info] [key=value...]`** - Get prompt info or execute a prompt
 - **`/prompts [--extension <name>]`** - List all available prompts, optionally filtered by extension
 - **`/compact`** - Compact and summarize the current conversation to reduce context length while preserving key information

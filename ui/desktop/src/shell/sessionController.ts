@@ -1,5 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import type { SessionNotification } from '@agentclientprotocol/sdk';
+import type {
+  GoslingSessionNotification_unstable,
+  PlanStatusDto,
+} from '@repo-makeover/gosling-sdk';
 import { classifyShellOperationFailure, type ShellOperationFailure } from './operationFailure';
 import { projectShellSessionUpdate, type ShellSessionStream } from './sessionUpdateProjection';
 
@@ -17,6 +21,14 @@ export interface ShellSessionRecord {
   providerId: string | null;
   modelId: string | null;
   promptAttempt: { id: string; phase: 'idle' | 'streaming' | 'cancelling' } | null;
+  plan?: ShellPlanProjection;
+}
+
+export interface ShellPlanProjection {
+  status: PlanStatusDto | 'none' | 'unavailable';
+  generation: number | null;
+  revisionId: string | null;
+  revisionSha256: string | null;
 }
 
 export interface ShellSessionUpdate {
@@ -47,6 +59,7 @@ export interface ShellSessionTransport {
     title?: string | null;
     providerId?: string | null;
     modelId?: string | null;
+    plan?: ShellPlanProjection;
   }>;
   resumeSession(sessionId: string): Promise<{
     sessionId: string;
@@ -54,6 +67,7 @@ export interface ShellSessionTransport {
     title?: string | null;
     providerId?: string | null;
     modelId?: string | null;
+    plan?: ShellPlanProjection;
     resumeIntegrity?: 'clean' | 'uncertain';
   }>;
   prompt(input: {
@@ -89,6 +103,7 @@ export interface ShellSessionController {
     modelId: string;
   }): Promise<ShellSessionRecord>;
   ingestUpdate(notification: SessionNotification): void;
+  ingestPlanUpdate(notification: GoslingSessionNotification_unstable): void;
   readTranscript(generation: number, sessionId: string): ShellTranscriptSnapshot;
   onUpdate(listener: (update: ShellSessionUpdate) => void): () => void;
   onChanged(listener: (session: ShellSessionRecord) => void): () => void;
@@ -106,6 +121,7 @@ function emptySession(): ShellSessionRecord {
     providerId: null,
     modelId: null,
     promptAttempt: null,
+    plan: { status: 'none', generation: null, revisionId: null, revisionSha256: null },
   };
 }
 
@@ -121,6 +137,7 @@ function copySession(session: ShellSessionRecord): ShellSessionRecord {
   return {
     ...session,
     promptAttempt: session.promptAttempt ? { ...session.promptAttempt } : null,
+    ...(session.plan ? { plan: { ...session.plan } } : {}),
   };
 }
 
@@ -265,6 +282,7 @@ export function createShellSessionController(input: {
         providerId: opened.providerId ?? null,
         modelId: opened.modelId ?? null,
         promptAttempt: null,
+        plan: opened.plan ? { ...opened.plan } : emptySession().plan,
       };
       publishState();
       for (const stream of pendingHistory) publish('stream', null, 'history', stream);
@@ -298,6 +316,17 @@ export function createShellSessionController(input: {
     submit({ generation, sessionId, text, libraryItemIds = [] }) {
       assertCurrent(generation, sessionId);
       assertPrompt(text, libraryItemIds);
+      if (
+        session.plan?.status === 'drafting' ||
+        session.plan?.status === 'awaiting_review' ||
+        session.plan?.status === 'unavailable'
+      ) {
+        throw new Error(
+          session.plan.status === 'unavailable'
+            ? 'plan status is unavailable; reconnect before submitting in this shell'
+            : 'this session has an open plan; review it in Gosling Desktop or CLI'
+        );
+      }
       if (session.promptAttempt) throw new Error('a prompt attempt is already active');
       const promptAttemptId = createAttemptId();
       if (
@@ -382,6 +411,33 @@ export function createShellSessionController(input: {
       if (session.status === 'active' && session.promptAttempt) {
         publish('stream', session.promptAttempt.id, 'live', stream);
       }
+    },
+    ingestPlanUpdate(notification) {
+      if (
+        notification.sessionId !== session.sessionId ||
+        session.status !== 'active' ||
+        notification.update.sessionUpdate !== 'plan_update'
+      ) {
+        return;
+      }
+      const update = notification.update;
+      if (
+        session.plan?.generation !== null &&
+        session.plan?.generation !== undefined &&
+        update.generation < session.plan.generation
+      ) {
+        return;
+      }
+      session = {
+        ...session,
+        plan: {
+          status: update.status,
+          generation: update.generation,
+          revisionId: update.activeRevision?.id ?? null,
+          revisionSha256: update.activeRevision?.contentSha256 ?? null,
+        },
+      };
+      publishState();
     },
     readTranscript(generation, sessionId) {
       assertCurrent(generation, sessionId);

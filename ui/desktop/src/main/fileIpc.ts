@@ -57,29 +57,29 @@ const READ_FILE_MAX_BYTES = 2 * 1024 * 1024;
 const COPY_ARTIFACT_MAX_BYTES = 20 * 1024 * 1024;
 
 export const FILE_IPC_CHANNELS = [
-  'select-file-or-directory',
-  'select-artifact-file',
-  'select-import-session-file',
-  'check-ollama',
-  'read-file',
-  'read-artifact-file',
+  desktopCommandChannels.selectFileOrDirectory,
+  desktopCommandChannels.selectArtifactFile,
+  desktopCommandChannels.selectImportSessionFile,
+  desktopCommandChannels.checkForOllama,
+  desktopCommandChannels.readFile,
+  desktopCommandChannels.readArtifactFile,
   desktopCommandChannels.copyArtifactContents,
-  'read-artifact-titles',
+  desktopCommandChannels.readArtifactTitles,
   desktopCommandChannels.getArtifactFileTimestamps,
   desktopCommandChannels.classifyArtifactRepositories,
-  'open-artifact-file',
-  'reveal-artifact-file',
-  'write-file',
-  'delete-file',
+  desktopCommandChannels.openArtifactFile,
+  desktopCommandChannels.revealArtifactFile,
+  desktopCommandChannels.writeFile,
+  desktopCommandChannels.deleteFile,
   desktopCommandChannels.trashArtifactFiles,
-  'ensure-directory',
-  'list-files',
-  'show-message-box',
-  'save-artifact',
-  'set-artifact-routing-config',
-  'write-clipboard-text',
-  'write-clipboard-html',
-  'get-allowed-extensions',
+  desktopCommandChannels.ensureDirectory,
+  desktopCommandChannels.listFiles,
+  desktopCommandChannels.showMessageBox,
+  desktopCommandChannels.saveArtifact,
+  desktopCommandChannels.setArtifactRoutingConfig,
+  desktopCommandChannels.writeClipboardText,
+  desktopCommandChannels.writeClipboardHtml,
+  desktopCommandChannels.getAllowedExtensions,
 ] as const;
 
 async function isRepositoryDirectory(
@@ -120,54 +120,66 @@ export function registerFileIpcHandlers(
   } = dependencies;
 
   // Add file/directory selection handler
-  targetIpcMain.handle('select-file-or-directory', async (event, defaultPath?: string) => {
-    const dialogOptions: OpenDialogOptions = {
-      properties: process.platform === 'darwin' ? ['openFile', 'openDirectory'] : ['openFile'],
-    };
+  targetIpcMain.handle(
+    desktopCommandChannels.selectFileOrDirectory,
+    async (event, defaultPath?: string) => {
+      const dialogOptions: OpenDialogOptions = {
+        properties: process.platform === 'darwin' ? ['openFile', 'openDirectory'] : ['openFile'],
+      };
 
-    // Set default path if provided
-    if (defaultPath) {
-      // Expand tilde to home directory
-      const expandedPath = expandTilde(defaultPath);
-      // Check if the path exists
-      try {
-        const stats = await fs.stat(expandedPath);
-        dialogOptions.defaultPath = stats.isDirectory() ? expandedPath : path.dirname(expandedPath);
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      } catch (error) {
-        // If path doesn't exist, fall back to home directory and log error
-        console.error(
-          `Default path does not exist: ${expandedPath}, falling back to home directory`
-        );
-        dialogOptions.defaultPath = os.homedir();
+      // Set default path if provided
+      if (defaultPath) {
+        // Expand tilde to home directory
+        const expandedPath = expandTilde(defaultPath);
+        // Check if the path exists
+        try {
+          const stats = await fs.stat(expandedPath);
+          dialogOptions.defaultPath = stats.isDirectory()
+            ? expandedPath
+            : path.dirname(expandedPath);
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        } catch (error) {
+          // If path doesn't exist, fall back to home directory and log error
+          console.error(
+            `Default path does not exist: ${expandedPath}, falling back to home directory`
+          );
+          dialogOptions.defaultPath = os.homedir();
+        }
       }
-    }
 
-    const result = (await dialog.showOpenDialog(dialogOptions)) as unknown as OpenDialogReturnValue;
-    if (!result.canceled && result.filePaths.length > 0) {
-      const selectedPath = result.filePaths[0];
-      grantRendererDirectory(event.sender.id, selectedPath);
+      const result = (await dialog.showOpenDialog(
+        dialogOptions
+      )) as unknown as OpenDialogReturnValue;
+      if (!result.canceled && result.filePaths.length > 0) {
+        const selectedPath = result.filePaths[0];
+        grantRendererDirectory(event.sender.id, selectedPath);
+        return selectedPath;
+      }
+      return null;
+    }
+  );
+
+  targetIpcMain.handle(
+    desktopCommandChannels.selectArtifactFile,
+    async (event, defaultPath?: string) => {
+      const result = await dialog.showOpenDialog({
+        properties: ['openFile'],
+        defaultPath: defaultPath ? expandTilde(defaultPath) : undefined,
+      });
+      if (result.canceled || result.filePaths.length === 0) return null;
+      const selectedPath = await canonicalizePotentialPath(
+        resolveRendererPath(result.filePaths[0])
+      );
+      grantRendererArtifactFile(event.sender.id, selectedPath);
       return selectedPath;
     }
-    return null;
-  });
-
-  targetIpcMain.handle('select-artifact-file', async (event, defaultPath?: string) => {
-    const result = await dialog.showOpenDialog({
-      properties: ['openFile'],
-      defaultPath: defaultPath ? expandTilde(defaultPath) : undefined,
-    });
-    if (result.canceled || result.filePaths.length === 0) return null;
-    const selectedPath = await canonicalizePotentialPath(resolveRendererPath(result.filePaths[0]));
-    grantRendererArtifactFile(event.sender.id, selectedPath);
-    return selectedPath;
-  });
+  );
 
   // Native picker tailored for session imports: shows hidden files (so users can
   // reach `~/.claude/projects/...` or `~/.pi/agent/sessions/...`), filters for
   // .json/.jsonl, and returns the file's contents inline so the renderer doesn't
   // need a separate read step.
-  targetIpcMain.handle('select-import-session-file', async () => {
+  targetIpcMain.handle(desktopCommandChannels.selectImportSessionFile, async () => {
     const result = (await dialog.showOpenDialog({
       title: 'Import session',
       defaultPath: os.homedir(),
@@ -187,7 +199,7 @@ export function registerFileIpcHandlers(
     }
   });
 
-  targetIpcMain.handle('check-ollama', async () => {
+  targetIpcMain.handle(desktopCommandChannels.checkForOllama, async () => {
     try {
       return new Promise((resolve) => {
         // Run `ps` and filter for "ollama"
@@ -243,7 +255,7 @@ export function registerFileIpcHandlers(
     }
   });
 
-  targetIpcMain.handle('read-file', async (event, filePath) => {
+  targetIpcMain.handle(desktopCommandChannels.readFile, async (event, filePath) => {
     try {
       const expandedPath = await assertRendererFileAccess(event.sender.id, filePath);
       // Read a bounded prefix rather than the whole file. The renderer chooses
@@ -273,7 +285,7 @@ export function registerFileIpcHandlers(
   });
 
   targetIpcMain.handle(
-    'read-artifact-file',
+    desktopCommandChannels.readArtifactFile,
     async (event, filePath: string, baseDirectory?: string) => {
       try {
         const resolvedPath = await assertRendererArtifactFileAccess(
@@ -391,7 +403,7 @@ export function registerFileIpcHandlers(
   );
 
   targetIpcMain.handle(
-    'read-artifact-titles',
+    desktopCommandChannels.readArtifactTitles,
     async (event, requests: Array<{ filePath: string; baseDirectory?: string }>) => {
       // A list row only needs the document's own heading, so this reads a small
       // prefix per file instead of the preview reader's multi-megabyte window.
@@ -493,7 +505,7 @@ export function registerFileIpcHandlers(
   );
 
   targetIpcMain.handle(
-    'open-artifact-file',
+    desktopCommandChannels.openArtifactFile,
     async (event, filePath: string, baseDirectory?: string) => {
       const resolvedPath = await assertRendererArtifactFileAccess(
         event.sender.id,
@@ -504,7 +516,7 @@ export function registerFileIpcHandlers(
     }
   );
   targetIpcMain.handle(
-    'reveal-artifact-file',
+    desktopCommandChannels.revealArtifactFile,
     async (event, filePath: string, baseDirectory?: string) => {
       const resolvedPath = await assertRendererArtifactFileAccess(
         event.sender.id,
@@ -514,7 +526,7 @@ export function registerFileIpcHandlers(
       shell.showItemInFolder(resolvedPath);
     }
   );
-  targetIpcMain.handle('write-file', async (event, filePath, content) => {
+  targetIpcMain.handle(desktopCommandChannels.writeFile, async (event, filePath, content) => {
     try {
       await fs.writeFile(await assertRendererFileAccess(event.sender.id, filePath), content, {
         encoding: 'utf8',
@@ -525,7 +537,7 @@ export function registerFileIpcHandlers(
       return false;
     }
   });
-  targetIpcMain.handle('delete-file', async (event, filePath) => {
+  targetIpcMain.handle(desktopCommandChannels.deleteFile, async (event, filePath) => {
     try {
       await fs.unlink(await assertRendererFileAccess(event.sender.id, filePath));
       return true;
@@ -590,7 +602,7 @@ export function registerFileIpcHandlers(
     }
   );
   // Enhanced file operations
-  targetIpcMain.handle('ensure-directory', async (event, dirPath) => {
+  targetIpcMain.handle(desktopCommandChannels.ensureDirectory, async (event, dirPath) => {
     try {
       await fs.mkdir(await assertRendererFileAccess(event.sender.id, dirPath), { recursive: true });
       return true;
@@ -599,7 +611,7 @@ export function registerFileIpcHandlers(
       return false;
     }
   });
-  targetIpcMain.handle('list-files', async (event, dirPath, extension) => {
+  targetIpcMain.handle(desktopCommandChannels.listFiles, async (event, dirPath, extension) => {
     try {
       const files = await fs.readdir(await assertRendererFileAccess(event.sender.id, dirPath));
       return extension ? files.filter((file) => file.endsWith(extension)) : files;
@@ -608,26 +620,32 @@ export function registerFileIpcHandlers(
       return [];
     }
   });
-  targetIpcMain.handle('show-message-box', async (_event, options) =>
+  targetIpcMain.handle(desktopCommandChannels.showMessageBox, async (_event, options) =>
     dialog.showMessageBox(options)
   );
-  targetIpcMain.handle('save-artifact', async (event, request: ArtifactSaveRequest) =>
-    saveArtifactWithDialog(request, {
-      resolveSource: (filePath, baseDirectory) =>
-        assertRendererArtifactFileAccess(event.sender.id, filePath, baseDirectory),
-      showSaveDialog: (options) => dialog.showSaveDialog(options),
-    })
+  targetIpcMain.handle(
+    desktopCommandChannels.saveArtifact,
+    async (event, request: ArtifactSaveRequest) =>
+      saveArtifactWithDialog(request, {
+        resolveSource: (filePath, baseDirectory) =>
+          assertRendererArtifactFileAccess(event.sender.id, filePath, baseDirectory),
+        showSaveDialog: (options) => dialog.showSaveDialog(options),
+      })
   );
   targetIpcMain.handle(
-    'set-artifact-routing-config',
+    desktopCommandChannels.setArtifactRoutingConfig,
     async (event, config: ArtifactRoutingConfig | null) =>
       updateArtifactRoutingConfig(event.sender.id, config)
   );
-  targetIpcMain.handle('write-clipboard-text', async (_event, text: string) =>
+  targetIpcMain.handle(desktopCommandChannels.writeClipboardText, async (_event, text: string) =>
     clipboard.writeText(text)
   );
-  targetIpcMain.handle('write-clipboard-html', async (_event, html: string, text: string) =>
-    clipboard.write({ html, text })
+  targetIpcMain.handle(
+    desktopCommandChannels.writeClipboardHtml,
+    async (_event, html: string, text: string) => clipboard.write({ html, text })
   );
-  targetIpcMain.handle('get-allowed-extensions', async () => await getAllowList());
+  targetIpcMain.handle(
+    desktopCommandChannels.getAllowedExtensions,
+    async () => await getAllowList()
+  );
 }

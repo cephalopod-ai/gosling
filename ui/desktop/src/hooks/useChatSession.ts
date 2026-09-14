@@ -57,6 +57,14 @@ const i18n = defineMessages({
     id: 'chat.notification.taskComplete.body',
     defaultMessage: 'Click here to bring Gosling back into focus.',
   },
+  planReadyTitle: {
+    id: 'chat.notification.planReady.title',
+    defaultMessage: 'Plan ready for review.',
+  },
+  planReadyBody: {
+    id: 'chat.notification.planReady.body',
+    defaultMessage: 'Open Gosling to review the exact plan revision.',
+  },
 });
 
 export function useChatSession({
@@ -79,6 +87,7 @@ export function useChatSession({
   const queueProcessingBlocked = acpSnapshot?.pendingCancelPromptAttemptId != null;
 
   const snapshotRef = useRef(acpSnapshot);
+  const lastPlanReviewNotificationRef = useRef<string | null>(null);
   snapshotRef.current = acpSnapshot;
 
   const getCurrentSnapshot = useCallback(
@@ -118,7 +127,8 @@ export function useChatSession({
 
   const onFinish = useCallback(
     async (error?: string): Promise<void> => {
-      if (!error) {
+      const planStatus = getCurrentSnapshot()?.plan.snapshot?.plan.status;
+      if (!error && planStatus !== 'drafting' && planStatus !== 'awaiting_review') {
         try {
           const [notificationsEnabled, anyWindowFocused] = await Promise.all([
             window.electron.getSetting('enableNotifications'),
@@ -137,17 +147,40 @@ export function useChatSession({
 
       onStreamFinish();
     },
-    [intl, onStreamFinish]
+    [getCurrentSnapshot, intl, onStreamFinish]
   );
 
+  useEffect(() => {
+    const planSnapshot = acpSnapshot?.plan.snapshot;
+    const revision = planSnapshot?.activeRevision;
+    if (planSnapshot?.plan.status !== 'awaiting_review' || !revision) return;
+    const identity = `${sessionId}:${planSnapshot.plan.generation}:${revision.id}:${revision.contentSha256}`;
+    if (lastPlanReviewNotificationRef.current === identity) return;
+    lastPlanReviewNotificationRef.current = identity;
+    void Promise.all([
+      window.electron.getSetting('enableNotifications'),
+      window.electron.isAnyWindowFocused(),
+    ])
+      .then(([enabled, focused]) => {
+        if (enabled === true && !focused) {
+          window.electron.showNotification({
+            title: intl.formatMessage(i18n.planReadyTitle),
+            body: intl.formatMessage(i18n.planReadyBody),
+          });
+        }
+      })
+      .catch((error) => console.warn('Failed to show plan review notification:', error));
+  }, [acpSnapshot?.plan.snapshot, intl, sessionId]);
+
   const submitToAcpSession = useCallback(
-    async (targetSessionId: string, userMessage: Message) => {
+    async (targetSessionId: string, userMessage: Message, includeSelectedSessionInputs = true) => {
       await acpChatSessionController.submitMessage(targetSessionId, userMessage, {
         getCurrentSnapshot: () =>
           targetSessionId === sessionId
             ? getCurrentSnapshot()
             : acpChatSessionStore.getSnapshot(targetSessionId),
         onFinish,
+        includeSelectedSessionInputs,
       });
     },
     [getCurrentSnapshot, onFinish, sessionId]
@@ -160,8 +193,8 @@ export function useChatSession({
     void acpChatSessionController.loadSession(sessionId, { onSessionLoaded, crashRecovery });
   }, [crashRecovery, sessionId, onSessionLoaded]);
 
-  const handleSubmit = useCallback(
-    async (input: UserInput) => {
+  const submitUserInput = useCallback(
+    async (input: UserInput, includeSelectedSessionInputs: boolean) => {
       const { msg: userMessage, images } = input;
       const sessionReady = await acpChatSessionController.loadSession(sessionId);
       if (!sessionReady) {
@@ -208,9 +241,19 @@ export function useChatSession({
         acpChatSessionActions.setMessages(sessionId, messagesForStore);
       }
 
-      await submitToAcpSession(sessionId, newMessage);
+      await submitToAcpSession(sessionId, newMessage, includeSelectedSessionInputs);
     },
     [getCurrentSnapshot, sessionId, submitToAcpSession]
+  );
+
+  const handleSubmit = useCallback(
+    (input: UserInput) => submitUserInput(input, true),
+    [submitUserInput]
+  );
+
+  const submitPlanImplementationReference = useCallback(
+    (reference: string) => submitUserInput({ msg: reference, images: [] }, false),
+    [submitUserInput]
   );
 
   const retrySessionLoad = useCallback(
@@ -467,6 +510,7 @@ export function useChatSession({
     chatState,
     updateSession,
     handleSubmit,
+    submitPlanImplementationReference,
     loadOlderMessages,
     loadAllOlderMessages,
     onSteerQueuedMessage,

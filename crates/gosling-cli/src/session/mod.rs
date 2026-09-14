@@ -9,6 +9,7 @@ pub mod streaming_buffer;
 mod thinking;
 
 use gosling::conversation::Conversation;
+use gosling::session::{NewPlanFeedback, PlanExpectation, PlanSnapshot, PlanStatus};
 use std::env;
 use std::str::FromStr;
 use tokio::signal::ctrl_c;
@@ -22,7 +23,6 @@ use gosling::agents::SUBAGENT_TOOL_REQUEST_TYPE;
 use gosling::permission::permission_confirmation::PrincipalType;
 use gosling::permission::Permission;
 use gosling::permission::PermissionConfirmation;
-use gosling::providers::base::Provider;
 use gosling::providers::base::ProviderUsage;
 use gosling::utils::safe_truncate;
 use gosling_providers::thinking::ThinkingEffort;
@@ -53,8 +53,16 @@ use tokio;
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
-const GOSLING_PLANNER_CONTEXT_LIMIT: &str = "GOSLING_PLANNER_CONTEXT_LIMIT";
 const CANCELLED_TURN_NOTICE: &str = "Run cancelled by user before completion.";
+const GOSLING_PLANNER_CONTEXT_LIMIT: &str = "GOSLING_PLANNER_CONTEXT_LIMIT";
+const GOSLING_PLANNER_MODEL: &str = "GOSLING_PLANNER_MODEL";
+const GOSLING_PLANNER_PROVIDER: &str = "GOSLING_PLANNER_PROVIDER";
+
+#[derive(Debug, PartialEq, Eq)]
+enum PlanImplementationSubmission {
+    Started,
+    Failed(String),
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 struct JsonOutput {
@@ -113,11 +121,6 @@ fn model_switch_label(provider: &str, model: &str, effort: Option<ThinkingEffort
         Some(ThinkingEffort::Off) | None => format!("{provider}/{model}"),
         Some(effort) => format!("{provider}/{model} {effort}"),
     }
-}
-
-pub enum RunMode {
-    Normal,
-    Plan,
 }
 
 struct HistoryManager {
@@ -181,7 +184,6 @@ pub struct CliSession {
     session_id: String,
     completion_cache: Arc<std::sync::RwLock<CompletionCache>>,
     debug: bool,
-    run_mode: RunMode,
     max_turns: Option<u32>,
     edit_mode: Option<EditMode>,
     output_format: String,
@@ -221,46 +223,6 @@ impl CompletionCache {
     }
 }
 
-pub enum PlannerResponseType {
-    Plan,
-    ClarifyingQuestions,
-}
-
-/// Decide if the planner's response is a plan or a clarifying question
-///
-/// This function is called after the planner has generated a response
-/// to the user's message. The response is either a plan or a clarifying
-/// question.
-pub async fn classify_planner_response(
-    session_id: &str,
-    message_text: String,
-    provider: Arc<dyn Provider>,
-    model_config: gosling_providers::model::ModelConfig,
-) -> Result<PlannerResponseType> {
-    let prompt = format!(
-        "The text below is the output from an AI model which can either provide a plan or list of clarifying questions. Based on the text below, decide if the output is a \"plan\" or \"clarifying questions\".\n---\n{message_text}"
-    );
-
-    let message = Message::user().with_text(&prompt);
-    let (result, _usage) = gosling::session_context::with_session_id(
-        Some(session_id.to_string()),
-        provider.complete(
-            &model_config,
-            "Reply only with the classification label: \"plan\" or \"clarifying questions\"",
-            &[message],
-            &[],
-        ),
-    )
-    .await?;
-
-    let predicted = result.as_concat_text();
-    if predicted.to_lowercase().contains("plan") {
-        Ok(PlannerResponseType::Plan)
-    } else {
-        Ok(PlannerResponseType::ClarifyingQuestions)
-    }
-}
-
 impl CliSession {
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
@@ -286,7 +248,6 @@ impl CliSession {
             session_id,
             completion_cache: Arc::new(std::sync::RwLock::new(CompletionCache::new())),
             debug,
-            run_mode: RunMode::Normal,
             max_turns,
             edit_mode,
             output_format,
@@ -647,11 +608,58 @@ impl CliSession {
                 self.handle_model(model.as_deref()).await?;
             }
             InputResult::Plan(options) => {
-                self.handle_plan_mode(options).await?;
+                history.save(editor);
+                if let Err(error) = self.handle_plan_mode(options).await {
+                    self.render_plan_command_error(&error);
+                }
             }
-            InputResult::EndPlan => {
-                self.run_mode = RunMode::Normal;
-                output::render_exit_plan_mode();
+            InputResult::PlanStatus => {
+                history.save(editor);
+                if let Err(error) = self.handle_plan_status().await {
+                    self.render_plan_command_error(&error);
+                }
+            }
+            InputResult::PlanFeedback(feedback) => {
+                history.save(editor);
+                if let Err(error) = self.handle_plan_feedback(&feedback).await {
+                    self.render_plan_command_error(&error);
+                }
+            }
+            InputResult::PlanComment(comment) => {
+                history.save(editor);
+                if let Err(error) = self.handle_plan_comment(&comment).await {
+                    self.render_plan_command_error(&error);
+                }
+            }
+            InputResult::PlanApprove => {
+                history.save(editor);
+                if let Err(error) = self.handle_plan_approve().await {
+                    self.render_plan_command_error(&error);
+                }
+            }
+            InputResult::PlanApproveAndRun => {
+                history.save(editor);
+                if let Err(error) = self.handle_plan_approve_and_run().await {
+                    self.render_plan_command_error(&error);
+                }
+            }
+            InputResult::PlanAbandon => {
+                history.save(editor);
+                if let Err(error) = self.handle_plan_abandon().await {
+                    self.render_plan_command_error(&error);
+                }
+            }
+            InputResult::PlanEnd => {
+                history.save(editor);
+                if let Err(error) = self.handle_plan_end().await {
+                    self.render_plan_command_error(&error);
+                }
+            }
+            InputResult::PlanExport => {
+                history.save(editor);
+                if let Err(error) = self.handle_plan_export().await {
+                    self.render_plan_command_error(&error);
+                }
             }
             InputResult::Status => {
                 self.display_session_status().await?;
@@ -717,46 +725,8 @@ impl CliSession {
         history: &HistoryManager,
         editor: &mut rustyline::Editor<GoslingCompleter, rustyline::history::DefaultHistory>,
     ) -> Result<()> {
-        match self.run_mode {
-            RunMode::Normal => {
-                history.save(editor);
-                self.push_message(Message::user().with_text(content));
-
-                if self.persist_local_state {
-                    if let Err(e) = crate::project_tracker::update_project_tracker(
-                        Some(content),
-                        Some(&self.session_id),
-                    ) {
-                        eprintln!(
-                            "Warning: Failed to update project tracker with instruction: {}",
-                            e
-                        );
-                    }
-                }
-
-                let _provider = self.agent.provider().await?;
-
-                println!();
-                output::run_status_hook("thinking");
-                output::show_thinking();
-                let start_time = Instant::now();
-                self.process_agent_response(true, CancellationToken::default())
-                    .await?;
-                output::hide_thinking();
-
-                let elapsed = start_time.elapsed();
-                let elapsed_str = format_elapsed_time(elapsed);
-                println!("{}", console::style(format!("  ⏱ {}", elapsed_str)).dim());
-            }
-            RunMode::Plan => {
-                let mut plan_messages = self.messages.clone();
-                plan_messages.push(Message::user().with_text(content));
-                let (reasoner, reasoner_model_config) = get_reasoner().await?;
-                self.plan_with_reasoner_model(plan_messages, reasoner, reasoner_model_config)
-                    .await?;
-            }
-        }
-        Ok(())
+        history.save(editor);
+        self.submit_visible_turn(content, "thinking").await
     }
 
     fn handle_toggle_theme(&self) {
@@ -925,19 +895,303 @@ impl CliSession {
     }
 
     async fn handle_plan_mode(&mut self, options: input::PlanCommandOptions) -> Result<()> {
-        self.run_mode = RunMode::Plan;
-        output::render_enter_plan_mode();
+        let current = self
+            .agent
+            .config
+            .session_manager
+            .plans()
+            .snapshot(&self.session_id)
+            .await?;
+        let provider = self.agent.provider().await?;
+        let model_config = self
+            .agent
+            .model_config_for_session(&self.session_id)
+            .await?;
+        let planner_model =
+            resolve_cli_planner_model(provider.get_name(), &model_config, Config::global())?;
+        let snapshot = self
+            .agent
+            .config
+            .session_manager
+            .plans()
+            .start_or_resume(
+                &self.session_id,
+                provider.as_ref(),
+                Some(planner_model),
+                current.as_ref().map(|snapshot| snapshot.plan.generation),
+            )
+            .await?;
 
         if options.message_text.is_empty() {
+            output::render_plan_snapshot(&snapshot, false);
             return Ok(());
         }
+        if snapshot.plan.status != PlanStatus::Drafting {
+            anyhow::bail!(
+                "Plan generation {} is {}; use /plan-feedback to request a revision",
+                snapshot.plan.generation,
+                snapshot.plan.status
+            );
+        }
 
-        let mut plan_messages = self.messages.clone();
-        plan_messages.push(Message::user().with_text(&options.message_text));
-
-        let (reasoner, reasoner_model_config) = get_reasoner().await?;
-        self.plan_with_reasoner_model(plan_messages, reasoner, reasoner_model_config)
+        self.submit_visible_turn(&options.message_text, "planning")
             .await
+    }
+
+    async fn handle_plan_status(&self) -> Result<()> {
+        match self
+            .agent
+            .config
+            .session_manager
+            .plans()
+            .snapshot(&self.session_id)
+            .await?
+        {
+            Some(snapshot) => output::render_plan_snapshot(&snapshot, true),
+            None => output::render_no_plan(),
+        }
+        Ok(())
+    }
+
+    async fn handle_plan_feedback(&mut self, feedback: &str) -> Result<()> {
+        let feedback = feedback.trim();
+        if feedback.is_empty() {
+            anyhow::bail!("Usage: /plan-feedback <text>");
+        }
+        self.record_plan_feedback(NewPlanFeedback {
+            body: feedback.to_string(),
+            start_line: None,
+            end_line: None,
+            selected_text: None,
+        })
+        .await
+    }
+
+    async fn handle_plan_comment(&mut self, comment: &str) -> Result<()> {
+        let (start_line, end_line, body) = parse_plan_comment(comment)?;
+        self.record_plan_feedback(NewPlanFeedback {
+            body,
+            start_line: Some(start_line),
+            end_line: Some(end_line),
+            selected_text: None,
+        })
+        .await
+    }
+
+    async fn record_plan_feedback(&mut self, feedback: NewPlanFeedback) -> Result<()> {
+        let current = self.require_current_plan().await?;
+        if current.plan.status != PlanStatus::AwaitingReview {
+            anyhow::bail!(
+                "Plan generation {} is {}; feedback requires a plan awaiting review",
+                current.plan.generation,
+                current.plan.status
+            );
+        }
+        let previous_feedback_ids = current
+            .feedback
+            .iter()
+            .map(|item| item.id.as_str())
+            .collect::<HashSet<_>>();
+        let updated = self
+            .agent
+            .config
+            .session_manager
+            .plans()
+            .add_feedback(
+                &self.session_id,
+                &PlanExpectation::for_snapshot(&current),
+                feedback,
+            )
+            .await?;
+        let new_feedback_ids = updated
+            .feedback
+            .iter()
+            .filter(|item| !previous_feedback_ids.contains(item.id.as_str()))
+            .map(|item| item.id.clone())
+            .collect::<Vec<_>>();
+        if new_feedback_ids.is_empty() {
+            anyhow::bail!("Plan feedback was recorded, but its durable identifier was unavailable");
+        }
+        output::render_plan_feedback_recorded(&updated, &new_feedback_ids);
+        let revision_prompt = format!(
+            "Revise the current host-enforced plan using durable feedback {}. Update the plan revision and request review again when it is ready. Do not implement the plan.",
+            new_feedback_ids.join(", ")
+        );
+        self.submit_visible_turn(&revision_prompt, "planning").await
+    }
+
+    async fn handle_plan_approve(&self) -> Result<()> {
+        let approved = self
+            .approve_current_plan(Some("approved from the CLI".to_string()))
+            .await?;
+        output::render_plan_approved(&approved, false);
+        Ok(())
+    }
+
+    async fn handle_plan_approve_and_run(&mut self) -> Result<()> {
+        let approved = self
+            .approve_current_plan(Some(
+                "approved and submitted for implementation from the CLI".to_string(),
+            ))
+            .await?;
+        output::render_plan_approved(&approved, true);
+        let implementation_prompt =
+            gosling::session::approved_plan_implementation_reference(&approved)?;
+        report_plan_implementation_submission(
+            &approved,
+            self.submit_visible_turn(&implementation_prompt, "thinking")
+                .await,
+        );
+        Ok(())
+    }
+
+    async fn approve_current_plan(&self, decision_note: Option<String>) -> Result<PlanSnapshot> {
+        let current = self.require_current_plan().await?;
+        self.agent
+            .config
+            .session_manager
+            .plans()
+            .approve(
+                &self.session_id,
+                &PlanExpectation::for_snapshot(&current),
+                decision_note,
+            )
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn handle_plan_abandon(&self) -> Result<()> {
+        let current = self.require_current_plan().await?;
+        if !current.plan.status.is_open() {
+            anyhow::bail!(
+                "Plan generation {} is already {}; only an open plan can be abandoned",
+                current.plan.generation,
+                current.plan.status
+            );
+        }
+        let abandoned = self
+            .agent
+            .config
+            .session_manager
+            .plans()
+            .abandon(
+                &self.session_id,
+                current.plan.generation,
+                Some("abandoned from the CLI".to_string()),
+            )
+            .await?;
+        output::render_plan_abandoned(&abandoned);
+        Ok(())
+    }
+
+    async fn handle_plan_end(&self) -> Result<()> {
+        let current = self.require_current_plan().await?;
+        if current.plan.status == PlanStatus::AwaitingReview {
+            if !std::io::stdin().is_terminal() {
+                anyhow::bail!(
+                    "A reviewable plan requires explicit abandonment; run /plan-abandon from a non-interactive client"
+                );
+            }
+            let confirmed = cliclack::confirm(format!(
+                "Abandon reviewable plan generation {}?",
+                current.plan.generation
+            ))
+            .initial_value(false)
+            .interact()?;
+            if !confirmed {
+                output::gosling_mode_message("Plan remains awaiting review.");
+                return Ok(());
+            }
+        }
+        self.handle_plan_abandon().await
+    }
+
+    async fn handle_plan_export(&self) -> Result<()> {
+        let current = self.require_current_plan().await?;
+        let markdown = self.export_selected_plan(&current).await?;
+        output::render_plan_export(&markdown);
+        Ok(())
+    }
+
+    async fn export_selected_plan(&self, selected: &PlanSnapshot) -> Result<String> {
+        let revision = selected.active_revision.as_ref().ok_or_else(|| {
+            anyhow::anyhow!(
+                "Plan generation {} has no revision to export",
+                selected.plan.generation
+            )
+        })?;
+        self.agent
+            .config
+            .session_manager
+            .plans()
+            .export_markdown(
+                &self.session_id,
+                selected.plan.generation,
+                selected.plan.status,
+                &revision.id,
+                &revision.content_sha256,
+            )
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn require_current_plan(&self) -> Result<PlanSnapshot> {
+        self.agent
+            .config
+            .session_manager
+            .plans()
+            .snapshot(&self.session_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("No plan exists for this session; start one with /plan"))
+    }
+
+    async fn submit_visible_turn(&mut self, content: &str, status: &str) -> Result<()> {
+        // Resolve the provider before changing local presentation state. Core performs
+        // the authoritative policy/readiness check again before persisting the prompt.
+        let _provider = self.agent.provider().await?;
+        self.push_message(Message::user().with_text(content));
+
+        if self.persist_local_state {
+            if let Err(error) = crate::project_tracker::update_project_tracker(
+                Some(content),
+                Some(&self.session_id),
+            ) {
+                eprintln!(
+                    "Warning: Failed to update project tracker with instruction: {}",
+                    error
+                );
+            }
+        }
+
+        println!();
+        output::run_status_hook(status);
+        output::show_thinking();
+        let start_time = Instant::now();
+        let result = self
+            .process_agent_response(true, CancellationToken::default())
+            .await;
+        output::hide_thinking();
+        result?;
+
+        let elapsed_str = format_elapsed_time(start_time.elapsed());
+        println!("{}", console::style(format!("  ⏱ {}", elapsed_str)).dim());
+        if let Some(snapshot) = self
+            .agent
+            .config
+            .session_manager
+            .plans()
+            .snapshot(&self.session_id)
+            .await?
+            .filter(|snapshot| snapshot.plan.status == PlanStatus::AwaitingReview)
+        {
+            output::render_plan_snapshot(&snapshot, true);
+            output::render_plan_review_commands();
+        }
+        Ok(())
+    }
+
+    fn render_plan_command_error(&self, error: &anyhow::Error) {
+        output::render_error(&error.to_string());
     }
 
     async fn handle_clear(&mut self) -> Result<()> {
@@ -1061,118 +1315,6 @@ impl CliSession {
         } else {
             println!("{}", console::style("Compaction cancelled.").yellow());
         }
-        Ok(())
-    }
-
-    async fn clear_conversation_history(&mut self) -> Result<()> {
-        self.agent
-            .config
-            .session_manager
-            .replace_conversation(&self.session_id, &Conversation::default())
-            .await?;
-        self.messages.clear();
-        Ok(())
-    }
-
-    async fn plan_with_reasoner_model(
-        &mut self,
-        plan_messages: Conversation,
-        reasoner: Arc<dyn Provider>,
-        model_config: gosling_providers::model::ModelConfig,
-    ) -> Result<(), anyhow::Error> {
-        let plan_prompt = self.agent.get_plan_prompt(&self.session_id).await?;
-        output::show_thinking();
-        let plan_result = gosling::session_context::with_session_id(
-            Some(self.session_id.clone()),
-            reasoner.complete(&model_config, &plan_prompt, plan_messages.messages(), &[]),
-        )
-        .await;
-        let (plan_response, _usage) = match plan_result {
-            Ok(response) => response,
-            Err(e) => {
-                output::hide_thinking();
-                output::render_error(&format!("Planning failed: {e}"));
-                return Ok(());
-            }
-        };
-        output::render_message(&plan_response, self.debug);
-        output::hide_thinking();
-        let planner_response_type = classify_planner_response(
-            &self.session_id,
-            plan_response.as_concat_text(),
-            self.agent.provider().await?,
-            self.agent
-                .model_config_for_session(&self.session_id)
-                .await?,
-        )
-        .await?;
-
-        match planner_response_type {
-            PlannerResponseType::Plan => {
-                println!();
-                let should_act = match cliclack::confirm(
-                    "Do you want to clear message history & act on this plan?",
-                )
-                .initial_value(true)
-                .interact()
-                {
-                    Ok(choice) => choice,
-                    Err(e) => {
-                        if e.kind() == std::io::ErrorKind::Interrupted {
-                            false // If interrupted, set should_act to false
-                        } else {
-                            return Err(e.into());
-                        }
-                    }
-                };
-                if should_act {
-                    if let Err(e) = self.clear_conversation_history().await {
-                        output::render_error(&format!("Failed to clear message history: {e}"));
-                        self.push_message(plan_response);
-                        return Ok(());
-                    }
-                    output::render_act_on_plan();
-                    self.run_mode = RunMode::Normal;
-                    // set gosling mode: auto if that isn't already the case
-                    let config = Config::global();
-                    let curr_gosling_mode = config.get_gosling_mode().unwrap_or_default();
-                    if curr_gosling_mode != GoslingMode::Auto {
-                        config.set_gosling_mode(GoslingMode::Auto).unwrap();
-                    }
-
-                    // add the plan response as a user message
-                    let plan_message = Message::user().with_text(plan_response.as_concat_text());
-                    self.push_message(plan_message);
-                    // act on the plan
-                    output::show_thinking();
-                    let act_result = self
-                        .process_agent_response(true, CancellationToken::default())
-                        .await;
-                    output::hide_thinking();
-
-                    // Restore before propagating. This used to be `...await?`,
-                    // so any error from acting on the plan skipped the restore
-                    // and left the *global* mode pinned to Auto — every later
-                    // session in this process, and every future one once the
-                    // config was written, silently ran auto-approved.
-                    // (WFG-GOS-007)
-                    if curr_gosling_mode != GoslingMode::Auto {
-                        config.set_gosling_mode(curr_gosling_mode)?;
-                    }
-                    act_result?;
-                } else {
-                    // add the plan response (assistant message) & carry the conversation forward
-                    // in the next round, the user might wanna slightly modify the plan
-                    self.push_message(plan_response);
-                }
-            }
-            PlannerResponseType::ClarifyingQuestions => {
-                // add the plan response (assistant message) & carry the conversation forward
-                // in the next round, the user will answer the clarifying questions
-                self.push_message(plan_response);
-            }
-        }
-
         Ok(())
     }
 
@@ -1837,16 +1979,25 @@ impl CliSession {
             .agent
             .model_config_for_session(&self.session_id)
             .await?;
-        let mode = Config::global().get_gosling_mode().unwrap_or_default();
         let session = self.get_session().await?;
 
         output::display_session_status(
             provider.get_name(),
             &model_config.model_name,
-            &mode.to_string(),
+            &session.gosling_mode.to_string(),
             &session.usage,
             &session.accumulated_usage,
         );
+        if let Some(snapshot) = self
+            .agent
+            .config
+            .session_manager
+            .plans()
+            .snapshot(&self.session_id)
+            .await?
+        {
+            output::render_plan_snapshot(&snapshot, false);
+        }
         self.display_context_usage().await
     }
 
@@ -1933,6 +2084,31 @@ fn message_has_text(message: &Message) -> bool {
     message.content.iter().any(
         |content| matches!(content, MessageContent::Text(text) if !text.text.trim().is_empty()),
     )
+}
+
+fn parse_plan_comment(value: &str) -> Result<(u32, u32, String)> {
+    let value = value.trim();
+    let split_at = value
+        .find(char::is_whitespace)
+        .ok_or_else(|| anyhow::anyhow!("Usage: /plan-comment <start>-<end> <text>"))?;
+    let (range, body) = value.split_at(split_at);
+    let body = body.trim();
+    let (start, end) = range
+        .split_once('-')
+        .ok_or_else(|| anyhow::anyhow!("Line range must use <start>-<end>"))?;
+    let start = start
+        .parse::<u32>()
+        .map_err(|_| anyhow::anyhow!("Plan comment start line must be a positive integer"))?;
+    let end = end
+        .parse::<u32>()
+        .map_err(|_| anyhow::anyhow!("Plan comment end line must be a positive integer"))?;
+    if start == 0 || end == 0 || start > end {
+        anyhow::bail!("Plan comment range must be positive and ordered");
+    }
+    if body.is_empty() {
+        anyhow::bail!("Plan comment text must not be empty");
+    }
+    Ok((start, end, body.to_string()))
 }
 
 fn terminal_error_reason(message: &Message) -> Option<String> {
@@ -2452,49 +2628,81 @@ fn handle_agent_error(e: &anyhow::Error, is_json_mode: bool, is_stream_json_mode
     }
 }
 
-async fn get_reasoner(
-) -> Result<(Arc<dyn Provider>, gosling_providers::model::ModelConfig), anyhow::Error> {
-    use gosling::providers::create;
+fn report_plan_implementation_submission(
+    approved: &PlanSnapshot,
+    submission: Result<()>,
+) -> PlanImplementationSubmission {
+    match submission {
+        Ok(()) => PlanImplementationSubmission::Started,
+        Err(error) => {
+            let error = error.to_string();
+            output::render_plan_implementation_partial_success(approved, &error);
+            PlanImplementationSubmission::Failed(error)
+        }
+    }
+}
 
-    let config = Config::global();
+/// Resolve legacy planner-selection settings without reintroducing the old
+/// second provider loop. The host-enforced path currently supports only the
+/// session's active provider/model/context; distinct planner settings fail
+/// explicitly before PlanService creates or resumes a generation.
+fn resolve_cli_planner_model(
+    current_provider: &str,
+    current_model: &gosling_providers::model::ModelConfig,
+    config: &Config,
+) -> Result<String> {
+    let configured_provider = config.get_param::<String>(GOSLING_PLANNER_PROVIDER).ok();
+    if let Some(provider) = configured_provider.as_deref() {
+        if provider.trim().is_empty() {
+            anyhow::bail!("{GOSLING_PLANNER_PROVIDER} must not be empty");
+        }
+        if provider != current_provider {
+            anyhow::bail!(
+                "Configured separate planner provider '{provider}' is not yet supported by host-enforced planning; use the session provider '{current_provider}'"
+            );
+        }
+    }
 
-    // Try planner-specific provider first, fall back to default provider
-    let provider = if let Ok(provider) = config.get_param::<String>("GOSLING_PLANNER_PROVIDER") {
-        provider
-    } else {
-        println!("WARNING: GOSLING_PLANNER_PROVIDER not found. Using default provider...");
-        config
-            .get_gosling_provider()
-            .map_err(|_| anyhow::anyhow!("No provider configured. Run 'gosling configure' first"))?
+    let configured_model = config.get_param::<String>(GOSLING_PLANNER_MODEL).ok();
+    if let Some(model) = configured_model.as_deref() {
+        if model.trim().is_empty() {
+            anyhow::bail!("{GOSLING_PLANNER_MODEL} must not be empty");
+        }
+        let selected =
+            gosling::model_config::model_config_from_user_config(current_provider, model)?;
+        if selected.model_name != current_model.model_name
+            || selected.thinking_effort() != current_model.thinking_effort()
+        {
+            anyhow::bail!(
+                "Configured separate planner model '{model}' is not yet supported by host-enforced planning; use the session model '{}'",
+                current_model.model_name
+            );
+        }
+    }
+
+    let configured_context_limit = match env::var(GOSLING_PLANNER_CONTEXT_LIMIT) {
+        Ok(value) => {
+            let limit = value
+                .parse::<usize>()
+                .map_err(|error| anyhow::anyhow!("{GOSLING_PLANNER_CONTEXT_LIMIT}: {error}"))?;
+            if limit < 4096 {
+                anyhow::bail!("{GOSLING_PLANNER_CONTEXT_LIMIT} must be at least 4096");
+            }
+            Some(limit)
+        }
+        Err(env::VarError::NotPresent) => None,
+        Err(error) => anyhow::bail!("{GOSLING_PLANNER_CONTEXT_LIMIT}: {error}"),
     };
+    if let Some(limit) = configured_context_limit {
+        let session_limit = current_model.context_limit();
+        if limit != session_limit {
+            anyhow::bail!(
+                "Configured separate planner context limit {limit} is not yet supported by host-enforced planning; use the session context limit {session_limit}"
+            );
+        }
+    }
 
-    // Try planner-specific model first, fall back to default model
-    let model = if let Ok(model) = config.get_param::<String>("GOSLING_PLANNER_MODEL") {
-        model
-    } else {
-        println!("WARNING: GOSLING_PLANNER_MODEL not found. Using default model...");
-        config
-            .get_gosling_model()
-            .map_err(|_| anyhow::anyhow!("No model configured. Run 'gosling configure' first"))?
-    };
-
-    let planner_context_limit = match env::var(GOSLING_PLANNER_CONTEXT_LIMIT)
-        .ok()
-        .map(|v| v.parse::<usize>())
-    {
-        Some(Ok(n)) if n >= 4096 => Some(n),
-        Some(Ok(_)) => anyhow::bail!("{} must be at least 4096", GOSLING_PLANNER_CONTEXT_LIMIT),
-        Some(Err(e)) => anyhow::bail!("{}: {}", GOSLING_PLANNER_CONTEXT_LIMIT, e),
-        None => None,
-    };
-
-    let model_config =
-        gosling::model_config::model_config_from_user_config(&provider, model.as_str())?
-            .with_context_limit(planner_context_limit);
-    let extensions = gosling::config::extensions::get_enabled_extensions_with_config(config);
-    let reasoner = create(&provider, extensions).await?;
-
-    Ok((reasoner, model_config))
+    Ok(current_model.model_name.clone())
 }
 
 /// Format elapsed time duration
@@ -2531,6 +2739,7 @@ mod tests {
     use gosling::agents::extension::Envs;
     use gosling::config::ExtensionConfig;
     use std::collections::HashMap;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::time::Duration;
     use test_case::test_case;
 
@@ -2722,6 +2931,99 @@ mod tests {
 
         assert_eq!(switched.model_name, current.model_name);
         assert_ne!(switched.thinking_effort(), current.thinking_effort());
+    }
+
+    #[test]
+    fn planner_compatibility_accepts_only_the_active_session_selection() {
+        let _guard = env_lock::lock_env([
+            (GOSLING_PLANNER_PROVIDER, Some("planning-test")),
+            (GOSLING_PLANNER_MODEL, Some("planner-model")),
+            (GOSLING_PLANNER_CONTEXT_LIMIT, Some("8192")),
+        ]);
+        let current =
+            gosling::model_config::model_config_from_user_config("planning-test", "planner-model")
+                .unwrap()
+                .with_context_limit(Some(8192));
+
+        assert_eq!(
+            resolve_cli_planner_model("planning-test", &current, Config::global()).unwrap(),
+            "planner-model"
+        );
+    }
+
+    #[test]
+    fn planner_compatibility_rejects_a_distinct_provider_before_plan_start() {
+        let _guard = env_lock::lock_env([
+            (GOSLING_PLANNER_PROVIDER, Some("other-provider")),
+            (GOSLING_PLANNER_MODEL, Some("planner-model")),
+            (GOSLING_PLANNER_CONTEXT_LIMIT, None::<&str>),
+        ]);
+        let current =
+            gosling::model_config::model_config_from_user_config("planning-test", "planner-model")
+                .unwrap();
+
+        let error =
+            resolve_cli_planner_model("planning-test", &current, Config::global()).unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("Configured separate planner provider"));
+    }
+
+    #[test]
+    fn planner_compatibility_rejects_a_distinct_model_before_plan_start() {
+        let _guard = env_lock::lock_env([
+            (GOSLING_PLANNER_PROVIDER, Some("planning-test")),
+            (GOSLING_PLANNER_MODEL, Some("other-model")),
+            (GOSLING_PLANNER_CONTEXT_LIMIT, None::<&str>),
+        ]);
+        let current = gosling_providers::model::ModelConfig::new("planner-model");
+
+        let error =
+            resolve_cli_planner_model("planning-test", &current, Config::global()).unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("Configured separate planner model"));
+    }
+
+    #[test]
+    fn planner_compatibility_rejects_a_distinct_context_limit_before_plan_start() {
+        let _guard = env_lock::lock_env([
+            (GOSLING_PLANNER_PROVIDER, Some("planning-test")),
+            (GOSLING_PLANNER_MODEL, Some("planner-model")),
+            (GOSLING_PLANNER_CONTEXT_LIMIT, Some("4096")),
+        ]);
+        let current =
+            gosling::model_config::model_config_from_user_config("planning-test", "planner-model")
+                .unwrap()
+                .with_context_limit(Some(8192));
+
+        let error =
+            resolve_cli_planner_model("planning-test", &current, Config::global()).unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("Configured separate planner context limit"));
+    }
+
+    #[test]
+    fn plan_comment_parser_binds_a_positive_ordered_line_range() {
+        assert_eq!(
+            parse_plan_comment("2-4 preserve rollback steps").unwrap(),
+            (2, 4, "preserve rollback steps".to_string())
+        );
+        for invalid in [
+            "",
+            "2-4",
+            "0-2 text",
+            "4-2 text",
+            "two-4 text",
+            "2-four text",
+            "2:4 text",
+        ] {
+            assert!(parse_plan_comment(invalid).is_err(), "accepted {invalid:?}");
+        }
     }
 
     #[test]
@@ -2988,12 +3290,30 @@ mod tests {
         (cli, manager, session.id)
     }
 
-    struct FailingProvider;
+    struct PlanningTestProvider {
+        stream_calls: Arc<AtomicUsize>,
+        fail_stream: bool,
+        external_tools: AtomicBool,
+    }
+
+    impl PlanningTestProvider {
+        fn new(fail_stream: bool, external_tools: bool) -> Self {
+            Self {
+                stream_calls: Arc::new(AtomicUsize::new(0)),
+                fail_stream,
+                external_tools: AtomicBool::new(external_tools),
+            }
+        }
+
+        fn set_external_tools(&self, external_tools: bool) {
+            self.external_tools.store(external_tools, Ordering::SeqCst);
+        }
+    }
 
     #[async_trait::async_trait]
-    impl Provider for FailingProvider {
+    impl gosling::providers::base::Provider for PlanningTestProvider {
         fn get_name(&self) -> &str {
-            "failing"
+            "planning-test"
         }
 
         async fn stream(
@@ -3004,43 +3324,388 @@ mod tests {
             _tools: &[rmcp::model::Tool],
         ) -> Result<gosling_providers::base::MessageStream, gosling_providers::errors::ProviderError>
         {
-            Err(gosling_providers::errors::ProviderError::RequestFailed(
-                "The model `bogus-planner` does not exist".to_string(),
+            self.stream_calls.fetch_add(1, Ordering::SeqCst);
+            if self.fail_stream {
+                return Err(gosling_providers::errors::ProviderError::RequestFailed(
+                    "planner test failure".to_string(),
+                ));
+            }
+            let message = Message::assistant().with_text("implementation response");
+            let usage = gosling_providers::conversation::token_usage::ProviderUsage::new(
+                "planning-test".to_string(),
+                gosling_providers::conversation::token_usage::Usage::default(),
+            );
+            Ok(gosling::providers::base::stream_from_single_message(
+                message, usage,
             ))
+        }
+
+        fn executes_tools_outside_gosling(&self) -> bool {
+            self.external_tools.load(Ordering::SeqCst)
         }
     }
 
-    #[tokio::test]
-    async fn planner_failure_keeps_the_interactive_session_in_plan_mode() {
-        let temp = tempfile::tempdir().unwrap();
-        let (mut cli, _manager, _session_id) = cli_session_with_messages(&temp, &[]).await;
-        cli.run_mode = RunMode::Plan;
-
-        let result = cli
-            .plan_with_reasoner_model(
-                Conversation::new_unvalidated(vec![Message::user().with_text("make a plan")]),
-                Arc::new(FailingProvider),
-                gosling_providers::model::ModelConfig::new("bogus-planner"),
+    async fn create_reviewable_plan(
+        cli: &CliSession,
+        manager: &gosling::session::SessionManager,
+        session_id: &str,
+        provider: Arc<PlanningTestProvider>,
+    ) -> PlanSnapshot {
+        let model = gosling_providers::model::ModelConfig::new("planner-model");
+        cli.agent
+            .update_provider(provider.clone(), model.clone(), session_id)
+            .await
+            .unwrap();
+        let started = manager
+            .plans()
+            .start_or_resume(session_id, provider.as_ref(), Some(model.model_name), None)
+            .await
+            .unwrap();
+        let revised = manager
+            .plans()
+            .update_revision(
+                session_id,
+                gosling::session::NewPlanRevision {
+                    content_markdown: "# Exact plan\n\n1. Keep history.".to_string(),
+                    expected_generation: started.plan.generation,
+                    expected_parent_revision_id: None,
+                    planner_provider: Some("planning-test".to_string()),
+                    planner_model: Some("planner-model".to_string()),
+                },
             )
-            .await;
-
-        assert!(result.is_ok(), "planner errors must not end the session");
-        assert!(matches!(cli.run_mode, RunMode::Plan));
+            .await
+            .unwrap();
+        manager
+            .plans()
+            .request_review(session_id, &PlanExpectation::for_snapshot(&revised))
+            .await
+            .unwrap()
     }
 
     #[tokio::test]
-    async fn clearing_history_for_a_plan_clears_the_stored_conversation() {
+    async fn cli_restart_observes_the_durable_plan_generation() {
+        let temp = tempfile::tempdir().unwrap();
+        let (cli, manager, session_id) = cli_session_with_messages(&temp, &[]).await;
+        let provider = PlanningTestProvider::new(false, false);
+        manager
+            .plans()
+            .start_or_resume(&session_id, &provider, Some("planner".to_string()), None)
+            .await
+            .unwrap();
+        let restarted = CliSession::new(
+            cli.agent,
+            session_id,
+            false,
+            None,
+            None,
+            "text".into(),
+            false,
+        )
+        .await;
+
+        let snapshot = restarted.require_current_plan().await.unwrap();
+        assert_eq!(snapshot.plan.status, PlanStatus::Drafting);
+        assert_eq!(snapshot.plan.generation, 1);
+    }
+
+    #[tokio::test]
+    async fn plan_export_rejects_stale_selected_status_after_concurrent_approval() {
+        let temp = tempfile::tempdir().unwrap();
+        let (cli, manager, session_id) = cli_session_with_messages(&temp, &[]).await;
+        let provider = Arc::new(PlanningTestProvider::new(false, false));
+        let selected = create_reviewable_plan(&cli, manager.as_ref(), &session_id, provider).await;
+
+        let approved = manager
+            .plans()
+            .approve(&session_id, &PlanExpectation::for_snapshot(&selected), None)
+            .await
+            .unwrap();
+        assert_eq!(approved.plan.status, PlanStatus::Approved);
+
+        let error = cli.export_selected_plan(&selected).await.unwrap_err();
+        assert!(matches!(
+            error.downcast_ref::<gosling::session::PlanError>(),
+            Some(gosling::session::PlanError::Conflict(message))
+                if message == "plan status changed from expected awaiting_review to approved"
+        ));
+    }
+
+    #[tokio::test]
+    async fn abandon_command_preserves_conversation_history() {
         let temp = tempfile::tempdir().unwrap();
         let earlier = Message::user()
             .with_text("PM04-T1 hello")
             .with_id("earlier");
-        let (mut cli, manager, session_id) = cli_session_with_messages(&temp, &[earlier]).await;
-
-        cli.clear_conversation_history().await.unwrap();
+        let (cli, manager, session_id) = cli_session_with_messages(&temp, &[earlier]).await;
+        let provider = PlanningTestProvider::new(false, false);
+        manager
+            .plans()
+            .start_or_resume(&session_id, &provider, Some("planner".to_string()), None)
+            .await
+            .unwrap();
+        cli.handle_plan_abandon().await.unwrap();
 
         let stored = manager.get_session(&session_id, true).await.unwrap();
-        assert!(stored.conversation.unwrap_or_default().is_empty());
-        assert!(cli.messages.is_empty());
+        assert_eq!(stored.conversation.unwrap_or_default().len(), 1);
+        assert_eq!(cli.messages.len(), 1);
+        assert_eq!(
+            manager
+                .plans()
+                .snapshot(&session_id)
+                .await
+                .unwrap()
+                .unwrap()
+                .plan
+                .status,
+            gosling::session::PlanStatus::Abandoned
+        );
+    }
+
+    #[tokio::test]
+    async fn incompatible_provider_fails_before_plan_or_prompt_persistence() {
+        let _guard = env_lock::lock_env([
+            (GOSLING_PLANNER_PROVIDER, Some("planning-test")),
+            (GOSLING_PLANNER_MODEL, Some("planner-model")),
+            (GOSLING_PLANNER_CONTEXT_LIMIT, None::<&str>),
+        ]);
+        let temp = tempfile::tempdir().unwrap();
+        let earlier = Message::user().with_text("keep me").with_id("earlier");
+        let (mut cli, manager, session_id) = cli_session_with_messages(&temp, &[earlier]).await;
+        let provider = Arc::new(PlanningTestProvider::new(false, true));
+        cli.agent
+            .update_provider(
+                provider.clone(),
+                gosling::model_config::model_config_from_user_config(
+                    "planning-test",
+                    "planner-model",
+                )
+                .unwrap(),
+                &session_id,
+            )
+            .await
+            .unwrap();
+
+        let error = cli
+            .handle_plan_mode(input::PlanCommandOptions {
+                message_text: "write a plan".to_string(),
+            })
+            .await
+            .unwrap_err();
+
+        assert!(error.to_string().contains("unsupported by this provider"));
+        assert!(manager
+            .plans()
+            .snapshot(&session_id)
+            .await
+            .unwrap()
+            .is_none());
+        assert_eq!(
+            manager
+                .get_session(&session_id, true)
+                .await
+                .unwrap()
+                .conversation
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(provider.stream_calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn plain_plan_approval_does_not_submit_a_prompt_or_change_mode() {
+        let temp = tempfile::tempdir().unwrap();
+        let earlier = Message::user().with_text("keep me").with_id("earlier");
+        let (cli, manager, session_id) = cli_session_with_messages(&temp, &[earlier]).await;
+        let provider = Arc::new(PlanningTestProvider::new(false, false));
+        create_reviewable_plan(&cli, manager.as_ref(), &session_id, provider.clone()).await;
+        let mode_before = cli.agent.gosling_mode().await;
+
+        cli.handle_plan_approve().await.unwrap();
+
+        assert_eq!(provider.stream_calls.load(Ordering::SeqCst), 0);
+        assert_eq!(cli.agent.gosling_mode().await, mode_before);
+        assert_eq!(
+            manager
+                .plans()
+                .snapshot(&session_id)
+                .await
+                .unwrap()
+                .unwrap()
+                .plan
+                .status,
+            PlanStatus::Approved
+        );
+        assert_eq!(
+            manager
+                .get_session(&session_id, true)
+                .await
+                .unwrap()
+                .conversation
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn approve_and_run_submits_one_visible_prompt_and_preserves_history_and_mode() {
+        let temp = tempfile::tempdir().unwrap();
+        let earlier = Message::user().with_text("keep me").with_id("earlier");
+        let (mut cli, manager, session_id) = cli_session_with_messages(&temp, &[earlier]).await;
+        let provider = Arc::new(PlanningTestProvider::new(false, false));
+        create_reviewable_plan(&cli, manager.as_ref(), &session_id, provider.clone()).await;
+        let mode_before = cli.agent.gosling_mode().await;
+
+        cli.handle_plan_approve_and_run().await.unwrap();
+
+        assert_eq!(provider.stream_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(cli.agent.gosling_mode().await, mode_before);
+        let approved = manager
+            .plans()
+            .snapshot(&session_id)
+            .await
+            .unwrap()
+            .unwrap();
+        let revision = approved.active_revision.as_ref().unwrap();
+        let expected_prompt = format!(
+            "Implement approved plan {} generation {} revision {} ({}; source {}; scope {}). Follow the stored plan exactly; report deviations.",
+            approved.plan.id,
+            approved.plan.generation,
+            revision.id,
+            revision.content_sha256,
+            revision.source_hash,
+            revision.scope_hash
+        );
+        let stored = manager.get_session(&session_id, true).await.unwrap();
+        let conversation = stored.conversation.unwrap();
+        assert_eq!(conversation.messages()[0].as_concat_text(), "keep me");
+        let implementation_prompts = conversation
+            .messages()
+            .iter()
+            .filter(|message| {
+                message.role == rmcp::model::Role::User
+                    && message
+                        .as_concat_text()
+                        .starts_with("Implement approved plan")
+            })
+            .count();
+        assert_eq!(implementation_prompts, 1);
+        let implementation_prompt = conversation
+            .messages()
+            .iter()
+            .find(|message| {
+                message.role == rmcp::model::Role::User
+                    && message
+                        .as_concat_text()
+                        .starts_with("Implement approved plan")
+            })
+            .map(Message::as_concat_text)
+            .unwrap();
+        assert_eq!(implementation_prompt, expected_prompt);
+        assert!(!implementation_prompt.contains("# Exact plan"));
+        assert_eq!(approved.plan.status, PlanStatus::Approved);
+    }
+
+    #[tokio::test]
+    async fn approve_and_run_reports_prompt_failure_without_rolling_back_approval() {
+        let temp = tempfile::tempdir().unwrap();
+        let earlier = Message::user().with_text("keep me").with_id("earlier");
+        let (mut cli, manager, session_id) = cli_session_with_messages(&temp, &[earlier]).await;
+        let provider = Arc::new(PlanningTestProvider::new(true, false));
+        create_reviewable_plan(&cli, manager.as_ref(), &session_id, provider.clone()).await;
+        let mode_before = cli.agent.gosling_mode().await;
+
+        cli.handle_plan_approve_and_run().await.unwrap();
+
+        assert_eq!(provider.stream_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(cli.agent.gosling_mode().await, mode_before);
+        assert_eq!(
+            manager
+                .plans()
+                .snapshot(&session_id)
+                .await
+                .unwrap()
+                .unwrap()
+                .plan
+                .status,
+            PlanStatus::Approved
+        );
+        let stored = manager.get_session(&session_id, true).await.unwrap();
+        assert_eq!(
+            stored
+                .conversation
+                .unwrap_or_default()
+                .messages()
+                .first()
+                .map(Message::as_concat_text)
+                .as_deref(),
+            Some("keep me")
+        );
+    }
+
+    #[tokio::test]
+    async fn implementation_start_failure_is_a_partial_success_after_approval() {
+        let temp = tempfile::tempdir().unwrap();
+        let (cli, manager, session_id) = cli_session_with_messages(&temp, &[]).await;
+        let provider = Arc::new(PlanningTestProvider::new(false, false));
+        let current = create_reviewable_plan(&cli, manager.as_ref(), &session_id, provider).await;
+        let approved = manager
+            .plans()
+            .approve(&session_id, &PlanExpectation::for_snapshot(&current), None)
+            .await
+            .unwrap();
+
+        let outcome = report_plan_implementation_submission(
+            &approved,
+            Err(anyhow::anyhow!("implementation prompt did not start")),
+        );
+
+        assert_eq!(
+            outcome,
+            PlanImplementationSubmission::Failed("implementation prompt did not start".to_string())
+        );
+        assert_eq!(
+            manager
+                .plans()
+                .snapshot(&session_id)
+                .await
+                .unwrap()
+                .unwrap()
+                .plan
+                .status,
+            PlanStatus::Approved
+        );
+    }
+
+    #[tokio::test]
+    async fn plan_feedback_remains_durable_when_the_revision_prompt_fails() {
+        let temp = tempfile::tempdir().unwrap();
+        let (mut cli, manager, session_id) = cli_session_with_messages(&temp, &[]).await;
+        let provider = Arc::new(PlanningTestProvider::new(false, false));
+        create_reviewable_plan(&cli, manager.as_ref(), &session_id, provider.clone()).await;
+        provider.set_external_tools(true);
+
+        let error = cli
+            .handle_plan_feedback("Keep the migration reversible")
+            .await
+            .unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("cannot be used for host-enforced planning"));
+        assert_eq!(provider.stream_calls.load(Ordering::SeqCst), 0);
+        let snapshot = manager
+            .plans()
+            .snapshot(&session_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(snapshot.plan.status, PlanStatus::Drafting);
+        assert!(snapshot
+            .feedback
+            .iter()
+            .any(|item| item.body == "Keep the migration reversible"));
     }
 
     #[tokio::test]
@@ -3068,11 +3733,13 @@ mod tests {
             .unwrap();
         let messages = stored.messages();
         assert_eq!(messages[0].as_concat_text(), "run the slow tool");
-        assert!(messages.iter().any(|message| message
-            .content
-            .iter()
-            .filter_map(MessageContent::as_tool_response)
-            .any(|response| response.id == "slow-request")));
+        assert!(messages.iter().any(|message| {
+            message
+                .content
+                .iter()
+                .filter_map(MessageContent::as_tool_response)
+                .any(|response| response.id == "slow-request")
+        }));
         assert_eq!(
             messages.last().map(Message::as_concat_text).as_deref(),
             Some(CANCELLED_TURN_NOTICE)

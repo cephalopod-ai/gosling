@@ -85,8 +85,59 @@ impl Agent {
     /// message is persisted: bailing after `add_message` leaves a stray copy in
     /// the conversation that gets replayed to the provider once a later submit
     /// succeeds.
-    async fn ensure_provider_ready(&self, restrict_to_working_dirs: bool) -> Result<()> {
+    async fn ensure_provider_ready(
+        &self,
+        session_id: &str,
+        restrict_to_working_dirs: bool,
+        turn_policy: &crate::session::InteractionPolicy,
+    ) -> Result<()> {
         let provider = self.provider().await?;
+        let plan_snapshot = self
+            .config
+            .session_manager
+            .plans()
+            .snapshot(session_id)
+            .await
+            .map_err(|error| anyhow!(error.to_string()))?;
+        match turn_policy {
+            crate::session::InteractionPolicy::Planning {
+                plan_id,
+                generation,
+                capability_policy_version,
+            } => {
+                let snapshot = plan_snapshot.ok_or_else(|| {
+                    anyhow!("the captured planning turn no longer has a durable plan")
+                })?;
+                if snapshot.plan.status == crate::session::PlanStatus::AwaitingReview {
+                    anyhow::bail!(
+                        "Plan {} is awaiting review; submit feedback before starting another planner turn",
+                        snapshot.plan.id
+                    );
+                }
+                if snapshot.plan.id != *plan_id
+                    || snapshot.plan.generation != *generation
+                    || snapshot.plan.capability_policy_version != *capability_policy_version
+                    || snapshot.plan.status != crate::session::PlanStatus::Drafting
+                {
+                    anyhow::bail!(
+                        "the captured planning turn is stale or no longer in drafting state"
+                    );
+                }
+                if provider.executes_tools_outside_gosling() {
+                    anyhow::bail!(
+                        "Provider '{}' runs tools outside gosling's inspection pipeline and cannot be used for host-enforced planning",
+                        provider.get_name()
+                    );
+                }
+            }
+            crate::session::InteractionPolicy::Normal => {
+                if plan_snapshot.is_some_and(|snapshot| snapshot.plan.status.is_open()) {
+                    anyhow::bail!(
+                        "the captured normal turn policy is stale because a plan is now open"
+                    );
+                }
+            }
+        }
         if restrict_to_working_dirs && provider.executes_tools_outside_gosling() {
             anyhow::bail!(
                 "Provider '{}' runs tools outside Gosling's inspection pipeline, so it can't be used while this session restricts tools to working directories. Turn off \"Restrict tools to working directories\" for this session to allow it — the toggle is in the working-directories menu (folder icon in the chat's top-right corner).",
@@ -172,15 +223,40 @@ impl Agent {
         let session = session_manager
             .get_session(&session_config.id, false)
             .await?;
+        // An open plan changes the meaning of this submission. Reject an
+        // awaiting-review state or provider-owned tool runtime before prompt
+        // hooks and slash-command handlers can observe or act on the text.
+        let interaction_policy = session_manager
+            .plans()
+            .interaction_policy(&session_config.id)
+            .await?;
+        let planning_turn = matches!(
+            &interaction_policy,
+            crate::session::InteractionPolicy::Planning { .. }
+        );
+        if planning_turn {
+            self.ensure_provider_ready(
+                &session.id,
+                session.restrict_tools_to_working_dirs,
+                &interaction_policy,
+            )
+            .await?;
+            if crate::agents::execute_commands::parse_slash_command(&message_text).is_some() {
+                anyhow::bail!(
+                    "Slash commands are unavailable while a plan is open; submit planner feedback or abandon the plan first"
+                );
+            }
+        }
         let is_first_turn = session.message_count == 0;
-        if is_first_turn {
+        if is_first_turn && !planning_turn {
             self.emit_hook(crate::hooks::HookEvent::SessionStart, &session_config.id)
                 .await;
         }
 
-        if self
-            .hook_manager
-            .has_hooks(crate::hooks::HookEvent::UserPromptSubmit)
+        if !planning_turn
+            && self
+                .hook_manager
+                .has_hooks(crate::hooks::HookEvent::UserPromptSubmit)
         {
             let ctx = crate::hooks::HookContext::new(
                 crate::hooks::HookEvent::UserPromptSubmit,
@@ -202,6 +278,10 @@ impl Agent {
         }
 
         let mut command_preamble: Vec<AgentEvent> = Vec::new();
+        // Only the current ordinary user submission may resolve an approved
+        // implementation plan. Never rediscover authority from older transcript
+        // entries during compaction, retries, or a later unrelated turn.
+        let mut implementation_reference = None;
 
         match command_result {
             Err(e) => {
@@ -222,8 +302,12 @@ impl Agent {
                 // user prompt. Record the command and its confirmation as
                 // user-visible only, then inject an agent-visible kickoff and
                 // fall through into the reply loop.
-                self.ensure_provider_ready(session.restrict_tools_to_working_dirs)
-                    .await?;
+                self.ensure_provider_ready(
+                    &session.id,
+                    session.restrict_tools_to_working_dirs,
+                    &interaction_policy,
+                )
+                .await?;
                 session_manager
                     .add_message(
                         &session_config.id,
@@ -290,8 +374,12 @@ impl Agent {
                 }));
             }
             Ok(Some(resolved_message)) => {
-                self.ensure_provider_ready(session.restrict_tools_to_working_dirs)
-                    .await?;
+                self.ensure_provider_ready(
+                    &session.id,
+                    session.restrict_tools_to_working_dirs,
+                    &interaction_policy,
+                )
+                .await?;
                 session_manager
                     .add_message(
                         &session_config.id,
@@ -306,11 +394,16 @@ impl Agent {
                     .await?;
             }
             Ok(None) => {
-                self.ensure_provider_ready(session.restrict_tools_to_working_dirs)
-                    .await?;
+                self.ensure_provider_ready(
+                    &session.id,
+                    session.restrict_tools_to_working_dirs,
+                    &interaction_policy,
+                )
+                .await?;
                 session_manager
                     .add_message(&session_config.id, &user_message)
                     .await?;
+                implementation_reference = Some(message_text.clone());
             }
         }
         let session = if session_config.compacted_context {
@@ -340,11 +433,15 @@ impl Agent {
             )
             .await?;
 
+        #[cfg(test)]
+        let auto_compact_threshold_override = self.config.auto_compact_threshold_override;
+        #[cfg(not(test))]
+        let auto_compact_threshold_override = None;
         let auto_compaction = crate::context_mgmt::auto_compaction_check(
             provider.as_ref(),
             &conversation,
             &session,
-            None,
+            auto_compact_threshold_override,
             None,
         )
         .await?;
@@ -452,6 +549,8 @@ impl Agent {
                 session,
                 pending_handoff_snapshot_id,
                 cancel_token.clone(),
+                implementation_reference,
+                interaction_policy,
             ).await?;
             while let Some(event) = reply_stream.next().await {
                 yield event?;

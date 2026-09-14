@@ -389,6 +389,12 @@
   "cardButtons.launch": {
     "defaultMessage": "Launch"
   },
+  "chat.notification.planReady.body": {
+    "defaultMessage": "Open Gosling to review the exact plan revision."
+  },
+  "chat.notification.planReady.title": {
+    "defaultMessage": "Plan ready for review."
+  },
   "chat.notification.taskComplete.body": {
     "defaultMessage": "Click here to bring Gosling back into focus."
   },

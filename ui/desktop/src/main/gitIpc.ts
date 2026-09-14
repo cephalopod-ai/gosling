@@ -4,6 +4,7 @@
 
 import type { IpcMain } from 'electron';
 import { execFile } from 'child_process';
+import { desktopCommandChannels } from '../ipc/channels';
 
 type AssertRendererFileAccess = (webContentsId: number, filePath: string) => Promise<string>;
 
@@ -108,21 +109,28 @@ export function isValidGitBranch(branch: unknown): branch is string {
   );
 }
 
+export const GIT_IPC_CHANNELS = [
+  desktopCommandChannels.listGitWorktreeDirs,
+  desktopCommandChannels.getGitBranchInfo,
+  desktopCommandChannels.listGitBranches,
+  desktopCommandChannels.switchGitBranch,
+] as const;
+
 export function registerGitIpcHandlers(
   targetIpcMain: Pick<IpcMain, 'handle'>,
   assertRendererFileAccess: AssertRendererFileAccess
 ): void {
-  targetIpcMain.handle('list-git-worktree-dirs', async (event, dir: string) => {
+  targetIpcMain.handle(desktopCommandChannels.listGitWorktreeDirs, async (event, dir: string) => {
     const authorizedDir = await assertRendererFileAccess(event.sender.id, dir);
     return await listGitWorktreeDirs(authorizedDir);
   });
 
-  targetIpcMain.handle('get-git-branch-info', async (event, dir: string) => {
+  targetIpcMain.handle(desktopCommandChannels.getGitBranchInfo, async (event, dir: string) => {
     const authorizedDir = await assertRendererFileAccess(event.sender.id, dir);
     return await getGitBranchInfo(authorizedDir);
   });
 
-  targetIpcMain.handle('list-git-branches', async (event, dir: string) => {
+  targetIpcMain.handle(desktopCommandChannels.listGitBranches, async (event, dir: string) => {
     const authorizedDir = await assertRendererFileAccess(event.sender.id, dir);
     try {
       const output = await runGit(authorizedDir, [
@@ -136,17 +144,20 @@ export function registerGitIpcHandlers(
     }
   });
 
-  targetIpcMain.handle('switch-git-branch', async (event, dir: string, branch: unknown) => {
-    const authorizedDir = await assertRendererFileAccess(event.sender.id, dir);
-    if (!isValidGitBranch(branch)) return { success: false };
+  targetIpcMain.handle(
+    desktopCommandChannels.switchGitBranch,
+    async (event, dir: string, branch: unknown) => {
+      const authorizedDir = await assertRendererFileAccess(event.sender.id, dir);
+      if (!isValidGitBranch(branch)) return { success: false };
 
-    try {
-      await runGit(authorizedDir, ['check-ref-format', '--branch', branch]);
-      await runGit(authorizedDir, ['switch', '--', branch], 30000);
-      return { success: true };
-    } catch {
-      const currentBranch = await getGitBranchInfo(authorizedDir);
-      return { success: currentBranch?.branch === branch };
+      try {
+        await runGit(authorizedDir, ['check-ref-format', '--branch', branch]);
+        await runGit(authorizedDir, ['switch', '--', branch], 30000);
+        return { success: true };
+      } catch {
+        const currentBranch = await getGitBranchInfo(authorizedDir);
+        return { success: currentBranch?.branch === branch };
+      }
     }
-  });
+  );
 }

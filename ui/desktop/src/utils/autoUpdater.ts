@@ -11,6 +11,7 @@ import {
   MenuItemConstructorOptions,
   Notification,
 } from 'electron';
+import type { IpcMain } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import log from './logger';
@@ -50,6 +51,16 @@ let ipcUpdateHandlersRegistered = false;
 
 let autoDownloadDisabled = false;
 
+export const UPDATE_IPC_CHANNELS = [
+  desktopCommandChannels.checkForUpdates,
+  desktopCommandChannels.downloadUpdate,
+  desktopCommandChannels.installUpdate,
+  desktopCommandChannels.getCurrentVersion,
+  desktopCommandChannels.getUpdateState,
+  desktopCommandChannels.isUsingGitHubFallback,
+  desktopCommandChannels.getAutoDownloadDisabled,
+] as const;
+
 export function setAutoDownloadDisabled(disabled: boolean) {
   autoDownloadDisabled = disabled;
   autoUpdater.autoDownload = !disabled;
@@ -61,7 +72,7 @@ export function getAutoDownloadDisabled(): boolean {
 }
 
 // Register IPC handlers (only once)
-export function registerUpdateIpcHandlers() {
+export function registerUpdateIpcHandlers(targetIpcMain: Pick<IpcMain, 'handle'> = ipcMain) {
   if (ipcUpdateHandlersRegistered) {
     return;
   }
@@ -70,7 +81,7 @@ export function registerUpdateIpcHandlers() {
   ipcUpdateHandlersRegistered = true;
 
   // IPC handlers for renderer process
-  ipcMain.handle('check-for-updates', async () => {
+  targetIpcMain.handle(desktopCommandChannels.checkForUpdates, async () => {
     const currentVersion = autoUpdater.currentVersion?.version || app.getVersion();
     const checkStartTime = Date.now();
 
@@ -217,7 +228,7 @@ export function registerUpdateIpcHandlers() {
     }
   });
 
-  ipcMain.handle('download-update', async () => {
+  targetIpcMain.handle(desktopCommandChannels.downloadUpdate, async () => {
     try {
       if (isUsingGitHubFallback && githubUpdateInfo.downloadUrl && githubUpdateInfo.latestVersion) {
         log.info('Using GitHub fallback for download...');
@@ -272,7 +283,7 @@ export function registerUpdateIpcHandlers() {
     }
   });
 
-  ipcMain.handle('install-update', async () => {
+  targetIpcMain.handle(desktopCommandChannels.installUpdate, async () => {
     if (isUsingGitHubFallback) {
       // For GitHub fallback, we need to handle the installation differently
       log.info('Installing update from GitHub fallback...');
@@ -339,19 +350,19 @@ export function registerUpdateIpcHandlers() {
     }
   });
 
-  ipcMain.handle('get-current-version', () => {
+  targetIpcMain.handle(desktopCommandChannels.getCurrentVersion, () => {
     return autoUpdater.currentVersion.version;
   });
 
-  ipcMain.handle('get-update-state', () => {
+  targetIpcMain.handle(desktopCommandChannels.getUpdateState, () => {
     return lastUpdateState;
   });
 
-  ipcMain.handle('is-using-github-fallback', () => {
+  targetIpcMain.handle(desktopCommandChannels.isUsingGitHubFallback, () => {
     return isUsingGitHubFallback;
   });
 
-  ipcMain.handle('get-auto-download-disabled', () => {
+  targetIpcMain.handle(desktopCommandChannels.getAutoDownloadDisabled, () => {
     return autoDownloadDisabled;
   });
 }
@@ -517,7 +528,11 @@ export function setupAutoUpdater(tray?: Tray) {
 
                 if (!autoDownloadDisabled) {
                   log.info('Auto-downloading update via GitHub fallback on startup...');
-                  await githubAutoDownload(result.downloadUrl!, result.latestVersion!, 'on startup');
+                  await githubAutoDownload(
+                    result.downloadUrl!,
+                    result.latestVersion!,
+                    'on startup'
+                  );
                 } else {
                   log.info('Auto-download disabled — skipping GitHub fallback download on startup');
                 }

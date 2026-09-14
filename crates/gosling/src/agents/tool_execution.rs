@@ -23,6 +23,8 @@ pub struct ToolCallContext {
     pub working_dir: Option<PathBuf>,
     pub tool_call_request_id: Option<String>,
     pub tool_operation_id: Option<String>,
+    pub(crate) interaction_policy: Option<crate::session::InteractionPolicy>,
+    pub(crate) dispatch_origin: crate::agents::interaction_policy::DispatchOrigin,
 }
 
 impl ToolCallContext {
@@ -36,11 +38,29 @@ impl ToolCallContext {
             working_dir,
             tool_call_request_id,
             tool_operation_id: None,
+            interaction_policy: None,
+            dispatch_origin: crate::agents::interaction_policy::DispatchOrigin::AgentDirect,
         }
     }
 
     pub fn with_tool_operation_id(mut self, tool_operation_id: String) -> Self {
         self.tool_operation_id = Some(tool_operation_id);
+        self
+    }
+
+    pub(crate) fn with_interaction_policy(
+        mut self,
+        interaction_policy: crate::session::InteractionPolicy,
+    ) -> Self {
+        self.interaction_policy = Some(interaction_policy);
+        self
+    }
+
+    pub(crate) fn with_dispatch_origin(
+        mut self,
+        dispatch_origin: crate::agents::interaction_policy::DispatchOrigin,
+    ) -> Self {
+        self.dispatch_origin = dispatch_origin;
         self
     }
 
@@ -96,6 +116,7 @@ pub const CHAT_MODE_TOOL_SKIPPED_RESPONSE: &str = "Let the user know the tool ca
                                         If needed, adjust the explanation based on user preferences or questions.";
 
 impl Agent {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn handle_approval_tool_requests<'a>(
         &'a self,
         tool_requests: &'a [ToolRequest],
@@ -103,6 +124,7 @@ impl Agent {
         request_to_response_map: &'a mut HashMap<String, Message>,
         cancellation_token: Option<CancellationToken>,
         session: &'a Session,
+        interaction_policy: &'a crate::session::InteractionPolicy,
         inspection_results: &'a [crate::tool_inspection::InspectionResult],
     ) -> BoxStream<'a, anyhow::Result<Message>> {
         try_stream! {
@@ -208,7 +230,7 @@ impl Agent {
                     || confirmation.permission == Permission::AlwaysAllow
                     || confirmation.permission == Permission::AlwaysAllowDomain
                 {
-                    let (req_id, tool_result) = self.dispatch_conversation_tool_call(tool_call.clone(), request.id.clone(), cancellation_token.clone(), session).await;
+                    let (req_id, tool_result) = self.dispatch_conversation_tool_call(tool_call.clone(), request.id.clone(), cancellation_token.clone(), session, interaction_policy).await;
 
                     tool_futures.push((req_id, match tool_result {
                         Ok(result) => tool_stream(
@@ -239,24 +261,49 @@ impl Agent {
         tool_request: &'a ToolRequest,
         message_tool_response: &'a mut Message,
         session: &'a Session,
+        interaction_policy: &'a crate::session::InteractionPolicy,
     ) -> BoxStream<'a, anyhow::Result<Message>> {
         try_stream! {
                 if let Ok(tool_call) = tool_request.tool_call.clone() {
                     if self.is_frontend_tool(&tool_call.name).await {
                         let expected_request_id = tool_request.id.clone();
+                        let authorization = match crate::agents::interaction_policy::authorize_tool_execution(
+                            self.config.session_manager.as_ref(),
+                            Some(self.config.permission_manager.as_ref()),
+                            &session.id,
+                            interaction_policy,
+                            crate::agents::interaction_policy::DispatchOrigin::Frontend,
+                            None,
+                            tool_call.name.as_ref(),
+                        ).await {
+                            Ok(authorization) => authorization,
+                            Err(error) => {
+                                message_tool_response.add_tool_response_with_metadata(
+                                    expected_request_id,
+                                    Err(error),
+                                    tool_request.metadata.as_ref(),
+                                );
+                                return;
+                            }
+                        };
                         let operation_id = match self
                             .config
                             .session_manager
-                            .begin_tool_operation(
+                            .authorize_and_begin_tool_operation(
                                 &session.id,
                                 &expected_request_id,
                                 &tool_call,
                                 true,
+                                interaction_policy,
+                                matches!(
+                                    authorization,
+                                    crate::agents::interaction_policy::ExecutionAuthorization::Planning(_)
+                                ),
                             )
-                            .await?
+                            .await
                         {
-                            crate::session::ToolOperationStart::Execute { operation_id } => operation_id,
-                            crate::session::ToolOperationStart::Replay { result, .. } => {
+                            Ok(crate::session::ToolOperationStart::Execute { operation_id }) => operation_id,
+                            Ok(crate::session::ToolOperationStart::Replay { result, .. }) => {
                                 message_tool_response.add_tool_response_with_metadata(
                                     expected_request_id.clone(),
                                     result,
@@ -271,10 +318,21 @@ impl Agent {
                                     .await?;
                                 return;
                             }
-                            crate::session::ToolOperationStart::InDoubt { operation_id } => {
+                            Ok(crate::session::ToolOperationStart::InDoubt { operation_id }) => {
                                 Err::<String, anyhow::Error>(anyhow::anyhow!(
                                     "Frontend tool operation {operation_id} is in doubt and will not be dispatched again automatically"
                                 ))?
+                            }
+                            Err(error) => {
+                                message_tool_response.add_tool_response_with_metadata(
+                                    expected_request_id,
+                                    Err(crate::agents::interaction_policy::atomic_policy_denial(
+                                        tool_call.name.as_ref(),
+                                        error,
+                                    )),
+                                    tool_request.metadata.as_ref(),
+                                );
+                                return;
                             }
                         };
                         let mut operation_guard = ToolOperationGuard::new(
@@ -384,6 +442,7 @@ mod permission_regression_tests {
             &mut responses,
             None,
             &session,
+            &crate::session::InteractionPolicy::Normal,
             &inspections,
         );
         assert!(approval

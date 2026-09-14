@@ -212,6 +212,60 @@ describe('acpChatSessionStore', () => {
     expect(acpChatSessionStore.getSnapshot('another-session')).toBeUndefined();
   });
 
+  it('invalidates only the addressed session for compact plan updates', () => {
+    const currentSessionId = sessionId('plan-session');
+    const otherSessionId = sessionId('other-plan-session');
+    acpChatSessionActions.startPlanLoad(otherSessionId);
+    acpChatSessionActions.setPlanResponse(otherSessionId, {
+      snapshot: null,
+      providerSupportsHostEnforcedPlanning: true,
+      permittedCapabilities: [],
+    });
+
+    const notification: GoslingSessionNotification_unstable = {
+      sessionId: currentSessionId,
+      update: {
+        sessionUpdate: 'plan_update',
+        planId: 'plan-1',
+        generation: 1,
+        status: 'awaiting_review',
+        activeRevision: { id: 'revision-1', revision: 1, contentSha256: 'sha-1' },
+        updatedAt: '2026-09-13T00:00:00Z',
+      },
+    };
+    acpChatSessionActions.applyAcpGoslingSessionNotification(notification);
+    acpChatSessionActions.applyAcpGoslingSessionNotification(notification);
+
+    expect(acpChatSessionStore.getSnapshot(currentSessionId)?.plan).toMatchObject({
+      invalidated: true,
+      latestUpdate: notification.update,
+    });
+    expect(acpChatSessionStore.getSnapshot(otherSessionId)?.plan.invalidated).toBe(false);
+  });
+
+  it('preserves unsent plan feedback while authoritative state refreshes', () => {
+    const currentSessionId = sessionId('plan-draft');
+    acpChatSessionActions.setPlanFeedbackDraft(currentSessionId, {
+      body: 'Keep the rollback step.',
+      startLine: 4,
+      endLine: 6,
+      revisionId: 'revision-1',
+    });
+    acpChatSessionActions.startPlanLoad(currentSessionId);
+    const refreshed = acpChatSessionActions.setPlanResponse(currentSessionId, {
+      snapshot: null,
+      providerSupportsHostEnforcedPlanning: true,
+      permittedCapabilities: ['workspace_read_text'],
+    });
+
+    expect(refreshed.plan.feedbackDraft).toEqual({
+      body: 'Keep the rollback step.',
+      startLine: 4,
+      endLine: 6,
+      revisionId: 'revision-1',
+    });
+  });
+
   it('keeps the last request measurement when a model switch reports only an estimate', () => {
     const currentSessionId = sessionId('model-switch-usage');
     const usageNotification = (

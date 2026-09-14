@@ -5,6 +5,7 @@ pub mod extension;
 pub mod extension_malware_check;
 pub mod extension_manager;
 mod frontend_tool_result_router;
+pub(crate) mod interaction_policy;
 mod large_response_handler;
 pub mod mcp_client;
 pub mod moim;

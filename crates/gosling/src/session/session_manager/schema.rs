@@ -177,6 +177,8 @@ impl SessionStorage {
 
         Self::create_session_handoff_schema(&mut tx).await?;
 
+        Self::create_session_plan_schema(&mut tx).await?;
+
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS session_summaries (
@@ -494,6 +496,7 @@ impl SessionStorage {
         .await?;
         Ok(())
     }
+
     pub(super) async fn backfill_session_artifacts(
         tx: &mut sqlx::Transaction<'_, Sqlite>,
     ) -> Result<()> {

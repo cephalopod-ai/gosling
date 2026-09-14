@@ -165,6 +165,15 @@ impl GoslingCompleter {
             "/prompt",
             "/mode",
             "/model",
+            "/plan",
+            "/plan-status",
+            "/plan-feedback",
+            "/plan-comment",
+            "/plan-approve",
+            "/plan-approve-and-run",
+            "/plan-abandon",
+            "/endplan",
+            "/plan-export",
             "/skills",
             "/status",
         ];
@@ -581,6 +590,24 @@ mod tests {
         // Test no match
         let (_pos, candidates) = completer.complete_slash_commands("/nonexistent").unwrap();
         assert_eq!(candidates.len(), 0);
+
+        let (_, plan_candidates) = completer.complete_slash_commands("/plan-").unwrap();
+        let plan_commands = plan_candidates
+            .iter()
+            .map(|candidate| candidate.display.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            plan_commands,
+            vec![
+                "/plan-status",
+                "/plan-feedback",
+                "/plan-comment",
+                "/plan-approve",
+                "/plan-approve-and-run",
+                "/plan-abandon",
+                "/plan-export",
+            ]
+        );
     }
 
     #[test]

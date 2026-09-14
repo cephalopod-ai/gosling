@@ -4,6 +4,7 @@ import {
   isAcpAwaitingReplyError,
   isAcpConnectionClosedError,
   parseAcpCreditsExhaustedError,
+  parseAcpPlanError,
 } from '../errors';
 
 describe('isAcpAwaitingReplyError', () => {
@@ -78,6 +79,26 @@ describe('parseAcpCreditsExhaustedError', () => {
         },
       })
     ).toBeNull();
+  });
+});
+
+describe('parseAcpPlanError', () => {
+  it('preserves the typed code and current authoritative snapshot', () => {
+    const currentSnapshot = { plan: { id: 'plan-1', generation: 2 } };
+    expect(
+      parseAcpPlanError({
+        message: 'Invalid params',
+        data: {
+          code: 'plan_conflict',
+          message: 'Plan state conflict: revision changed',
+          currentSnapshot,
+        },
+      })
+    ).toEqual({
+      code: 'plan_conflict',
+      message: 'Plan state conflict: revision changed',
+      currentSnapshot,
+    });
   });
 });
 

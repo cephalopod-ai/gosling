@@ -10,6 +10,7 @@ pub mod library;
 #[cfg(feature = "nostr")]
 pub mod nostr_share;
 pub mod output_revisions;
+pub mod plans;
 pub mod research;
 pub mod session_manager;
 mod session_naming;
@@ -34,6 +35,12 @@ pub use extension_data::{
 };
 pub use library::{
     NewSessionLibraryContent, SessionLibraryItem, SessionLibraryItemKind, SessionLibraryScope,
+};
+pub use plans::{
+    approved_plan_implementation_reference, InteractionPolicy, NewPlanFeedback, NewPlanRevision,
+    OpenPlanDisposition, PlanError, PlanExpectation, PlanResult, PlanRevisionIdentity, PlanService,
+    PlanSnapshot, PlanStatus, PlanUpdate, SessionPlan, SessionPlanEvent, SessionPlanFeedback,
+    SessionPlanRevision,
 };
 pub(crate) use session_manager::ToolOperationStart;
 pub use session_manager::{

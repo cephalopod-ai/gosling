@@ -11,6 +11,8 @@ import {
   type GetSessionInfoResponse_unstable,
   type GoslingClientCallbacks,
   type GoslingExtension,
+  type PlanStatusDto,
+  type SessionPlanResponse_unstable,
   type ShellCredentialListResponse_unstable,
   type ShellArtifactListResponse_unstable,
   type ShellDirectoryValidateResponse_unstable,
@@ -102,6 +104,7 @@ export interface ShellAcpClient {
       }>;
     }>;
     sessionInfo_unstable(params: { sessionId: string }): Promise<GetSessionInfoResponse_unstable>;
+    sessionPlanGet_unstable(params: { sessionId: string }): Promise<SessionPlanResponse_unstable>;
     shellProvisioningRead_unstable(params: {
       workingDir?: string;
     }): Promise<ShellProvisioningReadResponse_unstable>;
@@ -184,6 +187,12 @@ export interface ShellAcpConnection {
     modelId: string;
   }): Promise<void>;
   resumeSession(sessionId: string, workingDir: string): Promise<ShellSession>;
+  getSessionPlan(sessionId: string): Promise<{
+    status: PlanStatusDto | 'none';
+    generation: number | null;
+    revisionId: string | null;
+    revisionSha256: string | null;
+  }>;
   listSessions(workingDir: string): Promise<ShellSessionSummary[]>;
   validateDirectory(directory: string): Promise<ShellDirectoryValidateResponse_unstable>;
   listCredentials(): Promise<ShellCredentialListResponse_unstable>;
@@ -683,6 +692,20 @@ export async function connectShellAcp(input: {
           _meta: { gosling: { loadMode: 'compacted', tailLimit: 50 } },
         });
         return session;
+      },
+      getSessionPlan: async (sessionId) => {
+        const response = await client.gosling.sessionPlanGet_unstable({
+          sessionId: assertSessionId(sessionId),
+        });
+        const snapshot = response.snapshot;
+        return snapshot
+          ? {
+              status: snapshot.plan.status,
+              generation: snapshot.plan.generation,
+              revisionId: snapshot.activeRevision?.id ?? null,
+              revisionSha256: snapshot.activeRevision?.contentSha256 ?? null,
+            }
+          : { status: 'none', generation: null, revisionId: null, revisionSha256: null };
       },
       listSessions: async (workingDir) => {
         const cwd = assertAbsoluteWorkingDir(workingDir);

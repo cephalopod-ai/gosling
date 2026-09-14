@@ -386,6 +386,8 @@ export function createShellRuntimeController(
                 ? interactions.requestElicitation(request)
                 : Promise.resolve({ action: 'cancel' }),
             sessionUpdate: async (notification) => sessions?.ingestUpdate(notification),
+            unstable_sessionUpdate: async (notification) =>
+              sessions?.ingestPlanUpdate(notification),
             unstable_shellDomainStatus: async (notification: DomainStatusNotification_unstable) => {
               adapterStatus = notification.status;
               notify();
@@ -414,17 +416,31 @@ export function createShellRuntimeController(
               if (!accepted) {
                 throw new Error('no working directory is selected');
               }
-              return await connection.createSession({
+              const created = await connection.createSession({
                 workingDir: accepted,
                 credentialProfileId: options.credentials.selected(),
               });
+              const plan = await connection.getSessionPlan(created.sessionId).catch(() => ({
+                status: 'unavailable' as const,
+                generation: null,
+                revisionId: null,
+                revisionSha256: null,
+              }));
+              return { ...created, plan };
             },
-            resumeSession: (sessionId) => {
+            resumeSession: async (sessionId) => {
               const accepted = options.directory.accepted();
               if (!accepted) {
                 throw new Error('no working directory is selected');
               }
-              return connection.resumeSession(sessionId, accepted);
+              const resumed = await connection.resumeSession(sessionId, accepted);
+              const plan = await connection.getSessionPlan(resumed.sessionId).catch(() => ({
+                status: 'unavailable' as const,
+                generation: null,
+                revisionId: null,
+                revisionSha256: null,
+              }));
+              return { ...resumed, plan };
             },
             prompt: (input) => connection.prompt(input),
             cancel: (input) => connection.cancel(input),

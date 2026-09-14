@@ -1,4 +1,6 @@
-use crate::custom_requests::{CustomMethodSchema, SessionArtifactDto};
+use crate::custom_requests::{
+    CustomMethodSchema, PlanRevisionIdentityDto, PlanStatusDto, SessionArtifactDto,
+};
 use crate::shell::DomainAdapterStatus;
 use agent_client_protocol::{JsonRpcMessage, JsonRpcNotification};
 use schemars::{JsonSchema, SchemaGenerator};
@@ -35,13 +37,15 @@ pub struct DomainStatusNotification {
     "mapping": {
         "usage_update": "#/$defs/SessionUsageUpdate",
         "status_message": "#/$defs/StatusMessageUpdate",
-        "artifact_update": "#/$defs/ArtifactUpdate"
+        "artifact_update": "#/$defs/ArtifactUpdate",
+        "plan_update": "#/$defs/PlanUpdate"
     }
 }))]
 pub enum GoslingSessionUpdate {
     UsageUpdate(SessionUsageUpdate),
     StatusMessage(StatusMessageUpdate),
     ArtifactUpdate(ArtifactUpdate),
+    PlanUpdate(PlanUpdate),
 }
 
 impl Default for GoslingSessionUpdate {
@@ -70,6 +74,19 @@ pub struct SessionUsageUpdate {
 #[serde(rename_all = "camelCase")]
 pub struct ArtifactUpdate {
     pub artifact: SessionArtifactDto,
+}
+
+/// Compact plan state update. Clients fetch the full snapshot through
+/// `_gosling/unstable/session/plan/get` when this cache-invalidation event arrives.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanUpdate {
+    pub plan_id: String,
+    pub generation: u64,
+    pub status: PlanStatusDto,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_revision: Option<PlanRevisionIdentityDto>,
+    pub updated_at: String,
 }
 
 /// Live UI/session status. This is not conversation transcript content, and
@@ -172,6 +189,43 @@ mod tests {
         assert_eq!(
             serde_json::to_value(notification).unwrap()["update"]["sessionUpdate"],
             "artifact_update"
+        );
+    }
+
+    #[test]
+    fn plan_update_serializes_to_compact_wire_shape() {
+        let notification = GoslingSessionNotification {
+            session_id: "s1".to_string(),
+            update: GoslingSessionUpdate::PlanUpdate(PlanUpdate {
+                plan_id: "plan-1".to_string(),
+                generation: 2,
+                status: PlanStatusDto::AwaitingReview,
+                active_revision: Some(PlanRevisionIdentityDto {
+                    id: "revision-3".to_string(),
+                    revision: 3,
+                    content_sha256: "abc123".to_string(),
+                }),
+                updated_at: "2026-09-13T12:00:00Z".to_string(),
+            }),
+        };
+
+        assert_eq!(
+            serde_json::to_value(notification).unwrap(),
+            json!({
+                "sessionId": "s1",
+                "update": {
+                    "sessionUpdate": "plan_update",
+                    "planId": "plan-1",
+                    "generation": 2,
+                    "status": "awaiting_review",
+                    "activeRevision": {
+                        "id": "revision-3",
+                        "revision": 3,
+                        "contentSha256": "abc123"
+                    },
+                    "updatedAt": "2026-09-13T12:00:00Z"
+                }
+            })
         );
     }
 

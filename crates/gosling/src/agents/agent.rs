@@ -68,7 +68,7 @@ use crate::utils::is_token_cancelled;
 use crate::workspace::WorkspaceService;
 use gosling_providers::errors::ProviderError;
 use gosling_providers::model::ModelConfig;
-use gosling_providers::retry::{should_retry, RetryConfig};
+use gosling_providers::retry::{should_failover, should_retry, RetryConfig};
 use gosling_providers::thinking::ThinkingEffort;
 use rmcp::model::{
     CallToolRequestParams, CallToolResult, Content, ElicitationAction, ErrorCode, ErrorData,
@@ -256,6 +256,7 @@ pub struct ReplyContext {
     pub gosling_mode: GoslingMode,
     pub tool_call_cut_off: usize,
     pub model_config: gosling_providers::model::ModelConfig,
+    pub interaction_policy: crate::session::InteractionPolicy,
 }
 
 pub struct ToolCategorizeResult {
@@ -300,6 +301,8 @@ pub struct AgentConfig {
     pub use_login_shell_path: Option<bool>,
     pub workspace_service: Option<Arc<WorkspaceService>>,
     pub provider_failover: Option<ProviderFailoverConfig>,
+    #[cfg(test)]
+    pub auto_compact_threshold_override: Option<f64>,
 }
 
 #[derive(Clone)]
@@ -346,6 +349,8 @@ impl AgentConfig {
             use_login_shell_path: None,
             workspace_service: None,
             provider_failover: None,
+            #[cfg(test)]
+            auto_compact_threshold_override: None,
         }
     }
 
@@ -379,6 +384,12 @@ impl AgentConfig {
 
     pub fn with_provider_failover(mut self, failover: ProviderFailoverConfig) -> Self {
         self.provider_failover = Some(failover);
+        self
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_auto_compact_threshold_override(mut self, threshold: f64) -> Self {
+        self.auto_compact_threshold_override = Some(threshold);
         self
     }
 

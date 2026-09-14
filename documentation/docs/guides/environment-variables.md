@@ -18,7 +18,7 @@ These are the minimum required variables to get started with gosling.
 |----------|---------|---------|---------|
 | `GOSLING_PROVIDER` | Specifies the LLM provider to use | [See available providers](/docs/getting-started/providers#available-providers) | None (must be [configured](/docs/getting-started/providers#configure-provider-and-model)) |
 | `GOSLING_MODEL` | Specifies which model to use from the provider | Model name (e.g., "gpt-4", "claude-sonnet-4-20250514") | None (must be [configured](/docs/getting-started/providers#configure-provider-and-model)) |
-| `GOSLING_FAILOVER_PROVIDER` | Opt-in fallback for transient provider outages on gosling-managed API turns | Provider name (for example, `ollama` or `openrouter`) | Disabled |
+| `GOSLING_FAILOVER_PROVIDER` | Opt-in fallback for transient provider outages or an unavailable selected model on gosling-managed API turns | Provider name (for example, `ollama` or `openrouter`) | Disabled |
 | `GOSLING_FAILOVER_MODEL` | Model paired with `GOSLING_FAILOVER_PROVIDER` | A model available through the fallback provider | Disabled |
 | `GOSLING_FAST_MODEL` | Overrides the provider's default fast model used for auxiliary calls (tool-selection, classification, session titles) | Model name (e.g., "gpt-4o-mini", "google/gemini-flash-latest") | Provider-specific default |
 | `GOSLING_TEMPERATURE` | Sets the [temperature](https://medium.com/@kelseyywang/a-comprehensive-guide-to-llm-temperature-%EF%B8%8F-363a40bbc91f) for model responses | Float between 0.0 and 1.0 | Model-specific default |
@@ -96,21 +96,28 @@ export CLAUDE_THINKING_TYPE=disabled
 To see Claude's thinking output in the **CLI**, you also need to set `GOSLING_CLI_SHOW_THINKING=1`. In **gosling Desktop**, thinking output is shown automatically in a collapsible "Show reasoning" toggle.
 :::
 
-### Planning Mode Configuration
+### Planning Compatibility Checks
 
-These variables control gosling's [planning functionality](/docs/guides/context-engineering/creating-plans).
+Host-enforced planning uses the active session provider, model, thinking setting, and context
+limit. The CLI reads these legacy variables only as compatibility checks; they no longer select an
+independent planner route.
 
 | Variable | Purpose | Values | Default |
 |----------|---------|---------|---------|
-| `GOSLING_PLANNER_PROVIDER` | Specifies which provider to use for planning mode | [See available providers](/docs/getting-started/providers#available-providers) | Falls back to GOSLING_PROVIDER |
-| `GOSLING_PLANNER_MODEL` | Specifies which model to use for planning mode | Model name (e.g., "gpt-4", "claude-sonnet-4-20250514")| Falls back to GOSLING_MODEL |
+| `GOSLING_PLANNER_PROVIDER` | Require the CLI planning route to match a provider | Non-empty exact match for the active session provider | Unset; use the active provider |
+| `GOSLING_PLANNER_MODEL` | Require the CLI planning route to match a model and thinking setting | Non-empty value that resolves to the active model configuration | Unset; use the active model |
+| `GOSLING_PLANNER_CONTEXT_LIMIT` | Require the CLI planning route to match a context limit | Integer of at least 4,096 that equals the active model context limit | Unset; use the active limit |
 
-**Examples**
+Unset these variables for normal use. A different value fails explicitly before the CLI creates
+or resumes a plan; it does not switch providers or models. Desktop and other ACP clients use the
+active session route directly. See [Creating Plans](/docs/guides/context-engineering/creating-plans)
+for the provider and data-disclosure requirements.
 
 ```bash
-# Planning mode with different model
-export GOSLING_PLANNER_PROVIDER="openai"
-export GOSLING_PLANNER_MODEL="gpt-4"
+# Recommended: let planning use the active session route
+unset GOSLING_PLANNER_PROVIDER
+unset GOSLING_PLANNER_MODEL
+unset GOSLING_PLANNER_CONTEXT_LIMIT
 ```
 
 ### Provider Retries
@@ -261,7 +268,6 @@ These variables allow you to override the default context window size (token lim
 |----------|---------|---------|---------|
 | `GOSLING_CONTEXT_LIMIT` | Override context limit for the main model | Integer (number of tokens) | Model-specific default or 128,000 |
 | `GOSLING_INPUT_LIMIT` | Override input prompt limit for ollama requests (maps to `num_ctx`) | Integer (number of tokens) | Falls back to `GOSLING_CONTEXT_LIMIT` or model default |
-| `GOSLING_PLANNER_CONTEXT_LIMIT` | Override context limit for the [planner model](/docs/guides/context-engineering/creating-plans) | Integer (number of tokens) | Falls back to `GOSLING_CONTEXT_LIMIT` or model default |
 
 **Examples**
 
@@ -271,9 +277,10 @@ export GOSLING_CONTEXT_LIMIT=200000
 # Override ollama input prompt limit
 export GOSLING_INPUT_LIMIT=32000
 
-# Set context limit for planner
-export GOSLING_PLANNER_CONTEXT_LIMIT=1000000
 ```
+
+`GOSLING_PLANNER_CONTEXT_LIMIT` is not an independent override. If set for CLI compatibility, it
+must exactly equal the active model context limit described above.
 
 For more details and examples, see [Model Context Limit Overrides](/docs/guides/sessions/smart-context-management#model-context-limit-overrides).
 
@@ -699,4 +706,5 @@ When deploying gosling in enterprise environments, administrators might need to 
 - Environment variables take precedence over configuration files.
 - For security-sensitive variables (like API keys), consider using the system keyring instead of environment variables.
 - Some variables may require restarting gosling to take effect.
-- When using the planning mode, if planner-specific variables are not set, gosling will fall back to the main model configuration.
+- Host-enforced planning uses the active session route. Legacy `GOSLING_PLANNER_*` values that do
+  not match it are rejected instead of selecting a separate route.

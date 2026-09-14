@@ -118,6 +118,7 @@ mod manage_sessions;
 mod message_projection;
 mod new_session;
 mod onboarding;
+mod plans;
 mod presentation;
 mod prompt_execution;
 mod prompts;
@@ -277,6 +278,9 @@ pub struct GoslingAcpAgentOptions {
     pub gosling_platform: GoslingPlatform,
     pub additional_source_roots: Vec<SourceRoot>,
     pub shell_runtime: ShellRuntime,
+    /// Shared session manager for multi-connection servers. When absent, the
+    /// agent creates an isolated manager rooted at `data_dir`.
+    pub session_manager: Option<Arc<SessionManager>>,
 }
 
 pub struct GoslingAcpAgent {
@@ -473,7 +477,10 @@ impl GoslingAcpAgent {
                 WorkspaceService::initialize(&options.platform_data_dir, &default_working_folder)
                     .await?,
             );
-            let session_manager = Arc::new(SessionManager::new(options.data_dir));
+            let session_manager = options
+                .session_manager
+                .clone()
+                .unwrap_or_else(|| Arc::new(SessionManager::new(options.data_dir.clone())));
 
             session_manager.storage().pool().await?;
 

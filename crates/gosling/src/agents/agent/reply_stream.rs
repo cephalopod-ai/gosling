@@ -32,6 +32,8 @@ impl Agent {
         session: Session,
         pending_handoff_snapshot_id: Option<String>,
         cancel_token: Option<CancellationToken>,
+        implementation_reference: Option<String>,
+        interaction_policy: crate::session::InteractionPolicy,
     ) -> Result<BoxStream<'_, Result<AgentEvent>>> {
         let context = self
             .prepare_reply_context(
@@ -39,6 +41,8 @@ impl Agent {
                 conversation,
                 session.working_dir.as_path(),
                 &session.additional_working_dirs,
+                implementation_reference.as_deref(),
+                &interaction_policy,
             )
             .await?;
         let ReplyContext {
@@ -49,6 +53,7 @@ impl Agent {
             tool_call_cut_off,
             gosling_mode,
             model_config,
+            interaction_policy,
         } = context;
         // Kept separately (rather than only the merged `system_prompt`) so the
         // Context Manager can account for system vs. project-instructions
@@ -61,10 +66,25 @@ impl Agent {
 
         let primary_provider = self.provider().await?;
         let inference = Self::inference_metadata_for(&primary_provider, &model_config).await;
-        let failover_target = self.provider_failover_target();
+        let planning_turn = matches!(
+            &interaction_policy,
+            crate::session::InteractionPolicy::Planning { .. }
+        );
+        let configured_context_side_channels_allowed =
+            configured_context_side_channels_allowed(&interaction_policy);
+        // A planning turn is bound to the provider captured in its durable
+        // generation. A fallback route must never inherit that authority.
+        let failover_target = if planning_turn {
+            None
+        } else {
+            self.provider_failover_target()
+        };
         let session_manager = self.config.session_manager.clone();
         let session_id = session_config.id.clone();
-        if !self.config.disable_session_naming {
+        // Session naming is itself a provider invocation. Keep it outside the
+        // immutable planner turn so a successful review submission has one
+        // and only one provider stream and cannot race an ancillary prompt.
+        if configured_context_side_channels_allowed && !self.config.disable_session_naming {
             let provider = primary_provider.clone();
             let manager_for_spawn = session_manager.clone();
             let session_name_update_tx = self.config.session_name_update_tx.clone();
@@ -142,7 +162,8 @@ impl Agent {
                 if can_drain_pending_steers {
                     for message in self.drain_pending_steers(&session_config.id).await {
                         let message_text = message.as_concat_text();
-                        if self
+                        if !planning_turn
+                            && self
                             .hook_manager
                             .has_hooks(crate::hooks::HookEvent::UserPromptSubmit)
                         {
@@ -183,11 +204,15 @@ impl Agent {
                 // Reload the session to get current token counts — the stale snapshot
                 // passed into reply_internal won't reflect updates from update_session_metrics.
                 let current_session_for_compact = session_manager.get_session(&session_config.id, false).await?;
+                #[cfg(test)]
+                let auto_compact_threshold_override = self.config.auto_compact_threshold_override;
+                #[cfg(not(test))]
+                let auto_compact_threshold_override = None;
                 if let Some(auto_compaction) = crate::context_mgmt::auto_compaction_check(
                     active_provider.as_ref(),
                     &conversation,
                     &current_session_for_compact,
-                    None,
+                    auto_compact_threshold_override,
                     None,
                 )
                 .await?
@@ -280,18 +305,22 @@ impl Agent {
                     }
                 }
 
-                let conversation_with_moim = crate::agents::moim::inject_moim(
-                    &session_config.id,
-                    &conversation,
-                    &self.extension_manager,
-                    turns_taken,
-                    max_turns,
-                )
-                .await;
+                let conversation_with_moim = if configured_context_side_channels_allowed {
+                    crate::agents::moim::inject_moim(
+                        &session_config.id,
+                        &conversation,
+                        &self.extension_manager,
+                        turns_taken,
+                        max_turns,
+                    )
+                    .await
+                } else {
+                    None
+                };
                 let conversation_for_context = conversation_with_moim.as_ref().unwrap_or(&conversation);
 
-                let (provider_system_prompt, provider_messages) = self
-                    .apply_context_manager(
+                let (provider_system_prompt, provider_messages) = if configured_context_side_channels_allowed {
+                    self.apply_context_manager(
                         active_provider.as_ref(),
                         &session_config.id,
                         &base_system_prompt,
@@ -301,7 +330,16 @@ impl Agent {
                         &active_model_config,
                         &working_dir,
                     )
-                    .await;
+                    .await
+                } else {
+                    // Planning consumes only the already-bounded conversation and
+                    // host-built prompt. Do not retrieve cross-session memory or
+                    // launch a fact-writing context summarizer.
+                    (
+                        system_prompt.clone(),
+                        conversation_for_context.messages().clone(),
+                    )
+                };
 
                 let (mut stream, stream_setup_failed) = match Self::stream_response_from_provider(
                     active_provider.clone(),
@@ -311,6 +349,7 @@ impl Agent {
                     &provider_messages,
                     &tools,
                     &toolshim_tools,
+                    &interaction_policy,
                 ).await {
                     Ok(stream) => (stream, false),
                     Err(error) => {
@@ -326,7 +365,7 @@ impl Agent {
                     .count()
                     .saturating_sub(pre_turn_tool_count);
 
-                let tool_pair_summarization_task = if tool_pair_summarization_done {
+                let tool_pair_summarization_task = if planning_turn || tool_pair_summarization_done {
                     None
                 } else {
                     crate::context_mgmt::maybe_summarize_tool_pairs(
@@ -355,8 +394,9 @@ impl Agent {
                 // thinking so a later tool-call chunk can suppress replayed
                 // reasoning without hiding final-only non-streaming thoughts.
                 let mut surfaced_thinking_in_turn = false;
+                let mut planning_review_committed = false;
 
-                while let Some(next) = stream.next().await {
+                'provider_stream: while let Some(next) = stream.next().await {
                     if is_token_cancelled(&cancel_token) || exit_chat {
                         break;
                     }
@@ -382,14 +422,24 @@ impl Agent {
                                     response.with_id(stream_message_id.clone())
                                 };
                                 let ToolCategorizeResult {
-                                    frontend_requests,
-                                    remaining_requests,
+                                    mut frontend_requests,
+                                    mut remaining_requests,
                                     filtered_response,
                                 } = self
                                     .categorize_tools(
                                         &response,
                                         &tools,
                                         surfaced_thinking_in_turn,
+                                    )
+                                    .await;
+                                let all_frontend_requests = frontend_requests.clone();
+                                let all_remaining_requests = remaining_requests.clone();
+                                let (planning_denials, planning_review_request_id) = self
+                                    .guard_planning_tool_requests(
+                                        &session_config.id,
+                                        &interaction_policy,
+                                        &mut frontend_requests,
+                                        &mut remaining_requests,
                                     )
                                     .await;
 
@@ -441,7 +491,8 @@ impl Agent {
                                     },
                                 );
 
-                                let num_tool_requests = frontend_requests.len() + remaining_requests.len();
+                                let num_tool_requests =
+                                    all_frontend_requests.len() + all_remaining_requests.len();
                                 if num_tool_requests == 0 {
                                     let text = filtered_response.as_concat_text();
                                     if !text.is_empty() {
@@ -477,7 +528,10 @@ impl Agent {
 
                                 let mut request_to_response_map = HashMap::new();
                                 let mut request_metadata: HashMap<String, Option<ProviderMetadata>> = HashMap::new();
-                                for request in frontend_requests.iter().chain(remaining_requests.iter()) {
+                                for request in all_frontend_requests
+                                    .iter()
+                                    .chain(all_remaining_requests.iter())
+                                {
                                     request_to_response_map.insert(request.id.clone(), Message::user().with_generated_id());
                                     request_metadata.insert(request.id.clone(), request.metadata.clone());
                                 }
@@ -541,7 +595,10 @@ impl Agent {
                                 }) {
                                     request_msg = request_msg.with_content(content.clone());
                                 }
-                                for request in frontend_requests.iter().chain(remaining_requests.iter()) {
+                                for request in all_frontend_requests
+                                    .iter()
+                                    .chain(all_remaining_requests.iter())
+                                {
                                     let history_tool_call = match &request.tool_call {
                                         Ok(_) => request.tool_call.clone(),
                                         Err(_) => Ok(CallToolRequestParams::new(
@@ -568,6 +625,18 @@ impl Agent {
                                     .await?;
                                 messages_to_add.push(request_msg);
 
+                                for (request, error) in &planning_denials {
+                                    if let Some(response_msg) =
+                                        request_to_response_map.get_mut(&request.id)
+                                    {
+                                        response_msg.add_tool_response_with_metadata(
+                                            request.id.clone(),
+                                            Err(error.clone()),
+                                            request.metadata.as_ref(),
+                                        );
+                                    }
+                                }
+
                                 // Chat mode must run no tools at all. This loop
                                 // used to sit above the `GoslingMode::Chat`
                                 // branch below, which only skipped
@@ -590,6 +659,7 @@ impl Agent {
                                             request,
                                             response_msg,
                                             &session,
+                                            &interaction_policy,
                                         );
 
                                         while let Some(msg) = frontend_tool_stream.try_next().await? {
@@ -605,33 +675,48 @@ impl Agent {
                                         );
                                     }
                                 } else {
-                                    let inspection_results = self
-                                        .tool_inspection_manager
-                                        .inspect_tools(
-                                            &session_config.id,
-                                            &remaining_requests,
-                                            conversation.messages(),
-                                            gosling_mode,
-                                        )
-                                        .await?;
-
-                                    let mut permission_check_result = self
-                                        .tool_inspection_manager
-                                        .process_inspection_results_with_permission_inspector(
-                                            &remaining_requests,
-                                            &inspection_results,
-                                        )
-                                        .unwrap_or_else(|| {
-                                            let mut result = PermissionCheckResult {
-                                                approved: vec![],
-                                                needs_approval: vec![],
-                                                denied: vec![],
-                                            };
-                                            result
-                                                .needs_approval
-                                                .extend(remaining_requests.iter().cloned());
-                                            result
-                                        });
+                                    let (inspection_results, mut permission_check_result) =
+                                        if matches!(
+                                            &interaction_policy,
+                                            crate::session::InteractionPolicy::Planning { .. }
+                                        ) {
+                                            (
+                                                Vec::new(),
+                                                PermissionCheckResult {
+                                                    approved: remaining_requests.clone(),
+                                                    needs_approval: Vec::new(),
+                                                    denied: Vec::new(),
+                                                },
+                                            )
+                                        } else {
+                                            let inspection_results = self
+                                                .tool_inspection_manager
+                                                .inspect_tools(
+                                                    &session_config.id,
+                                                    &remaining_requests,
+                                                    conversation.messages(),
+                                                    gosling_mode,
+                                                )
+                                                .await?;
+                                            let permission_check_result = self
+                                                .tool_inspection_manager
+                                                .process_inspection_results_with_permission_inspector(
+                                                    &remaining_requests,
+                                                    &inspection_results,
+                                                )
+                                                .unwrap_or_else(|| {
+                                                    let mut result = PermissionCheckResult {
+                                                        approved: vec![],
+                                                        needs_approval: vec![],
+                                                        denied: vec![],
+                                                    };
+                                                    result.needs_approval.extend(
+                                                        remaining_requests.iter().cloned(),
+                                                    );
+                                                    result
+                                                });
+                                            (inspection_results, permission_check_result)
+                                        };
 
                                     Self::redirect_unapprovable_subagent_requests(
                                         gosling_mode,
@@ -656,6 +741,7 @@ impl Agent {
                                         &mut request_to_response_map,
                                         cancel_token.clone(),
                                         &session,
+                                        &interaction_policy,
                                     ).await?;
 
                                     {
@@ -665,6 +751,7 @@ impl Agent {
                                             &mut request_to_response_map,
                                             cancel_token.clone(),
                                             &session,
+                                            &interaction_policy,
                                             &inspection_results,
                                         );
 
@@ -683,6 +770,7 @@ impl Agent {
                                     let mut combined = stream::select_all(with_id);
                                     let mut all_install_successful = true;
                                     let mut tool_persistence_error = None;
+                                    let mut planning_review_call_succeeded = false;
                                     let mut seen_subagent_tool_notifications = HashSet::new();
 
                                     loop {
@@ -705,6 +793,12 @@ impl Agent {
                                                                 yield AgentEvent::Message(msg);
                                                             }
                                                             ToolStreamItem::Result(output) => {
+                                                                let review_call_succeeded =
+                                                                    planning_review_request_id.as_deref()
+                                                                        == Some(request_id.as_str())
+                                                                        && output.as_ref().is_ok_and(|result| {
+                                                                            result.is_error != Some(true)
+                                                                        });
                                                                 if let Ok(ref call_result) = output {
                                                                     if let Some(ref meta) = call_result.meta {
                                                                         if let Some(notification_data) = meta.0.get("platform_notification") {
@@ -741,6 +835,8 @@ impl Agent {
                                                                         tool_persistence_error = Some(error);
                                                                         break;
                                                                     }
+                                                                    planning_review_call_succeeded |=
+                                                                        review_call_succeeded;
                                                                 }
                                                             }
                                                             ToolStreamItem::Message(msg) => {
@@ -762,6 +858,28 @@ impl Agent {
 
                                     if let Some(error) = tool_persistence_error {
                                         Err(error)?;
+                                    }
+
+                                    if planning_review_call_succeeded {
+                                        let snapshot = session_manager
+                                            .plans()
+                                            .snapshot(&session_config.id)
+                                            .await
+                                            .map_err(|error| anyhow!(error.to_string()))?;
+                                        planning_review_committed = matches!(
+                                            (&interaction_policy, snapshot.as_ref()),
+                                            (
+                                                crate::session::InteractionPolicy::Planning {
+                                                    plan_id,
+                                                    generation,
+                                                    ..
+                                                },
+                                                Some(snapshot)
+                                            ) if snapshot.plan.id == *plan_id
+                                                && snapshot.plan.generation == *generation
+                                                && snapshot.plan.status
+                                                    == crate::session::PlanStatus::AwaitingReview
+                                        );
                                     }
 
                                     if all_install_successful && !enable_extension_request_ids.is_empty() {
@@ -829,6 +947,13 @@ impl Agent {
                                 no_tools_called = false;
                                 // Agent is actively working — re-check goal when it next finishes
                                 goal_check_pending = false;
+                                if planning_review_committed {
+                                    // The durable review result above is the terminal output for
+                                    // this planner turn. Drop any provider chunks already buffered
+                                    // after the successful request rather than interpreting them
+                                    // with a now-invalid drafting catalog.
+                                    break 'provider_stream;
+                                }
                             }
                         }
                         #[allow(unused_variables)]
@@ -1035,9 +1160,10 @@ impl Agent {
                             break;
                         }
                         Err(ref provider_err) if no_tools_called
+                            && !planning_turn
                             && !failover_attempted
                             && failover_target.is_some()
-                            && should_retry(provider_err, &RetryConfig::default()) => {
+                            && should_failover(provider_err, &RetryConfig::default()) => {
                             #[cfg(feature = "telemetry")]
                             crate::posthog::emit_error(provider_err.telemetry_type(), &provider_err.to_string());
 
@@ -1169,7 +1295,7 @@ impl Agent {
                         }
                     }
                 }
-                can_drain_pending_steers = true;
+                can_drain_pending_steers = !planning_review_committed;
 
                 // The budget is for consecutive failures. A stream that ran to
                 // completion means the connection recovered, so the next blip
@@ -1178,17 +1304,18 @@ impl Agent {
                     mid_stream_retries = 0;
                 }
 
-                if tools_updated {
+                if !planning_review_committed && tools_updated {
                     (tools, toolshim_tools, system_prompt, _) = self
-                        .prepare_tools_and_prompt_with_additional_dirs(
+                        .prepare_tools_and_prompt_for_policy(
                             &session_config.id,
                             &session.working_dir,
                             &session.additional_working_dirs,
+                            &interaction_policy,
                         )
                         .await?;
                 }
 
-                {
+                if !planning_review_committed {
                     let hint_text = self
                         .subdirectory_hint_tracker
                         .lock()
@@ -1351,8 +1478,28 @@ impl Agent {
                 }
                 conversation.extend(messages_to_add);
 
+                if self
+                    .config
+                    .session_manager
+                    .plans()
+                    .snapshot(&session_config.id)
+                    .await
+                    .map_err(|error| anyhow!(error.to_string()))?
+                    .is_some_and(|snapshot| {
+                        snapshot.plan.status == crate::session::PlanStatus::AwaitingReview
+                    })
+                {
+                    stop_hook_handled_for_exit = true;
+                    break;
+                }
+
                 if exit_chat && self.has_pending_steers(&session_config.id).await {
                     exit_chat = false;
+                }
+
+                if exit_chat && planning_turn {
+                    stop_hook_handled_for_exit = true;
+                    break;
                 }
 
                 if exit_chat {
@@ -1401,19 +1548,30 @@ impl Agent {
                 tracing::Span::current().record("trace_output", last_assistant_text.as_str());
             }
 
-            if !stop_hook_handled_for_exit {
+            if !stop_hook_handled_for_exit && !planning_turn {
                 self.emit_stop_hook(&session_config.id, &last_assistant_text).await;
             }
 
-            summarizer::spawn_session_rollup(
-                summarizer::summarizer_mode(),
-                session_manager.clone(),
-                session_config.id.clone(),
-                session_config.tail_limit.unwrap_or(DEFAULT_SESSION_TAIL_LIMIT),
-            );
+            if configured_context_side_channels_allowed {
+                summarizer::spawn_session_rollup(
+                    summarizer::summarizer_mode(),
+                    session_manager.clone(),
+                    session_config.id.clone(),
+                    session_config.tail_limit.unwrap_or(DEFAULT_SESSION_TAIL_LIMIT),
+                );
+            }
         }.instrument(reply_stream_span));
         Ok(inner)
     }
+}
+
+fn configured_context_side_channels_allowed(
+    interaction_policy: &crate::session::InteractionPolicy,
+) -> bool {
+    matches!(
+        interaction_policy,
+        crate::session::InteractionPolicy::Normal
+    )
 }
 
 /// A reply cut off by a terminal provider error stays visible to the user, but
@@ -1431,6 +1589,20 @@ mod tests {
     use crate::agents::subagent_handler::{
         create_tool_notification, should_forward_subagent_tool_notification,
     };
+
+    #[test]
+    fn planning_disables_configured_context_side_channels() {
+        let planning = crate::session::InteractionPolicy::Planning {
+            plan_id: "plan-fixed-boundary".to_string(),
+            generation: 1,
+            capability_policy_version: 1,
+        };
+
+        assert!(!configured_context_side_channels_allowed(&planning));
+        assert!(configured_context_side_channels_allowed(
+            &crate::session::InteractionPolicy::Normal
+        ));
+    }
 
     #[tokio::test]
     async fn combined_tool_streams_forward_one_rebroadcast_subagent_notification() {

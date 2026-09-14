@@ -1449,9 +1449,9 @@ This method simplifies authentication and enhances security for enterprise envir
 
 ## Multi-Model Configuration
 
-Beyond single-model setups, gosling supports [multi-model configurations](/docs/guides/multi-model/) that can use different models and providers for specialized tasks:
+Beyond single-model setups, gosling supports [multi-model configurations](/docs/guides/multi-model/) for specialized tasks:
 
-- **Planning Mode** - Use a dedicated planner model to create detailed project breakdowns before execution
+- **Planning Mode** - Use the active session model inside a durable host-enforced lifecycle; a separate planner route is not supported
 - **Subagents** - Delegate scoped tasks to isolated sessions to keep your primary workflow focused and efficient
 
 ## Gemini 3 Thinking Levels

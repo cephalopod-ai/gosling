@@ -37,7 +37,7 @@
     "test-e2e:ui": "playwright test --ui",
     "test-e2e:debug": "playwright test --debug",
     "test-e2e:report": "playwright show-report",
-    "test-e2e:single": "playwright test -g",
+    "test-e2e:single": "node scripts/run-single-e2e.js",
     "lint": "eslint \"src/**/*.{ts,tsx}\" --fix --no-warn-ignored",
     "lint:check": "pnpm run typecheck && eslint \"src/**/*.{ts,tsx}\" --max-warnings 0 --no-warn-ignored && pnpm run i18n:check",
     "format": "prettier --write \"src/**/*.{ts,tsx,css,json}\"",

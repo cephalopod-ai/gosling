@@ -131,6 +131,23 @@ describe('createAcpSessionNotificationAdapter', () => {
     ).toEqual([{ type: 'artifactUpserted', artifact }]);
   });
 
+  it('maps compact plan updates to invalidation without creating chat content', () => {
+    const adapter = createAcpSessionNotificationAdapter();
+    const update = {
+      sessionUpdate: 'plan_update' as const,
+      planId: 'plan-1',
+      generation: 2,
+      status: 'awaiting_review' as const,
+      activeRevision: { id: 'revision-3', revision: 3, contentSha256: 'sha-3' },
+      updatedAt: '2026-09-13T00:00:00Z',
+    };
+
+    expect(adapter.applyGosling(goslingUpdate(update))).toEqual([
+      { type: 'planInvalidated', update },
+    ]);
+    expect(adapter.getMessages()).toEqual([]);
+  });
+
   describe('apply', () => {
     describe('message chunks', () => {
       it('maps and merges text chunks by role', () => {

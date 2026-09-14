@@ -5,16 +5,10 @@
 import type { App, BrowserWindow as BrowserWindowType, IpcMain } from 'electron';
 import { BrowserWindow, Notification, shell } from 'electron';
 import { desktopCommandChannels, rendererEventChannels } from '../ipc/channels';
+import type { CreateChatWindowOptions } from '../ipc/channels';
 import { errorMessage } from '../utils/conversionUtils';
 import type logger from '../utils/logger';
 import { normalizeWebUrl } from '../utils/urlSecurity';
-
-interface CreateChatWindowOptions {
-  query?: string;
-  dir?: string;
-  resumeSessionId?: string;
-  viewType?: string;
-}
 
 interface CreateChatOptions {
   initialMessage?: string;
@@ -36,18 +30,18 @@ export interface AppIpcDependencies {
 export const APP_IPC_ON_CHANNELS = [
   desktopCommandChannels.createChatWindow,
   desktopCommandChannels.closeWindow,
-  'notify',
-  'logInfo',
+  desktopCommandChannels.showNotification,
+  desktopCommandChannels.logInfo,
   desktopCommandChannels.broadcastThemeChange,
   desktopCommandChannels.broadcastWorkspaceChange,
-  'reload-app',
-  'open-in-chrome',
-  'restart-app',
+  desktopCommandChannels.reloadApp,
+  desktopCommandChannels.openInChrome,
+  desktopCommandChannels.restartApp,
   desktopCommandChannels.getAppVersion,
   desktopCommandChannels.getAppLocale,
 ] as const;
 
-export const APP_IPC_HANDLE_CHANNELS = ['open-directory-in-explorer'] as const;
+export const APP_IPC_HANDLE_CHANNELS = [desktopCommandChannels.openDirectoryInExplorer] as const;
 
 export function registerAppIpcHandlers(
   targetIpcMain: Pick<IpcMain, 'on' | 'handle'>,
@@ -125,7 +119,7 @@ export function registerAppIpcHandlers(
     }
   });
 
-  targetIpcMain.on('notify', (event, data) => {
+  targetIpcMain.on(desktopCommandChannels.showNotification, (event, data) => {
     try {
       // Validate notification data
       if (!data || typeof data !== 'object') {
@@ -172,7 +166,7 @@ export function registerAppIpcHandlers(
     }
   });
 
-  targetIpcMain.on('logInfo', (_event, info) => {
+  targetIpcMain.on(desktopCommandChannels.logInfo, (_event, info) => {
     try {
       // Validate log info
       if (info === undefined || info === null) {
@@ -217,7 +211,7 @@ export function registerAppIpcHandlers(
     });
   });
 
-  targetIpcMain.on('reload-app', (event) => {
+  targetIpcMain.on(desktopCommandChannels.reloadApp, (event) => {
     // Get the window that sent the event
     const window = BrowserWindow.fromWebContents(event.sender);
     if (window) {
@@ -225,7 +219,7 @@ export function registerAppIpcHandlers(
     }
   });
 
-  targetIpcMain.on('open-in-chrome', async (_event, url: unknown) => {
+  targetIpcMain.on(desktopCommandChannels.openInChrome, async (_event, url: unknown) => {
     try {
       const webUrl = normalizeWebUrl(url);
       if (!webUrl) {
@@ -240,7 +234,7 @@ export function registerAppIpcHandlers(
   });
 
   // Handle app restart
-  targetIpcMain.on('restart-app', () => {
+  targetIpcMain.on(desktopCommandChannels.restartApp, () => {
     app.relaunch();
     app.quit();
   });
@@ -254,14 +248,17 @@ export function registerAppIpcHandlers(
     event.returnValue = getConfiguredGoslingLocale();
   });
 
-  targetIpcMain.handle('open-directory-in-explorer', async (event, directoryPath: string) => {
-    try {
-      const resolvedPath = await assertRendererFileAccess(event.sender.id, directoryPath);
-      const errorMessage = await shell.openPath(resolvedPath);
-      return errorMessage === '';
-    } catch (error) {
-      console.error('Error opening directory in explorer:', error);
-      return false;
+  targetIpcMain.handle(
+    desktopCommandChannels.openDirectoryInExplorer,
+    async (event, directoryPath: string) => {
+      try {
+        const resolvedPath = await assertRendererFileAccess(event.sender.id, directoryPath);
+        const errorMessage = await shell.openPath(resolvedPath);
+        return errorMessage === '';
+      } catch (error) {
+        console.error('Error opening directory in explorer:', error);
+        return false;
+      }
     }
-  });
+  );
 }

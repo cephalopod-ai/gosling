@@ -150,10 +150,11 @@ pub fn is_hidden_extension(name: &str) -> bool {
 }
 
 /// Result of resolving a tool call to its owning extension
-pub(super) struct ResolvedTool {
+pub(crate) struct ResolvedTool {
     pub(super) tool_name: String,
     pub(super) extension_name: String,
     pub(super) actual_tool_name: String,
+    pub(crate) host_identity: crate::agents::interaction_policy::HostToolIdentity,
     pub(super) client: McpClientBox,
     pub(super) tool_meta: Option<Value>,
     pub(super) resource_uri: Option<String>,

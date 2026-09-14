@@ -32,6 +32,8 @@ export function applyGoslingSessionNotification(
       return applyStatusMessage(state, notification.sessionId, update);
     case 'artifact_update':
       return [{ type: 'artifactUpserted', artifact: update.artifact }];
+    case 'plan_update':
+      return [{ type: 'planInvalidated', update }];
     default:
       return [];
   }

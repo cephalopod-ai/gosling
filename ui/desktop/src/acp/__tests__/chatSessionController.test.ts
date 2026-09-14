@@ -11,6 +11,7 @@ import {
 } from '../chatSessionStore';
 import { acpCancelPrompt, acpPromptSession } from '../prompt';
 import { getAcpConnectionGeneration } from '../acpConnection';
+import { refreshAcpSessionPlan } from '../plans';
 import {
   acpHandoffSession,
   acpLoadSession,
@@ -46,6 +47,9 @@ vi.mock('../chatSessionStore', () => ({
     setChatState: vi.fn(),
     setSessionMetadata: vi.fn(),
     setSessionLoadError: vi.fn(),
+    startPlanLoad: vi.fn(),
+    setPlanResponse: vi.fn(),
+    failPlanLoad: vi.fn(),
   },
 }));
 
@@ -66,6 +70,10 @@ vi.mock('../prompt', () => ({
 
 vi.mock('../acpConnection', () => ({
   getAcpConnectionGeneration: vi.fn(),
+}));
+
+vi.mock('../plans', () => ({
+  refreshAcpSessionPlan: vi.fn().mockResolvedValue(undefined),
 }));
 
 const SESSION_ID = 'session-1';
@@ -135,6 +143,18 @@ function snapshotWithActivePrompt(activePromptAttemptId: string | null): AcpChat
     activeRunId: activePromptAttemptId ? 'run-1' : null,
     pendingCancelPromptAttemptId: null,
     pendingLocalSteerMessageIds: new Set(),
+    plan: {
+      snapshot: null,
+      providerSupportsHostEnforcedPlanning: false,
+      permittedCapabilities: [],
+      loading: false,
+      invalidated: false,
+      loadError: undefined,
+      latestUpdate: null,
+      feedbackDraft: { body: '', startLine: null, endLine: null, revisionId: null },
+      actionPending: null,
+      workflowMessage: undefined,
+    },
   };
 }
 
@@ -163,6 +183,7 @@ describe('acpChatSessionController.loadSession', () => {
     vi.mocked(getAcpConnectionGeneration).mockReturnValue(1);
     vi.mocked(acpLoadSession).mockResolvedValue(mockLoadResult());
     vi.mocked(acpListSessionArtifacts).mockResolvedValue([]);
+    vi.mocked(refreshAcpSessionPlan).mockResolvedValue(undefined);
     vi.mocked(sessionInfoToSession).mockReturnValue(loadedSession());
   });
 
@@ -179,6 +200,15 @@ describe('acpChatSessionController.loadSession', () => {
       1,
       { interruptedPrompt: false, resumeIntegrity: 'clean' }
     );
+  });
+
+  it('refreshes persisted plan state when a session is loaded', async () => {
+    vi.mocked(isAcpSessionLoadInFlight).mockReturnValue(false);
+
+    await acpChatSessionController.loadSession(SESSION_ID, { force: true });
+
+    expect(refreshAcpSessionPlan).toHaveBeenCalledOnce();
+    expect(refreshAcpSessionPlan).toHaveBeenCalledWith(SESSION_ID);
   });
 
   it('does not reset replay state when joining an in-flight session load', async () => {

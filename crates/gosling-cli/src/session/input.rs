@@ -24,7 +24,14 @@ pub enum InputResult {
     GoslingMode(String),
     Model(Option<String>),
     Plan(PlanCommandOptions),
-    EndPlan,
+    PlanStatus,
+    PlanFeedback(String),
+    PlanComment(String),
+    PlanApprove,
+    PlanApproveAndRun,
+    PlanAbandon,
+    PlanEnd,
+    PlanExport,
     Status,
     Clear,
     Compact,
@@ -266,7 +273,16 @@ fn handle_slash_command(input: &str) -> Option<InputResult> {
     const CMD_MODEL: &str = "/model";
     const CMD_MODEL_WITH_SPACE: &str = "/model ";
     const CMD_PLAN: &str = "/plan";
-    const CMD_ENDPLAN: &str = "/endplan";
+    const CMD_PLAN_WITH_SPACE: &str = "/plan ";
+    const CMD_PLAN_STATUS: &str = "/plan-status";
+    const CMD_PLAN_FEEDBACK: &str = "/plan-feedback";
+    const CMD_PLAN_FEEDBACK_WITH_SPACE: &str = "/plan-feedback ";
+    const CMD_PLAN_COMMENT: &str = "/plan-comment";
+    const CMD_PLAN_COMMENT_WITH_SPACE: &str = "/plan-comment ";
+    const CMD_PLAN_APPROVE: &str = "/plan-approve";
+    const CMD_PLAN_APPROVE_AND_RUN: &str = "/plan-approve-and-run";
+    const CMD_PLAN_ABANDON: &str = "/plan-abandon";
+    const CMD_PLAN_EXPORT: &str = "/plan-export";
     const CMD_STATUS: &str = "/status";
     const CMD_CLEAR: &str = "/clear";
     const CMD_COMPACT: &str = "/compact";
@@ -347,10 +363,33 @@ fn handle_slash_command(input: &str) -> Option<InputResult> {
                 Some(InputResult::Model(Some(model)))
             }
         }
-        s if s.starts_with(CMD_PLAN) => {
-            parse_plan_command(s.get(CMD_PLAN.len()..).unwrap_or("").trim().to_string())
-        }
-        s if s == CMD_ENDPLAN => Some(InputResult::EndPlan),
+        s if s == CMD_PLAN => parse_plan_command(String::new()),
+        s if s.starts_with(CMD_PLAN_WITH_SPACE) => parse_plan_command(
+            s.get(CMD_PLAN_WITH_SPACE.len()..)
+                .unwrap_or("")
+                .trim()
+                .to_string(),
+        ),
+        s if s == CMD_PLAN_STATUS => Some(InputResult::PlanStatus),
+        s if s == CMD_PLAN_FEEDBACK => Some(InputResult::PlanFeedback(String::new())),
+        s if s.starts_with(CMD_PLAN_FEEDBACK_WITH_SPACE) => Some(InputResult::PlanFeedback(
+            s.get(CMD_PLAN_FEEDBACK_WITH_SPACE.len()..)
+                .unwrap_or("")
+                .trim()
+                .to_string(),
+        )),
+        s if s == CMD_PLAN_COMMENT => Some(InputResult::PlanComment(String::new())),
+        s if s.starts_with(CMD_PLAN_COMMENT_WITH_SPACE) => Some(InputResult::PlanComment(
+            s.get(CMD_PLAN_COMMENT_WITH_SPACE.len()..)
+                .unwrap_or("")
+                .trim()
+                .to_string(),
+        )),
+        s if s == CMD_PLAN_APPROVE => Some(InputResult::PlanApprove),
+        s if s == CMD_PLAN_APPROVE_AND_RUN => Some(InputResult::PlanApproveAndRun),
+        s if s == CMD_PLAN_ABANDON => Some(InputResult::PlanAbandon),
+        "/endplan" => Some(InputResult::PlanEnd),
+        s if s == CMD_PLAN_EXPORT => Some(InputResult::PlanExport),
         s if s == CMD_STATUS => Some(InputResult::Status),
         s if s == CMD_CLEAR => Some(InputResult::Clear),
         s if s == CMD_COMPACT => Some(InputResult::Compact),
@@ -461,12 +500,17 @@ fn print_help() {
 /prompt <n> [--info] [key=value...] - Get prompt info or execute a prompt
 /mode <name> - Set the gosling mode to use ({modes})
 /model [name] - Show the current model, or switch models for this session while keeping the same provider
-/plan <message_text> -  Enters 'plan' mode with optional message. Create a plan based on the current messages and asks user if they want to act on it.
-                        If user acts on the plan, gosling mode is set to 'auto' and returns to 'normal' gosling mode.
-                        To warm up gosling before using '/plan', we recommend setting '/mode approve' & putting appropriate context into gosling.
-                        The model is used based on $GOSLING_PLANNER_PROVIDER and $GOSLING_PLANNER_MODEL environment variables.
-                        If no model is set, the default model is used.
-/endplan - Exit plan mode and return to 'normal' gosling mode.
+/plan [prompt] - Start or resume a durable plan, optionally submitting one planner prompt.
+                 GOSLING_PLANNER_PROVIDER, GOSLING_PLANNER_MODEL, and GOSLING_PLANNER_CONTEXT_LIMIT
+                 remain compatibility inputs; they must match the active session selection for now.
+/plan-status - Show the current plan generation, status, revision, and content.
+/plan-feedback <text> - Record feedback against the exact revision and request a revision.
+/plan-comment <start>-<end> <text> - Attach line-scoped feedback to the exact revision.
+/plan-approve - Approve the exact current revision without starting implementation.
+/plan-approve-and-run - Approve, then start one separate implementation turn in the current mode.
+/plan-abandon - Explicitly abandon the current open plan.
+/endplan - Leave planning; asks before abandoning a reviewable plan.
+/plan-export - Print the exact current revision as Markdown with provenance.
 /compact - Compact the current conversation to reduce context length while preserving key information.
 /status - Show session status: model, provider, mode, and token usage.
 /edit [text] - Open your prompt editor to compose a message. Optionally pre-fill with text.
@@ -799,21 +843,57 @@ mod tests {
     }
 
     #[test]
-    fn test_plan_mode() {
-        // Test plan mode with no text
-        let result = handle_slash_command("/plan");
-        assert!(result.is_some());
-
-        // Test plan mode with text
-        let result = handle_slash_command("/plan hello world");
-        assert!(result.is_some());
-        let options = result.unwrap();
-        match options {
+    fn plan_commands_require_exact_command_boundaries() {
+        match handle_slash_command("/plan hello world").unwrap() {
             InputResult::Plan(options) => {
                 assert_eq!(options.message_text, "hello world");
             }
             _ => panic!("Expected Plan"),
         }
+
+        assert!(matches!(
+            handle_slash_command("/plan"),
+            Some(InputResult::Plan(PlanCommandOptions { message_text })) if message_text.is_empty()
+        ));
+        assert!(matches!(
+            handle_slash_command("/plan-feedback revise storage"),
+            Some(InputResult::PlanFeedback(feedback)) if feedback == "revise storage"
+        ));
+        assert!(matches!(
+            handle_slash_command("/plan-comment 2-4 preserve rollback"),
+            Some(InputResult::PlanComment(comment)) if comment == "2-4 preserve rollback"
+        ));
+        assert!(matches!(
+            handle_slash_command("/plan-approve"),
+            Some(InputResult::PlanApprove)
+        ));
+        assert!(matches!(
+            handle_slash_command("/plan-approve-and-run"),
+            Some(InputResult::PlanApproveAndRun)
+        ));
+        assert!(matches!(
+            handle_slash_command("/plan-status"),
+            Some(InputResult::PlanStatus)
+        ));
+        assert!(matches!(
+            handle_slash_command("/plan-abandon"),
+            Some(InputResult::PlanAbandon)
+        ));
+        assert!(matches!(
+            handle_slash_command("/endplan"),
+            Some(InputResult::PlanEnd)
+        ));
+        assert!(matches!(
+            handle_slash_command("/plan-export"),
+            Some(InputResult::PlanExport)
+        ));
+
+        assert!(handle_slash_command("/planner").is_none());
+        assert!(handle_slash_command("/plan-status now").is_none());
+        assert!(handle_slash_command("/plan-commentary").is_none());
+        assert!(handle_slash_command("/plan-approve later").is_none());
+        assert!(handle_slash_command("/plan-abandon now").is_none());
+        assert!(handle_slash_command("/plan-export file.md").is_none());
     }
 
     #[test]

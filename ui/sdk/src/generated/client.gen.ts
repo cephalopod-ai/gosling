@@ -9,9 +9,12 @@ export interface ExtMethodProvider {
 
 import type { Client } from "@agentclientprotocol/sdk";
 import type {
+  AbandonSessionPlanRequest_unstable,
   AddConfigExtensionRequest_unstable,
   AddSessionExtensionRequest_unstable,
+  AddSessionPlanFeedbackRequest_unstable,
   AddSessionWorkingDirRequest_unstable,
+  ApproveSessionPlanRequest_unstable,
   ArchiveSessionRequest_unstable,
   CanonicalModelInfoRequest_unstable,
   CanonicalModelInfoResponse_unstable,
@@ -64,6 +67,8 @@ import type {
   DomainSnapshotRequest_unstable,
   DomainSnapshotResponse_unstable,
   DomainStatusNotification_unstable,
+  ExportSessionPlanRequest_unstable,
+  ExportSessionPlanResponse_unstable,
   ExportSessionRequest_unstable,
   ExportSessionResponse_unstable,
   ExportSourceRequest_unstable,
@@ -80,6 +85,7 @@ import type {
   GetSessionExtensionsResponse_unstable,
   GetSessionInfoRequest_unstable,
   GetSessionInfoResponse_unstable,
+  GetSessionPlanRequest_unstable,
   GetSessionSummaryRequest_unstable,
   GetSessionSummaryResponse_unstable,
   GetToolsRequest_unstable,
@@ -158,6 +164,7 @@ import type {
   SavePromptRequest_unstable,
   SearchSessionMessagesRequest_unstable,
   SearchSessionMessagesResponse_unstable,
+  SessionPlanResponse_unstable,
   SessionWorkingDirsResponse_unstable,
   SetConfigExtensionEnabledRequest_unstable,
   SetSessionSystemPromptRequest_unstable,
@@ -190,6 +197,7 @@ import type {
   ShellProvisioningReadResponse_unstable,
   ShellProvisioningValidateRequest_unstable,
   ShellProvisioningValidateResponse_unstable,
+  StartSessionPlanRequest_unstable,
   SteerSessionRequest_unstable,
   SteerSessionResponse_unstable,
   SummarizerModelsListRequest_unstable,
@@ -240,6 +248,7 @@ import {
   zDomainActionResponse_unstable,
   zDomainSnapshotResponse_unstable,
   zDomainStatusNotification_unstable,
+  zExportSessionPlanResponse_unstable,
   zExportSessionResponse_unstable,
   zExportSourceResponse_unstable,
   zGetAvailableExtensionsResponse_unstable,
@@ -282,6 +291,7 @@ import {
   zRefreshProviderInventoryResponse_unstable,
   zRestoreOutputRevisionResponse_unstable,
   zSearchSessionMessagesResponse_unstable,
+  zSessionPlanResponse_unstable,
   zSessionWorkingDirsResponse_unstable,
   zSetToolPermissionsResponse_unstable,
   zShareSessionNostrResponse_unstable,
@@ -627,6 +637,78 @@ export class GoslingExtClient {
     return zSteerSessionResponse_unstable.parse(
       raw,
     ) as SteerSessionResponse_unstable;
+  }
+
+  async sessionPlanGet_unstable(
+    params: GetSessionPlanRequest_unstable,
+  ): Promise<SessionPlanResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/session/plan/get",
+      params,
+    );
+    return zSessionPlanResponse_unstable.parse(
+      raw,
+    ) as SessionPlanResponse_unstable;
+  }
+
+  async sessionPlanStart_unstable(
+    params: StartSessionPlanRequest_unstable,
+  ): Promise<SessionPlanResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/session/plan/start",
+      params,
+    );
+    return zSessionPlanResponse_unstable.parse(
+      raw,
+    ) as SessionPlanResponse_unstable;
+  }
+
+  async sessionPlanFeedback_unstable(
+    params: AddSessionPlanFeedbackRequest_unstable,
+  ): Promise<SessionPlanResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/session/plan/feedback",
+      params,
+    );
+    return zSessionPlanResponse_unstable.parse(
+      raw,
+    ) as SessionPlanResponse_unstable;
+  }
+
+  async sessionPlanApprove_unstable(
+    params: ApproveSessionPlanRequest_unstable,
+  ): Promise<SessionPlanResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/session/plan/approve",
+      params,
+    );
+    return zSessionPlanResponse_unstable.parse(
+      raw,
+    ) as SessionPlanResponse_unstable;
+  }
+
+  async sessionPlanAbandon_unstable(
+    params: AbandonSessionPlanRequest_unstable,
+  ): Promise<SessionPlanResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/session/plan/abandon",
+      params,
+    );
+    return zSessionPlanResponse_unstable.parse(
+      raw,
+    ) as SessionPlanResponse_unstable;
+  }
+
+  async sessionPlanExport_unstable(
+    params: ExportSessionPlanRequest_unstable,
+  ): Promise<ExportSessionPlanResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/session/plan/export",
+      params,
+    );
+    return zExportSessionPlanResponse_unstable.parse(
+      raw,
+    ) as ExportSessionPlanResponse_unstable;
   }
 
   async diagnosticsGet_unstable(

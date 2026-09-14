@@ -21,6 +21,10 @@ use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 
 use common_tests::fixtures::OpenAiFixture;
+use gosling::acp::custom_notifications::GoslingSessionUpdate;
+use gosling::session::{
+    approved_plan_implementation_reference, NewPlanRevision, PlanExpectation, SessionManager,
+};
 
 const DEFAULT_ACP_TEST_CONFIG: &str =
     "GOSLING_MODEL: gpt-4o\nGOSLING_PROVIDER: openai\nGOSLING_DISABLE_KEYRING: true\n";
@@ -183,6 +187,406 @@ fn test_custom_get_tools() {
         let response = result.unwrap();
         let tools = response.get("tools").expect("missing 'tools' field");
         assert!(tools.is_array(), "tools should be array");
+    });
+}
+
+#[test]
+#[serial]
+fn test_custom_plan_lifecycle_and_notifications() {
+    write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
+    run_test(async move {
+        let openai = OpenAiFixture::new(vec![], Arc::new(EnforceSessionId::default())).await;
+        let data_root = tempfile::tempdir().unwrap();
+        let manager = Arc::new(SessionManager::new(data_root.path().to_path_buf()));
+        let mut conn = AcpServerConnection::new(
+            TestConnectionConfig {
+                custom_notifications: true,
+                data_root: data_root.path().to_path_buf(),
+                session_manager: Some(Arc::clone(&manager)),
+                ..Default::default()
+            },
+            openai,
+        )
+        .await;
+
+        let SessionData { session, .. } = conn.new_session().await.unwrap();
+        let session_id = session.session_id().0.to_string();
+        conn.custom_session_updates();
+
+        // Older/default-provider sessions can lack persisted provider metadata while their
+        // live agent still owns a verified host-mediated provider. The response must derive
+        // support from that provider rather than treating missing metadata as unsupported.
+        let provider_metadata_pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(
+                sqlx::sqlite::SqliteConnectOptions::new().filename(
+                    manager
+                        .data_dir()
+                        .join(gosling::session::session_manager::SESSIONS_FOLDER)
+                        .join(gosling::session::session_manager::DB_NAME),
+                ),
+            )
+            .await
+            .unwrap();
+        sqlx::query("UPDATE sessions SET provider_name = NULL WHERE id = ?")
+            .bind(&session_id)
+            .execute(&provider_metadata_pool)
+            .await
+            .unwrap();
+        provider_metadata_pool.close().await;
+        assert!(manager
+            .get_session(&session_id, false)
+            .await
+            .unwrap()
+            .provider_name
+            .is_none());
+
+        let started = send_custom(
+            conn.cx(),
+            "_gosling/unstable/session/plan/start",
+            serde_json::json!({ "sessionId": session_id }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(started["snapshot"]["plan"]["status"], "drafting");
+        assert_eq!(started["snapshot"]["plan"]["generation"], 1);
+        assert_eq!(started["providerSupportsHostEnforcedPlanning"], true);
+        assert!(started.get("implementationReference").is_none());
+        let capabilities = started["permittedCapabilities"].as_array().unwrap();
+        assert!(capabilities.contains(&serde_json::json!("workspace_read_text")));
+        assert!(capabilities.contains(&serde_json::json!("workspace_search_text")));
+        assert!(capabilities.contains(&serde_json::json!("session_history_search")));
+        assert!(capabilities.contains(&serde_json::json!("session_history_read")));
+
+        send_custom(
+            conn.cx(),
+            "_gosling/unstable/tools/permissions/set",
+            serde_json::json!({
+                "toolPermissions": [
+                    { "toolName": "session_search", "permission": "never_allow" },
+                    { "toolName": "session_read", "permission": "never_allow" }
+                ]
+            }),
+        )
+        .await
+        .unwrap();
+        let narrowed = send_custom(
+            conn.cx(),
+            "_gosling/unstable/session/plan/get",
+            serde_json::json!({ "sessionId": session_id }),
+        )
+        .await
+        .unwrap();
+        let narrowed_capabilities = narrowed["permittedCapabilities"].as_array().unwrap();
+        assert!(narrowed_capabilities.contains(&serde_json::json!("workspace_read_text")));
+        assert!(!narrowed_capabilities.contains(&serde_json::json!("session_history_search")));
+        assert!(!narrowed_capabilities.contains(&serde_json::json!("session_history_read")));
+        send_custom(
+            conn.cx(),
+            "_gosling/unstable/tools/permissions/set",
+            serde_json::json!({
+                "toolPermissions": [
+                    { "toolName": "session_search", "permission": "ask_before" },
+                    { "toolName": "session_read", "permission": "ask_before" }
+                ]
+            }),
+        )
+        .await
+        .unwrap();
+
+        let update = conn
+            .next_custom_session_update()
+            .await
+            .expect("start should publish a compact plan update");
+        assert_eq!(update.session_id, session_id);
+        let GoslingSessionUpdate::PlanUpdate(update) = update.update else {
+            panic!("expected plan_update notification");
+        };
+        assert_eq!(update.generation, 1);
+        assert!(update.active_revision.is_none());
+
+        let stale = send_custom(
+            conn.cx(),
+            "_gosling/unstable/session/plan/start",
+            serde_json::json!({ "sessionId": session_id }),
+        )
+        .await
+        .expect_err("stale start expectation should fail");
+        let stale = serde_json::to_value(stale).unwrap();
+        assert_eq!(stale["data"]["code"], "plan_conflict");
+        assert_eq!(stale["data"]["currentSnapshot"]["plan"]["generation"], 1);
+
+        let current = send_custom(
+            conn.cx(),
+            "_gosling/unstable/session/plan/get",
+            serde_json::json!({ "sessionId": session_id, "generation": 1 }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(current["snapshot"]["plan"]["status"], "drafting");
+
+        let service = manager.plans();
+        let revision = service
+            .update_revision(
+                &session_id,
+                NewPlanRevision {
+                    content_markdown: "# Plan\n\n1. First step\n".to_string(),
+                    expected_generation: 1,
+                    expected_parent_revision_id: None,
+                    planner_provider: Some("openai".to_string()),
+                    planner_model: Some("gpt-4o".to_string()),
+                },
+            )
+            .await
+            .unwrap();
+        let update = conn
+            .next_custom_session_update()
+            .await
+            .expect("a shared PlanService revision should notify the ACP client");
+        let GoslingSessionUpdate::PlanUpdate(update) = update.update else {
+            panic!("expected plan_update notification");
+        };
+        assert_eq!(
+            update.status,
+            gosling::acp::custom_requests::PlanStatusDto::Drafting
+        );
+        assert!(update.active_revision.is_some());
+
+        let reviewed = service
+            .request_review(&session_id, &PlanExpectation::for_snapshot(&revision))
+            .await
+            .unwrap();
+        let update = conn
+            .next_custom_session_update()
+            .await
+            .expect("a shared PlanService transition should notify the ACP client");
+        let GoslingSessionUpdate::PlanUpdate(update) = update.update else {
+            panic!("expected plan_update notification");
+        };
+        assert_eq!(
+            update.status,
+            gosling::acp::custom_requests::PlanStatusDto::AwaitingReview
+        );
+
+        let current = send_custom(
+            conn.cx(),
+            "_gosling/unstable/session/plan/get",
+            serde_json::json!({ "sessionId": session_id, "generation": 1 }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(current["snapshot"]["plan"]["status"], "awaiting_review");
+
+        let expectation = PlanExpectation::for_snapshot(&reviewed);
+        let feedback = send_custom(
+            conn.cx(),
+            "_gosling/unstable/session/plan/feedback",
+            serde_json::json!({
+                "sessionId": session_id,
+                "body": "Clarify the first step",
+                "startLine": 3,
+                "endLine": 3,
+                "selectedText": "1. First step",
+                "expectedGeneration": expectation.generation,
+                "expectedRevisionId": expectation.revision_id,
+                "expectedRevisionSha256": expectation.revision_sha256,
+                "expectedSourceHash": expectation.source_hash,
+                "expectedScopeHash": expectation.scope_hash,
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(feedback["snapshot"]["plan"]["status"], "drafting");
+        assert_eq!(
+            feedback["snapshot"]["feedback"][0]["body"],
+            "Clarify the first step"
+        );
+        assert!(conn.next_custom_session_update().await.is_some());
+
+        let first_revision_id = feedback["snapshot"]["activeRevision"]["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let revised = service
+            .update_revision(
+                &session_id,
+                NewPlanRevision {
+                    content_markdown: "# Plan\n\n1. First step, with clarification\n".to_string(),
+                    expected_generation: 1,
+                    expected_parent_revision_id: Some(first_revision_id),
+                    planner_provider: Some("openai".to_string()),
+                    planner_model: Some("gpt-4o".to_string()),
+                },
+            )
+            .await
+            .unwrap();
+        let update = conn
+            .next_custom_session_update()
+            .await
+            .expect("the replacement revision should publish a plan update");
+        let GoslingSessionUpdate::PlanUpdate(update) = update.update else {
+            panic!("expected plan_update notification");
+        };
+        assert_eq!(
+            update.status,
+            gosling::acp::custom_requests::PlanStatusDto::Drafting
+        );
+        let reviewed = service
+            .request_review(&session_id, &PlanExpectation::for_snapshot(&revised))
+            .await
+            .unwrap();
+        let update = conn
+            .next_custom_session_update()
+            .await
+            .expect("the second review transition should publish a plan update");
+        let GoslingSessionUpdate::PlanUpdate(update) = update.update else {
+            panic!("expected plan_update notification");
+        };
+        assert_eq!(
+            update.status,
+            gosling::acp::custom_requests::PlanStatusDto::AwaitingReview
+        );
+        let expectation = PlanExpectation::for_snapshot(&reviewed);
+        let approved = send_custom(
+            conn.cx(),
+            "_gosling/unstable/session/plan/approve",
+            serde_json::json!({
+                "sessionId": session_id,
+                "decisionNote": "Approved for implementation",
+                "expectedGeneration": expectation.generation,
+                "expectedRevisionId": expectation.revision_id,
+                "expectedRevisionSha256": expectation.revision_sha256,
+                "expectedSourceHash": expectation.source_hash,
+                "expectedScopeHash": expectation.scope_hash,
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(approved["snapshot"]["plan"]["status"], "approved");
+        assert!(approved["permittedCapabilities"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+        let approved_snapshot = service.snapshot(&session_id).await.unwrap().unwrap();
+        let implementation_reference =
+            approved_plan_implementation_reference(&approved_snapshot).unwrap();
+        assert_eq!(
+            approved["implementationReference"].as_str(),
+            Some(implementation_reference.as_str())
+        );
+        assert!(!implementation_reference.contains("First step, with clarification"));
+        let update = conn
+            .next_custom_session_update()
+            .await
+            .expect("approval should publish a plan update");
+        let GoslingSessionUpdate::PlanUpdate(update) = update.update else {
+            panic!("expected plan_update notification");
+        };
+        assert_eq!(
+            update.status,
+            gosling::acp::custom_requests::PlanStatusDto::Approved
+        );
+
+        let revision = &approved["snapshot"]["activeRevision"];
+        let stale_export = send_custom(
+            conn.cx(),
+            "_gosling/unstable/session/plan/export",
+            serde_json::json!({
+                "sessionId": session_id,
+                "expectedGeneration": 1,
+                "expectedRevisionId": revision["id"],
+                "expectedRevisionSha256": revision["contentSha256"],
+                "expectedStatus": "awaiting_review",
+            }),
+        )
+        .await
+        .expect_err("a stale expected export status must conflict");
+        let stale_export = serde_json::to_value(stale_export).unwrap();
+        assert_eq!(stale_export["data"]["code"], "plan_conflict");
+        assert_eq!(
+            stale_export["data"]["currentSnapshot"]["plan"]["status"],
+            "approved"
+        );
+
+        let exported = send_custom(
+            conn.cx(),
+            "_gosling/unstable/session/plan/export",
+            serde_json::json!({
+                "sessionId": session_id,
+                "expectedGeneration": 1,
+                "expectedRevisionId": revision["id"],
+                "expectedRevisionSha256": revision["contentSha256"],
+                "expectedStatus": "approved",
+            }),
+        )
+        .await
+        .unwrap();
+        assert!(exported["markdown"]
+            .as_str()
+            .unwrap()
+            .contains("First step, with clarification"));
+
+        let started_again = send_custom(
+            conn.cx(),
+            "_gosling/unstable/session/plan/start",
+            serde_json::json!({
+                "sessionId": session_id,
+                "expectedGeneration": 1,
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(started_again["snapshot"]["plan"]["generation"], 2);
+        assert!(started_again.get("implementationReference").is_none());
+        let update = conn
+            .next_custom_session_update()
+            .await
+            .expect("the next generation should publish a plan update");
+        let GoslingSessionUpdate::PlanUpdate(update) = update.update else {
+            panic!("expected plan_update notification");
+        };
+        assert_eq!(update.generation, 2);
+        assert_eq!(
+            update.status,
+            gosling::acp::custom_requests::PlanStatusDto::Drafting
+        );
+
+        let historical_approved = send_custom(
+            conn.cx(),
+            "_gosling/unstable/session/plan/get",
+            serde_json::json!({ "sessionId": session_id, "generation": 1 }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            historical_approved["snapshot"]["plan"]["status"],
+            "approved"
+        );
+        assert!(historical_approved.get("implementationReference").is_none());
+
+        let abandoned = send_custom(
+            conn.cx(),
+            "_gosling/unstable/session/plan/abandon",
+            serde_json::json!({
+                "sessionId": session_id,
+                "expectedGeneration": 2,
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(abandoned["snapshot"]["plan"]["status"], "abandoned");
+        let update = conn
+            .next_custom_session_update()
+            .await
+            .expect("abandon should publish a plan update");
+        let GoslingSessionUpdate::PlanUpdate(update) = update.update else {
+            panic!("expected plan_update notification");
+        };
+        assert_eq!(update.generation, 2);
+        assert_eq!(
+            update.status,
+            gosling::acp::custom_requests::PlanStatusDto::Abandoned
+        );
     });
 }
 

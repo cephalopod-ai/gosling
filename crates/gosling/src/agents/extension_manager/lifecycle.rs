@@ -14,6 +14,20 @@ impl ExtensionManager {
         temp_dir: Option<TempDir>,
     ) {
         let normalized = name_to_key(&name);
+        let config_name = config.key();
+        if crate::agents::interaction_policy::PlanningCapability::is_capability_owner_extension(
+            &normalized,
+        ) || crate::agents::interaction_policy::PlanningCapability::is_capability_owner_extension(
+            &config_name,
+        ) {
+            tracing::warn!(
+                security.event_type = "reserved_extension_identity_denied",
+                extension.name = normalized,
+                extension.config_name = config_name,
+                "refusing to inject a client under a host capability identity"
+            );
+            return;
+        }
         let _lifecycle_guard = self.lifecycle_lock.lock().await;
         let replaced = self.extensions.lock().await.remove(&normalized);
         if let Some(replaced) = replaced {
@@ -44,6 +58,12 @@ impl ExtensionManager {
     /// Get aggregated usage statistics
     pub async fn remove_extension(&self, name: &str) -> ExtensionResult<()> {
         let sanitized_name = name_to_key(name);
+        if sanitized_name == crate::agents::interaction_policy::PLANNING_EXTENSION_NAME {
+            return Err(ExtensionError::ConfigError(
+                "The planning extension is host policy infrastructure and cannot be disabled"
+                    .to_string(),
+            ));
+        }
         let _lifecycle_guard = self.lifecycle_lock.lock().await;
         let removed = self.extensions.lock().await.remove(&sanitized_name);
         if let Some(removed) = removed {

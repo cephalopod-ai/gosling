@@ -139,6 +139,33 @@ function harness() {
       },
     })
   );
+  const sessionPlan = vi.fn(() =>
+    Promise.resolve({
+      snapshot: {
+        plan: {
+          id: 'plan-1',
+          generation: 3,
+          status: 'awaiting_review' as const,
+          sourceHash: 'source',
+          scopeHash: 'scope',
+          capabilityPolicyVersion: 1,
+          createdAt: '2026-09-13T00:00:00Z',
+          updatedAt: '2026-09-13T00:01:00Z',
+        },
+        activeRevision: {
+          id: 'revision-2',
+          revision: 2,
+          contentMarkdown: '# Private from shell projection',
+          contentSha256: 'sha-2',
+          sourceHash: 'source',
+          scopeHash: 'scope',
+          createdAt: '2026-09-13T00:01:00Z',
+        },
+      },
+      providerSupportsHostEnforcedPlanning: true,
+      permittedCapabilities: [],
+    })
+  );
   const validateDirectory = vi.fn((params: { path: string }) =>
     Promise.resolve({ status: 'valid' as const, canonicalPath: params.path })
   );
@@ -180,6 +207,7 @@ function harness() {
     cancel,
     gosling: {
       sessionInfo_unstable: sessionInfo,
+      sessionPlanGet_unstable: sessionPlan,
       shellProvisioningRead_unstable: read,
       shellProvisioningValidate_unstable: validate,
       shellDirectoryValidate_unstable: validateDirectory,
@@ -231,6 +259,7 @@ function harness() {
     cancel,
     read,
     sessionInfo,
+    sessionPlan,
     snapshot,
     action,
     confirmAction,
@@ -452,6 +481,22 @@ describe('shell ACP runtime', () => {
       mcpServers: [],
       _meta: { gosling: { loadMode: 'compacted', tailLimit: 50 } },
     });
+  });
+
+  it('projects only bounded plan identity into the shell runtime', async () => {
+    const { promise, value } = connect();
+    const connection = await promise;
+
+    await expect(connection.getSessionPlan('session-1')).resolves.toEqual({
+      status: 'awaiting_review',
+      generation: 3,
+      revisionId: 'revision-2',
+      revisionSha256: 'sha-2',
+    });
+    expect(value.sessionPlan).toHaveBeenCalledWith({ sessionId: 'session-1' });
+    expect(JSON.stringify(await connection.getSessionPlan('session-1'))).not.toContain(
+      'Private from shell projection'
+    );
   });
 
   it('refuses to load a session outside the main-selected working directory', async () => {

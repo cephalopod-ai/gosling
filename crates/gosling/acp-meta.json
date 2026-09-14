@@ -141,6 +141,36 @@
       "responseType": "SteerSessionResponse_unstable"
     },
     {
+      "method": "_gosling/unstable/session/plan/get",
+      "requestType": "GetSessionPlanRequest_unstable",
+      "responseType": "SessionPlanResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/session/plan/start",
+      "requestType": "StartSessionPlanRequest_unstable",
+      "responseType": "SessionPlanResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/session/plan/feedback",
+      "requestType": "AddSessionPlanFeedbackRequest_unstable",
+      "responseType": "SessionPlanResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/session/plan/approve",
+      "requestType": "ApproveSessionPlanRequest_unstable",
+      "responseType": "SessionPlanResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/session/plan/abandon",
+      "requestType": "AbandonSessionPlanRequest_unstable",
+      "responseType": "SessionPlanResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/session/plan/export",
+      "requestType": "ExportSessionPlanRequest_unstable",
+      "responseType": "ExportSessionPlanResponse_unstable"
+    },
+    {
       "method": "_gosling/unstable/diagnostics/get",
       "requestType": "DiagnosticsGetRequest_unstable",
       "responseType": "DiagnosticsGetResponse_unstable"

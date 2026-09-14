@@ -121,6 +121,9 @@ impl Agent {
             .get_extension_configs_for_persistence()
             .await;
         extension_configs.extend(self.frontend_extension_configs().await);
+        extension_configs.retain(|config| {
+            config.key() != crate::agents::interaction_policy::PLANNING_EXTENSION_NAME
+        });
         extension_configs
     }
 

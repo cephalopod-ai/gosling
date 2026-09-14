@@ -9,16 +9,10 @@ import { URLSearchParams } from 'node:url';
 import { acpTokenSubprotocol } from '../goslingServe';
 import type { GoslingServeLeaseRegistry } from '../goslingServeLeaseRegistry';
 import { desktopCommandChannels, rendererEventChannels } from '../ipc/channels';
+import type { McpAppProxyCsp } from '../ipc/channels';
 import type { RendererDirectoryGrantRegistry } from '../utils/rendererDirectoryGrants';
 import { addRecentDir, loadRecentDirs } from '../utils/recentDirs';
-import { registerGitIpcHandlers } from './gitIpc';
-
-export type McpAppProxyCsp = {
-  connectDomains?: string[];
-  resourceDomains?: string[];
-  frameDomains?: string[];
-  baseUriDomains?: string[];
-};
+import { GIT_IPC_CHANNELS, registerGitIpcHandlers } from './gitIpc';
 
 interface RendererIpcLogger {
   info: (...args: unknown[]) => void;
@@ -37,6 +31,19 @@ export interface RendererIpcDependencies {
   assertRendererFileAccess: (webContentsId: number, filePath: string) => Promise<string>;
   goslingServeLeases: Pick<GoslingServeLeaseRegistry, 'getAcpUrl' | 'getSecretKey'>;
 }
+
+export const RENDERER_IPC_ON_CHANNELS = [desktopCommandChannels.reactReady] as const;
+
+export const RENDERER_IPC_HANDLE_CHANNELS = [
+  desktopCommandChannels.openExternal,
+  desktopCommandChannels.directoryChooser,
+  desktopCommandChannels.sessionDirectoryChooser,
+  desktopCommandChannels.addRecentDir,
+  desktopCommandChannels.listRecentDirs,
+  ...GIT_IPC_CHANNELS,
+  desktopCommandChannels.getAcpUrl,
+  desktopCommandChannels.getMcpAppProxyUrl,
+] as const;
 
 export function loopbackHttpBaseFromAcpUrl(acpUrl: string): string | null {
   try {
@@ -116,7 +123,7 @@ export function registerRendererIpcHandlers(
   targetIpcMain.handle(desktopCommandChannels.openExternal, async (_event, url: string) => {
     await openExternalIfSafe(url);
   });
-  targetIpcMain.handle('directory-chooser', async (event) => {
+  targetIpcMain.handle(desktopCommandChannels.directoryChooser, async (event) => {
     const result = await dialog.showOpenDialog({
       properties: ['openDirectory', 'createDirectory'],
       defaultPath: os.homedir(),
@@ -125,19 +132,19 @@ export function registerRendererIpcHandlers(
       rendererDirectoryGrants.grantSelectedPath(event.sender.id, result.filePaths[0]);
     return result;
   });
-  targetIpcMain.handle('session-directory-chooser', () =>
+  targetIpcMain.handle(desktopCommandChannels.sessionDirectoryChooser, () =>
     dialog.showOpenDialog({
       properties: ['openDirectory', 'createDirectory'],
       defaultPath: os.homedir(),
       title: 'Add directory to this session',
     })
   );
-  targetIpcMain.handle('add-recent-dir', (_event, dir: string) => {
+  targetIpcMain.handle(desktopCommandChannels.addRecentDir, (_event, dir: string) => {
     if (dir) addRecentDir(dir);
   });
-  targetIpcMain.handle('list-recent-dirs', () => loadRecentDirs());
+  targetIpcMain.handle(desktopCommandChannels.listRecentDirs, () => loadRecentDirs());
   registerGitIpcHandlers(targetIpcMain, assertRendererFileAccess);
-  targetIpcMain.handle('get-acp-url', async (event) => {
+  targetIpcMain.handle(desktopCommandChannels.getAcpUrl, async (event) => {
     const windowId = BrowserWindow.fromWebContents(event.sender)?.id;
     if (!windowId) return null;
     const url = goslingServeLeases.getAcpUrl(windowId);
@@ -146,17 +153,20 @@ export function registerRendererIpcHandlers(
     // The secret travels in the WebSocket subprotocol, not the URL (SEC-GOS-001).
     return { url, subprotocol: acpTokenSubprotocol(secretKey) };
   });
-  targetIpcMain.handle('get-mcp-app-proxy-url', async (event, csp?: McpAppProxyCsp | null) => {
-    const windowId = BrowserWindow.fromWebContents(event.sender)?.id;
-    if (!windowId) return null;
-    const acpUrl = goslingServeLeases.getAcpUrl(windowId);
-    const secretKey = goslingServeLeases.getSecretKey(windowId);
-    if (!acpUrl || !secretKey) return null;
-    const httpBase = loopbackHttpBaseFromAcpUrl(acpUrl);
-    if (!httpBase) return null;
-    const proxyUrl = new URL(`${httpBase}/mcp-app-proxy`);
-    appendDomainParams(proxyUrl, csp);
-    proxyUrl.hash = new URLSearchParams({ secret: secretKey }).toString();
-    return proxyUrl.toString();
-  });
+  targetIpcMain.handle(
+    desktopCommandChannels.getMcpAppProxyUrl,
+    async (event, csp?: McpAppProxyCsp | null) => {
+      const windowId = BrowserWindow.fromWebContents(event.sender)?.id;
+      if (!windowId) return null;
+      const acpUrl = goslingServeLeases.getAcpUrl(windowId);
+      const secretKey = goslingServeLeases.getSecretKey(windowId);
+      if (!acpUrl || !secretKey) return null;
+      const httpBase = loopbackHttpBaseFromAcpUrl(acpUrl);
+      if (!httpBase) return null;
+      const proxyUrl = new URL(`${httpBase}/mcp-app-proxy`);
+      appendDomainParams(proxyUrl, csp);
+      proxyUrl.hash = new URLSearchParams({ secret: secretKey }).toString();
+      return proxyUrl.toString();
+    }
+  );
 }

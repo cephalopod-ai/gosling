@@ -3,6 +3,7 @@ pub mod code_execution;
 pub mod developer;
 pub mod ext_manager;
 pub mod orchestrator;
+pub mod planning;
 pub mod session_history;
 pub mod summarize;
 pub mod summon;
@@ -65,6 +66,19 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
                 unprefixed_tools: true,
                 hidden: false,
                 client_factory: |ctx| Box::new(summon::SummonClient::new(ctx).unwrap()),
+            },
+        );
+
+        map.insert(
+            planning::EXTENSION_NAME,
+            PlatformExtensionDef {
+                name: planning::EXTENSION_NAME,
+                display_name: "Planning",
+                description: "Bounded workspace inspection and persisted plan lifecycle tools",
+                default_enabled: false,
+                unprefixed_tools: true,
+                hidden: true,
+                client_factory: |ctx| Box::new(planning::PlanningClient::new(ctx)),
             },
         );
 

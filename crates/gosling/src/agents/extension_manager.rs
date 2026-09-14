@@ -328,6 +328,22 @@ impl ExtensionManager {
         container: Option<&Container>,
         session_id: Option<&str>,
     ) -> ExtensionResult<()> {
+        if config.key() == crate::agents::interaction_policy::PLANNING_EXTENSION_NAME {
+            let trusted_shape = matches!(
+                &config,
+                ExtensionConfig::Platform {
+                    available_tools,
+                    bundled: Some(true),
+                    ..
+                } if available_tools.is_empty()
+            );
+            if !trusted_shape {
+                return Err(ExtensionError::ConfigError(
+                    "The planning extension identity is reserved for host policy infrastructure"
+                        .to_string(),
+                ));
+            }
+        }
         crate::config::extension_allowlist::enforce_extension(&config)
             .await
             .map_err(|error| ExtensionError::ConfigError(error.to_string()))?;

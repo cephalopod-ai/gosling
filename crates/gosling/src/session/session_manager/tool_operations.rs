@@ -29,6 +29,7 @@ pub(crate) enum ToolOperationStart {
 }
 
 impl SessionStorage {
+    #[cfg(test)]
     pub(super) async fn begin_tool_operation(
         &self,
         session_id: &str,
@@ -36,9 +37,56 @@ impl SessionStorage {
         tool_call: &CallToolRequestParams,
         conversation_bound: bool,
     ) -> Result<ToolOperationStart> {
+        self.begin_tool_operation_inner(
+            session_id,
+            tool_request_id,
+            tool_call,
+            conversation_bound,
+            None,
+        )
+        .await
+    }
+
+    pub(super) async fn begin_tool_operation_with_policy(
+        &self,
+        session_id: &str,
+        tool_request_id: &str,
+        tool_call: &CallToolRequestParams,
+        conversation_bound: bool,
+        turn_policy: &crate::session::plans::InteractionPolicy,
+        planning_capability_allowed: bool,
+    ) -> Result<ToolOperationStart> {
+        self.begin_tool_operation_inner(
+            session_id,
+            tool_request_id,
+            tool_call,
+            conversation_bound,
+            Some((turn_policy, planning_capability_allowed)),
+        )
+        .await
+    }
+
+    async fn begin_tool_operation_inner(
+        &self,
+        session_id: &str,
+        tool_request_id: &str,
+        tool_call: &CallToolRequestParams,
+        conversation_bound: bool,
+        policy_check: Option<(&crate::session::plans::InteractionPolicy, bool)>,
+    ) -> Result<ToolOperationStart> {
         let _write_guard = self.acquire_write_guard().await;
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+        if let Some((turn_policy, planning_capability_allowed)) = policy_check {
+            Self::validate_tool_operation_policy_in_tx(
+                &mut tx,
+                session_id,
+                turn_policy,
+                planning_capability_allowed,
+            )
+            .await
+            .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+        }
         let request_digest = tool_operation_request_digest(tool_call)?;
         let existing = sqlx::query_as::<_, (String, String, String, bool, String, Option<String>)>(
             r#"
@@ -262,7 +310,8 @@ impl SessionStorage {
             anyhow::bail!("cannot persist response for tool operation in state {state}");
         }
 
-        Self::upsert_message_in_tx(&mut tx, session_id, message).await?;
+        self.upsert_message_in_tx(&mut tx, session_id, message)
+            .await?;
         sqlx::query(
             r#"
             UPDATE tool_operations
@@ -412,7 +461,8 @@ impl SessionStorage {
                     request_id.clone(),
                     Ok(CallToolRequestParams::new(tool_name)),
                 );
-                Self::upsert_message_in_tx(&mut tx, session_id, &request).await?;
+                self.upsert_message_in_tx(&mut tx, session_id, &request)
+                    .await?;
             }
 
             let result = match state.as_str() {
@@ -440,7 +490,8 @@ impl SessionStorage {
                 request_metadata.as_ref(),
             );
             let response_message_id = response.id.clone().expect("generated message id");
-            Self::upsert_message_in_tx(&mut tx, session_id, &response).await?;
+            self.upsert_message_in_tx(&mut tx, session_id, &response)
+                .await?;
             sqlx::query(
                 r#"
                 UPDATE tool_operations
@@ -521,7 +572,8 @@ impl SessionStorage {
                 )),
                 request_metadata.as_ref(),
             );
-            Self::upsert_message_in_tx(&mut tx, session_id, &response).await?;
+            self.upsert_message_in_tx(&mut tx, session_id, &response)
+                .await?;
             cancelled += 1;
         }
 

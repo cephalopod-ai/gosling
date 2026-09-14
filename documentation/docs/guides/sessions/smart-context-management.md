@@ -328,8 +328,7 @@ Context limits are automatically detected based on your model name, but gosling 
 
 | Model | Description | Best For | Setting |
 |-------|-------------|----------|---------|
-| **Main** | Set context limit for the main model (also serves as fallback for other models) | LiteLLM proxies, custom models with non-standard names | `GOSLING_CONTEXT_LIMIT` |
-| **Planner** | Set context for [planner models](/docs/guides/context-engineering/creating-plans) | Large planning tasks requiring extensive context | `GOSLING_PLANNER_CONTEXT_LIMIT` |
+| **Active session model** | Set the context limit for the session model, including host-enforced planning turns | LiteLLM proxies, custom models with non-standard names | `GOSLING_CONTEXT_LIMIT` |
 
 :::info
 This setting supplies a fallback or explicit model configuration. Providers that
@@ -347,10 +346,14 @@ This feature is particularly useful with:
 gosling resolves context limits with the following precedence (highest to lowest):
 
 1. Explicit context_limit in model configuration (if set programmatically)
-2. Specific environment variable (e.g., `GOSLING_PLANNER_CONTEXT_LIMIT`)
-3. Global environment variable (`GOSLING_CONTEXT_LIMIT`)
-4. Model-specific default based on name pattern matching
-5. Global default (128,000 tokens)
+2. Global environment variable (`GOSLING_CONTEXT_LIMIT`)
+3. Model-specific default based on name pattern matching
+4. Global default (128,000 tokens)
+
+Host-enforced planning uses this same active-session limit. The CLI treats
+`GOSLING_PLANNER_CONTEXT_LIMIT` only as a legacy compatibility assertion: if set, it must be at
+least 4,096 and exactly equal the resolved active limit. It does not create a separate planning
+context. See [Creating Plans](/docs/guides/context-engineering/creating-plans).
 
 **Configuration**
 
@@ -382,22 +385,6 @@ gosling resolves context limits with the following precedence (highest to lowest
 export GOSLING_PROVIDER="openai"
 export GOSLING_MODEL="my-custom-gpt4-proxy"
 export GOSLING_CONTEXT_LIMIT=200000  # Override the 32k default
-```
-
-2. Planner setup with a different context limit
-
-```bash
-# Set a larger context window for planning
-export GOSLING_PLANNER_MODEL="claude-opus-custom"
-export GOSLING_PLANNER_CONTEXT_LIMIT=500000
-```
-
-3. Planner with large context
-
-```bash
-# Large context for complex planning
-export GOSLING_PLANNER_MODEL="gpt-4-custom"
-export GOSLING_PLANNER_CONTEXT_LIMIT=1000000
 ```
 
 ## Credit Balance Monitoring

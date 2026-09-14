@@ -256,17 +256,7 @@ pub async fn handle_session_export(
         }
     };
 
-    let output = match format.as_str() {
-        "json" => serde_json::to_string_pretty(&session)?,
-        "yaml" => serde_yaml::to_string(&session)?,
-        "markdown" => {
-            let conversation = session
-                .conversation
-                .ok_or_else(|| anyhow::anyhow!("Session has no messages"))?;
-            export_session_to_markdown(conversation.messages().to_vec(), &session.name)
-        }
-        _ => return Err(anyhow::anyhow!("Unsupported format: {}", format)),
-    };
+    let output = serialize_session_export(&session_manager, &session, &format).await?;
 
     #[cfg(feature = "nostr")]
     if nostr {
@@ -314,6 +304,31 @@ pub async fn handle_session_export(
     }
 
     Ok(())
+}
+
+async fn serialize_session_export(
+    session_manager: &SessionManager,
+    session: &Session,
+    format: &str,
+) -> Result<String> {
+    match format {
+        // Native JSON is a transactional core export, not merely Session
+        // serialization: it also carries plan_history_v1 and future native
+        // adjuncts that must round-trip with the transcript.
+        "json" => session_manager.export_session(&session.id).await,
+        "yaml" => Ok(serde_yaml::to_string(session)?),
+        "markdown" => {
+            let conversation = session
+                .conversation
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("Session has no messages"))?;
+            Ok(export_session_to_markdown(
+                conversation.messages().to_vec(),
+                &session.name,
+            ))
+        }
+        _ => Err(anyhow::anyhow!("Unsupported format: {format}")),
+    }
 }
 
 pub async fn handle_session_import(
@@ -452,6 +467,89 @@ fn write_owner_only_output_file(path: &Path, contents: &[u8]) -> io::Result<()> 
     temp.as_file().sync_all()?;
     temp.persist(path).map_err(|error| error.error)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod session_export_tests {
+    use super::*;
+    use gosling::config::GoslingMode;
+    use gosling::conversation::message::Message;
+    use gosling::session::{NewPlanRevision, SessionType};
+
+    struct ExportTestProvider;
+
+    #[async_trait::async_trait]
+    impl gosling::providers::base::Provider for ExportTestProvider {
+        fn get_name(&self) -> &str {
+            "export-test"
+        }
+
+        async fn stream(
+            &self,
+            _model_config: &gosling_providers::model::ModelConfig,
+            _system: &str,
+            _messages: &[Message],
+            _tools: &[rmcp::model::Tool],
+        ) -> Result<gosling_providers::base::MessageStream, gosling_providers::errors::ProviderError>
+        {
+            unreachable!("session export does not run inference")
+        }
+    }
+
+    #[tokio::test]
+    async fn native_json_export_includes_plan_history_from_the_core_export() {
+        let temp = tempfile::tempdir().unwrap();
+        let manager = SessionManager::new(temp.path().to_path_buf());
+        let session = manager
+            .create_session(
+                temp.path().to_path_buf(),
+                "plan export".to_string(),
+                SessionType::User,
+                GoslingMode::Approve,
+            )
+            .await
+            .unwrap();
+        let started = manager
+            .plans()
+            .start_or_resume(
+                &session.id,
+                &ExportTestProvider,
+                Some("planner-model".to_string()),
+                None,
+            )
+            .await
+            .unwrap();
+        manager
+            .plans()
+            .update_revision(
+                &session.id,
+                NewPlanRevision {
+                    content_markdown: "# Persist me".to_string(),
+                    expected_generation: started.plan.generation,
+                    expected_parent_revision_id: None,
+                    planner_provider: Some("export-test".to_string()),
+                    planner_model: Some("planner-model".to_string()),
+                },
+            )
+            .await
+            .unwrap();
+        let loaded = manager.get_session(&session.id, true).await.unwrap();
+
+        let json = serialize_session_export(&manager, &loaded, "json")
+            .await
+            .unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert!(value.get("plan_history_v1").is_some());
+        assert_eq!(
+            value["plan_history_v1"]["plans"][0]["revisions"][0]["contentMarkdown"],
+            "# Persist me"
+        );
+        assert!(!serialize_session_export(&manager, &loaded, "yaml")
+            .await
+            .unwrap()
+            .contains("plan_history_v1"));
+    }
 }
 
 #[cfg(all(test, unix))]

@@ -5,6 +5,7 @@ mod library_storage;
 mod message_storage;
 mod migrations;
 mod output_revisions_storage;
+mod plan_storage;
 mod pool_lifecycle;
 mod schema;
 mod session_crud;
@@ -17,6 +18,8 @@ mod tool_operations;
 #[cfg(test)]
 use summary_storage::summary_covers_history_before;
 
+pub(crate) use plan_storage::NATIVE_PLAN_HISTORY_KEY;
+use plan_storage::{NativePlanHistoryV1, PlanHistorySelection};
 pub(crate) use tool_operations::ToolOperationStart;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,7 +64,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 use utoipa::ToSchema;
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 34;
+pub const CURRENT_SCHEMA_VERSION: i32 = 35;
 
 pub use output_revisions_storage::OutputCapture;
 pub const SESSIONS_FOLDER: &str = "sessions";
@@ -69,6 +72,8 @@ pub const DB_NAME: &str = "sessions.db";
 const MILLISECOND_TIMESTAMP_THRESHOLD: i64 = 10_000_000_000;
 pub const DEFAULT_SESSION_TAIL_LIMIT: usize = 50;
 pub const MAX_SESSION_MESSAGE_PAGE_LIMIT: usize = 200;
+
+type PlanSourceHashCache = std::collections::HashMap<(String, i64), (String, Option<i64>, String)>;
 
 /// Result of importing a local transcript file. Identical content and a
 /// changed source path are both prevented from creating a duplicate full
@@ -539,6 +544,7 @@ impl<'a> SessionUpdateBuilder<'a> {
     }
 }
 
+#[derive(Clone)]
 pub struct SessionManager {
     storage: Arc<SessionStorage>,
 }
@@ -607,6 +613,10 @@ impl SessionManager {
 
     pub fn storage(&self) -> &Arc<SessionStorage> {
         &self.storage
+    }
+
+    pub fn plans(&self) -> crate::session::plans::PlanService {
+        crate::session::plans::PlanService::new(self.clone())
     }
 
     pub fn data_dir(&self) -> PathBuf {
@@ -910,6 +920,7 @@ impl SessionManager {
             .await
     }
 
+    #[cfg(test)]
     pub(crate) async fn begin_tool_operation(
         &self,
         session_id: &str,
@@ -919,6 +930,27 @@ impl SessionManager {
     ) -> Result<ToolOperationStart> {
         self.storage
             .begin_tool_operation(session_id, tool_request_id, tool_call, conversation_bound)
+            .await
+    }
+
+    pub(crate) async fn authorize_and_begin_tool_operation(
+        &self,
+        session_id: &str,
+        tool_request_id: &str,
+        tool_call: &CallToolRequestParams,
+        conversation_bound: bool,
+        turn_policy: &crate::session::plans::InteractionPolicy,
+        planning_capability_allowed: bool,
+    ) -> Result<ToolOperationStart> {
+        self.storage
+            .begin_tool_operation_with_policy(
+                session_id,
+                tool_request_id,
+                tool_call,
+                conversation_bound,
+                turn_policy,
+                planning_capability_allowed,
+            )
             .await
     }
 
@@ -1163,7 +1195,20 @@ impl SessionManager {
     }
 
     pub async fn copy_session(&self, session_id: &str, new_name: String) -> Result<Session> {
-        self.storage.copy_session(self, session_id, new_name).await
+        self.storage
+            .copy_session(self, session_id, new_name, None)
+            .await
+    }
+
+    pub async fn fork_session(
+        &self,
+        session_id: &str,
+        new_name: String,
+        conversation_before: Option<i64>,
+    ) -> Result<Session> {
+        self.storage
+            .copy_session(self, session_id, new_name, conversation_before)
+            .await
     }
 
     pub async fn create_handoff_session(
@@ -1361,6 +1406,8 @@ pub struct SessionStorage {
     session_dir: PathBuf,
     owner_id: String,
     active_tool_operations: std::sync::Mutex<HashSet<String>>,
+    plan_updates: tokio::sync::broadcast::Sender<crate::session::plans::PlanUpdate>,
+    plan_source_hash_cache: std::sync::Mutex<PlanSourceHashCache>,
 }
 
 pub(crate) fn role_to_string(role: &Role) -> &'static str {

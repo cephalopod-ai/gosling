@@ -133,12 +133,58 @@ impl SessionStorage {
         Ok(session)
     }
 
+    pub(super) async fn get_session_with_messages_in_tx(
+        tx: &mut sqlx::Transaction<'_, Sqlite>,
+        id: &str,
+    ) -> Result<Session> {
+        let mut session = sqlx::query_as::<_, Session>(
+            r#"
+            SELECT id, working_dir, additional_working_dirs_json, restrict_tools_to_working_dirs,
+                   name, description, user_set_name, session_type, created_at, updated_at,
+                   extension_data, total_tokens, input_tokens, output_tokens,
+                   cache_read_tokens, cache_write_tokens, context_usage_estimated,
+                   last_request_tokens, accumulated_total_tokens, accumulated_input_tokens,
+                   accumulated_output_tokens, accumulated_cache_read_tokens,
+                   accumulated_cache_write_tokens, accumulated_cost, provider_name,
+                   model_config_json, gosling_mode, archived_at, project_id, workspace_id,
+                   workspace_name, credential_profile_id, credential_profile_name,
+                   credential_binding_id, workspace_context_json
+            FROM sessions WHERE id = ?
+            "#,
+        )
+        .bind(id)
+        .fetch_optional(&mut **tx)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("Session not found"))?;
+        let conversation = Self::get_conversation_in_tx(tx, id).await?;
+        session.message_count = conversation.messages().len();
+        session.last_message_at = conversation
+            .messages()
+            .iter()
+            .filter_map(|message| message_timestamp_to_datetime(message.created))
+            .max();
+        session.conversation = Some(conversation);
+        Ok(session)
+    }
+
     pub(super) async fn apply_update(&self, builder: SessionUpdateBuilder<'_>) -> Result<()> {
+        let session_id = builder.session_id.clone();
         let _write_guard = self.acquire_write_guard().await;
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
-        Self::apply_update_in_tx(&mut tx, builder).await?;
+        let plan_staled = Self::apply_update_in_tx(&mut tx, builder).await?;
         tx.commit().await?;
+        if plan_staled {
+            match self.plan_snapshot(&session_id).await {
+                Ok(Some(snapshot)) => self.publish_plan_update(&snapshot),
+                Ok(None) => {}
+                Err(error) => tracing::warn!(
+                    session.id = session_id,
+                    plan.error = %error,
+                    "plan was staled but its post-commit update could not be published"
+                ),
+            }
+        }
         Ok(())
     }
 
@@ -151,7 +197,31 @@ impl SessionStorage {
     pub(super) async fn apply_update_in_tx(
         tx: &mut sqlx::Transaction<'_, Sqlite>,
         builder: SessionUpdateBuilder<'_>,
-    ) -> Result<()> {
+    ) -> Result<bool> {
+        let snapshot_session_id = builder.session_id.clone();
+        let provider_update_requested = builder.provider_name.is_some()
+            || builder.model_config.is_some()
+            || builder.credential_profile_id.is_some()
+            || builder.credential_profile_name.is_some()
+            || builder.credential_binding_id.is_some();
+        if provider_update_requested && Self::has_open_plan_in_tx(tx, &snapshot_session_id).await? {
+            anyhow::bail!(
+                "provider or model transitions are blocked while session {} has an open plan",
+                snapshot_session_id
+            );
+        }
+        let scope_update_requested = builder.working_dir.is_some()
+            || builder.additional_working_dirs.is_some()
+            || builder.restrict_tools_to_working_dirs.is_some()
+            || builder.workspace_id.is_some()
+            || builder.project_id.is_some();
+        let old_scope_hash = if scope_update_requested
+            && Self::has_open_plan_in_tx(tx, &snapshot_session_id).await?
+        {
+            Some(Self::current_scope_hash_in_tx(tx, &snapshot_session_id).await?)
+        } else {
+            None
+        };
         let mut updates = Vec::new();
         let mut query = String::from("UPDATE sessions SET ");
 
@@ -208,7 +278,7 @@ impl SessionStorage {
         add_update!(builder.project_id, "project_id");
 
         if updates.is_empty() {
-            return Ok(());
+            return Ok(false);
         }
 
         let guard_on_user_set_name = builder.only_if_not_user_named;
@@ -325,14 +395,29 @@ impl SessionStorage {
                     .fetch_optional(&mut **tx)
                     .await?;
                 if exists.is_some() {
-                    return Ok(());
+                    return Ok(false);
                 }
                 return Err(anyhow::anyhow!("Session not found: {}", builder.session_id));
             }
             return Err(anyhow::anyhow!("Session not found: {}", builder.session_id));
         }
 
-        Ok(())
+        let plan_staled = if let Some(old_scope_hash) = old_scope_hash {
+            let new_scope_hash = Self::current_scope_hash_in_tx(tx, &snapshot_session_id).await?;
+            if old_scope_hash != new_scope_hash {
+                Self::stale_open_plan_in_tx(
+                    tx,
+                    &snapshot_session_id,
+                    "planning workspace scope changed",
+                )
+                .await?
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+        Ok(plan_staled)
     }
 
     pub(super) async fn record_usage(
@@ -464,6 +549,8 @@ impl SessionStorage {
         if !exists {
             return Err(anyhow::anyhow!("Session not found"));
         }
+
+        Self::delete_plan_history_in_tx(&mut tx, session_id).await?;
 
         sqlx::query("DELETE FROM session_summary_facts WHERE session_id = ?")
             .bind(session_id)

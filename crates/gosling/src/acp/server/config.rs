@@ -361,7 +361,12 @@ fn validate_compaction_preferences(
         crate::context_mgmt::DEFAULT_AUTO_COMPACT_REDUCTION,
     );
     crate::context_mgmt::validate_compaction_settings(threshold, reduction)
-        .map_err(|error| agent_client_protocol::Error::invalid_params().data(error.to_string()))
+        .map_err(|error| agent_client_protocol::Error::invalid_params().data(error.to_string()))?;
+    if threshold > 0.0 && reduction > 0.0 && reduction >= threshold {
+        return Err(agent_client_protocol::Error::invalid_params()
+            .data("autoCompactReduction must be less than autoCompactThreshold"));
+    }
+    Ok(())
 }
 
 fn prepare_auto_compact_threshold(

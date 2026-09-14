@@ -29,8 +29,8 @@ When gosling sends your requests through one of these providers, the provider wi
 
 ## Configure Gosling's turn-level fallback
 
-Gosling can also switch one interrupted turn to a second provider after the primary provider's
-transient retry budget is exhausted:
+Gosling can also switch one unexecuted turn to a second provider after the primary provider's
+transient retry budget is exhausted or the primary rejects the selected model as unavailable:
 
 ```bash
 export GOSLING_FAILOVER_PROVIDER="ollama"

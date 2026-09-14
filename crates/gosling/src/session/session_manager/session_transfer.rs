@@ -23,9 +23,22 @@ use anyhow::Result;
 use chrono::Utc;
 use gosling_providers::model::ModelConfig;
 use gosling_sdk_types::session_handoff::{SessionHandoffSnapshotV1Dto, SessionHandoffStatusDto};
+use serde_json::Value;
 use std::path::{Path, PathBuf};
 
 impl SessionStorage {
+    async fn publish_transferred_plan_update(&self, session_id: &str) {
+        match self.plan_snapshot(session_id).await {
+            Ok(Some(snapshot)) => self.publish_plan_update(&snapshot),
+            Ok(None) => {}
+            Err(error) => tracing::warn!(
+                session.id = session_id,
+                plan.error = %error,
+                "transferred plan committed but its update could not be published"
+            ),
+        }
+    }
+
     async fn imported_session_by_provenance(
         &self,
         json_path: &str,
@@ -73,8 +86,26 @@ impl SessionStorage {
     }
 
     pub(super) async fn export_session(&self, id: &str) -> Result<String> {
-        let session = self.get_session(id, true).await?;
-        serde_json::to_string_pretty(&session).map_err(Into::into)
+        let _write_guard = self.acquire_write_guard().await;
+        let pool = self.pool().await?;
+        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+        let session = Self::get_session_with_messages_in_tx(&mut tx, id).await?;
+        let plan_history =
+            Self::native_plan_history_in_tx(&mut tx, id, super::PlanHistorySelection::All).await?;
+        let mut value = serde_json::to_value(session)?;
+        if !plan_history.plans.is_empty() {
+            value
+                .as_object_mut()
+                .ok_or_else(|| anyhow::anyhow!("native session export must be a JSON object"))?
+                .insert(
+                    super::NATIVE_PLAN_HISTORY_KEY.to_string(),
+                    serde_json::to_value(plan_history)?,
+                );
+        }
+        let exported = serde_json::to_string_pretty(&value)?;
+        crate::session::import_formats::ensure_import_payload_size(&exported)?;
+        tx.commit().await?;
+        Ok(exported)
     }
 
     pub(super) async fn import_session(
@@ -88,7 +119,13 @@ impl SessionStorage {
     ) -> Result<Session> {
         let source_format = crate::session::import_formats::detect_format(json);
         let normalized = crate::session::import_formats::convert_to_gosling_session_json(json)?;
-        let mut import: Session = serde_json::from_str(&normalized)?;
+        let mut normalized_value: Value = serde_json::from_str(&normalized)?;
+        let plan_history = normalized_value
+            .as_object_mut()
+            .and_then(|object| object.remove(super::NATIVE_PLAN_HISTORY_KEY))
+            .map(serde_json::from_value::<super::NativePlanHistoryV1>)
+            .transpose()?;
+        let mut import: Session = serde_json::from_value(normalized_value)?;
         let effective_working_dir =
             crate::session::import_formats::validate_import_working_dir(&working_dir)?;
         let original_working_dir = (!import.working_dir.as_os_str().is_empty())
@@ -167,8 +204,12 @@ impl SessionStorage {
         if let Some(conversation) = imported_conversation {
             Self::replace_conversation_in_tx(&mut tx, &session.id, &conversation).await?;
         }
+        if let Some(plan_history) = &plan_history {
+            Self::import_plan_history_as_stale_in_tx(&mut tx, &session.id, plan_history).await?;
+        }
 
         tx.commit().await?;
+        self.publish_transferred_plan_update(&session.id).await;
         #[cfg(feature = "telemetry")]
         crate::posthog::emit_session_started();
 
@@ -180,9 +221,8 @@ impl SessionStorage {
         session_manager: &SessionManager,
         session_id: &str,
         new_name: String,
+        conversation_before: Option<i64>,
     ) -> Result<Session> {
-        let original_session = self.get_session(session_id, true).await?;
-
         // Session creation, the metadata update, the conversation replace,
         // and the artifact copy all run in one transaction so a process
         // interruption between them can't leave an empty stray copy behind —
@@ -190,6 +230,7 @@ impl SessionStorage {
         let _write_guard = self.acquire_write_guard().await;
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+        let original_session = Self::get_session_with_messages_in_tx(&mut tx, session_id).await?;
 
         let new_session = Self::create_session_in_tx(
             &mut tx,
@@ -238,6 +279,13 @@ impl SessionStorage {
         if let Some(conversation) = original_session.conversation {
             Self::replace_conversation_in_tx(&mut tx, &new_session.id, &conversation).await?;
         }
+        if let Some(conversation_before) = conversation_before {
+            sqlx::query("DELETE FROM messages WHERE session_id = ? AND created_timestamp >= ?")
+                .bind(&new_session.id)
+                .bind(conversation_before)
+                .execute(&mut *tx)
+                .await?;
+        }
 
         sqlx::query(
             r#"
@@ -255,8 +303,17 @@ impl SessionStorage {
         .bind(session_id)
         .execute(&mut *tx)
         .await?;
+        Self::clone_plan_history_as_stale_in_tx(
+            &mut tx,
+            session_id,
+            &new_session.id,
+            super::PlanHistorySelection::All,
+            "copied plan history cannot transfer approval authority",
+        )
+        .await?;
 
         tx.commit().await?;
+        self.publish_transferred_plan_update(&new_session.id).await;
         #[cfg(feature = "telemetry")]
         crate::posthog::emit_session_started();
 
@@ -272,10 +329,11 @@ impl SessionStorage {
         model_config: ModelConfig,
         mut snapshot: SessionHandoffSnapshotV1Dto,
     ) -> Result<(Session, SessionHandoffSnapshotV1Dto)> {
-        let original_session = self.get_session(source_session_id, false).await?;
         let _write_guard = self.acquire_write_guard().await;
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+        let original_session =
+            Self::get_session_with_messages_in_tx(&mut tx, source_session_id).await?;
         let new_session = Self::create_session_in_tx(
             &mut tx,
             original_session.working_dir.clone(),
@@ -345,7 +403,16 @@ impl SessionStorage {
         .bind(source_session_id)
         .execute(&mut *tx)
         .await?;
+        Self::clone_plan_history_as_stale_in_tx(
+            &mut tx,
+            source_session_id,
+            &new_session.id,
+            super::PlanHistorySelection::Latest,
+            "handoff plan context cannot transfer approval authority",
+        )
+        .await?;
         tx.commit().await?;
+        self.publish_transferred_plan_update(&new_session.id).await;
         #[cfg(feature = "telemetry")]
         crate::posthog::emit_session_started();
 

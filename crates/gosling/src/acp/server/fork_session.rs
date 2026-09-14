@@ -24,19 +24,12 @@ impl GoslingAcpAgent {
 
         let new_session = self
             .session_manager
-            .copy_session(source_session_id, fork_name)
+            .fork_session(source_session_id, fork_name, conversation_before)
             .await
             .internal_err()?;
         let new_session_id = new_session.id.clone();
 
         let result = async {
-            if let Some(conversation_before) = conversation_before {
-                self.session_manager
-                    .truncate_conversation(&new_session_id, conversation_before)
-                    .await
-                    .internal_err()?;
-            }
-
             let new_session = self
                 .session_manager
                 .get_session(&new_session_id, false)

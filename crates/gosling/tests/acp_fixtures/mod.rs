@@ -19,6 +19,7 @@ use gosling::config::{CodeExecutionRuntime, GoslingMode, PermissionManager};
 use gosling::providers::api_client::{ApiClient, AuthMethod as ApiAuthMethod};
 use gosling::providers::base::Provider;
 use gosling::providers::openai::OpenAiProvider;
+use gosling::session::SessionManager;
 use gosling::session_context::SESSION_ID_HEADER;
 use gosling_test_support::{ExpectedSessionId, TEST_MODEL};
 use std::collections::VecDeque;
@@ -207,6 +208,28 @@ pub async fn spawn_acp_server_in_process(
     provider_factory: Option<AcpProviderFactory>,
     settings: AcpTestServerSettings<'_>,
 ) -> (DuplexTransport, JoinHandle<()>, Arc<PermissionManager>) {
+    spawn_acp_server_in_process_with_session_manager(
+        openai_base_url,
+        builtins,
+        data_root,
+        gosling_mode,
+        provider_factory,
+        None,
+        settings,
+    )
+    .await
+}
+
+#[allow(dead_code)]
+pub async fn spawn_acp_server_in_process_with_session_manager(
+    openai_base_url: &str,
+    builtins: &[String],
+    data_root: &std::path::Path,
+    gosling_mode: GoslingMode,
+    provider_factory: Option<AcpProviderFactory>,
+    session_manager: Option<Arc<SessionManager>>,
+    settings: AcpTestServerSettings<'_>,
+) -> (DuplexTransport, JoinHandle<()>, Arc<PermissionManager>) {
     fs::create_dir_all(data_root).unwrap();
     // TODO[POLISH-20260827-004]: Paths::in_state_dir is global, ignoring per-test data_root
     fs::create_dir_all(Paths::in_state_dir("logs")).unwrap();
@@ -252,6 +275,7 @@ pub async fn spawn_acp_server_in_process(
         gosling_platform: GoslingPlatform::GoslingCli,
         additional_source_roots: Vec::new(),
         shell_runtime: Default::default(),
+        session_manager,
     })
     .await
     .unwrap();
@@ -573,6 +597,8 @@ pub struct TestConnectionConfig {
     pub current_model: String,
     pub code_execution_runtime: CodeExecutionRuntime,
     pub disable_session_naming: bool,
+    pub custom_notifications: bool,
+    pub session_manager: Option<Arc<SessionManager>>,
 }
 
 impl Default for TestConnectionConfig {
@@ -590,6 +616,8 @@ impl Default for TestConnectionConfig {
             current_model: TEST_MODEL.to_string(),
             code_execution_runtime: CodeExecutionRuntime::Disabled,
             disable_session_naming: true,
+            custom_notifications: false,
+            session_manager: None,
         }
     }
 }

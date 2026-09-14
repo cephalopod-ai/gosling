@@ -34,15 +34,15 @@ The following settings can be configured at the root level of your config.yaml f
 |---------|---------|---------|---------|-----------|
 | `GOSLING_PROVIDER` | Primary [LLM provider](/docs/getting-started/providers) | "anthropic", "openai", etc. | None | Yes |
 | `GOSLING_MODEL` | Default model to use | Model name (e.g., "claude-3.5-sonnet", "gpt-4") | None | Yes |
-| `GOSLING_FAILOVER_PROVIDER` | Optional fallback for transient outages on Gosling-managed API turns | "ollama", "openrouter", etc. | Disabled | No |
+| `GOSLING_FAILOVER_PROVIDER` | Optional fallback for transient outages or an unavailable selected model on Gosling-managed API turns | "ollama", "openrouter", etc. | Disabled | No |
 | `GOSLING_FAILOVER_MODEL` | Model paired with `GOSLING_FAILOVER_PROVIDER` | Provider model name | Disabled | No |
 | `GOSLING_TEMPERATURE` | Model response randomness | Float between 0.0 and 1.0 | Model-specific | No |
 | `GOSLING_MAX_TOKENS` | Maximum number of tokens for each model response (truncates longer responses) | Positive integer | Model-specific | No |
 | `GOSLING_MODE` | [Tool execution behavior](/docs/guides/managing-tools/gosling-permissions) | "auto", "approve", "chat", "smart_approve" | "auto" | No |
 | `GOSLING_CODE_EXECUTION_RUNTIME` | Allow or block [Code Mode](/docs/guides/managing-tools/code-mode) runtime loading for new gosling processes | "enabled", "disabled" | "enabled" | No |
 | `GOSLING_MAX_TURNS` | [Maximum number of turns](/docs/guides/sessions/smart-context-management#maximum-turns) allowed without user input | Integer (e.g., 10, 50, 100) | 1000 | No |
-| `GOSLING_PLANNER_PROVIDER` | Provider for [planning mode](/docs/guides/context-engineering/creating-plans) | Same as `GOSLING_PROVIDER` options | Falls back to `GOSLING_PROVIDER` | No |
-| `GOSLING_PLANNER_MODEL` | Model for planning mode | Model name | Falls back to `GOSLING_MODEL` | No |
+| `GOSLING_PLANNER_PROVIDER` | Legacy CLI planning compatibility assertion | Exact active `GOSLING_PROVIDER` value | Unset; planning uses the active provider | No |
+| `GOSLING_PLANNER_MODEL` | Legacy CLI planning compatibility assertion | Value resolving to the active model and thinking setting | Unset; planning uses the active model | No |
 | `GOSLING_TOOLSHIM` | Enable tool interpretation | true/false | false | No |
 | `GOSLING_TOOLSHIM_OLLAMA_MODEL` | Model for tool interpretation | Model name (e.g., "llama3.2") | System default | No |
 | `GOSLING_INPUT_LIMIT` | Override input token limit for Ollama (maps to `num_ctx`) | Positive integer | Model default | No |
@@ -74,10 +74,6 @@ GOSLING_MODEL: "claude-4.5-sonnet"
 GOSLING_FAILOVER_PROVIDER: "ollama"
 GOSLING_FAILOVER_MODEL: "qwen3-coder:latest"
 GOSLING_TEMPERATURE: 0.7
-
-# Planning Configuration
-GOSLING_PLANNER_PROVIDER: "openai"
-GOSLING_PLANNER_MODEL: "gpt-4"
 
 # Tool Configuration
 GOSLING_MODE: "smart_approve"

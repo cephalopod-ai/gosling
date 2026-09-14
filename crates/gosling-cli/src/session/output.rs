@@ -440,27 +440,94 @@ pub fn render_text_no_newlines(text: &str, color: Option<Color>, dim: bool) {
     print!("{}", styled_text);
 }
 
-pub fn render_enter_plan_mode() {
+pub fn render_plan_snapshot(snapshot: &gosling::session::PlanSnapshot, include_content: bool) {
     println!(
-        "\n{} {}\n",
-        style("Entering plan mode.").green().bold(),
-        style("You can provide instructions to create a plan and then act on it. To exit early, type /endplan")
-            .green()
-            .dim()
+        "\n{} generation {} · {}",
+        style("Host plan").green().bold(),
+        snapshot.plan.generation,
+        snapshot.plan.status
+    );
+    println!("  Plan ID: {}", snapshot.plan.id);
+    if let Some(revision) = snapshot.active_revision.as_ref() {
+        println!(
+            "  Revision: {} · {} · SHA-256 {}",
+            revision.revision, revision.id, revision.content_sha256
+        );
+        println!("  Source: {}", revision.source_hash);
+        println!("  Scope: {}", revision.scope_hash);
+        if include_content {
+            println!();
+            print_markdown(&revision.content_markdown, get_theme());
+        }
+    } else {
+        println!("  Revision: none yet");
+    }
+    if let Some(reason) = snapshot.plan.stale_reason.as_deref() {
+        println!("  Stale reason: {reason}");
+    }
+    println!();
+}
+
+pub fn render_no_plan() {
+    println!("\n{}\n", style("No plan exists for this session.").dim());
+}
+
+pub fn render_plan_review_commands() {
+    println!(
+        "{}",
+        style(
+            "Review with /plan-approve, /plan-approve-and-run, /plan-feedback <text>, /plan-comment <start>-<end> <text>, /plan-export, or /plan-abandon."
+        )
+        .yellow()
     );
 }
 
-pub fn render_act_on_plan() {
+pub fn render_plan_feedback_recorded(
+    snapshot: &gosling::session::PlanSnapshot,
+    feedback_ids: &[String],
+) {
     println!(
-        "\n{}\n",
-        style("Exiting plan mode and acting on the above plan")
-            .green()
-            .bold(),
+        "\n{} generation {} · feedback {}",
+        style("Plan feedback recorded.").green().bold(),
+        snapshot.plan.generation,
+        feedback_ids.join(", ")
     );
 }
 
-pub fn render_exit_plan_mode() {
-    println!("\n{}\n", style("Exiting plan mode.").green().bold());
+pub fn render_plan_approved(snapshot: &gosling::session::PlanSnapshot, will_run: bool) {
+    let next = if will_run {
+        " Starting one separate implementation turn with the current permission mode."
+    } else {
+        " No implementation prompt was submitted."
+    };
+    println!(
+        "\n{} generation {}.{}\n",
+        style("Plan approved.").green().bold(),
+        snapshot.plan.generation,
+        next
+    );
+}
+
+pub fn render_plan_implementation_partial_success(
+    snapshot: &gosling::session::PlanSnapshot,
+    error: &str,
+) {
+    render_error(&format!(
+        "Plan generation {} was approved, but its separate implementation turn did not start: {error}",
+        snapshot.plan.generation
+    ));
+}
+
+pub fn render_plan_abandoned(snapshot: &gosling::session::PlanSnapshot) {
+    println!(
+        "\n{} generation {}.\n",
+        style("Plan abandoned.").yellow().bold(),
+        snapshot.plan.generation
+    );
+}
+
+pub fn render_plan_export(markdown: &str) {
+    println!("{markdown}");
 }
 
 pub fn gosling_mode_message(text: &str) {

@@ -20,11 +20,17 @@ pub struct AcpServerFactoryConfig {
 
 pub struct AcpServer {
     config: AcpServerFactoryConfig,
+    session_manager: Arc<crate::session::SessionManager>,
 }
 
 impl AcpServer {
     pub fn new(config: AcpServerFactoryConfig) -> Self {
-        Self { config }
+        let session_manager =
+            Arc::new(crate::session::SessionManager::new(config.data_dir.clone()));
+        Self {
+            config,
+            session_manager,
+        }
     }
 
     pub async fn create_agent(&self) -> Result<Arc<GoslingAcpAgent>> {
@@ -61,6 +67,7 @@ impl AcpServer {
                 gosling_platform: self.config.gosling_platform.clone(),
                 additional_source_roots: self.config.additional_source_roots.clone(),
                 shell_runtime: self.config.shell_runtime.clone(),
+                session_manager: Some(Arc::clone(&self.session_manager)),
             })
             .await?;
             info!("Created new ACP agent");

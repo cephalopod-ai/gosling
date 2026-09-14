@@ -1,0 +1,19 @@
+[
+  { "name": "workspace tree", "hostKind": "platform", "extension": "planning", "tool": "workspace_tree", "origin": "model_native", "allowed": true },
+  { "name": "workspace read text", "hostKind": "platform", "extension": "planning", "tool": "workspace_read_text", "origin": "model_native", "allowed": true },
+  { "name": "workspace search text", "hostKind": "platform", "extension": "planning", "tool": "workspace_search_text", "origin": "model_native", "allowed": true },
+  { "name": "plan update", "hostKind": "platform", "extension": "planning", "tool": "plan_update", "origin": "model_native", "allowed": true },
+  { "name": "plan request review", "hostKind": "platform", "extension": "planning", "tool": "plan_request_review", "origin": "model_native", "allowed": true },
+  { "name": "session search", "hostKind": "platform", "extension": "session_history", "tool": "session_search", "origin": "model_native", "allowed": true },
+  { "name": "session read", "hostKind": "platform", "extension": "session_history", "tool": "session_read", "origin": "model_native", "allowed": true },
+  { "name": "legacy workspace read name", "hostKind": "platform", "extension": "planning", "tool": "workspace_read", "origin": "model_native", "allowed": false },
+  { "name": "external MCP name collision", "hostKind": "streamable_http", "extension": "planning", "tool": "workspace_read_text", "origin": "model_native", "allowed": false },
+  { "name": "stdio name collision", "hostKind": "stdio", "extension": "session_history", "tool": "session_read", "origin": "model_native", "allowed": false },
+  { "name": "frontend name collision", "hostKind": "frontend", "extension": "planning", "tool": "workspace_tree", "origin": "frontend", "allowed": false },
+  { "name": "toolshim cannot dispatch", "hostKind": "platform", "extension": "planning", "tool": "workspace_tree", "origin": "toolshim", "allowed": false },
+  { "name": "direct app cannot dispatch", "hostKind": "platform", "extension": "planning", "tool": "workspace_tree", "origin": "app_direct", "allowed": false },
+  { "name": "direct agent cannot dispatch", "hostKind": "platform", "extension": "planning", "tool": "workspace_tree", "origin": "agent_direct", "allowed": false },
+  { "name": "nested code mode cannot dispatch", "hostKind": "platform", "extension": "planning", "tool": "workspace_tree", "origin": "code_mode_nested", "allowed": false },
+  { "name": "provider-owned runtime cannot dispatch", "hostKind": "platform", "extension": "planning", "tool": "workspace_tree", "origin": "provider_owned", "allowed": false },
+  { "name": "orchestrator is not a capability", "hostKind": "platform", "extension": "orchestrator", "tool": "delegate", "origin": "model_native", "allowed": false }
+]

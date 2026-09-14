@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { gitArgs, isValidGitBranch, registerGitIpcHandlers } from './gitIpc';
+import { GIT_IPC_CHANNELS, gitArgs, isValidGitBranch, registerGitIpcHandlers } from './gitIpc';
 
 describe('Git IPC', () => {
   it('keeps hardening options ahead of the repository and caller arguments', () => {
@@ -27,11 +27,6 @@ describe('Git IPC', () => {
     const handle = vi.fn();
     registerGitIpcHandlers({ handle }, vi.fn());
 
-    expect(handle.mock.calls.map(([channel]) => channel)).toEqual([
-      'list-git-worktree-dirs',
-      'get-git-branch-info',
-      'list-git-branches',
-      'switch-git-branch',
-    ]);
+    expect(handle.mock.calls.map(([channel]) => channel)).toEqual(GIT_IPC_CHANNELS);
   });
 });

@@ -1,3 +1,5 @@
+import type { PlanSnapshotDto } from '@repo-makeover/gosling-sdk';
+
 export interface AcpCreditsExhaustedError {
   message: string;
   url?: string;
@@ -62,6 +64,32 @@ export function isAcpConnectionClosedError(error: unknown): boolean {
   return /ACP connection closed|ACP WebSocket connection failed|WebSocket.*(?:closed|reset|failed)|Not connected/i.test(
     message
   );
+}
+
+export interface AcpPlanError {
+  code: string;
+  message: string;
+  currentSnapshot?: PlanSnapshotDto;
+}
+
+/** Structured plan failure returned by Gosling's authoritative lifecycle service. */
+export function parseAcpPlanError(error: unknown): AcpPlanError | null {
+  const jsonRpcError = asAcpJsonRpcError(error);
+  if (!jsonRpcError || !isRecord(jsonRpcError.data)) {
+    return null;
+  }
+  const code = jsonRpcError.data.code;
+  const message = jsonRpcError.data.message;
+  if (typeof code !== 'string' || !code.startsWith('plan_')) {
+    return null;
+  }
+  return {
+    code,
+    message: typeof message === 'string' ? message : jsonRpcError.message,
+    ...(isRecord(jsonRpcError.data.currentSnapshot)
+      ? { currentSnapshot: jsonRpcError.data.currentSnapshot as PlanSnapshotDto }
+      : {}),
+  };
 }
 
 interface AcpJsonRpcError {

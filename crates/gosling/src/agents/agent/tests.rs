@@ -378,6 +378,13 @@ impl PreToolHookTestEnv {
     fn work_dir(&self) -> PathBuf {
         self.temp_dir.path().join("work")
     }
+
+    fn hook_invocations(&self) -> usize {
+        std::fs::read_to_string(self.plugin_dir.join("hook.log"))
+            .unwrap_or_default()
+            .lines()
+            .count()
+    }
 }
 
 struct StopHookTestEnv {
@@ -498,11 +505,313 @@ echo start >> "$PLUGIN_ROOT/hook.log"
     }
 }
 
+struct UserPromptHookTestEnv {
+    temp_dir: TempDir,
+    hook_log: PathBuf,
+}
+
+impl UserPromptHookTestEnv {
+    fn new() -> Result<Self> {
+        let temp_dir = tempfile::tempdir()?;
+        let plugin_dir = temp_dir.path().join("user-prompt");
+        std::fs::create_dir_all(plugin_dir.join("hooks"))?;
+        std::fs::write(
+            plugin_dir.join("hooks/hooks.json"),
+            r#"{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          { "type": "command", "command": "sh ${PLUGIN_ROOT}/record.sh" }
+        ]
+      }
+    ]
+  }
+}
+"#,
+        )?;
+        std::fs::write(
+            plugin_dir.join("record.sh"),
+            r#"#!/bin/sh
+echo prompt >> "$PLUGIN_ROOT/hook.log"
+"#,
+        )?;
+        Ok(Self {
+            temp_dir,
+            hook_log: plugin_dir.join("hook.log"),
+        })
+    }
+
+    fn hook_manager(&self) -> crate::hooks::HookManager {
+        crate::hooks::HookManager::from_plugins_for_test(vec![DiscoveredPlugin {
+            name: "user-prompt".into(),
+            root: self.temp_dir.path().join("user-prompt"),
+            scope: PluginScope::Project,
+        }])
+    }
+
+    fn data_dir(&self) -> PathBuf {
+        self.temp_dir.path().join("data")
+    }
+
+    fn hook_invocations(&self) -> usize {
+        std::fs::read_to_string(&self.hook_log)
+            .unwrap_or_default()
+            .lines()
+            .count()
+    }
+}
+
+struct PlanningHooksTestEnv {
+    temp_dir: TempDir,
+    hook_log: PathBuf,
+}
+
+impl PlanningHooksTestEnv {
+    fn new() -> Result<Self> {
+        let temp_dir = tempfile::tempdir()?;
+        let plugin_dir = temp_dir.path().join("planning-hooks");
+        std::fs::create_dir_all(plugin_dir.join("hooks"))?;
+        std::fs::write(
+            plugin_dir.join("hooks/hooks.json"),
+            r#"{
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "sh ${PLUGIN_ROOT}/record.sh" }] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "command": "sh ${PLUGIN_ROOT}/record.sh" }] }
+    ],
+    "PreToolUse": [
+      { "hooks": [{ "type": "command", "command": "sh ${PLUGIN_ROOT}/record.sh" }] }
+    ],
+    "PostToolUse": [
+      { "hooks": [{ "type": "command", "command": "sh ${PLUGIN_ROOT}/record.sh" }] }
+    ],
+    "PostToolUseFailure": [
+      { "hooks": [{ "type": "command", "command": "sh ${PLUGIN_ROOT}/record.sh" }] }
+    ],
+    "BeforeReadFile": [
+      { "hooks": [{ "type": "command", "command": "sh ${PLUGIN_ROOT}/record.sh" }] }
+    ],
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "sh ${PLUGIN_ROOT}/record.sh" }] }
+    ]
+  }
+}
+"#,
+        )?;
+        std::fs::write(
+            plugin_dir.join("record.sh"),
+            "#!/bin/sh\necho invoked >> \"$PLUGIN_ROOT/hook.log\"\n",
+        )?;
+        Ok(Self {
+            temp_dir,
+            hook_log: plugin_dir.join("hook.log"),
+        })
+    }
+
+    fn hook_manager(&self) -> crate::hooks::HookManager {
+        crate::hooks::HookManager::from_plugins_for_test(vec![DiscoveredPlugin {
+            name: "planning-hooks".into(),
+            root: self.temp_dir.path().join("planning-hooks"),
+            scope: PluginScope::Project,
+        }])
+    }
+
+    fn data_dir(&self) -> PathBuf {
+        self.temp_dir.path().join("data")
+    }
+
+    fn hook_invocations(&self) -> usize {
+        std::fs::read_to_string(&self.hook_log)
+            .unwrap_or_default()
+            .lines()
+            .count()
+    }
+}
+
 struct CountingTextProvider {
     call_count: AtomicUsize,
+    system_prompts: tokio::sync::Mutex<Vec<String>>,
 }
 
 impl CountingTextProvider {
+    fn new() -> Self {
+        Self {
+            call_count: AtomicUsize::new(0),
+            system_prompts: tokio::sync::Mutex::new(Vec::new()),
+        }
+    }
+
+    fn call_count(&self) -> usize {
+        self.call_count.load(Ordering::SeqCst)
+    }
+
+    async fn system_prompts(&self) -> Vec<String> {
+        self.system_prompts.lock().await.clone()
+    }
+}
+
+#[async_trait::async_trait]
+impl crate::providers::base::Provider for CountingTextProvider {
+    async fn stream(
+        &self,
+        _model_config: &gosling_providers::model::ModelConfig,
+        system_prompt: &str,
+        _messages: &[Message],
+        _tools: &[Tool],
+    ) -> Result<MessageStream, ProviderError> {
+        self.system_prompts
+            .lock()
+            .await
+            .push(system_prompt.to_string());
+        let call = self.call_count.fetch_add(1, Ordering::SeqCst);
+        let message = Message::assistant().with_text(format!("provider response {call}"));
+        let usage = ProviderUsage::new("mock-model".to_string(), Usage::default());
+        Ok(stream_from_single_message(message, usage))
+    }
+
+    fn get_name(&self) -> &str {
+        "counting-text"
+    }
+}
+
+struct CompactionBoundaryProvider {
+    compaction_calls: AtomicUsize,
+    agent_turn_calls: AtomicUsize,
+}
+
+impl CompactionBoundaryProvider {
+    fn new() -> Self {
+        Self {
+            compaction_calls: AtomicUsize::new(0),
+            agent_turn_calls: AtomicUsize::new(0),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl crate::providers::base::Provider for CompactionBoundaryProvider {
+    async fn stream(
+        &self,
+        _model_config: &gosling_providers::model::ModelConfig,
+        system_prompt: &str,
+        _messages: &[Message],
+        _tools: &[Tool],
+    ) -> Result<MessageStream, ProviderError> {
+        let message = if system_prompt.starts_with("## Task Context") {
+            self.compaction_calls.fetch_add(1, Ordering::SeqCst);
+            Message::assistant().with_text("Compacted planning history.")
+        } else {
+            self.agent_turn_calls.fetch_add(1, Ordering::SeqCst);
+            Message::assistant().with_text("PLANNING_POLICY_WAS_LOST")
+        };
+        let usage = ProviderUsage::new("mock-model".to_string(), Usage::default());
+        Ok(stream_from_single_message(message, usage))
+    }
+
+    fn get_name(&self) -> &str {
+        "compaction-boundary"
+    }
+
+    async fn get_context_limit(
+        &self,
+        _model_config: &gosling_providers::model::ModelConfig,
+    ) -> Result<usize, ProviderError> {
+        Ok(1_000)
+    }
+}
+
+struct UnavailablePlanningProvider {
+    call_count: AtomicUsize,
+}
+
+#[async_trait::async_trait]
+impl crate::providers::base::Provider for UnavailablePlanningProvider {
+    async fn stream(
+        &self,
+        _model_config: &gosling_providers::model::ModelConfig,
+        _system_prompt: &str,
+        _messages: &[Message],
+        _tools: &[Tool],
+    ) -> Result<MessageStream, ProviderError> {
+        self.call_count.fetch_add(1, Ordering::SeqCst);
+        Err(ProviderError::RequestFailed(
+            "The requested model is not supported".to_string(),
+        ))
+    }
+
+    fn get_name(&self) -> &str {
+        "unavailable-planning"
+    }
+}
+
+struct ReviewThenTrailingProvider {
+    call_count: AtomicUsize,
+    review_arguments: tokio::sync::Mutex<Option<rmcp::model::JsonObject>>,
+}
+
+impl ReviewThenTrailingProvider {
+    fn new() -> Self {
+        Self {
+            call_count: AtomicUsize::new(0),
+            review_arguments: tokio::sync::Mutex::new(None),
+        }
+    }
+
+    async fn set_review_arguments(&self, snapshot: &crate::session::PlanSnapshot) {
+        let revision = snapshot
+            .active_revision
+            .as_ref()
+            .expect("review test requires an active revision");
+        *self.review_arguments.lock().await = Some(rmcp::object!({
+            "generation": snapshot.plan.generation,
+            "revisionId": revision.id,
+            "revisionSha256": revision.content_sha256,
+        }));
+    }
+}
+
+#[async_trait::async_trait]
+impl crate::providers::base::Provider for ReviewThenTrailingProvider {
+    async fn stream(
+        &self,
+        _model_config: &gosling_providers::model::ModelConfig,
+        _system_prompt: &str,
+        _messages: &[Message],
+        _tools: &[Tool],
+    ) -> Result<MessageStream, ProviderError> {
+        self.call_count.fetch_add(1, Ordering::SeqCst);
+        let arguments = self.review_arguments.lock().await.clone().ok_or_else(|| {
+            ProviderError::ExecutionError("review arguments were not configured".to_string())
+        })?;
+        let usage = ProviderUsage::new("mock-model".to_string(), Usage::default());
+        Ok(Box::pin(futures::stream::iter(vec![
+            Ok((
+                Some(Message::assistant().with_tool_request(
+                    "review-call",
+                    Ok(CallToolRequestParams::new("plan_request_review").with_arguments(arguments)),
+                )),
+                None,
+            )),
+            Ok((
+                Some(Message::assistant().with_text("POST_REVIEW_OUTPUT_MUST_NOT_APPEAR")),
+                Some(usage),
+            )),
+        ])))
+    }
+
+    fn get_name(&self) -> &str {
+        "review-then-trailing"
+    }
+}
+
+struct ProviderOwnedToolRuntime {
+    call_count: AtomicUsize,
+}
+
+impl ProviderOwnedToolRuntime {
     fn new() -> Self {
         Self {
             call_count: AtomicUsize::new(0),
@@ -515,7 +824,7 @@ impl CountingTextProvider {
 }
 
 #[async_trait::async_trait]
-impl crate::providers::base::Provider for CountingTextProvider {
+impl crate::providers::base::Provider for ProviderOwnedToolRuntime {
     async fn stream(
         &self,
         _model_config: &gosling_providers::model::ModelConfig,
@@ -523,14 +832,16 @@ impl crate::providers::base::Provider for CountingTextProvider {
         _messages: &[Message],
         _tools: &[Tool],
     ) -> Result<MessageStream, ProviderError> {
-        let call = self.call_count.fetch_add(1, Ordering::SeqCst);
-        let message = Message::assistant().with_text(format!("provider response {call}"));
-        let usage = ProviderUsage::new("mock-model".to_string(), Usage::default());
-        Ok(stream_from_single_message(message, usage))
+        self.call_count.fetch_add(1, Ordering::SeqCst);
+        unreachable!("planning must reject a provider-owned runtime before streaming")
     }
 
     fn get_name(&self) -> &str {
-        "counting-text"
+        "provider-owned-test-runtime"
+    }
+
+    fn executes_tools_outside_gosling(&self) -> bool {
+        true
     }
 }
 
@@ -1596,7 +1907,12 @@ async fn frontend_tool_execution_uses_the_durable_operation_ledger() -> Result<(
 
     let mut response = Message::user().with_generated_id();
     let events = agent
-        .handle_frontend_tool_request(&request, &mut response, &session)
+        .handle_frontend_tool_request(
+            &request,
+            &mut response,
+            &session,
+            &crate::session::InteractionPolicy::Normal,
+        )
         .try_collect::<Vec<_>>()
         .await?;
     assert_eq!(events.len(), 1);
@@ -1616,6 +1932,90 @@ async fn frontend_tool_execution_uses_the_durable_operation_ledger() -> Result<(
         0
     );
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn planning_frontend_call_is_denied_before_request_and_ledger() -> Result<()> {
+    let temp_dir = tempfile::tempdir()?;
+    let session_manager = Arc::new(SessionManager::new(temp_dir.path().join("data")));
+    let provider = Arc::new(CountingTextProvider::new());
+    let agent = Agent::with_config(AgentConfig::new(
+        session_manager.clone(),
+        Arc::new(PermissionManager::new(temp_dir.path().join("permissions"))),
+        GoslingMode::Auto,
+        true,
+        GoslingPlatform::GoslingCli,
+    ));
+    let session = session_manager
+        .create_session(
+            temp_dir.path().to_path_buf(),
+            "planning frontend denial".to_string(),
+            SessionType::Hidden,
+            GoslingMode::Auto,
+        )
+        .await?;
+    agent
+        .update_provider(
+            provider.clone(),
+            gosling_providers::model::ModelConfig::new("mock-model"),
+            &session.id,
+        )
+        .await?;
+    session_manager
+        .plans()
+        .start_or_resume(&session.id, provider.as_ref(), None, None)
+        .await?;
+    let interaction_policy = session_manager
+        .plans()
+        .interaction_policy(&session.id)
+        .await?;
+    agent.frontend_tools.lock().await.insert(
+        "frontend__save_artifact".to_string(),
+        FrontendTool {
+            name: "frontend__save_artifact".to_string(),
+            tool: Tool::new(
+                "frontend__save_artifact".to_string(),
+                "Save an artifact".to_string(),
+                rmcp::object!({ "type": "object" }),
+            ),
+        },
+    );
+    let request = ToolRequest {
+        id: "planning-frontend-denial".to_string(),
+        tool_call: Ok(CallToolRequestParams::new("frontend__save_artifact")),
+        metadata: None,
+        tool_meta: None,
+    };
+    let mut response = Message::user().with_generated_id();
+
+    let events = agent
+        .handle_frontend_tool_request(&request, &mut response, &session, &interaction_policy)
+        .try_collect::<Vec<_>>()
+        .await?;
+
+    assert!(events.is_empty(), "no frontend request may be emitted");
+    let tool_response = response
+        .content
+        .iter()
+        .find_map(MessageContent::as_tool_response)
+        .expect("planning denial must produce a tool response");
+    let denial = match &tool_response.tool_result {
+        Err(error) => error,
+        Ok(_) => anyhow::bail!("planning frontend denial unexpectedly returned success"),
+    };
+    assert_eq!(
+        denial
+            .data
+            .as_ref()
+            .and_then(|data| data.get("approvalAvailable"))
+            .and_then(serde_json::Value::as_bool),
+        Some(false)
+    );
+    assert!(session_manager
+        .handoff_tool_operations(&session.id, 10)
+        .await?
+        .is_empty());
     Ok(())
 }
 
@@ -1846,6 +2246,7 @@ async fn policy_denial_preserves_inspector_reason() {
             &mut responses,
             None,
             &Session::default(),
+            &crate::session::InteractionPolicy::Normal,
         )
         .await
         .unwrap();
@@ -1867,4 +2268,1055 @@ fn turn_completion_distinguishes_lease_revocation_from_user_cancellation() {
     assert!(Agent::ensure_turn_not_revoked(&Some(turn.clone()), &None).is_err());
     caller.cancel();
     assert!(Agent::ensure_turn_not_revoked(&Some(turn), &Some(caller)).is_ok());
+}
+
+#[tokio::test]
+async fn planning_direct_dispatch_is_denied_before_ledger_and_pre_tool_hooks() -> Result<()> {
+    let env = PreToolHookTestEnv::new(
+        "echo invoked >> \"$PLUGIN_ROOT/hook.log\"\necho denied >&2\nexit 2\n",
+    )?;
+    let session_manager = Arc::new(SessionManager::new(env.data_dir()));
+    let permission_manager = Arc::new(PermissionManager::new(
+        env.temp_dir.path().join("permissions"),
+    ));
+    let mut agent = Agent::with_config(AgentConfig::new(
+        session_manager.clone(),
+        permission_manager,
+        GoslingMode::Auto,
+        true,
+        GoslingPlatform::GoslingCli,
+    ));
+    agent.set_hook_manager_for_test(env.hook_manager());
+    let agent = Arc::new(agent);
+    let session = session_manager
+        .create_session(
+            env.temp_dir.path().to_path_buf(),
+            "planning boundary".to_string(),
+            SessionType::Hidden,
+            GoslingMode::Auto,
+        )
+        .await?;
+    let provider = Arc::new(CountingTextProvider::new());
+    agent
+        .update_provider(
+            provider.clone(),
+            gosling_providers::model::ModelConfig::new("mock-model"),
+            &session.id,
+        )
+        .await?;
+    session_manager
+        .plans()
+        .start_or_resume(&session.id, provider.as_ref(), None, None)
+        .await?;
+
+    let (_, result) = agent
+        .dispatch_tool_call(
+            CallToolRequestParams::new("developer__shell")
+                .with_arguments(rmcp::object!({ "command": "touch forbidden" })),
+            "planning-direct-denial".to_string(),
+            None,
+            &session,
+        )
+        .await;
+
+    let denial = match result {
+        Ok(_) => anyhow::bail!("direct dispatch unexpectedly entered planning"),
+        Err(error) => error,
+    };
+    assert!(serde_json::to_string(&denial)?.contains("\"approvalAvailable\":false"));
+    assert!(session_manager
+        .handoff_tool_operations(&session.id, 10)
+        .await?
+        .is_empty());
+    assert_eq!(env.hook_invocations(), 0);
+    Ok(())
+}
+
+#[tokio::test]
+async fn planning_app_dispatch_is_denied_without_approval_or_ledger() -> Result<()> {
+    let temp_dir = tempfile::tempdir()?;
+    let session_manager = Arc::new(SessionManager::new(temp_dir.path().join("data")));
+    let provider = Arc::new(CountingTextProvider::new());
+    let agent = Agent::with_config(AgentConfig::new(
+        session_manager.clone(),
+        Arc::new(PermissionManager::new(temp_dir.path().join("permissions"))),
+        GoslingMode::Approve,
+        true,
+        GoslingPlatform::GoslingCli,
+    ));
+    let session = session_manager
+        .create_session(
+            temp_dir.path().to_path_buf(),
+            "planning app denial".to_string(),
+            SessionType::Hidden,
+            GoslingMode::Approve,
+        )
+        .await?;
+    agent
+        .update_provider(
+            provider.clone(),
+            gosling_providers::model::ModelConfig::new("mock-model"),
+            &session.id,
+        )
+        .await?;
+    session_manager
+        .plans()
+        .start_or_resume(&session.id, provider.as_ref(), None, None)
+        .await?;
+
+    let denial = match agent
+        .dispatch_app_tool_call(
+            &session.id,
+            CallToolRequestParams::new("workspace_tree"),
+            CancellationToken::new(),
+        )
+        .await
+    {
+        Ok(_) => anyhow::bail!("app dispatch unexpectedly entered planning"),
+        Err(error) => error,
+    };
+
+    let denial_json = serde_json::to_string(&denial)?;
+    assert!(denial_json.contains("\"approvalAvailable\":false"));
+    assert!(!denial_json.contains("action_required"));
+    assert!(session_manager
+        .handoff_tool_operations(&session.id, 10)
+        .await?
+        .is_empty());
+    Ok(())
+}
+
+#[tokio::test]
+async fn planning_rejects_provider_owned_runtime_before_prompt_side_effects() -> Result<()> {
+    let env = UserPromptHookTestEnv::new()?;
+    let session_manager = Arc::new(SessionManager::new(env.data_dir()));
+    let initial_provider = Arc::new(CountingTextProvider::new());
+    let provider_owned = Arc::new(ProviderOwnedToolRuntime::new());
+    let mut agent = Agent::with_config(AgentConfig::new(
+        session_manager.clone(),
+        Arc::new(PermissionManager::new(
+            env.temp_dir.path().join("permissions"),
+        )),
+        GoslingMode::Auto,
+        true,
+        GoslingPlatform::GoslingCli,
+    ));
+    agent.set_hook_manager_for_test(env.hook_manager());
+    let session = session_manager
+        .create_session(
+            env.temp_dir.path().to_path_buf(),
+            "provider-owned planning denial".to_string(),
+            SessionType::Hidden,
+            GoslingMode::Auto,
+        )
+        .await?;
+    assert!(session_manager
+        .plans()
+        .start_or_resume(&session.id, provider_owned.as_ref(), None, None)
+        .await
+        .is_err());
+    assert!(session_manager
+        .plans()
+        .snapshot(&session.id)
+        .await?
+        .is_none());
+    agent
+        .update_provider(
+            initial_provider.clone(),
+            gosling_providers::model::ModelConfig::new("mock-model"),
+            &session.id,
+        )
+        .await?;
+    session_manager
+        .plans()
+        .start_or_resume(&session.id, initial_provider.as_ref(), None, None)
+        .await?;
+    assert!(agent
+        .update_provider(
+            provider_owned.clone(),
+            gosling_providers::model::ModelConfig::new("mock-model"),
+            &session.id,
+        )
+        .await
+        .is_err());
+    // Production transitions are themselves blocked while a plan is open.
+    // Replace only the in-memory test seam to exercise the reply preflight's
+    // defense in depth without weakening that transition invariant.
+    *agent.provider.lock().await = Some(provider_owned.clone());
+
+    let error = match agent
+        .reply(
+            Message::user().with_text("do not persist or run this"),
+            SessionConfig {
+                id: session.id.clone(),
+                max_turns: Some(1),
+                compacted_context: false,
+                tail_limit: None,
+            },
+            None,
+        )
+        .await
+    {
+        Ok(_) => anyhow::bail!("provider-owned runtime unexpectedly started a planner turn"),
+        Err(error) => error,
+    };
+    assert!(error.to_string().contains("outside gosling"));
+    assert_eq!(provider_owned.call_count(), 0);
+    assert_eq!(env.hook_invocations(), 0);
+    assert_eq!(
+        session_manager
+            .get_session(&session.id, false)
+            .await?
+            .message_count,
+        0
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn planning_drafting_rejects_slash_commands_before_side_effects() -> Result<()> {
+    let env = UserPromptHookTestEnv::new()?;
+    let session_manager = Arc::new(SessionManager::new(env.data_dir()));
+    let provider = Arc::new(CountingTextProvider::new());
+    let mut agent = Agent::with_config(AgentConfig::new(
+        session_manager.clone(),
+        Arc::new(PermissionManager::new(
+            env.temp_dir.path().join("permissions"),
+        )),
+        GoslingMode::Auto,
+        true,
+        GoslingPlatform::GoslingCli,
+    ));
+    agent.set_hook_manager_for_test(env.hook_manager());
+    let session = session_manager
+        .create_session(
+            env.temp_dir.path().to_path_buf(),
+            "planning slash command denial".to_string(),
+            SessionType::Hidden,
+            GoslingMode::Auto,
+        )
+        .await?;
+    agent
+        .update_provider(
+            provider.clone(),
+            gosling_providers::model::ModelConfig::new("mock-model"),
+            &session.id,
+        )
+        .await?;
+    session_manager
+        .add_message(
+            &session.id,
+            &Message::user().with_text("preserve this transcript"),
+        )
+        .await?;
+    session_manager
+        .plans()
+        .start_or_resume(&session.id, provider.as_ref(), None, None)
+        .await?;
+
+    let error = match agent
+        .reply(
+            Message::user().with_text("/clear"),
+            SessionConfig {
+                id: session.id.clone(),
+                max_turns: Some(1),
+                compacted_context: false,
+                tail_limit: None,
+            },
+            None,
+        )
+        .await
+    {
+        Ok(_) => anyhow::bail!("planning unexpectedly executed a slash command"),
+        Err(error) => error,
+    };
+    assert!(error.to_string().contains("Slash commands are unavailable"));
+    assert_eq!(provider.call_count(), 0);
+    assert_eq!(env.hook_invocations(), 0);
+    let reloaded = session_manager.get_session(&session.id, true).await?;
+    assert_eq!(reloaded.message_count, 1);
+    assert_eq!(
+        reloaded.conversation.expect("seed conversation").messages()[0].as_concat_text(),
+        "preserve this transcript"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn planning_extension_is_internal_always_loaded_and_not_persisted() -> Result<()> {
+    let temp_dir = tempfile::tempdir()?;
+    let session_manager = Arc::new(SessionManager::new(temp_dir.path().join("data")));
+    let agent = Arc::new(Agent::with_config(AgentConfig::new(
+        session_manager.clone(),
+        Arc::new(PermissionManager::new(temp_dir.path().join("permissions"))),
+        GoslingMode::Auto,
+        true,
+        GoslingPlatform::GoslingCli,
+    )));
+    let session = session_manager
+        .create_session(
+            temp_dir.path().to_path_buf(),
+            "internal planning extension".to_string(),
+            SessionType::Hidden,
+            GoslingMode::Auto,
+        )
+        .await?;
+
+    let results = agent.load_extensions_from_session(&session).await;
+    assert!(!results
+        .iter()
+        .any(|result| result.name == "planning" && !result.success));
+    assert!(
+        agent
+            .extension_manager
+            .is_extension_enabled(crate::agents::interaction_policy::PLANNING_EXTENSION_NAME)
+            .await
+    );
+    assert!(agent
+        .extension_configs_for_persistence()
+        .await
+        .iter()
+        .all(|config| {
+            config.key() != crate::agents::interaction_policy::PLANNING_EXTENSION_NAME
+        }));
+    assert!(agent
+        .list_tools(&session.id, None)
+        .await?
+        .iter()
+        .all(|tool| {
+            crate::agents::extension_manager::get_tool_owner(tool).as_deref()
+                != Some(crate::agents::interaction_policy::PLANNING_EXTENSION_NAME)
+        }));
+    assert!(agent
+        .remove_extension(
+            crate::agents::interaction_policy::PLANNING_EXTENSION_NAME,
+            &session.id,
+        )
+        .await
+        .is_err());
+    let spoofed_remote = crate::agents::extension::ExtensionConfig::streamable_http(
+        crate::agents::interaction_policy::PLANNING_EXTENSION_NAME,
+        "http://127.0.0.1:9/mcp",
+        "hostile identity collision",
+        1_u64,
+    );
+    assert!(agent
+        .add_extension(spoofed_remote, &session.id)
+        .await
+        .is_err());
+    Ok(())
+}
+
+#[tokio::test]
+async fn planning_stale_turn_policy_cannot_begin_a_tool_operation() -> Result<()> {
+    let temp_dir = tempfile::tempdir()?;
+    let session_manager = Arc::new(SessionManager::new(temp_dir.path().join("data")));
+    let agent = Arc::new(Agent::with_config(AgentConfig::new(
+        session_manager.clone(),
+        Arc::new(PermissionManager::new(temp_dir.path().join("permissions"))),
+        GoslingMode::Auto,
+        true,
+        GoslingPlatform::GoslingCli,
+    )));
+    let session = session_manager
+        .create_session(
+            temp_dir.path().to_path_buf(),
+            "stale planning dispatch".to_string(),
+            SessionType::Hidden,
+            GoslingMode::Auto,
+        )
+        .await?;
+    assert!(!agent
+        .load_extensions_from_session(&session)
+        .await
+        .iter()
+        .any(|result| result.name == "planning" && !result.success));
+    let provider = Arc::new(CountingTextProvider::new());
+    agent
+        .update_provider(
+            provider.clone(),
+            gosling_providers::model::ModelConfig::new("mock-model"),
+            &session.id,
+        )
+        .await?;
+    session_manager
+        .plans()
+        .start_or_resume(&session.id, provider.as_ref(), None, None)
+        .await?;
+    let turn_policy = session_manager
+        .plans()
+        .interaction_policy(&session.id)
+        .await?;
+    assert!(
+        session_manager
+            .plans()
+            .mark_stale(&session.id, "concurrent source change")
+            .await?
+    );
+
+    let (_, result) = agent
+        .dispatch_conversation_tool_call(
+            CallToolRequestParams::new("workspace_tree")
+                .with_arguments(rmcp::object!({ "root_id": "primary", "path": "." })),
+            "stale-planning-request".to_string(),
+            None,
+            &session,
+            &turn_policy,
+        )
+        .await;
+
+    let denial = match result {
+        Ok(_) => anyhow::bail!("stale planning policy unexpectedly began dispatch"),
+        Err(error) => error,
+    };
+    assert!(serde_json::to_string(&denial)?.contains("\"approvalAvailable\":false"));
+    assert!(session_manager
+        .handoff_tool_operations(&session.id, 10)
+        .await?
+        .is_empty());
+    Ok(())
+}
+
+#[tokio::test]
+async fn planning_turn_suppresses_session_prompt_steer_and_stop_hooks() -> Result<()> {
+    let env = PlanningHooksTestEnv::new()?;
+    let session_manager = Arc::new(SessionManager::new(env.data_dir()));
+    let provider = Arc::new(CountingTextProvider::new());
+    let mut configured_agent = Agent::with_config(AgentConfig::new(
+        session_manager.clone(),
+        Arc::new(PermissionManager::new(
+            env.temp_dir.path().join("permissions"),
+        )),
+        GoslingMode::Auto,
+        true,
+        GoslingPlatform::GoslingCli,
+    ));
+    configured_agent.set_hook_manager_for_test(env.hook_manager());
+    let agent = Arc::new(configured_agent);
+    let session = session_manager
+        .create_session(
+            env.temp_dir.path().to_path_buf(),
+            "planning hook boundary".to_string(),
+            SessionType::Hidden,
+            GoslingMode::Auto,
+        )
+        .await?;
+    std::fs::write(
+        session.working_dir.join("planning-evidence.txt"),
+        "evidence",
+    )?;
+    agent
+        .update_provider(
+            provider.clone(),
+            gosling_providers::model::ModelConfig::new("mock-model"),
+            &session.id,
+        )
+        .await?;
+    assert!(!agent
+        .load_extensions_from_session(&session)
+        .await
+        .iter()
+        .any(|result| result.name == "planning" && !result.success));
+    session_manager
+        .plans()
+        .start_or_resume(&session.id, provider.as_ref(), None, None)
+        .await?;
+    agent
+        .steer(
+            &session.id,
+            Message::user().with_text("queued planning clarification"),
+        )
+        .await;
+
+    let reply = agent
+        .reply(
+            Message::user().with_text("prepare a bounded plan"),
+            SessionConfig {
+                id: session.id.clone(),
+                max_turns: Some(1),
+                compacted_context: false,
+                tail_limit: None,
+            },
+            None,
+        )
+        .await?;
+    tokio::pin!(reply);
+    while let Some(event) = reply.next().await {
+        event?;
+    }
+
+    let interaction_policy = session_manager
+        .plans()
+        .interaction_policy(&session.id)
+        .await?;
+    let planning_read =
+        CallToolRequestParams::new("workspace_read_text").with_arguments(rmcp::object!({
+            "root_id": "primary",
+            "path": "planning-evidence.txt"
+        }));
+    session_manager
+        .add_message(
+            &session.id,
+            &Message::assistant()
+                .with_tool_request("planning-read-hook-proof", Ok(planning_read.clone())),
+        )
+        .await?;
+    let (_, tool_result) = agent
+        .dispatch_conversation_tool_call(
+            planning_read,
+            "planning-read-hook-proof".to_string(),
+            None,
+            &session,
+            &interaction_policy,
+        )
+        .await;
+    let tool_result = match tool_result {
+        Ok(result) => result,
+        Err(error) => anyhow::bail!("allowed planning read was denied: {error}"),
+    };
+    let terminal_result = tool_result.result.await;
+    assert!(
+        terminal_result
+            .as_ref()
+            .is_ok_and(|result| result.is_error != Some(true)),
+        "allowed planning read failed: {terminal_result:?}"
+    );
+
+    assert_eq!(provider.call_count(), 1);
+    assert_eq!(
+        env.hook_invocations(),
+        0,
+        "planning must not execute command-backed lifecycle, steer, pre-tool, extended read, post-tool, or Stop hooks"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn planning_policy_survives_pre_provider_compaction_without_normal_fallback() -> Result<()> {
+    let temp_dir = tempfile::tempdir()?;
+    let session_manager = Arc::new(SessionManager::new(temp_dir.path().join("data")));
+    let provider = Arc::new(CompactionBoundaryProvider::new());
+    let agent = Arc::new(Agent::with_config(
+        AgentConfig::new(
+            session_manager.clone(),
+            Arc::new(PermissionManager::new(temp_dir.path().join("permissions"))),
+            GoslingMode::Auto,
+            true,
+            GoslingPlatform::GoslingCli,
+        )
+        .with_auto_compact_threshold_override(0.000_1),
+    ));
+    let session = session_manager
+        .create_session(
+            temp_dir.path().to_path_buf(),
+            "planning compaction boundary".to_string(),
+            SessionType::Hidden,
+            GoslingMode::Auto,
+        )
+        .await?;
+    agent
+        .update_provider(
+            provider.clone(),
+            gosling_providers::model::ModelConfig::new("mock-model"),
+            &session.id,
+        )
+        .await?;
+    for turn in 0..12 {
+        session_manager
+            .add_message(
+                &session.id,
+                &Message::user().with_text(format!(
+                    "planning history {turn}: {}",
+                    "boundary evidence ".repeat(40)
+                )),
+            )
+            .await?;
+        session_manager
+            .add_message(
+                &session.id,
+                &Message::assistant().with_text(format!(
+                    "planning response {turn}: {}",
+                    "preserved detail ".repeat(20)
+                )),
+            )
+            .await?;
+    }
+    let current = session_manager.get_session(&session.id, false).await?;
+    assert!(!agent
+        .load_extensions_from_session(&current)
+        .await
+        .iter()
+        .any(|result| result.name == "planning" && !result.success));
+    session_manager
+        .plans()
+        .start_or_resume(&session.id, provider.as_ref(), None, None)
+        .await?;
+
+    let reply = agent
+        .reply(
+            Message::user().with_text("prepare the reviewable plan"),
+            SessionConfig {
+                id: session.id.clone(),
+                max_turns: Some(1),
+                compacted_context: false,
+                tail_limit: None,
+            },
+            None,
+        )
+        .await?;
+    tokio::pin!(reply);
+    let mut terminal_error = None;
+    while let Some(event) = reply.next().await {
+        if let Err(error) = event {
+            terminal_error = Some(error.to_string());
+            break;
+        }
+    }
+
+    assert!(
+        provider.compaction_calls.load(Ordering::SeqCst) > 0,
+        "the regression must force the pre-provider compaction path"
+    );
+    assert_eq!(
+        provider.agent_turn_calls.load(Ordering::SeqCst),
+        0,
+        "a stale captured planning policy must never be rebuilt as Normal"
+    );
+    assert!(
+        terminal_error
+            .as_deref()
+            .is_some_and(|error| error.contains("stale") && error.contains("drafting")),
+        "unexpected stream result: {terminal_error:?}"
+    );
+    assert_eq!(
+        session_manager
+            .plans()
+            .snapshot(&session.id)
+            .await?
+            .expect("plan snapshot")
+            .plan
+            .status,
+        crate::session::PlanStatus::Stale
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn planning_provider_failure_never_invokes_the_configured_fallback() -> Result<()> {
+    let temp_dir = tempfile::tempdir()?;
+    let session_manager = Arc::new(SessionManager::new(temp_dir.path().join("data")));
+    let primary = Arc::new(UnavailablePlanningProvider {
+        call_count: AtomicUsize::new(0),
+    });
+    let fallback = Arc::new(CountingTextProvider::new());
+    let agent = Arc::new(Agent::with_config(
+        AgentConfig::new(
+            session_manager.clone(),
+            Arc::new(PermissionManager::new(temp_dir.path().join("permissions"))),
+            GoslingMode::Auto,
+            true,
+            GoslingPlatform::GoslingCli,
+        )
+        .with_provider_failover(ProviderFailoverConfig::new(
+            fallback.clone(),
+            gosling_providers::model::ModelConfig::new("fallback-model"),
+        )),
+    ));
+    let session = session_manager
+        .create_session(
+            temp_dir.path().to_path_buf(),
+            "planning failover boundary".to_string(),
+            SessionType::Hidden,
+            GoslingMode::Auto,
+        )
+        .await?;
+    agent
+        .update_provider(
+            primary.clone(),
+            gosling_providers::model::ModelConfig::new("unavailable-model"),
+            &session.id,
+        )
+        .await?;
+    assert!(!agent
+        .load_extensions_from_session(&session)
+        .await
+        .iter()
+        .any(|result| result.name == "planning" && !result.success));
+    session_manager
+        .plans()
+        .start_or_resume(&session.id, primary.as_ref(), None, None)
+        .await?;
+
+    let reply = agent
+        .reply(
+            Message::user().with_text("prepare a plan without changing providers"),
+            SessionConfig {
+                id: session.id.clone(),
+                max_turns: Some(1),
+                compacted_context: false,
+                tail_limit: None,
+            },
+            None,
+        )
+        .await?;
+    tokio::pin!(reply);
+    while let Some(event) = reply.next().await {
+        event?;
+    }
+
+    assert_eq!(primary.call_count.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        fallback.call_count(),
+        0,
+        "planning authority must never transfer to a fallback provider"
+    );
+    assert_eq!(
+        session_manager
+            .plans()
+            .snapshot(&session.id)
+            .await?
+            .expect("plan snapshot")
+            .plan
+            .status,
+        crate::session::PlanStatus::Drafting
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn committed_plan_request_review_ends_the_turn_before_trailing_output() -> Result<()> {
+    let temp_dir = tempfile::tempdir()?;
+    let session_manager = Arc::new(SessionManager::new(temp_dir.path().join("data")));
+    let provider = Arc::new(ReviewThenTrailingProvider::new());
+    let agent = Arc::new(Agent::with_config(AgentConfig::new(
+        session_manager.clone(),
+        Arc::new(PermissionManager::new(temp_dir.path().join("permissions"))),
+        GoslingMode::Auto,
+        false,
+        GoslingPlatform::GoslingCli,
+    )));
+    let session = session_manager
+        .create_session(
+            temp_dir.path().to_path_buf(),
+            "review terminates planner turn".to_string(),
+            SessionType::Hidden,
+            GoslingMode::Auto,
+        )
+        .await?;
+    agent
+        .update_provider(
+            provider.clone(),
+            gosling_providers::model::ModelConfig::new("mock-model"),
+            &session.id,
+        )
+        .await?;
+    assert!(!agent
+        .load_extensions_from_session(&session)
+        .await
+        .iter()
+        .any(|result| result.name == "planning" && !result.success));
+    let started = session_manager
+        .plans()
+        .start_or_resume(&session.id, provider.as_ref(), None, None)
+        .await?;
+    session_manager
+        .add_message(
+            &session.id,
+            &Message::user().with_text("submit the completed plan for review"),
+        )
+        .await?;
+    let revised = session_manager
+        .plans()
+        .update_revision(
+            &session.id,
+            crate::session::NewPlanRevision {
+                content_markdown: "# Review boundary\n\nStop the turn after review.".to_string(),
+                expected_generation: started.plan.generation,
+                expected_parent_revision_id: None,
+                planner_provider: None,
+                planner_model: None,
+            },
+        )
+        .await?;
+    provider.set_review_arguments(&revised).await;
+
+    // Enter the provider loop with the exact persisted conversation covered by
+    // the revision. Calling `reply` here would append a newer user message and
+    // correctly make the pre-created revision stale before review.
+    let session = session_manager.get_session(&session.id, true).await?;
+    let conversation = session
+        .conversation
+        .clone()
+        .expect("review session conversation");
+    let interaction_policy = session_manager
+        .plans()
+        .interaction_policy(&session.id)
+        .await?;
+    let reply = agent
+        .reply_internal(
+            conversation,
+            SessionConfig {
+                id: session.id.clone(),
+                max_turns: Some(3),
+                compacted_context: false,
+                tail_limit: None,
+            },
+            session.clone(),
+            None,
+            None,
+            None,
+            interaction_policy,
+        )
+        .await?;
+    tokio::pin!(reply);
+    let mut streamed_text = Vec::new();
+    let mut review_responses = 0;
+    let mut review_outputs = Vec::new();
+    while let Some(event) = reply.next().await {
+        if let AgentEvent::Message(message) = event? {
+            streamed_text.push(message.as_concat_text());
+            for content in &message.content {
+                if let MessageContent::ToolResponse(response) = content {
+                    if response.id == "review-call" {
+                        review_responses += 1;
+                        review_outputs.push(format!("{:?}", response.tool_result));
+                    }
+                }
+            }
+        }
+    }
+
+    let final_plan = session_manager
+        .plans()
+        .snapshot(&session.id)
+        .await?
+        .expect("plan snapshot");
+    assert_eq!(
+        provider.call_count.load(Ordering::SeqCst),
+        1,
+        "streamed={streamed_text:?}, review_responses={review_responses}, review_outputs={review_outputs:?}, status={:?}",
+        final_plan.plan.status
+    );
+    assert_eq!(review_responses, 1);
+    assert!(!streamed_text
+        .iter()
+        .any(|text| text.contains("POST_REVIEW_OUTPUT_MUST_NOT_APPEAR")));
+    let snapshot = session_manager
+        .plans()
+        .snapshot(&session.id)
+        .await?
+        .expect("plan snapshot");
+    assert_eq!(
+        snapshot.plan.status,
+        crate::session::PlanStatus::AwaitingReview
+    );
+    let persisted = session_manager.get_session(&session.id, true).await?;
+    assert!(!persisted
+        .conversation
+        .expect("persisted conversation")
+        .messages()
+        .iter()
+        .any(|message| message
+            .as_concat_text()
+            .contains("POST_REVIEW_OUTPUT_MUST_NOT_APPEAR")));
+    Ok(())
+}
+
+#[tokio::test]
+async fn planning_awaiting_review_rejects_prompt_before_message_persistence() -> Result<()> {
+    let env = UserPromptHookTestEnv::new()?;
+    let session_manager = Arc::new(SessionManager::new(env.data_dir()));
+    let provider = Arc::new(CountingTextProvider::new());
+    let mut agent = Agent::with_config(AgentConfig::new(
+        session_manager.clone(),
+        Arc::new(PermissionManager::new(
+            env.temp_dir.path().join("permissions"),
+        )),
+        GoslingMode::Auto,
+        true,
+        GoslingPlatform::GoslingCli,
+    ));
+    agent.set_hook_manager_for_test(env.hook_manager());
+    let session = session_manager
+        .create_session(
+            env.temp_dir.path().to_path_buf(),
+            "awaiting review prompt".to_string(),
+            SessionType::Hidden,
+            GoslingMode::Auto,
+        )
+        .await?;
+    agent
+        .update_provider(
+            provider.clone(),
+            gosling_providers::model::ModelConfig::new("mock-model"),
+            &session.id,
+        )
+        .await?;
+    let started = session_manager
+        .plans()
+        .start_or_resume(&session.id, provider.as_ref(), None, None)
+        .await?;
+    let revised = session_manager
+        .plans()
+        .update_revision(
+            &session.id,
+            crate::session::NewPlanRevision {
+                content_markdown: "# Plan\n\nInspect safely.".to_string(),
+                expected_generation: started.plan.generation,
+                expected_parent_revision_id: None,
+                planner_provider: None,
+                planner_model: None,
+            },
+        )
+        .await?;
+    session_manager
+        .plans()
+        .request_review(
+            &session.id,
+            &crate::session::PlanExpectation::for_snapshot(&revised),
+        )
+        .await?;
+
+    let error = match agent
+        .reply(
+            Message::user().with_text("ordinary prompt must wait"),
+            SessionConfig {
+                id: session.id.clone(),
+                max_turns: Some(1),
+                compacted_context: false,
+                tail_limit: None,
+            },
+            None,
+        )
+        .await
+    {
+        Ok(_) => anyhow::bail!("awaiting review unexpectedly started a planner turn"),
+        Err(error) => error,
+    };
+    assert!(error.to_string().contains("awaiting review"));
+    assert_eq!(
+        session_manager
+            .get_session(&session.id, false)
+            .await?
+            .message_count,
+        0
+    );
+    assert_eq!(provider.call_count(), 0);
+    assert_eq!(env.hook_invocations(), 0);
+    Ok(())
+}
+
+#[tokio::test]
+async fn approved_plan_context_is_injected_only_for_the_current_reference_turn() -> Result<()> {
+    let temp_dir = tempfile::tempdir()?;
+    let session_manager = Arc::new(SessionManager::new(temp_dir.path().join("data")));
+    let provider = Arc::new(CountingTextProvider::new());
+    let agent = Agent::with_config(AgentConfig::new(
+        session_manager.clone(),
+        Arc::new(PermissionManager::new(temp_dir.path().join("permissions"))),
+        GoslingMode::Auto,
+        true,
+        GoslingPlatform::GoslingCli,
+    ));
+    let session = session_manager
+        .create_session(
+            temp_dir.path().to_path_buf(),
+            "approved implementation handoff".to_string(),
+            SessionType::Hidden,
+            GoslingMode::Auto,
+        )
+        .await?;
+    agent
+        .update_provider(
+            provider.clone(),
+            gosling_providers::model::ModelConfig::new("mock-model"),
+            &session.id,
+        )
+        .await?;
+    let started = session_manager
+        .plans()
+        .start_or_resume(&session.id, provider.as_ref(), None, None)
+        .await?;
+    let revised = session_manager
+        .plans()
+        .update_revision(
+            &session.id,
+            crate::session::NewPlanRevision {
+                content_markdown: "# One-turn approved context\n\nPreserve the boundary."
+                    .to_string(),
+                expected_generation: started.plan.generation,
+                expected_parent_revision_id: None,
+                planner_provider: None,
+                planner_model: None,
+            },
+        )
+        .await?;
+    let awaiting = session_manager
+        .plans()
+        .request_review(
+            &session.id,
+            &crate::session::PlanExpectation::for_snapshot(&revised),
+        )
+        .await?;
+    let approved = session_manager
+        .plans()
+        .approve(
+            &session.id,
+            &crate::session::PlanExpectation::for_snapshot(&awaiting),
+            None,
+        )
+        .await?;
+    let reference = crate::session::approved_plan_implementation_reference(&approved)?;
+    assert!(!reference.contains("# One-turn approved context"));
+    let config = SessionConfig {
+        id: session.id.clone(),
+        max_turns: Some(1),
+        compacted_context: false,
+        tail_limit: None,
+    };
+
+    let first = agent
+        .reply(
+            Message::user().with_text(reference.clone()),
+            config.clone(),
+            None,
+        )
+        .await?;
+    tokio::pin!(first);
+    while let Some(event) = first.next().await {
+        event?;
+    }
+    let second = agent
+        .reply(
+            Message::user().with_text("Continue with an unrelated request."),
+            config,
+            None,
+        )
+        .await?;
+    tokio::pin!(second);
+    while let Some(event) = second.next().await {
+        event?;
+    }
+
+    let prompts = provider.system_prompts().await;
+    assert_eq!(prompts.len(), 2);
+    assert!(prompts[0].contains("<gosling_untrusted_approved_plan_context>"));
+    assert!(prompts[0].contains("# One-turn approved context"));
+    assert!(!prompts[1].contains("<gosling_untrusted_approved_plan_context>"));
+    assert!(!prompts[1].contains("# One-turn approved context"));
+
+    let persisted = session_manager.get_session(&session.id, true).await?;
+    let user_messages = persisted
+        .conversation
+        .unwrap()
+        .messages()
+        .iter()
+        .filter(|message| message.role == rmcp::model::Role::User && message.is_user_visible())
+        .map(Message::as_concat_text)
+        .collect::<Vec<_>>();
+    assert_eq!(user_messages[0], reference);
+    assert!(!user_messages
+        .iter()
+        .any(|message| message.contains("# One-turn approved context")));
+    Ok(())
 }

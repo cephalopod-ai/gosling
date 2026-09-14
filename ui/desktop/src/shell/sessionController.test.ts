@@ -89,6 +89,91 @@ describe('shell session controller', () => {
     ).toThrow('generation is stale');
   });
 
+  it('projects plan updates and refuses to treat an open plan as a normal prompt session', async () => {
+    const prompt = vi.fn();
+    const controller = createShellSessionController({
+      generation: () => 1,
+      transport: {
+        createSession: vi.fn().mockResolvedValue({
+          sessionId: 'session-a',
+          plan: {
+            status: 'drafting',
+            generation: 3,
+            revisionId: null,
+            revisionSha256: null,
+          },
+        }),
+        resumeSession: vi.fn(),
+        prompt,
+        cancel: vi.fn(),
+      },
+    });
+    await controller.create(1);
+    expect(() =>
+      controller.submit({ generation: 1, sessionId: 'session-a', text: 'implement it' })
+    ).toThrow('review it in Gosling Desktop or CLI');
+    expect(prompt).not.toHaveBeenCalled();
+
+    controller.ingestPlanUpdate({
+      sessionId: 'session-a',
+      update: {
+        sessionUpdate: 'plan_update',
+        planId: 'plan-1',
+        generation: 3,
+        status: 'awaiting_review',
+        activeRevision: { id: 'revision-2', revision: 2, contentSha256: 'sha-2' },
+        updatedAt: '2026-09-13T00:00:00Z',
+      },
+    });
+    expect(controller.read().plan).toEqual({
+      status: 'awaiting_review',
+      generation: 3,
+      revisionId: 'revision-2',
+      revisionSha256: 'sha-2',
+    });
+  });
+
+  it('ignores a delayed plan update from an older generation', async () => {
+    const controller = createShellSessionController({
+      generation: () => 1,
+      transport: {
+        createSession: vi.fn().mockResolvedValue({ sessionId: 'session-a' }),
+        resumeSession: vi.fn(),
+        prompt: vi.fn(),
+        cancel: vi.fn(),
+      },
+    });
+    await controller.create(1);
+    controller.ingestPlanUpdate({
+      sessionId: 'session-a',
+      update: {
+        sessionUpdate: 'plan_update',
+        planId: 'plan-2',
+        generation: 2,
+        status: 'awaiting_review',
+        activeRevision: { id: 'revision-2', revision: 2, contentSha256: 'sha-2' },
+        updatedAt: '2026-09-13T00:02:00Z',
+      },
+    });
+    controller.ingestPlanUpdate({
+      sessionId: 'session-a',
+      update: {
+        sessionUpdate: 'plan_update',
+        planId: 'plan-1',
+        generation: 1,
+        status: 'approved',
+        activeRevision: { id: 'revision-1', revision: 1, contentSha256: 'sha-1' },
+        updatedAt: '2026-09-13T00:01:00Z',
+      },
+    });
+
+    expect(controller.read().plan).toMatchObject({
+      status: 'awaiting_review',
+      generation: 2,
+      revisionId: 'revision-2',
+    });
+  });
+
   it('uses the server-derived compacted-resume integrity result', async () => {
     const controller = createShellSessionController({
       generation: () => 1,

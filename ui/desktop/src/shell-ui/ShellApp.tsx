@@ -125,6 +125,9 @@ export const ShellApp = ({ store, productName }: ShellAppProps) => {
   }
 
   const blockedByInteraction = state.interactions.length > 0;
+  const planStatus = snapshot.session?.plan?.status;
+  const planBlocksComposer =
+    planStatus === 'drafting' || planStatus === 'awaiting_review' || planStatus === 'unavailable';
   const dock = (
     <InteractionDock
       interactions={state.interactions}
@@ -369,6 +372,17 @@ export const ShellApp = ({ store, productName }: ShellAppProps) => {
             />
           </ShellNotice>
         ) : null}
+        {planBlocksComposer ? (
+          <ShellNotice
+            tone="warn"
+            live
+            message={
+              planStatus === 'unavailable'
+                ? 'Plan state is unavailable, so this shell cannot safely submit a prompt.'
+                : 'This session has an open host-enforced plan. Review it in Gosling Desktop or CLI.'
+            }
+          />
+        ) : null}
         <main className="gsh-main">{body}</main>
         {dock}
         {failure}
@@ -378,7 +392,7 @@ export const ShellApp = ({ store, productName }: ShellAppProps) => {
             draft={state.draft}
             session={snapshot.session}
             blockedByInteraction={blockedByInteraction}
-            canSubmit={isDeclared(state, 'prompt.submit')}
+            canSubmit={isDeclared(state, 'prompt.submit') && !planBlocksComposer}
             canCancel={isDeclared(state, 'prompt.cancel')}
             attachmentCount={state.library.selectedItemIds.length}
             onDraftChange={actions.setDraft}

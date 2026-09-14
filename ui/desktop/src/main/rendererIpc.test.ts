@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { loopbackHttpBaseFromAcpUrl, registerRendererIpcHandlers } from './rendererIpc';
+import {
+  loopbackHttpBaseFromAcpUrl,
+  registerRendererIpcHandlers,
+  RENDERER_IPC_HANDLE_CHANNELS,
+  RENDERER_IPC_ON_CHANNELS,
+} from './rendererIpc';
 
 vi.mock('electron', () => ({
   app: { getPath: vi.fn(() => '/tmp') },
@@ -35,19 +40,7 @@ describe('renderer IPC', () => {
         goslingServeLeases: {} as never,
       }
     );
-    expect(on).toHaveBeenCalledOnce();
-    expect(handle.mock.calls.map(([channel]) => channel)).toEqual([
-      'open-external',
-      'directory-chooser',
-      'session-directory-chooser',
-      'add-recent-dir',
-      'list-recent-dirs',
-      'list-git-worktree-dirs',
-      'get-git-branch-info',
-      'list-git-branches',
-      'switch-git-branch',
-      'get-acp-url',
-      'get-mcp-app-proxy-url',
-    ]);
+    expect(on.mock.calls.map(([channel]) => channel)).toEqual(RENDERER_IPC_ON_CHANNELS);
+    expect(handle.mock.calls.map(([channel]) => channel)).toEqual(RENDERER_IPC_HANDLE_CHANNELS);
   });
 });

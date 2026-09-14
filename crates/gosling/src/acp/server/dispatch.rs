@@ -399,7 +399,10 @@ impl HandleDispatchFrom<Client> for GoslingAcpHandler {
                                 cx.spawn(async move {
                                     match agent.dispatch_custom_request(&req.method, req.params).await {
                                         Ok(json) => responder.respond(json)?,
-                                        Err(e) => responder.respond_with_error(e)?,
+                                        // `respond_with_error` debug-logs the complete error. Plan
+                                        // conflict data may intentionally contain the current plan
+                                        // snapshot, so route custom errors without formatting them.
+                                        Err(e) => responder.respond_with_result(Err(e))?,
                                     }
                                     Ok(())
                                 })?;

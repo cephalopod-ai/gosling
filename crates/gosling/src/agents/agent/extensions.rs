@@ -5,6 +5,23 @@
 
 use super::*;
 
+fn is_internal_planning_extension(config: &ExtensionConfig) -> bool {
+    config.key() == crate::agents::interaction_policy::PLANNING_EXTENSION_NAME
+}
+
+fn internal_planning_extension_config() -> ExtensionConfig {
+    let definition = crate::agents::platform_extensions::PLATFORM_EXTENSIONS
+        .get(crate::agents::interaction_policy::PLANNING_EXTENSION_NAME)
+        .expect("the host planning extension must be registered");
+    ExtensionConfig::Platform {
+        name: definition.name.to_string(),
+        description: definition.description.to_string(),
+        display_name: Some(definition.display_name.to_string()),
+        bundled: Some(true),
+        available_tools: Vec::new(),
+    }
+}
+
 impl Agent {
     /// Save current extension state to session metadata
     /// Should be called after any extension add/remove operation
@@ -48,12 +65,37 @@ impl Agent {
         self: &Arc<Self>,
         session: &Session,
     ) -> Vec<ExtensionLoadResult> {
-        let enabled_configs = EnabledExtensionsState::extensions_or_default(
+        let mut enabled_configs = EnabledExtensionsState::extensions_or_default(
             Some(&session.extension_data),
             crate::config::Config::global(),
         );
+        // The planning extension is policy infrastructure, not user state. Drop
+        // any serialized/configured lookalike and load the trusted in-process
+        // definition independently.
+        enabled_configs.retain(|config| !is_internal_planning_extension(config));
 
         let session_id = session.id.clone();
+        let planning_result = if self
+            .extension_manager
+            .is_extension_enabled(crate::agents::interaction_policy::PLANNING_EXTENSION_NAME)
+            .await
+        {
+            None
+        } else {
+            match self
+                .add_extension_inner(internal_planning_extension_config(), &session_id)
+                .await
+            {
+                Ok(()) => None,
+                Err(error) => Some(ExtensionLoadResult {
+                    name: crate::agents::interaction_policy::PLANNING_EXTENSION_NAME.to_string(),
+                    success: false,
+                    error: Some(format!(
+                        "Host planning capability could not be initialized: {error}"
+                    )),
+                }),
+            }
+        };
 
         let extension_futures = enabled_configs
             .into_iter()
@@ -101,7 +143,10 @@ impl Agent {
             })
             .collect::<Vec<_>>();
 
-        let results = futures::future::join_all(extension_futures).await;
+        let mut results = futures::future::join_all(extension_futures).await;
+        if let Some(planning_result) = planning_result {
+            results.insert(0, planning_result);
+        }
         results
     }
 
@@ -110,6 +155,12 @@ impl Agent {
         extension: ExtensionConfig,
         session_id: &str,
     ) -> ExtensionResult<()> {
+        if is_internal_planning_extension(&extension) {
+            return Err(crate::agents::extension::ExtensionError::ConfigError(
+                "The planning extension is host policy infrastructure and cannot be configured"
+                    .to_string(),
+            ));
+        }
         self.add_extension_inner(extension, session_id).await?;
 
         // Persist extension state after successful add
@@ -159,6 +210,16 @@ impl Agent {
 
                 async move {
                     let name = config.name().to_string();
+                    if is_internal_planning_extension(&config) {
+                        return ExtensionLoadResult {
+                            name,
+                            success: false,
+                            error: Some(
+                                "The planning extension is host policy infrastructure and cannot be configured"
+                                    .to_string(),
+                            ),
+                        };
+                    }
                     match ext_manager
                         .add_extension(config, working_dir, container.as_ref(), Some(&sid))
                         .await
@@ -234,6 +295,21 @@ impl Agent {
         session_id: &str,
         extension_name: Option<String>,
     ) -> Result<Vec<Tool>> {
+        let mut tools = self
+            .list_tools_including_internal(session_id, extension_name)
+            .await?;
+        tools.retain(|tool| {
+            crate::agents::extension_manager::get_tool_owner(tool).as_deref()
+                != Some(crate::agents::interaction_policy::PLANNING_EXTENSION_NAME)
+        });
+        Ok(tools)
+    }
+
+    pub(crate) async fn list_tools_including_internal(
+        &self,
+        session_id: &str,
+        extension_name: Option<String>,
+    ) -> Result<Vec<Tool>> {
         let mut prefixed_tools = self
             .extension_manager
             .get_prefixed_tools(session_id, extension_name.clone())
@@ -249,6 +325,11 @@ impl Agent {
     }
 
     pub async fn remove_extension(&self, name: &str, session_id: &str) -> Result<()> {
+        if name_to_key(name) == crate::agents::interaction_policy::PLANNING_EXTENSION_NAME {
+            anyhow::bail!(
+                "The planning extension is host policy infrastructure and cannot be disabled"
+            );
+        }
         self.extension_manager.remove_extension(name).await?;
         self.remove_frontend_extension(name).await;
 
@@ -278,12 +359,16 @@ impl Agent {
                 .into_iter()
                 .map(|config| config.name()),
         );
+        extensions.retain(|name| {
+            name_to_key(name) != crate::agents::interaction_policy::PLANNING_EXTENSION_NAME
+        });
         extensions
     }
 
     pub async fn get_extension_configs(&self) -> Vec<ExtensionConfig> {
         let mut extension_configs = self.extension_manager.get_extension_configs().await;
         extension_configs.extend(self.frontend_extension_configs().await);
+        extension_configs.retain(|config| !is_internal_planning_extension(config));
         extension_configs
     }
 }

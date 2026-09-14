@@ -227,13 +227,14 @@ export GOSLING_CLI_MIN_PRIORITY=0.2  # Reduce verbose output
 ### Advanced Configuration
 
 ```bash
-# For complex workflows requiring dedicated planning
-export GOSLING_PLANNER_PROVIDER=openai
-export GOSLING_PLANNER_MODEL=gpt-4o
-
 # Security and permissions
 export GOSLING_ALLOWLIST=https://company.com/allowed-extensions.json
 ```
+
+Host-enforced planning uses the active session provider and model; legacy
+`GOSLING_PLANNER_*` values cannot select a second route. See
+[Creating Plans](/docs/guides/context-engineering/creating-plans) before combining planning with
+automation.
 
 ## The Future of Automated Development
 

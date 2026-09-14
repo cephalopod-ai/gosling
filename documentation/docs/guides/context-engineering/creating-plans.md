@@ -4,335 +4,164 @@ title: Creating Plans Before Working
 sidebar_label: Creating Plans
 ---
 
-import Card from '@site/src/components/Card';
-import styles from '@site/src/components/Card/styles.module.css';
+# Creating plans before working
 
-Starting a project without a clear plan is like building a house without a blueprint. It can lead to:
+Host-enforced planning gives a session a durable plan lifecycle before implementation begins.
+While a plan is open, gosling limits the model to bounded, read-only evidence gathering and plan
+updates. It cannot run shell commands, edit files, browse the network, delegate work, or gain
+ordinary session tools through an extension.
 
-* Confusion about what to do
-* Wasted time and effort
-* Projects that grow too big
-
-A good plan keeps everyone on track and helps measure progress. That's why the gosling CLI includes the `/plan` prompt completion command to help break down your projects into clear, manageable steps.
- 
-:::tip Plans in the gosling Desktop
-The gosling Desktop doesn't have a `plan` keyword. If you want gosling Desktop to create a plan for you, you need to use a prompt like:
-
-```
-"Hey gosling, can you create a plan to convert my CLI project into a locally hosted web page that gives me input fields for each CLI command I can run? Please don't start the actual work"
-```
-Unless you ask gosling to "create a plan", it might just start into the project work. 
+:::caution Source-candidate feature
+Durable host-enforced planning is present in the current source candidate. The CLI and first-party
+Desktop paths exist in source, but final packaged and cross-platform Desktop acceptance is still
+pending. This page does not claim that the feature has shipped in a published release.
 :::
 
-The gosling CLI's plan mode is interactive, asking clarifying questions to understand your project before creating a plan. If you can provide thoughtful and informative answers to those questions, gosling can generate a really useful and actionable plan.
+## Before you start: provider compatibility
 
-## Set your planner provider and model
-In some workflows, it can be helpful to use one LLM for planning and a different one for execution. For example, GPT-4.1 tends to excel at strategic planning and breaking down complex tasks into clear, logical steps. On the other hand, Claude Sonnet 3.5 is particularly strong at writing clean, efficient code and following instructions precisely. By using GPT-4.1 to plan and Claude to execute, you can play to the strengths of both models and get better results overall.
+Planning uses the active session provider, model, thinking setting, and context limit. It does not
+start a second planner connection. A provider that executes tools outside gosling cannot enforce
+the planning boundary, so gosling rejects planning on that route before it creates or resumes a
+plan generation.
 
-The gosling CLI plan mode uses two configuration values:
+Provider and model changes are also blocked while a plan is `drafting` or `awaiting_review`.
+Approve or abandon the open generation before changing the session route.
 
-- `GOSLING_PLANNER_PROVIDER`: Which provider to use for planning
-- `GOSLING_PLANNER_MODEL`: Which model to use for planning
+The CLI still reads the legacy `GOSLING_PLANNER_*` variables as compatibility checks:
 
-:::tip Multi-Model Alternative to Plan Mode
-You can combine planning mode with a different default execution model to balance cost, speed, and quality.
+| Variable | Current behavior |
+| --- | --- |
+| `GOSLING_PLANNER_PROVIDER` | If set, it must be non-empty and exactly match the active session provider. |
+| `GOSLING_PLANNER_MODEL` | If set, it must be non-empty and resolve to the active model and thinking setting. |
+| `GOSLING_PLANNER_CONTEXT_LIMIT` | If set, it must be an integer of at least 4,096 and exactly match the active model's context limit. |
+
+Unset these variables unless a compatibility check is required. A different value fails
+explicitly; it does not select a separate planner. Desktop and other ACP clients use the active
+session route directly.
+
+## What planning may read
+
+The planning policy provides seven fixed host capabilities: list, read, and search bounded
+workspace text; update a plan and request review; and search or read bounded persisted session
+text. This internal capability set is not a user-configurable extension and does not widen the
+session's ordinary tool permissions.
+
+:::warning Read-data disclosure
+Workspace or session text returned by a planning tool becomes model input and is sent to the
+active session provider. gosling applies path controls, ignore rules, size and time bounds, and
+secret redaction. It also rejects hidden, protected, symbolic-link, binary, and oversized file
+reads. These controls reduce exposure but cannot guarantee that every sensitive value is removed.
+Review the session's primary and additional working directories, keep secrets out of readable
+project text, and use ignore rules before starting a plan.
 :::
 
-:::tip Customize Plan Format
-You can also customize how gosling creates plans by editing the `plan.md` [prompt template](/docs/guides/context-engineering/prompt-templates).
-:::
+Planning treats retrieved text as untrusted evidence, not instructions or approval. Only an
+explicit lifecycle action can approve a revision.
 
-### Set gosling planner environment variables
-You might add these lines to your bash shell config file (.bashrc) to add the planner environment variables:
-```bash
-export GOSLING_PLANNER_PROVIDER=<my-chosen-provider>
-export GOSLING_PLANNER_MODEL=<my-chosen-model>
-```
-After you save your changes to the config file, you need to re-start your gosling session so that gosling can use the variables.
+## CLI workflow
 
-If these aren't set, gosling will use your default provider and model settings. You might want to set different planning models if you find certain models are better at breaking down tasks into clear steps. However, your default model configuration is usually sufficient.
-
-To verify that the planner provider is set, input the following terminal command:
+Start an interactive session, then use `/plan` with an optional first planning prompt:
 
 ```bash
-~ gosling info -v
+gosling session
 ```
 
-In this example, the `info` command returns the current configuration and the path to the configuration file.  
-
-```bash
-gosling Version:
-  Version:          1.0.18
-
-gosling Locations:
-  Config file:      /Users/alincoln/.config/gosling/config.yaml
-  Sessions dir:     /Users/alincoln/.local/share/gosling/sessions
-  Logs dir:         /Users/alincoln/.local/state/gosling/logs
-
-gosling Configuration:
-  GOSLING_PROVIDER: anthropic
-  GOSLING_MODEL: claude-3.5-sonnet
-  GOSLING_PLANNER_PROVIDER: openai
-  GOSLING_MODE: smart_approve
-  GOSLING_PLANNER_MODEL: gpt-4.1
+```text
+( O)> /plan Design a reversible database migration with rollback checks
 ```
 
- If either `GOSLING_PLANNER_PROVIDER` or `GOSLING_PLANNER_MODEL` are not set, `GOSLING_PROVIDER` and `GOSLING_MODEL`are used to build your plan.  
+The durable planning commands are:
 
-## Describe your project
-While gosling can handle complex project descriptions, it works best with clear, concise ones. Focus on stating your project's purpose and desired outcomes. If these aren't clear, gosling will ask clarifying questions until it fully understands your goals. 
+| Command | Effect |
+| --- | --- |
+| `/plan [prompt]` | Start or resume the current generation and optionally submit one planning prompt. With no prompt, show the current snapshot. |
+| `/plan-status` | Show the selected generation, status, revision identity, content hash, and plan content. |
+| `/plan-feedback <text>` | Record feedback against the exact revision awaiting review, return it to drafting, and request a revised plan. |
+| `/plan-comment <start>-<end> <text>` | Attach line-scoped feedback to the exact revision, return it to drafting, and request a revised plan. |
+| `/plan-approve` | Approve the exact current revision without starting implementation. |
+| `/plan-approve-and-run` | Approve first, then submit a separate implementation turn using the current authorization mode. |
+| `/plan-abandon` | Abandon the current open generation. |
+| `/endplan` | Leave planning. If a reviewable revision exists, confirm before abandoning it; non-interactive clients must use explicit `/plan-abandon`. |
+| `/plan-export` | Print the exact current revision as Markdown with plan provenance. |
 
-## A simple construction plan example
-gosling can produce good plans for relatively simple projects such as the home construction example:
+For example, review and revise a plan without starting work:
 
-```bash
-( O)> /plan
-
-Entering plan mode. You can provide instructions to create a plan and then act on it. To exit early, type /endplan
-
-( O)> Build a four bedroom house
-◓  Measuring semantic distance...                                                                                                         
-
-I need to gather more information before creating a detailed house-building plan. Please provide clarification on the following:
-
-1. What is the purpose of this plan? Are you looking for architectural designs, construction steps, or a project management timeline?
-2. What is your budget range for this four-bedroom house?
-3. What is the approximate square footage or size requirements?
-4. Do you have a specific location or lot already selected? What are the dimensions and any zoning restrictions?
-5. Are there any specific architectural styles or features you want included?
-6. How many bathrooms and other rooms (e.g., kitchen, living room, dining room, garage) do you want?
-7. Do you have any specific sustainability or energy efficiency requirements?
-8. What is your timeline for completion?
-
-( O)> 1 construction steps and a project management timeline. 2 $600,000. 3 4,000 sq feet. 4 the lot is not yet selected. 5 one story rambler. 6 four bedrooms, two ful baths, a kitchen, diningroom, family room, and garage. 7 the house must be efficient and powered by solar energy. 8 complete in six months. 
-◓  Taming tensors...                                                                                                          I'll create a detailed plan for building a 4,000 sq ft, one-story rambler with four bedrooms, two full bathrooms, kitchen, dining room, family room, garage, and home office. The house will be energy efficient with solar power, with a $600,000 budget and 6-month timeline.
-
-◇  Do you want to clear message history & act on this plan?
-│  Yes 
-│
-
-Exiting plan mode and acting on the above plan
-
-### Introduction to Building a 4,000 Sq Ft Rambler
-To create a detailed plan for your 4,000 sq ft, one-story rambler, we need to consider several factors including design, energy efficiency, budget, and timeline. Given your requirements, here's an overview of how to approach this project:
-
-### Step 1: Design and Planning
-- **Architectural Design**: Hire an architect to design the house, ensuring it meets your space requirements and is energy efficient. Consider factors like natural lighting, insulation, and window placement.
-- **Floor Plan**: Create a floor plan that includes four bedrooms, two full bathrooms, a kitchen, dining room, family room, garage, and home office. Ensure the layout is functional and spacious.
-- **Land Preparation**: Ensure the building site is prepared, including clearing the land, grading, and preparing the foundation.
-
-### Step 2: Energy Efficiency and Solar Power
-- **Solar Power System**: Design and install a solar power system that can meet the energy needs of a 4,000 sq ft house. This may include a large solar panel array and a battery storage system for nighttime and cloudy days.
-- **Insulation and Windows**: Use high-quality insulation in the walls, floor, and ceiling to minimize heat loss. Install energy-efficient windows that allow natural light in while keeping the heat or cold out.
-- **Energy-Efficient Appliances**: Specify energy-efficient appliances and lighting to minimize energy consumption.
-
-### Step 3: Budgeting
-- **Construction Costs**: Allocate approximately $200-250 per sq ft for construction, which translates to $800,000-$1,000,000 for a 4,000 sq ft house. However, your budget is $600,000, so you'll need to optimize costs without compromising on quality and energy efficiency.
-- **Solar Power System Costs**: Budget an additional $20,000 to $50,000 for the solar power system, depending on its size and complexity.
-- **Contingency Fund**: Set aside 10-20% of the budget for unexpected expenses.
-
-### Step 4: Timeline
-- **Month 1-2: Design and Planning**: Complete the architectural design, obtain necessary permits, and prepare the building site.
-- **Month 3-4: Foundation and Framing**: Lay the foundation, frame the house, and install the roof.
-- **Month 5: Installation of Electrical, Plumbing, and HVAC Systems**: Install the solar power system, electrical, plumbing, and HVAC systems.
-- **Month 6: Finishing Work**: Complete the interior finishing work, including installation of energy-efficient appliances, flooring, and fixtures.
-
-### Conclusion
-Building a 4,000 sq ft, energy-efficient rambler with solar power within a $600,000 budget and 6-month timeline is challenging but feasible with careful planning and design. It's essential to work closely with your architect, contractor, and solar power system installer to ensure the project stays on track and within budget.
-
-Given that no extensions are currently available for more specific tools or data sources, consider the following steps to proceed with your project:
-
-* Search for available extensions using the <function=platform__search_available_extensions>{}</function>
-
-```
-The home construction plan remains high-level because gosling's current models specialize in technology and software development rather than construction. This is why projects like our first example—building a web application—receive more detailed planning and specific guidance.
-
-### Create a separate plan for plan sub-steps
-Let's return to the home construction example. While the plan includes hiring an architect, this high-level step needs more detail – such as what type of architect to hire and how to navigate the selection process.
-
-```
-- **Architectural Design**: Hire an architect to design the house, ensuring it meets your space requirements and is energy efficient. Consider factors like natural lighting, insulation, and window placement.
-```
-If you exit plan mode while reviewing your construction plan, you can always resume it to continue working with gosling. 
-
-```
-( O)> /plan hire an architect
-
-Entering plan mode. You can provide instructions to create a plan and then act on it. To exit early, type /endplan
-
-◓  Synchronizing flock algorithms...                                                                                                       I need some clarifying questions to better understand your request about hiring an architect:
-
-1. What is your location or preferred region for the architect to be based in?
-2. Do you have a specific budget range for architectural services?
-3. Are you looking for an architect with specific expertise (e.g., energy-efficient homes, modern design, traditional styles)?
-4. Do you need full architectural services (design through construction oversight) or just certain phases?
-5. Do you have a timeline for when you'd like to begin working with an architect?
-6. Have you already purchased land for your home, or will the architect need to help evaluate potential sites?
-7. Are there any specific certifications or qualifications you're looking for in an architect?
-8. Would you prefer to work with a solo practitioner or a larger architectural firm?
-9. Do you have any examples of architectural styles or specific homes you admire?
-10. How involved do you want to be in the design process?
+```text
+( O)> /plan-status
+( O)> /plan-feedback Keep the rollout reversible and add a restore drill
+( O)> /plan-status
+( O)> /plan-approve
 ```
 
-After gathering information through clarifying questions, gosling creates a detailed plan for hiring an architect. This sub-plan integrates with the larger home construction project, with steps that reflect and support the overall construction context.
+When a revision is ready, the CLI displays the review commands. While the status is
+`awaiting_review`, use a lifecycle command rather than another `/plan <prompt>`; feedback is the
+explicit route back to drafting.
 
-## A development project example
-In this example, a developer has written a CLI in Python that interacts with the Contentful CMS to let a user search for strings and replace them with new strings. As a website, the search/replace feature would be more usable and also allow for a larger set of features. The developer is using the gosling CLI to plan the conversion project.
+## Durable states
 
-If gosling believes the project can be completed in many different ways and using a wide variety of components, it will ask you a clarifying question for each of these decision points. For example, if you start a plan like this:
+| State | Meaning |
+| --- | --- |
+| `drafting` | The generation is open. Planning prompts may gather bounded evidence and update the plan. |
+| `awaiting_review` | The generation is open and has an exact revision ready for feedback, approval, export, or abandonment. |
+| `approved` | The selected revision was approved. Approval alone does not implement it. |
+| `abandoned` | The open generation was deliberately closed without approval. |
+| `stale` | The generation is retained as history but cannot be approved as current authority. Imported or copied plan history is made stale. |
 
-```bash 
-( O)> /plan
+Plans, revisions, feedback, events, and decisions are stored with the session. After restarting
+gosling and resuming the same session, `/plan-status` recovers the latest snapshot and `/plan`
+resumes an open generation. Terminal generations remain reviewable history rather than being
+reopened implicitly.
 
-Entering plan mode. You can provide instructions to create a plan and then act on it. To exit early, type /endplan
+Feedback, approval, and implementation references are checked against the selected generation,
+revision, content hash, source history, and workspace scope. If any of those changed, refresh the
+snapshot and review again. This prevents a stale screen or command from approving different
+content. Markdown export identifies the selected generation, revision, content hash, and status;
+it is a read-only export, not a mutating approval check.
 
-( O)> Convert the CLI built by search_replace_routes.py into a web page
-```
-gosling parses your project description, consults with the LLM mode you've configured, and then if it needs more information, starts a round of clarifying questions.
+## Approval is separate from implementation
 
-## Clarifying questions
-Converting a Python CLI into a website seems simple enough but gosling will have questions about things like styling, authentication, features, technology stack, and more. You might see questions like this:
+`/plan-approve` records approval and stops there. It does not clear or rewrite conversation
+history, change `GOSLING_MODE`, or grant new permissions.
 
-```bash
-1. Should the application support any keyboard shortcuts for common actions?
-2. Would you like the application to remember user preferences (like case sensitivity setting) between sessions?
-3. Should there be any form of notification when operations complete successfully?
-4. How should the application handle very large text fields that might be difficult to display in the three-column layout?
-5. Are there any specific CI/CD requirements for deployment to AWS?
+`/plan-approve-and-run` first records the same exact approval, then submits a separate ordinary
+implementation turn. That turn uses the session's unchanged authorization mode and normal tool
+approval behavior. If submission fails after approval, the plan stays approved and gosling reports
+that implementation did not start; you can retry implementation without approving different
+content.
 
-```
-You can answer the questions one at a time or you can batch your answers:
+## Desktop review
 
-```bash
-( O)> 1 no keyboard shortcuts. 2 do not remember preferences. 3 on success, open a dialog that says "success". 4 Truncate to 30 characters before the string to replace and then 30 characters after the string to replace.5 no CI/CD requirements 
-```
+The current source-candidate Desktop UI includes a Plan control and review dialog. It can start a
+plan, show the current revision and provenance, collect optional line-scoped feedback, refresh a
+stale view, approve, approve and implement, abandon, and save a Markdown export. The normal
+composer is unavailable while a revision awaits review so that ordinary text cannot bypass the
+lifecycle controls.
 
+These controls use the same typed ACP lifecycle as the CLI. Unsupported providers disable the
+entry point. Final presentation details and packaged, cross-platform acceptance remain release
+work; consult the candidate release notes before relying on Desktop availability.
 
-:::tip
-When gosling requests a project artifact like source code during plan mode, you'll need to paste the content directly into the chat. Simply copying the file contents and prefixing it with a brief description like 'Here's the requested code:' is sufficient. Note that providing just a file path won't work in plan mode.
-:::
+The lightweight app shell intentionally receives only the minimum open-plan projection: status,
+generation, revision ID, and revision SHA-256. It does not become plan authority or reproduce the
+full review surface. Review an open plan in the first-party Desktop UI or CLI; the host continues
+to reject provider or model transitions while the plan is open.
 
-When answering multiple questions, number your responses to match each question. For example, instead of answering with a simple 'no' or 'don't remember', provide context like '2. Do not store my preferences.' This helps gosling track which questions have been answered and prevents repeated questions.
+## Export and session transfer
 
-In complex projects like converting a CLI to a website, gosling may ask multiple rounds of clarifying questions. Each round typically stems from new information in your previous answers or when additional details are needed about specific aspects of your project.
+`/plan-export` produces user-readable Markdown for the selected current revision. The document
+contains provenance, but exporting it neither approves the revision nor grants implementation
+authority.
 
-If you've answered _all_ of gosling's questions and it has no more questions, gosling will generate the plan. Other times, you might think gosling will never run out of questions. If you want your plan and don't want to answer more questions, you can simply ask for a "generic" plan:
+Native session JSON export uses a separate optional `plan_history_v1` section. On import or copy,
+gosling remaps plan identities and preserves that history as `stale`, so authority is not silently
+transferred to another session. Session deletion removes its plan history; archiving preserves it.
 
-```bash
-I still need some critical information to create a comprehensive plan:
+## Customize the plan format
 
-1. What specific functionality does your Python script perform with Contentful? Could you share the actual code or describe how it interacts with the Contentful API to search and replace content?
-2. What are the 5 predefined keys/inputs you mentioned earlier?
-3. Should the web application include all the command-line options from the script (environment, status, case-sensitive, partial-match, dry-run)?
-4. How should the application handle errors from the Contentful API?
-5. Should the application maintain any history of previous search/replace operations?
+You can change the planning instructions by editing the `plan.md`
+[prompt template](/docs/guides/context-engineering/prompt-templates). The host boundary and
+lifecycle checks remain fixed even when the prompt wording changes.
 
-Without this information, I can only provide a generic plan that might not accurately capture your requirements.
-( O)> please provide a generic plan
-```
-While gosling creates a standardized plan format, it customizes the content based on your answers. gosling can generate the code needed to implement the steps of the plan it produces. You should review the plan and any code that it generates before ending plan mode (`/endplan`) and asking gosling to implement the plan. 
+## Additional resource
 
-Below is a sample plan for this project, with the generated website code omitted for brevity:
-
-```bash
-# Plan for Converting CLI Script to React Web Application
-
-## Step 1: Set up the React project and dependencies
-1. Create a new React application using Create React App
-2. Install necessary dependencies
-3. Set up project structure
-   src/
-   ├── components/
-   │   ├── Auth/
-   │   ├── Layout/
-   │   ├── Search/
-   │   ├── Results/
-   │   └── History/
-   ├── services/
-   │   ├── contentful.ts
-   │   ├── auth.ts
-   │   └── storage.ts
-   ├── utils/
-   │   ├── validation.ts
-   │   └── helpers.ts
-   ├── contexts/
-   │   └── AppContext.tsx
-   └── pages/
-       ├── Home.tsx
-       ├── Search.tsx
-       └── History.tsx
-
-## Step 2: Implement authentication with Okta
-1. Create an Okta application in the Okta Developer Console
-2. Configure the Okta authentication settings in the application
-3. Implement protected routes using Okta's React components
-## Step 3: Create the layout and UI components with Material UI
-1. Implement the main layout with Material UI
-2. Create the search form component
-3. Create the results display component with three columns
-4. Implement the "Load More" pagination component
-## Step 4: Implement Contentful service
-1. Create a service for interacting with Contentful
-## Step 5: Implement local storage service for history
-1. Create a service for managing search history in localStorage
-## Step 6: Implement validation utilities
-1. Create utility functions for input validation
-## Step 7: Implement main pages
-1. Create the Search page
-2. Create the History page
-## Step 8: Set up routing and main application
-1. Create the main App component
-## Step 9: Implement error handling and loading states
-1. Create error boundary components
-2. Add loading indicators for API operations
-3. Implement error messages display
-
-## Step 10: Set up deployment configuration
-1. Create AWS deployment configuration
-## Step 11: Testing and quality assurance
-1. Write unit tests for key components
-2. Implement integration tests for the main workflows
-3. Perform manual testing of the application
-
-This plan provides a comprehensive framework for converting your CLI script to a React web application with Material UI and Okta authentication. You'll need to adapt specific parts based on your exact requirements and the functionality of your original script.
-
-```
-
-
-
-## Basic usage
-You need to have an active gosling session before you can put the CLI into plan mode. If you are going to dedicate a session to creating a plan, you should give your new session a name as in the following example:
-
-```bash
-~ gosling session -n web-project-plan
-starting session | provider: databricks model: databricks-meta-llama
-    session id: 20251110_5
-    working directory: /Users/alincoln
-
-gosling is running! Enter your instructions, or try asking what gosling can do.
-```
-To enter planning mode, type `/plan`.  Optionally, you can append your plan description to the prompt completion command.
-```bash
-( O)> /plan  Build a four bedroom house
-```
-
- Plan mode in the CLI is a special interaction mode where gosling helps break down tasks into manageable steps.  If you want to close the plan mode and return to the active session, type `/endplan`.
-
-```bash
-( O)> /endplan
-```
-
-## Additional Resources
-
-import ContentCardCarousel from '@site/src/components/ContentCardCarousel';
-
-<ContentCardCarousel
-  items={[
-    {
-      type: 'topic',
-      title: 'Planning Complex Tasks',
-      description: 'Learn how to use the Plan feature to break down complex tasks into manageable, executable steps.',
-      linkUrl: '/docs/tutorials/plan-feature-devcontainer-setup',
-    }
-  ]}
-/>
+- [Planning Complex Tasks tutorial](/docs/tutorials/plan-feature-devcontainer-setup)

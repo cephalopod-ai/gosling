@@ -190,18 +190,29 @@ pub fn list_templates() -> Vec<Template> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::paths::RuntimePaths;
     use std::collections::HashMap;
 
-    #[test]
-    fn test_get_template() {
-        let template = get_template("system.md");
-        assert!(template.is_some(), "system.md should be registered");
+    #[tokio::test]
+    async fn test_get_template() {
+        let root = tempfile::tempdir().unwrap();
+        let runtime_paths = RuntimePaths::new(
+            root.path().join("config"),
+            root.path().join("data"),
+            root.path().join("state"),
+        );
 
-        let template = template.unwrap();
-        assert_eq!(template.name, "system.md");
-        assert!(!template.description.is_empty());
-        assert!(!template.default_content.is_empty());
-        assert!(!template.is_customized);
+        Paths::scope(runtime_paths, async {
+            let template = get_template("system.md");
+            assert!(template.is_some(), "system.md should be registered");
+
+            let template = template.unwrap();
+            assert_eq!(template.name, "system.md");
+            assert!(!template.description.is_empty());
+            assert!(!template.default_content.is_empty());
+            assert!(!template.is_customized);
+        })
+        .await;
     }
 
     #[test]

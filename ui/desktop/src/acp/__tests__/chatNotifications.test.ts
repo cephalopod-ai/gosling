@@ -1,11 +1,16 @@
 import type { SessionNotification } from '@agentclientprotocol/sdk';
+import type { GoslingSessionNotification_unstable } from '@repo-makeover/gosling-sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppEvents } from '../../constants/events';
 import { ChatState } from '../../types/chatState';
 import type { Session } from '../../types/session';
-import { handleAcpSessionNotification } from '../chatNotifications';
+import {
+  handleAcpGoslingSessionNotification,
+  handleAcpSessionNotification,
+} from '../chatNotifications';
 import type { AcpChatSessionSnapshot } from '../chatSessionStore';
 import { acpChatSessionActions, acpChatSessionStore } from '../chatSessionStore';
+import { invalidateAcpSessionPlan } from '../plans';
 
 vi.mock('../chatSessionStore', () => ({
   acpChatSessionStore: {
@@ -15,6 +20,10 @@ vi.mock('../chatSessionStore', () => ({
     applyAcpSessionNotification: vi.fn(),
     applyAcpGoslingSessionNotification: vi.fn(),
   },
+}));
+
+vi.mock('../plans', () => ({
+  invalidateAcpSessionPlan: vi.fn(),
 }));
 
 const SESSION_ID = 'session-1';
@@ -40,6 +49,21 @@ function sessionWithName(name: string): Session {
     extension_data: {},
     source: 'test',
   } as Session;
+}
+
+function emptyPlanState(): AcpChatSessionSnapshot['plan'] {
+  return {
+    snapshot: null,
+    providerSupportsHostEnforcedPlanning: false,
+    permittedCapabilities: [],
+    loading: false,
+    invalidated: false,
+    loadError: undefined,
+    latestUpdate: null,
+    feedbackDraft: { body: '', startLine: null, endLine: null, revisionId: null },
+    actionPending: null,
+    workflowMessage: undefined,
+  };
 }
 
 function snapshotWithName(name: string): AcpChatSessionSnapshot {
@@ -70,6 +94,7 @@ function snapshotWithName(name: string): AcpChatSessionSnapshot {
     activeRunId: null,
     pendingCancelPromptAttemptId: null,
     pendingLocalSteerMessageIds: new Set(),
+    plan: emptyPlanState(),
   };
 }
 
@@ -101,6 +126,7 @@ function snapshotWithoutSession(): AcpChatSessionSnapshot {
     activeRunId: null,
     pendingCancelPromptAttemptId: null,
     pendingLocalSteerMessageIds: new Set(),
+    plan: emptyPlanState(),
   };
 }
 
@@ -153,5 +179,32 @@ describe('handleAcpSessionNotification', () => {
         detail: { sessionId: SESSION_ID, newName: 'Generated name' },
       })
     );
+  });
+});
+
+describe('handleAcpGoslingSessionNotification', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('invalidates and refreshes the authoritative snapshot for compact plan updates', async () => {
+    const notification: GoslingSessionNotification_unstable = {
+      sessionId: SESSION_ID,
+      update: {
+        sessionUpdate: 'plan_update',
+        planId: 'plan-1',
+        generation: 2,
+        status: 'awaiting_review',
+        activeRevision: { id: 'revision-3', revision: 3, contentSha256: 'sha-3' },
+        updatedAt: '2026-09-13T00:00:00Z',
+      },
+    };
+
+    await handleAcpGoslingSessionNotification(notification);
+
+    expect(acpChatSessionActions.applyAcpGoslingSessionNotification).toHaveBeenCalledWith(
+      notification
+    );
+    expect(invalidateAcpSessionPlan).toHaveBeenCalledWith(SESSION_ID);
   });
 });

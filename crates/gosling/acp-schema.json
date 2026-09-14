@@ -2632,6 +2632,543 @@
       "x-side": "agent",
       "x-method": "_gosling/unstable/session/steer"
     },
+    "GetSessionPlanRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "generation": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      },
+      "required": [
+        "sessionId"
+      ],
+      "description": "Read the current or selected generation of a session plan.",
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/session/plan/get"
+    },
+    "SessionPlanResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "snapshot": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PlanSnapshotDto"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "providerSupportsHostEnforcedPlanning": {
+          "type": "boolean"
+        },
+        "permittedCapabilities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PlanningCapabilityDto"
+          },
+          "default": []
+        },
+        "implementationReference": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Server-authored stable identity prompt for a separate implementation turn.\nPresent only when `snapshot` is the current approved plan."
+        }
+      },
+      "required": [
+        "providerSupportsHostEnforcedPlanning"
+      ],
+      "description": "Shared response for plan reads and lifecycle mutations.",
+      "x-side": "agent"
+    },
+    "PlanSnapshotDto": {
+      "type": "object",
+      "properties": {
+        "plan": {
+          "$ref": "#/$defs/SessionPlanDto"
+        },
+        "activeRevision": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SessionPlanRevisionDto"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "feedback": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SessionPlanFeedbackDto"
+          },
+          "default": []
+        },
+        "recentEvents": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SessionPlanEventDto"
+          },
+          "default": []
+        }
+      },
+      "required": [
+        "plan"
+      ],
+      "description": "Bounded current view of one session plan generation."
+    },
+    "SessionPlanDto": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "status": {
+          "$ref": "#/$defs/PlanStatusDto"
+        },
+        "sourceThroughRowId": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "sourceHash": {
+          "type": "string"
+        },
+        "scopeHash": {
+          "type": "string"
+        },
+        "capabilityPolicyVersion": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "plannerProvider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "plannerModel": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "staleReason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "generation",
+        "status",
+        "sourceHash",
+        "scopeHash",
+        "capabilityPolicyVersion",
+        "createdAt",
+        "updatedAt"
+      ],
+      "description": "Plan-level state and concurrency boundaries."
+    },
+    "PlanStatusDto": {
+      "type": "string",
+      "enum": [
+        "drafting",
+        "awaiting_review",
+        "approved",
+        "abandoned",
+        "stale"
+      ],
+      "description": "Durable status for a host-enforced session plan."
+    },
+    "SessionPlanRevisionDto": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "parentRevisionId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "contentMarkdown": {
+          "type": "string"
+        },
+        "contentSha256": {
+          "type": "string"
+        },
+        "plannerProvider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "plannerModel": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sourceThroughRowId": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "sourceHash": {
+          "type": "string"
+        },
+        "scopeHash": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "revision",
+        "contentMarkdown",
+        "contentSha256",
+        "sourceHash",
+        "scopeHash",
+        "createdAt"
+      ],
+      "description": "Immutable Markdown revision of a session plan."
+    },
+    "SessionPlanFeedbackDto": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "revisionId": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        },
+        "startLine": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "endLine": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "selectedTextSha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "selectedTextPreview": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "consumedByRevisionId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "createdAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "revisionId",
+        "body",
+        "createdAt"
+      ],
+      "description": "User feedback bound to an exact immutable plan revision."
+    },
+    "SessionPlanEventDto": {
+      "type": "object",
+      "properties": {
+        "eventType": {
+          "type": "string"
+        },
+        "fromStatus": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PlanStatusDto"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "toStatus": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PlanStatusDto"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "revisionId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "revisionSha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "actor": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "eventType",
+        "actor",
+        "createdAt"
+      ],
+      "description": "User-safe projection of an append-only plan lifecycle event."
+    },
+    "PlanningCapabilityDto": {
+      "type": "string",
+      "enum": [
+        "workspace_tree",
+        "workspace_read_text",
+        "workspace_search_text",
+        "session_history_search",
+        "session_history_read",
+        "plan_update",
+        "plan_request_review"
+      ],
+      "description": "Server-authored capabilities available during a host-enforced planning turn."
+    },
+    "StartSessionPlanRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "expectedGeneration": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      },
+      "required": [
+        "sessionId"
+      ],
+      "description": "Resume an open generation or atomically create a new drafting generation.",
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/session/plan/start"
+    },
+    "AddSessionPlanFeedbackRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        },
+        "startLine": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "endLine": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "selectedText": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "expectedGeneration": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "expectedRevisionId": {
+          "type": "string"
+        },
+        "expectedRevisionSha256": {
+          "type": "string"
+        },
+        "expectedSourceHash": {
+          "type": "string"
+        },
+        "expectedScopeHash": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "body",
+        "expectedGeneration",
+        "expectedRevisionId",
+        "expectedRevisionSha256",
+        "expectedSourceHash",
+        "expectedScopeHash"
+      ],
+      "description": "Add free-form or line-scoped feedback against an exact plan revision.",
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/session/plan/feedback"
+    },
+    "ApproveSessionPlanRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "decisionNote": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "expectedGeneration": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "expectedRevisionId": {
+          "type": "string"
+        },
+        "expectedRevisionSha256": {
+          "type": "string"
+        },
+        "expectedSourceHash": {
+          "type": "string"
+        },
+        "expectedScopeHash": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "expectedGeneration",
+        "expectedRevisionId",
+        "expectedRevisionSha256",
+        "expectedSourceHash",
+        "expectedScopeHash"
+      ],
+      "description": "Approve an exact reviewed plan revision.",
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/session/plan/approve"
+    },
+    "AbandonSessionPlanRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "expectedGeneration": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "sessionId",
+        "expectedGeneration"
+      ],
+      "description": "Abandon an exact open plan generation.",
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/session/plan/abandon"
+    },
+    "ExportSessionPlanRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "expectedGeneration": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "expectedRevisionId": {
+          "type": "string"
+        },
+        "expectedRevisionSha256": {
+          "type": "string"
+        },
+        "expectedStatus": {
+          "$ref": "#/$defs/PlanStatusDto"
+        }
+      },
+      "required": [
+        "sessionId",
+        "expectedGeneration",
+        "expectedRevisionId",
+        "expectedRevisionSha256",
+        "expectedStatus"
+      ],
+      "description": "Export an exact approved/current plan revision as user-readable Markdown.",
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/session/plan/export"
+    },
+    "ExportSessionPlanResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "markdown": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "markdown"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/session/plan/export"
+    },
     "DiagnosticsGetRequest_unstable": {
       "type": "object",
       "properties": {
@@ -8298,6 +8835,19 @@
           "required": [
             "sessionUpdate"
           ]
+        },
+        {
+          "$ref": "#/$defs/PlanUpdate",
+          "type": "object",
+          "properties": {
+            "sessionUpdate": {
+              "type": "string",
+              "const": "plan_update"
+            }
+          },
+          "required": [
+            "sessionUpdate"
+          ]
         }
       ],
       "description": "Discriminated union of gosling-specific session update payloads.\nVariant tag matches ACP's convention (`sessionUpdate: \"<snake_case>\"`).\n\n`discriminator.mapping` is what makes TS codegen (`@hey-api/openapi-ts`)\nemit the correct snake_case tag value even when this enum has a single\nvariant. Add a mapping entry per variant.",
@@ -8306,7 +8856,8 @@
         "mapping": {
           "usage_update": "#/$defs/SessionUsageUpdate",
           "status_message": "#/$defs/StatusMessageUpdate",
-          "artifact_update": "#/$defs/ArtifactUpdate"
+          "artifact_update": "#/$defs/ArtifactUpdate",
+          "plan_update": "#/$defs/PlanUpdate"
         }
       }
     },
@@ -8414,6 +8965,62 @@
       "required": [
         "artifact"
       ]
+    },
+    "PlanRevisionIdentityDto": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "contentSha256": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "revision",
+        "contentSha256"
+      ],
+      "description": "Compact identity for cache invalidation and optimistic concurrency UI."
+    },
+    "PlanUpdate": {
+      "type": "object",
+      "properties": {
+        "planId": {
+          "type": "string"
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "status": {
+          "$ref": "#/$defs/PlanStatusDto"
+        },
+        "activeRevision": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PlanRevisionIdentityDto"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updatedAt": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "planId",
+        "generation",
+        "status",
+        "updatedAt"
+      ],
+      "description": "Compact plan state update. Clients fetch the full snapshot through\n`_gosling/unstable/session/plan/get` when this cache-invalidation event arrives."
     },
     "DomainStatusNotification_unstable": {
       "type": "object",
@@ -8701,6 +9308,60 @@
                   ],
                   "description": "Params for _gosling/unstable/session/steer",
                   "title": "SteerSessionRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/GetSessionPlanRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/session/plan/get",
+                  "title": "GetSessionPlanRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/StartSessionPlanRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/session/plan/start",
+                  "title": "StartSessionPlanRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/AddSessionPlanFeedbackRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/session/plan/feedback",
+                  "title": "AddSessionPlanFeedbackRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ApproveSessionPlanRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/session/plan/approve",
+                  "title": "ApproveSessionPlanRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/AbandonSessionPlanRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/session/plan/abandon",
+                  "title": "AbandonSessionPlanRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/ExportSessionPlanRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/session/plan/export",
+                  "title": "ExportSessionPlanRequest_unstable"
                 },
                 {
                   "allOf": [
@@ -9745,6 +10406,22 @@
                         }
                       ],
                       "title": "SteerSessionResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/SessionPlanResponse_unstable"
+                        }
+                      ],
+                      "title": "SessionPlanResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ExportSessionPlanResponse_unstable"
+                        }
+                      ],
+                      "title": "ExportSessionPlanResponse_unstable"
                     },
                     {
                       "allOf": [

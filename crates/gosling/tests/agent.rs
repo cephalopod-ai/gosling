@@ -2780,6 +2780,7 @@ mod tests {
         /// `with_retry` budget for a 429 or connect error is exhausted.
         struct SetupFailureProvider {
             agent_turn_calls: AtomicUsize,
+            error: ProviderError,
         }
 
         #[async_trait]
@@ -2797,10 +2798,7 @@ mod tests {
                 if is_agent_turn {
                     self.agent_turn_calls.fetch_add(1, Ordering::SeqCst);
                 }
-                Err(ProviderError::RateLimitExceeded {
-                    details: "too many requests".to_string(),
-                    retry_delay: None,
-                })
+                Err(self.error.clone())
             }
 
             fn get_name(&self) -> &str {
@@ -2826,6 +2824,10 @@ mod tests {
             ));
             let provider = Arc::new(SetupFailureProvider {
                 agent_turn_calls: AtomicUsize::new(0),
+                error: ProviderError::RateLimitExceeded {
+                    details: "too many requests".to_string(),
+                    retry_delay: None,
+                },
             });
             let session = agent
                 .config
@@ -2975,6 +2977,104 @@ mod tests {
                     .iter()
                     .any(|text| text.contains("Please resend your message")),
                 "{user_visible:?}"
+            );
+
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn unavailable_model_switches_to_the_configured_turn_local_fallback() -> Result<()> {
+            let temp_dir = tempfile::tempdir()?;
+            let session_manager = Arc::new(SessionManager::new(temp_dir.path().join("data")));
+            let permission_manager =
+                Arc::new(PermissionManager::new(temp_dir.path().join("config")));
+            let fallback = Arc::new(FallbackProvider::new());
+            let agent = Agent::with_config(
+                AgentConfig::new(
+                    session_manager,
+                    permission_manager,
+                    GoslingMode::default(),
+                    true,
+                    GoslingPlatform::GoslingCli,
+                )
+                .with_provider_failover(ProviderFailoverConfig::new(
+                    fallback.clone(),
+                    ModelConfig::new("fallback-model"),
+                )),
+            );
+            let provider = Arc::new(SetupFailureProvider {
+                agent_turn_calls: AtomicUsize::new(0),
+                error: ProviderError::RequestFailed(
+                    "Bad request (400): The 'gpt-5.4' model is not supported when using Codex with a ChatGPT account."
+                        .to_string(),
+                ),
+            });
+            let session = agent
+                .config
+                .session_manager
+                .create_session(
+                    PathBuf::default(),
+                    "unavailable-model-failover".to_string(),
+                    SessionType::Hidden,
+                    GoslingMode::default(),
+                )
+                .await?;
+            agent
+                .update_provider(provider.clone(), ModelConfig::new("gpt-5.4"), &session.id)
+                .await?;
+
+            let reply_stream = agent
+                .reply(
+                    Message::user().with_text(USER_TEXT),
+                    SessionConfig {
+                        id: session.id.clone(),
+                        max_turns: Some(4),
+                        compacted_context: false,
+                        tail_limit: None,
+                    },
+                    None,
+                )
+                .await?;
+            tokio::pin!(reply_stream);
+            let mut texts = Vec::new();
+            let mut notifications = Vec::new();
+            let mut terminal_errors = Vec::new();
+            while let Some(event) = reply_stream.next().await {
+                if let AgentEvent::Message(message) = event? {
+                    notifications.extend(message.content.iter().filter_map(|content| {
+                        content
+                            .as_system_notification()
+                            .map(|notification| notification.msg.clone())
+                    }));
+                    texts.push(message.as_concat_text());
+                    terminal_errors.extend(message.metadata.terminal_error);
+                }
+            }
+
+            assert_eq!(provider.agent_turn_calls.load(Ordering::SeqCst), 1);
+            assert_eq!(fallback.calls.load(Ordering::SeqCst), 1);
+            assert!(texts.iter().any(|text| text == FALLBACK_TEXT), "{texts:?}");
+            assert!(notifications.iter().any(|text| {
+                text.contains("Continuing this turn from the last checkpoint")
+                    && text.contains("mock-fallback / fallback-model")
+            }));
+            assert!(terminal_errors.is_empty(), "{terminal_errors:?}");
+
+            let persisted = agent
+                .config
+                .session_manager
+                .get_session(&session.id, false)
+                .await?;
+            assert_eq!(
+                persisted.provider_name.as_deref(),
+                Some("mock-setup-failure")
+            );
+            assert_eq!(
+                persisted
+                    .model_config
+                    .as_ref()
+                    .map(|model| model.model_name.as_str()),
+                Some("gpt-5.4")
             );
 
             Ok(())

@@ -1,4 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
+import type { SessionPlanResponse_unstable } from '@repo-makeover/gosling-sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { acpChatSessionActions, acpChatSessionStore } from '../acp/chatSessionStore';
 import { IntlTestWrapper } from '../i18n/test-utils';
@@ -42,6 +43,42 @@ vi.mock('../toasts', () => ({
 
 const SESSION_ID = 'thread-navigation-session';
 
+function awaitingReviewPlan(): SessionPlanResponse_unstable {
+  return {
+    snapshot: {
+      plan: {
+        id: 'plan-1',
+        generation: 2,
+        status: 'awaiting_review' as const,
+        sourceThroughRowId: 42,
+        sourceHash: 'source',
+        scopeHash: 'scope',
+        capabilityPolicyVersion: 1,
+        plannerProvider: 'openai',
+        plannerModel: 'gpt-5',
+        createdAt: '2026-09-13T00:00:00Z',
+        updatedAt: '2026-09-13T00:01:00Z',
+      },
+      activeRevision: {
+        id: 'revision-3',
+        revision: 3,
+        contentMarkdown: '# Plan\n\nFirst step',
+        contentSha256: '0123456789abcdef',
+        plannerProvider: 'openai',
+        plannerModel: 'gpt-5',
+        sourceThroughRowId: 42,
+        sourceHash: 'source',
+        scopeHash: 'scope',
+        createdAt: '2026-09-13T00:01:00Z',
+      },
+      feedback: [],
+      recentEvents: [],
+    },
+    providerSupportsHostEnforcedPlanning: true,
+    permittedCapabilities: ['workspace_read_text'],
+  };
+}
+
 function session(): Session {
   return {
     id: SESSION_ID,
@@ -70,6 +107,10 @@ describe('useChatSession history navigation', () => {
     mocks.loadSession.mockClear();
     mocks.submitMessage.mockClear();
     mocks.toastError.mockClear();
+    Object.assign(window.electron, {
+      isAnyWindowFocused: vi.fn(() => Promise.resolve(true)),
+      showNotification: vi.fn(),
+    });
     acpChatSessionActions.finishSessionLoad(SESSION_ID, session(), 1);
     acpChatSessionActions.setMessages(SESSION_ID, [message('current')]);
     acpChatSessionActions.setHistoryPageState(SESSION_ID, {
@@ -156,6 +197,27 @@ describe('useChatSession history navigation', () => {
     expect(getSelectedSessionInputs(SESSION_ID)).toEqual(['notes']);
   });
 
+  it('routes a plan implementation reference through the exact-input submit path', async () => {
+    const reference =
+      'Implement approved plan plan-1 generation 4 revision revision-7 (sha-7; source source-hash; scope scope-hash). Follow the stored plan exactly; report deviations.';
+    setSessionInputSelected(SESSION_ID, 'notes', true);
+    const { result } = renderHook(
+      () => useChatSession({ sessionId: SESSION_ID, onStreamFinish: vi.fn() }),
+      { wrapper: IntlTestWrapper }
+    );
+
+    await act(async () => {
+      await result.current.submitPlanImplementationReference(reference);
+    });
+
+    expect(mocks.submitMessage).toHaveBeenCalledWith(
+      SESSION_ID,
+      expect.objectContaining({ content: [{ type: 'text', text: reference }] }),
+      expect.objectContaining({ includeSelectedSessionInputs: false })
+    );
+    expect(getSelectedSessionInputs(SESSION_ID)).toEqual(['notes']);
+  });
+
   it('reports success only after reaching the oldest history page', async () => {
     mocks.acpListSessionMessages
       .mockResolvedValueOnce({
@@ -210,6 +272,52 @@ describe('useChatSession history navigation', () => {
       title: 'Failed to load older messages',
       msg: 'offline',
     });
+  });
+
+  it('notifies once when an exact plan revision becomes ready for review', async () => {
+    vi.mocked(window.electron.getSetting).mockResolvedValue(true);
+    vi.mocked(window.electron.isAnyWindowFocused).mockResolvedValue(false);
+    acpChatSessionActions.setPlanResponse(SESSION_ID, awaitingReviewPlan());
+
+    const { rerender } = renderHook(
+      () => useChatSession({ sessionId: SESSION_ID, onStreamFinish: vi.fn() }),
+      { wrapper: IntlTestWrapper }
+    );
+
+    await waitFor(() =>
+      expect(window.electron.showNotification).toHaveBeenCalledWith({
+        title: 'Plan ready for review.',
+        body: 'Open Gosling to review the exact plan revision.',
+      })
+    );
+    rerender();
+    expect(window.electron.showNotification).toHaveBeenCalledTimes(1);
+  });
+
+  it('suppresses the generic completion notification while a plan awaits review', async () => {
+    vi.mocked(window.electron.getSetting).mockResolvedValue(true);
+    vi.mocked(window.electron.isAnyWindowFocused).mockResolvedValue(false);
+    acpChatSessionActions.setPlanResponse(SESSION_ID, awaitingReviewPlan());
+    const onStreamFinish = vi.fn();
+    const { result } = renderHook(() => useChatSession({ sessionId: SESSION_ID, onStreamFinish }), {
+      wrapper: IntlTestWrapper,
+    });
+
+    await waitFor(() => expect(window.electron.showNotification).toHaveBeenCalledTimes(1));
+    vi.mocked(window.electron.showNotification).mockClear();
+    await act(async () => {
+      await result.current.handleSubmit({ msg: 'Continue', images: [] });
+    });
+    const calls = mocks.submitMessage.mock.calls as unknown as Array<
+      [unknown, unknown, { onFinish(error?: string): Promise<void> }]
+    >;
+    const options = calls[calls.length - 1]?.[2];
+    await act(async () => {
+      await options?.onFinish();
+    });
+
+    expect(window.electron.showNotification).not.toHaveBeenCalled();
+    expect(onStreamFinish).toHaveBeenCalledOnce();
   });
 
   it('automatically continues a safely recoverable crashed prompt', async () => {

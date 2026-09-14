@@ -8,7 +8,10 @@ import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 import { PanelLeft, Tornado } from 'lucide-react';
 
-gosling’s permissions determine how much autonomy it has when modifying files, using extensions, and performing automated actions. By selecting a permission mode, you have full control over how gosling interacts with your development environment.
+gosling’s permission mode controls the default treatment of tool calls. It is
+one layer in the authorization pipeline: saved tool policy, security checks,
+network-egress checks, policy hooks, workspace restrictions, and any active
+host-enforced planning boundary can still deny a request or require review.
 
 <details>
   <summary>Permission Modes Video Walkthrough</summary>
@@ -26,13 +29,23 @@ gosling’s permissions determine how much autonomy it has when modifying files,
 
 | Mode | Description | Best For |
 |------|-------------|----------|
-| **Completely Autonomous** | gosling can modify files, use extensions, and delete files **without requiring approval** | Users who want **full automation** and seamless integration into their workflow |
-| **Manual Approval** | gosling **asks for confirmation** before using any tools or extensions (supports granular [tool permissions](/docs/guides/managing-tools/tool-permissions)) | Users who want to **review and approve** every change and tool usage |
-| **Smart Approval** | gosling uses a risk-based approach to **automatically approve low-risk actions** and **flag others** for approval (supports granular [tool permissions](/docs/guides/managing-tools/tool-permissions))  | Users who want a **balanced mix of autonomy and oversight** based on the action’s impact |
-| **Chat Only** | gosling **only engages in chat**, with no extension use or file modifications | Users who prefer a **conversational AI experience** for analysis, writing, and reasoning tasks without automation |
+| **Completely Autonomous** | The ordinary permission layer does not prompt for unknown or `Ask Before` tools. Saved `Never Allow` rules and stricter security, egress, hook, workspace, and planning decisions still apply. | Users who accept tool execution without routine confirmation |
+| **Manual Approval** | gosling asks for confirmation before each ordinary tool call. A confirmation cannot override a denial from a stricter policy layer. | Users who want to review every ordinary tool call |
+| **Smart Approval** | gosling may approve a tool only when its read-only classifier and host-side side-effect checks agree; uncertain, sensitive, or explicitly configured tools require approval or are denied. | Users who want low-risk reads automated while retaining review gates |
+| **Chat Only** | gosling does not publish gosling-hosted tools to the model. | Users who want a conversational session without gosling-hosted automation |
 
 :::warning
-`Autonomous Mode` is applied by default.
+`Autonomous Mode` is the default for new gosling sessions. It is not a promise
+that every request will execute: the stricter checks described above remain in
+force.
+:::
+
+:::caution
+Some CLI-backed providers manage and execute their own tools outside gosling.
+gosling cannot apply its normal tool-inspection pipeline to those provider-owned
+actions. Chat Only therefore suppresses gosling-hosted tools but cannot by
+itself make an externally managed provider read-only. Use that provider's own
+permission controls, or choose a provider whose tools are executed by gosling.
 :::
 
 ## Configuring gosling mode
@@ -137,12 +150,29 @@ Here's how to configure:
   </TabItem>
 </Tabs>
 
-  :::info
-  In manual and smart approval modes, you will see "Allow" and "Deny" buttons in your session windows during tool calls. 
-  gosling will only ask for permission for tools that it deems are 'write' tools, e.g. any 'text editor write', 'text editor edit', 'bash - rm, cp, mv' commands. 
-  
-  Read/write approval makes best effort attempt at classifying read or write tools. This is interpreted by your LLM provider. 
-  :::
+:::info
+In Manual Approval and Smart Approval modes, a tool request that needs your
+decision appears with Allow and Deny controls. Manual Approval asks for every
+ordinary tool call. Smart Approval uses a model-assisted read-only judgment,
+but that judgment cannot grant tools that gosling recognizes as having side
+effects. Tool annotations may force more review; they cannot grant execution.
+:::
+
+## Host-enforced planning
+
+Host-enforced planning is separate from the four permission modes. While a
+session has an open plan, gosling publishes a fixed set of bounded read and plan
+lifecycle capabilities and checks the same capability again immediately before
+dispatch. Ordinary permission grants, tool names, annotations, extensions, and
+provider output cannot widen this set. Shell, network, file mutation,
+delegation, frontend tools, and direct app tool calls are unavailable during the
+planning turn.
+
+Providers that execute tools outside gosling cannot enter host-enforced
+planning. Approval applies only to the exact persisted plan generation,
+revision, content hash, conversation source, and workspace scope that you
+reviewed. Approving a plan records the decision; implementation requires a
+separate explicit action.
 
 ## CLI Provider Permission Integration
 

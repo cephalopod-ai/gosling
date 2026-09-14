@@ -12,6 +12,8 @@ components:
       - ui/desktop/src/ipc
       - ui/desktop/src/preload.ts
       - ui/desktop/src/main.ts
+      - ui/desktop/src/main
+      - ui/desktop/src/utils/autoUpdater.ts
     responsibilities:
       - define channel names and payload types shared by preload and main
       - keep renderer-facing privileged API surface minimal
@@ -33,6 +35,7 @@ components:
       - ui/desktop/scripts
       - ui/desktop/forge.config.ts
       - ui/desktop/vite.shell.renderer.config.mts
+      - ui/shell-kit/src/shell-consumer.js
     responsibilities:
       - resolve trusted consumer manifests and renderer entries
       - keep Electron host main and preload entries immutable across consumers
@@ -50,6 +53,7 @@ components:
   - id: shell.domain_adapter
     owners: [core_maintainers]
     paths:
+      - crates/gosling/src/acp/domain_adapter.rs
       - crates/gosling/src/acp/shell.rs
       - crates/gosling/src/acp/server/shell_handlers.rs
       - crates/gosling-cli/src/cli.rs
@@ -58,3 +62,87 @@ components:
       - negotiate and supervise registered out-of-process domain adapters
       - keep domain authorization and confirmation in the Rust server
       - prevent descriptor-only domain capability from reaching ready state
+
+  - id: core.session_planning
+    owners: [core_maintainers]
+    paths:
+      - crates/gosling/src/session/plans.rs
+      - crates/gosling/src/session/diagnostics.rs
+      - crates/gosling/src/session/session_manager.rs
+      - crates/gosling/src/session/session_manager/schema.rs
+      - crates/gosling/src/session/session_manager/migrations.rs
+      - crates/gosling/src/session/session_manager/pool_lifecycle.rs
+      - crates/gosling/src/session/session_manager/plan_storage.rs
+      - crates/gosling/src/session/session_manager/message_storage.rs
+      - crates/gosling/src/session/session_manager/session_crud.rs
+      - crates/gosling/src/session/session_manager/session_transfer.rs
+      - crates/gosling/src/session/session_manager/handoff_storage.rs
+      - crates/gosling/src/workspace/planning_access.rs
+      - crates/gosling/src/agents/platform_extensions/planning.rs
+      - crates/gosling/src/acp/server/plans.rs
+      - crates/gosling-sdk-types/src/custom_requests.rs
+      - crates/gosling-sdk-types/src/custom_notifications.rs
+      - crates/gosling-cli/src/session
+    responsibilities:
+      - own durable plan generations, immutable revisions, feedback, events, and decisions
+      - bind plan transitions to current transcript and workspace evidence
+      - project typed plan state through ACP and first-party CLI workflows
+      - preserve plan history without transferring approval authority across session boundaries
+    notes:
+      - source implementation is present; release conformance depends on the recorded validation evidence
+
+  - id: desktop.plan_review
+    owners: [core_maintainers]
+    paths:
+      - ui/desktop/src/acp/plans.ts
+      - ui/desktop/src/acp/chatNotifications.ts
+      - ui/desktop/src/acp/chatSessionController.ts
+      - ui/desktop/src/acp/chatSessionStore.ts
+      - ui/desktop/src/acp/adapter/goslingSessionNotifications.ts
+      - ui/desktop/src/components/BaseChat.tsx
+      - ui/desktop/src/components/ChatInput.tsx
+      - ui/desktop/src/components/plans
+      - ui/desktop/src/hooks/useChatSession.ts
+      - ui/desktop/src/hooks/useChatSessionTypes.ts
+    responsibilities:
+      - project typed plan state into the first-party review workflow
+      - bind feedback and decisions to an exact revision
+      - keep approval separate from implementation submission
+    notes:
+      - source implementation is present; this ownership entry is not a candidate-wide conformance or published-release claim
+
+  - id: security.planning_execution_boundary
+    owners: [core_maintainers]
+    paths:
+      - crates/gosling/src/agents/interaction_policy.rs
+      - crates/gosling/src/agents/agent.rs
+      - crates/gosling/src/agents/agent/extensions.rs
+      - crates/gosling/src/agents/agent/frontend_extensions.rs
+      - crates/gosling/src/agents/agent/hooks.rs
+      - crates/gosling/src/agents/agent/reply_context.rs
+      - crates/gosling/src/agents/agent/reply_entry.rs
+      - crates/gosling/src/agents/agent/reply_stream.rs
+      - crates/gosling/src/agents/agent/provider_transitions.rs
+      - crates/gosling/src/agents/agent/tool_dispatch.rs
+      - crates/gosling/src/agents/extension_manager/tool_dispatch.rs
+      - crates/gosling/src/agents/extension_manager/tool_metadata.rs
+      - crates/gosling/src/agents/extension_manager.rs
+      - crates/gosling/src/agents/extension_manager/lifecycle.rs
+      - crates/gosling/src/agents/moim.rs
+      - crates/gosling/src/agents/platform_extensions/code_execution.rs
+      - crates/gosling/src/agents/platform_extensions/mod.rs
+      - crates/gosling/src/agents/platform_extensions/session_history.rs
+      - crates/gosling/src/agents/reply_parts.rs
+      - crates/gosling/src/agents/tool_execution.rs
+      - crates/gosling/src/context_mgmt/memory.rs
+      - crates/gosling/src/context_mgmt/summarizer
+      - crates/gosling/src/providers
+      - crates/gosling/src/session/session_manager/tool_operations.rs
+      - crates/gosling/src/session/session_manager/session_crud.rs
+    responsibilities:
+      - capture an immutable interaction policy for each turn
+      - derive planning authority only from fixed host-owned capability identities
+      - enforce the same planning boundary across catalog, provider, and dispatch paths
+      - revalidate durable plan authority atomically with tool-operation begin or replay
+    notes:
+      - source implementation is present; release conformance depends on the recorded validation evidence

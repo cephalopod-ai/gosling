@@ -100,6 +100,20 @@ fn is_permanent_request_failure(message: &str) -> bool {
         .any(|marker| message.contains(marker))
 }
 
+fn is_unavailable_model_failure(message: &str) -> bool {
+    let message = message.to_ascii_lowercase();
+    message.contains("model")
+        && [
+            "not supported",
+            "unsupported",
+            "does not exist",
+            "not found",
+            "no longer available",
+        ]
+        .iter()
+        .any(|marker| message.contains(marker))
+}
+
 pub fn should_retry(error: &ProviderError, config: &RetryConfig) -> bool {
     match error {
         ProviderError::RateLimitExceeded { .. }
@@ -109,6 +123,14 @@ pub fn should_retry(error: &ProviderError, config: &RetryConfig) -> bool {
         ProviderError::RequestFailed(_) => !config.transient_only,
         _ => false,
     }
+}
+
+/// Whether a failed primary route may hand the unexecuted turn to an explicitly
+/// configured fallback. A missing model is permanent for the primary request,
+/// but recoverable through a different route without retrying that request.
+pub fn should_failover(error: &ProviderError, config: &RetryConfig) -> bool {
+    should_retry(error, config)
+        || matches!(error, ProviderError::RequestFailed(message) if is_unavailable_model_failure(message))
 }
 
 pub async fn retry_operation<F, Fut, T>(
@@ -272,6 +294,27 @@ mod tests {
         let config = RetryConfig::default();
         let error = ProviderError::RequestFailed("Bad request (400): model not found".into());
         assert!(!should_retry(&error, &config));
+    }
+
+    #[test]
+    fn unavailable_model_is_failover_eligible_but_not_retryable() {
+        let config = RetryConfig::default();
+        let error = ProviderError::RequestFailed(
+            "Bad request (400): The 'gpt-5.4' model is not supported when using Codex with a ChatGPT account."
+                .into(),
+        );
+
+        assert!(!should_retry(&error, &config));
+        assert!(should_failover(&error, &config));
+    }
+
+    #[test]
+    fn unrelated_bad_request_is_not_failover_eligible() {
+        let config = RetryConfig::default();
+        let error =
+            ProviderError::RequestFailed("Bad request (400): invalid reasoning effort".into());
+
+        assert!(!should_failover(&error, &config));
     }
 
     #[test]

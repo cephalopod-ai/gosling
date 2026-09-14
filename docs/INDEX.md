@@ -45,8 +45,10 @@ for the relationship to cephalopod-ai/gosling.
 - [adr/0017-session-private-directory-grants.md](adr/0017-session-private-directory-grants.md) — additive, session-only directory grants for active workspace chats
 - [adr/0018-output-contribution-history.md](adr/0018-output-contribution-history.md) — agent/model attribution, saved output revisions, comparison, export, and guarded restore
 - [adr/0019-full-session-handoff-continuity.md](adr/0019-full-session-handoff-continuity.md) — bounded, redacted checkpoints and atomic provider/model continuity
+- [adr/0020-host-enforced-plan-lifecycle.md](adr/0020-host-enforced-plan-lifecycle.md) — persisted, revision-bound planning with a non-widenable host capability boundary
 - [build/](build/) — build documentation
 - [build/context-compaction-failsafe-plan.md](build/context-compaction-failsafe-plan.md) — recurring oversized-session compaction repair plan and acceptance criteria
+- [build/host-enforced-planning/README.md](build/host-enforced-planning/README.md) — ADR-0020 implementation sequence, release gates, evidence, and resumable status
 - [cloud/](cloud/) — audit and playtest reports (not cloud-hosting runbooks)
 - [cloud/2026-09-13-consolidated-audit-repair.md](cloud/2026-09-13-consolidated-audit-repair.md) — canonical reconciliation, disposition, repair commits, validation, local install addendum, and remaining decisions for both 2026-09-13 audits
 - [cloud/2026-09-13-live-all-scenarios-playtest.md](cloud/2026-09-13-live-all-scenarios-playtest.md) — historical 2026-09-13 live playtest report, with a disposition addendum linking to the repair campaign

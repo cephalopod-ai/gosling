@@ -5,6 +5,7 @@
 import type { App, IpcMain } from 'electron';
 import { BrowserWindow } from 'electron';
 import { execFileSync, spawn } from 'child_process';
+import { desktopCommandChannels } from '../ipc/channels';
 import type { Settings } from '../utils/settings';
 
 export interface SystemIpcDependencies {
@@ -25,19 +26,19 @@ export interface SystemIpcDependencies {
 }
 
 export const SYSTEM_IPC_CHANNELS = [
-  'set-menu-bar-icon',
-  'get-menu-bar-icon-state',
-  'set-dock-icon',
-  'get-dock-icon-state',
-  'open-notifications-settings',
-  'set-wakelock',
-  'get-wakelock-state',
-  'set-wakelock-active',
-  'set-session-recovery-active',
-  'set-spellcheck',
-  'get-spellcheck-state',
-  'is-any-window-focused',
-  'get-is-fullscreen',
+  desktopCommandChannels.setMenuBarIcon,
+  desktopCommandChannels.getMenuBarIconState,
+  desktopCommandChannels.setDockIcon,
+  desktopCommandChannels.getDockIconState,
+  desktopCommandChannels.openNotificationsSettings,
+  desktopCommandChannels.setWakelock,
+  desktopCommandChannels.getWakelockState,
+  desktopCommandChannels.setWakelockActive,
+  desktopCommandChannels.setSessionRecoveryActive,
+  desktopCommandChannels.setSpellcheck,
+  desktopCommandChannels.getSpellcheckState,
+  desktopCommandChannels.isAnyWindowFocused,
+  desktopCommandChannels.getIsFullScreen,
 ] as const;
 
 export function registerSystemIpcHandlers(
@@ -57,7 +58,7 @@ export function registerSystemIpcHandlers(
   } = dependencies;
 
   // Handle menu bar icon visibility
-  targetIpcMain.handle('set-menu-bar-icon', async (_event, show: boolean) => {
+  targetIpcMain.handle(desktopCommandChannels.setMenuBarIcon, async (_event, show: boolean) => {
     updateSettings((settings) => {
       settings.showMenuBarIcon = show;
     });
@@ -65,7 +66,7 @@ export function registerSystemIpcHandlers(
     else destroyTray();
     return true;
   });
-  targetIpcMain.handle('get-menu-bar-icon-state', () => {
+  targetIpcMain.handle(desktopCommandChannels.getMenuBarIconState, () => {
     try {
       return getSettings().showMenuBarIcon ?? true;
     } catch (error) {
@@ -75,7 +76,7 @@ export function registerSystemIpcHandlers(
   });
 
   // Handle dock icon visibility (macOS only)
-  targetIpcMain.handle('set-dock-icon', async (_event, show: boolean) => {
+  targetIpcMain.handle(desktopCommandChannels.setDockIcon, async (_event, show: boolean) => {
     if (process.platform !== 'darwin') return false;
     const settings = getSettings();
     updateSettings((nextSettings) => {
@@ -90,7 +91,7 @@ export function registerSystemIpcHandlers(
     }
     return true;
   });
-  targetIpcMain.handle('get-dock-icon-state', () => {
+  targetIpcMain.handle(desktopCommandChannels.getDockIconState, () => {
     try {
       if (process.platform !== 'darwin') return true;
       return getSettings().showDockIcon ?? true;
@@ -101,7 +102,7 @@ export function registerSystemIpcHandlers(
   });
 
   // Handle opening system notifications preferences
-  targetIpcMain.handle('open-notifications-settings', async () => {
+  targetIpcMain.handle(desktopCommandChannels.openNotificationsSettings, async () => {
     try {
       if (process.platform === 'darwin') {
         spawn('open', ['x-apple.systempreferences:com.apple.preference.notifications']);
@@ -150,7 +151,7 @@ export function registerSystemIpcHandlers(
   });
 
   // Handle wakelock setting
-  targetIpcMain.handle('set-wakelock', async (_event, enable: boolean) => {
+  targetIpcMain.handle(desktopCommandChannels.setWakelock, async (_event, enable: boolean) => {
     updateSettings((settings) => {
       settings.enableWakelock = enable;
     });
@@ -159,7 +160,7 @@ export function registerSystemIpcHandlers(
     }
     return true;
   });
-  targetIpcMain.handle('get-wakelock-state', () => {
+  targetIpcMain.handle(desktopCommandChannels.getWakelockState, () => {
     try {
       return getSettings().enableWakelock ?? false;
     } catch (error) {
@@ -168,7 +169,7 @@ export function registerSystemIpcHandlers(
     }
   });
   targetIpcMain.handle(
-    'set-wakelock-active',
+    desktopCommandChannels.setWakelockActive,
     (event, sessionId: string, active: boolean): boolean => {
       const windowId = BrowserWindow.fromWebContents(event.sender)?.id;
       if (!windowId || !sessionId.trim()) return false;
@@ -185,7 +186,7 @@ export function registerSystemIpcHandlers(
     }
   );
   targetIpcMain.handle(
-    'set-session-recovery-active',
+    desktopCommandChannels.setSessionRecoveryActive,
     (event, sessionId: unknown, workingDir: unknown, active: unknown): boolean => {
       const windowId = BrowserWindow.fromWebContents(event.sender)?.id;
       if (
@@ -199,13 +200,13 @@ export function registerSystemIpcHandlers(
       return setSessionRecoveryActive(windowId, sessionId, workingDir, active);
     }
   );
-  targetIpcMain.handle('set-spellcheck', async (_event, enable: boolean) => {
+  targetIpcMain.handle(desktopCommandChannels.setSpellcheck, async (_event, enable: boolean) => {
     updateSettings((settings) => {
       settings.spellcheckEnabled = enable;
     });
     return true;
   });
-  targetIpcMain.handle('get-spellcheck-state', () => {
+  targetIpcMain.handle(desktopCommandChannels.getSpellcheckState, () => {
     try {
       return getSettings().spellcheckEnabled ?? true;
     } catch (error) {
@@ -213,9 +214,12 @@ export function registerSystemIpcHandlers(
       return true;
     }
   });
-  targetIpcMain.handle('is-any-window-focused', () => BrowserWindow.getFocusedWindow() !== null);
   targetIpcMain.handle(
-    'get-is-fullscreen',
+    desktopCommandChannels.isAnyWindowFocused,
+    () => BrowserWindow.getFocusedWindow() !== null
+  );
+  targetIpcMain.handle(
+    desktopCommandChannels.getIsFullScreen,
     (event) => BrowserWindow.fromWebContents(event.sender)?.isFullScreen() ?? false
   );
 }

@@ -883,6 +883,181 @@ export const zSteerSessionResponse_unstable = z.object({
     messageId: z.string()
 });
 
+/**
+ * Read the current or selected generation of a session plan.
+ */
+export const zGetSessionPlanRequest_unstable = z.object({
+    sessionId: z.string(),
+    generation: z.number().int().gte(0).nullish()
+});
+
+/**
+ * Durable status for a host-enforced session plan.
+ */
+export const zPlanStatusDto = z.enum([
+    'drafting',
+    'awaiting_review',
+    'approved',
+    'abandoned',
+    'stale'
+]);
+
+/**
+ * Plan-level state and concurrency boundaries.
+ */
+export const zSessionPlanDto = z.object({
+    id: z.string(),
+    generation: z.number().int().gte(0),
+    status: zPlanStatusDto,
+    sourceThroughRowId: z.number().int().nullish(),
+    sourceHash: z.string(),
+    scopeHash: z.string(),
+    capabilityPolicyVersion: z.number().int().gte(0),
+    plannerProvider: z.string().nullish(),
+    plannerModel: z.string().nullish(),
+    staleReason: z.string().nullish(),
+    createdAt: z.string(),
+    updatedAt: z.string()
+});
+
+/**
+ * Immutable Markdown revision of a session plan.
+ */
+export const zSessionPlanRevisionDto = z.object({
+    id: z.string(),
+    revision: z.number().int().gte(0),
+    parentRevisionId: z.string().nullish(),
+    contentMarkdown: z.string(),
+    contentSha256: z.string(),
+    plannerProvider: z.string().nullish(),
+    plannerModel: z.string().nullish(),
+    sourceThroughRowId: z.number().int().nullish(),
+    sourceHash: z.string(),
+    scopeHash: z.string(),
+    createdAt: z.string()
+});
+
+/**
+ * User feedback bound to an exact immutable plan revision.
+ */
+export const zSessionPlanFeedbackDto = z.object({
+    id: z.string(),
+    revisionId: z.string(),
+    body: z.string(),
+    startLine: z.number().int().gte(0).nullish(),
+    endLine: z.number().int().gte(0).nullish(),
+    selectedTextSha256: z.string().nullish(),
+    selectedTextPreview: z.string().nullish(),
+    consumedByRevisionId: z.string().nullish(),
+    createdAt: z.string()
+});
+
+/**
+ * User-safe projection of an append-only plan lifecycle event.
+ */
+export const zSessionPlanEventDto = z.object({
+    eventType: z.string(),
+    fromStatus: zPlanStatusDto.nullish(),
+    toStatus: zPlanStatusDto.nullish(),
+    revisionId: z.string().nullish(),
+    revisionSha256: z.string().nullish(),
+    actor: z.string(),
+    createdAt: z.string()
+});
+
+/**
+ * Bounded current view of one session plan generation.
+ */
+export const zPlanSnapshotDto = z.object({
+    plan: zSessionPlanDto,
+    activeRevision: zSessionPlanRevisionDto.nullish(),
+    feedback: z.array(zSessionPlanFeedbackDto).optional().default([]),
+    recentEvents: z.array(zSessionPlanEventDto).optional().default([])
+});
+
+/**
+ * Server-authored capabilities available during a host-enforced planning turn.
+ */
+export const zPlanningCapabilityDto = z.enum([
+    'workspace_tree',
+    'workspace_read_text',
+    'workspace_search_text',
+    'session_history_search',
+    'session_history_read',
+    'plan_update',
+    'plan_request_review'
+]);
+
+/**
+ * Shared response for plan reads and lifecycle mutations.
+ */
+export const zSessionPlanResponse_unstable = z.object({
+    snapshot: zPlanSnapshotDto.nullish(),
+    providerSupportsHostEnforcedPlanning: z.boolean(),
+    permittedCapabilities: z.array(zPlanningCapabilityDto).optional().default([]),
+    implementationReference: z.string().nullish()
+});
+
+/**
+ * Resume an open generation or atomically create a new drafting generation.
+ */
+export const zStartSessionPlanRequest_unstable = z.object({
+    sessionId: z.string(),
+    expectedGeneration: z.number().int().gte(0).nullish()
+});
+
+/**
+ * Add free-form or line-scoped feedback against an exact plan revision.
+ */
+export const zAddSessionPlanFeedbackRequest_unstable = z.object({
+    sessionId: z.string(),
+    body: z.string(),
+    startLine: z.number().int().gte(0).nullish(),
+    endLine: z.number().int().gte(0).nullish(),
+    selectedText: z.string().nullish(),
+    expectedGeneration: z.number().int().gte(0),
+    expectedRevisionId: z.string(),
+    expectedRevisionSha256: z.string(),
+    expectedSourceHash: z.string(),
+    expectedScopeHash: z.string()
+});
+
+/**
+ * Approve an exact reviewed plan revision.
+ */
+export const zApproveSessionPlanRequest_unstable = z.object({
+    sessionId: z.string(),
+    decisionNote: z.string().nullish(),
+    expectedGeneration: z.number().int().gte(0),
+    expectedRevisionId: z.string(),
+    expectedRevisionSha256: z.string(),
+    expectedSourceHash: z.string(),
+    expectedScopeHash: z.string()
+});
+
+/**
+ * Abandon an exact open plan generation.
+ */
+export const zAbandonSessionPlanRequest_unstable = z.object({
+    sessionId: z.string(),
+    expectedGeneration: z.number().int().gte(0)
+});
+
+/**
+ * Export an exact approved/current plan revision as user-readable Markdown.
+ */
+export const zExportSessionPlanRequest_unstable = z.object({
+    sessionId: z.string(),
+    expectedGeneration: z.number().int().gte(0),
+    expectedRevisionId: z.string(),
+    expectedRevisionSha256: z.string(),
+    expectedStatus: zPlanStatusDto
+});
+
+export const zExportSessionPlanResponse_unstable = z.object({
+    markdown: z.string()
+});
+
 export const zDiagnosticsReportLevel = z.enum(['summary', 'full']);
 
 export const zDiagnosticsGetRequest_unstable = z.object({
@@ -2766,6 +2941,27 @@ export const zArtifactUpdate = z.object({
 });
 
 /**
+ * Compact identity for cache invalidation and optimistic concurrency UI.
+ */
+export const zPlanRevisionIdentityDto = z.object({
+    id: z.string(),
+    revision: z.number().int().gte(0),
+    contentSha256: z.string()
+});
+
+/**
+ * Compact plan state update. Clients fetch the full snapshot through
+ * `_gosling/unstable/session/plan/get` when this cache-invalidation event arrives.
+ */
+export const zPlanUpdate = z.object({
+    planId: z.string(),
+    generation: z.number().int().gte(0),
+    status: zPlanStatusDto,
+    activeRevision: zPlanRevisionIdentityDto.nullish(),
+    updatedAt: z.string()
+});
+
+/**
  * Discriminated union of gosling-specific session update payloads.
  * Variant tag matches ACP's convention (`sessionUpdate: "<snake_case>"`).
  *
@@ -2776,7 +2972,8 @@ export const zArtifactUpdate = z.object({
 export const zGoslingSessionUpdate = z.discriminatedUnion('sessionUpdate', [
     zSessionUsageUpdate.extend({ sessionUpdate: z.literal('usage_update') }),
     zStatusMessageUpdate.extend({ sessionUpdate: z.literal('status_message') }),
-    zArtifactUpdate.extend({ sessionUpdate: z.literal('artifact_update') })
+    zArtifactUpdate.extend({ sessionUpdate: z.literal('artifact_update') }),
+    zPlanUpdate.extend({ sessionUpdate: z.literal('plan_update') })
 ]);
 
 /**
@@ -2835,6 +3032,12 @@ export const zExtRequest = z.object({
             zSetSessionWorkingDirRestrictionRequest_unstable,
             zSetSessionSystemPromptRequest_unstable,
             zSteerSessionRequest_unstable,
+            zGetSessionPlanRequest_unstable,
+            zStartSessionPlanRequest_unstable,
+            zAddSessionPlanFeedbackRequest_unstable,
+            zApproveSessionPlanRequest_unstable,
+            zAbandonSessionPlanRequest_unstable,
+            zExportSessionPlanRequest_unstable,
             zDiagnosticsGetRequest_unstable,
             zListPromptsRequest_unstable,
             zGetPromptRequest_unstable,
@@ -2960,6 +3163,8 @@ export const zExtResponse = z.union([
                 zReadResourceResponse_unstable,
                 zSessionWorkingDirsResponse_unstable,
                 zSteerSessionResponse_unstable,
+                zSessionPlanResponse_unstable,
+                zExportSessionPlanResponse_unstable,
                 zDiagnosticsGetResponse_unstable,
                 zListPromptsResponse_unstable,
                 zGetPromptResponse_unstable,

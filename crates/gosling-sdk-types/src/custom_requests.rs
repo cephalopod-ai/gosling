@@ -703,6 +703,250 @@ pub struct DictationSecretDeleteRequest {
     pub provider: String,
 }
 
+/// Durable status for a host-enforced session plan.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PlanStatusDto {
+    #[default]
+    Drafting,
+    AwaitingReview,
+    Approved,
+    Abandoned,
+    Stale,
+}
+
+/// Server-authored capabilities available during a host-enforced planning turn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PlanningCapabilityDto {
+    WorkspaceTree,
+    WorkspaceReadText,
+    WorkspaceSearchText,
+    SessionHistorySearch,
+    SessionHistoryRead,
+    PlanUpdate,
+    PlanRequestReview,
+}
+
+/// Plan-level state and concurrency boundaries.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionPlanDto {
+    pub id: String,
+    pub generation: u64,
+    pub status: PlanStatusDto,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_through_row_id: Option<i64>,
+    pub source_hash: String,
+    pub scope_hash: String,
+    pub capability_policy_version: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub planner_provider: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub planner_model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stale_reason: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// Immutable Markdown revision of a session plan.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionPlanRevisionDto {
+    pub id: String,
+    pub revision: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_revision_id: Option<String>,
+    pub content_markdown: String,
+    pub content_sha256: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub planner_provider: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub planner_model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_through_row_id: Option<i64>,
+    pub source_hash: String,
+    pub scope_hash: String,
+    pub created_at: String,
+}
+
+/// User feedback bound to an exact immutable plan revision.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionPlanFeedbackDto {
+    pub id: String,
+    pub revision_id: String,
+    pub body: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_line: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_line: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selected_text_sha256: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selected_text_preview: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub consumed_by_revision_id: Option<String>,
+    pub created_at: String,
+}
+
+/// User-safe projection of an append-only plan lifecycle event.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionPlanEventDto {
+    pub event_type: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_status: Option<PlanStatusDto>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_status: Option<PlanStatusDto>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision_sha256: Option<String>,
+    pub actor: String,
+    pub created_at: String,
+}
+
+/// Bounded current view of one session plan generation.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanSnapshotDto {
+    pub plan: SessionPlanDto,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_revision: Option<SessionPlanRevisionDto>,
+    #[serde(default)]
+    pub feedback: Vec<SessionPlanFeedbackDto>,
+    #[serde(default)]
+    pub recent_events: Vec<SessionPlanEventDto>,
+}
+
+/// Compact identity for cache invalidation and optimistic concurrency UI.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanRevisionIdentityDto {
+    pub id: String,
+    pub revision: u64,
+    pub content_sha256: String,
+}
+
+/// Shared response for plan reads and lifecycle mutations.
+#[derive(
+    Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, JsonRpcResponse,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionPlanResponse {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snapshot: Option<PlanSnapshotDto>,
+    pub provider_supports_host_enforced_planning: bool,
+    #[serde(default)]
+    pub permitted_capabilities: Vec<PlanningCapabilityDto>,
+    /// Server-authored stable identity prompt for a separate implementation turn.
+    /// Present only when `snapshot` is the current approved plan.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub implementation_reference: Option<String>,
+}
+
+/// Read the current or selected generation of a session plan.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_gosling/unstable/session/plan/get",
+    response = SessionPlanResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct GetSessionPlanRequest {
+    pub session_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub generation: Option<u64>,
+}
+
+/// Resume an open generation or atomically create a new drafting generation.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_gosling/unstable/session/plan/start",
+    response = SessionPlanResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct StartSessionPlanRequest {
+    pub session_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_generation: Option<u64>,
+}
+
+/// Add free-form or line-scoped feedback against an exact plan revision.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_gosling/unstable/session/plan/feedback",
+    response = SessionPlanResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct AddSessionPlanFeedbackRequest {
+    pub session_id: String,
+    pub body: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_line: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_line: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selected_text: Option<String>,
+    pub expected_generation: u64,
+    pub expected_revision_id: String,
+    pub expected_revision_sha256: String,
+    pub expected_source_hash: String,
+    pub expected_scope_hash: String,
+}
+
+/// Approve an exact reviewed plan revision.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_gosling/unstable/session/plan/approve",
+    response = SessionPlanResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ApproveSessionPlanRequest {
+    pub session_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decision_note: Option<String>,
+    pub expected_generation: u64,
+    pub expected_revision_id: String,
+    pub expected_revision_sha256: String,
+    pub expected_source_hash: String,
+    pub expected_scope_hash: String,
+}
+
+/// Abandon an exact open plan generation.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_gosling/unstable/session/plan/abandon",
+    response = SessionPlanResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct AbandonSessionPlanRequest {
+    pub session_id: String,
+    pub expected_generation: u64,
+}
+
+/// Export an exact approved/current plan revision as user-readable Markdown.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_gosling/unstable/session/plan/export",
+    response = ExportSessionPlanResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportSessionPlanRequest {
+    pub session_id: String,
+    pub expected_generation: u64,
+    pub expected_revision_id: String,
+    pub expected_revision_sha256: String,
+    pub expected_status: PlanStatusDto,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportSessionPlanResponse {
+    pub markdown: String,
+}
+
 /// Return list-style metadata for a single session without loading the conversation.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
 #[request(

@@ -198,6 +198,7 @@ interface ChatInputProps {
   submitDisabled?: boolean;
   submitDisabledReason?: string;
   allowEmptySubmit?: boolean;
+  planControl?: React.ReactNode;
 }
 
 export default function ChatInput({
@@ -240,6 +241,7 @@ export default function ChatInput({
   submitDisabled = false,
   submitDisabledReason,
   allowEmptySubmit = false,
+  planControl,
 }: ChatInputProps) {
   const [_value, setValue] = useState(initialValue);
   const [displayValue, setDisplayValue] = useState(initialValue); // For immediate visual feedback
@@ -1721,6 +1723,8 @@ export default function ChatInput({
             />
           </div>
         </Tooltip>
+
+        {planControl}
 
         {/* Left: working directory (leaf folder name only) */}
         {!isBottomBarNarrow && (

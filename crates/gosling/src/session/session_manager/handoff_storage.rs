@@ -86,6 +86,14 @@ impl SessionStorage {
         let _write_guard = self.acquire_write_guard().await;
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+        let changes_provider_or_model = snapshot.source.provider_id != snapshot.target.provider_id
+            || snapshot.source.requested_model != snapshot.target.requested_model;
+        anyhow::ensure!(
+            !changes_provider_or_model
+                || !Self::has_open_plan_in_tx(&mut tx, &snapshot.session_id).await?,
+            "provider or model transitions are blocked while session {} has an open plan",
+            snapshot.session_id
+        );
         let current_generation = sqlx::query_scalar::<_, Option<i64>>(
             "SELECT MAX(generation) FROM session_handoff_snapshots WHERE session_id = ?",
         )

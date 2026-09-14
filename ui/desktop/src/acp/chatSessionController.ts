@@ -28,6 +28,7 @@ import { acpCancelPrompt, acpPromptSession } from './prompt';
 import { getAcpConnectionGeneration } from './acpConnection';
 import { resolveSessionLibraryInputs } from './sessionLibraryInputs';
 import { clearSelectedSessionInputs, getSelectedSessionInputs } from './sessionInputSelection';
+import { refreshAcpSessionPlan } from './plans';
 import { viewableFilePathsFromMarkdown } from '../components/artifacts/artifactUtils';
 import {
   acpForkSession,
@@ -53,6 +54,8 @@ export interface AcpSnapshotOptions {
 
 export interface AcpSubmitMessageOptions extends AcpSnapshotOptions {
   onFinish(error?: string): void | Promise<void>;
+  /** Preserve selected library inputs without appending them to this prompt. */
+  includeSelectedSessionInputs?: boolean;
 }
 
 export interface AcpChatSessionController {
@@ -167,6 +170,8 @@ async function createSession(
   );
   acpChatSessionActions.finishSessionLoad(sessionId, session, connectionGeneration);
   acpChatSessionActions.setArtifacts(sessionId, []);
+  acpChatSessionActions.startPlanLoad(sessionId);
+  await refreshAcpSessionPlan(sessionId);
 
   return session;
 }
@@ -254,6 +259,7 @@ async function loadSessionSnapshot(
       }
     );
     acpChatSessionActions.setArtifacts(sessionId, artifacts);
+    await refreshAcpSessionPlan(sessionId);
     if (meta.historyLoad?.mode === 'compacted') {
       acpChatSessionActions.setHistoryPageState(sessionId, {
         cursor: meta.historyLoad.nextBeforeCursor ?? null,
@@ -325,6 +331,7 @@ async function submitMessage(
   const promptAttemptId = uuidv7();
   const workingDir = snapshot?.session?.working_dir;
   const selectedInputIds =
+    options.includeSelectedSessionInputs !== false &&
     userMessage.role === 'user' &&
     !getTextAndImageContent(userMessage).textContent.trim().startsWith('/')
       ? getSelectedSessionInputs(sessionId)

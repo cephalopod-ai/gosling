@@ -466,6 +466,22 @@ describe('composer', () => {
     expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
     expect(screen.getByText(/65,537 \/ 65,536 bytes/)).toBeInTheDocument();
   });
+
+  it('disables ordinary prompts and directs open-plan review to Desktop or CLI', async () => {
+    await mount({
+      session: activeSession({
+        plan: {
+          status: 'awaiting_review',
+          generation: 2,
+          revisionId: 'revision-1',
+          revisionSha256: 'sha-1',
+        },
+      }),
+    });
+    expect(screen.getByText(/open host-enforced plan/i)).toBeInTheDocument();
+    expect(screen.getByText(/Gosling Desktop or CLI/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
+  });
 });
 
 describe('capability gating', () => {

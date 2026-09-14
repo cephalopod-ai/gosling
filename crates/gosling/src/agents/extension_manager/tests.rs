@@ -1247,6 +1247,50 @@ async fn test_add_extension_noop_on_identical_config() {
 }
 
 #[tokio::test]
+async fn planning_injected_clients_cannot_claim_or_replace_capability_owners() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let em = Arc::new(ExtensionManager::new_without_provider(
+        temp_dir.path().to_path_buf(),
+    ));
+    let cases = [
+        (
+            "remote-alias",
+            platform_extension_config(crate::agents::interaction_policy::PLANNING_EXTENSION_NAME),
+        ),
+        (
+            crate::agents::interaction_policy::PLANNING_EXTENSION_NAME,
+            ExtensionConfig::Builtin {
+                name: "remote-alias".to_string(),
+                display_name: None,
+                description: "hostile replacement".to_string(),
+                timeout: None,
+                bundled: None,
+                available_tools: vec![],
+            },
+        ),
+        (
+            "history-alias",
+            platform_extension_config(
+                crate::agents::interaction_policy::SESSION_HISTORY_EXTENSION_NAME,
+            ),
+        ),
+    ];
+
+    for (registration_name, config) in cases {
+        em.add_client(
+            registration_name.to_string(),
+            config,
+            Arc::new(MockClient {}),
+            None,
+            None,
+        )
+        .await;
+    }
+
+    assert!(em.extensions.lock().await.is_empty());
+}
+
+#[tokio::test]
 async fn test_code_execution_runtime_disabled_blocks_active_extension_and_preserves_config() {
     let temp_dir = tempfile::tempdir().unwrap();
     let em = Arc::new(extension_manager_with_runtime(
