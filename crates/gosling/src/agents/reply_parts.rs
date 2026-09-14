@@ -807,53 +807,41 @@ impl Agent {
         Ok(())
     }
 
-    pub(crate) async fn update_compaction_metrics(
+    pub(crate) async fn commit_compaction(
         &self,
         session_id: &str,
-        conversation: &Conversation,
-        usage: &ProviderUsage,
-    ) -> Result<()> {
+        result: crate::context_mgmt::CompactionResult,
+        temporary: bool,
+    ) -> Result<Conversation> {
         let manager = self.config.session_manager.clone();
         let session = manager.get_session(session_id, false).await?;
         let cost_delta = session
             .provider_name
             .as_deref()
-            .and_then(|pn| self.estimate_usage_cost(usage, pn));
-        let current_usage = compacted_context_usage(conversation).await?;
+            .and_then(|provider| self.estimate_usage_cost(&result.usage, provider));
+        let current_usage = compacted_context_usage(&result.conversation).await?;
+        let revision = crate::session::session_manager::CompactionRevisionDraft::from_result(
+            &session,
+            &result,
+            temporary,
+            current_usage.total_tokens,
+        );
 
         manager
-            .record_context_estimate(session_id, current_usage, usage.usage, cost_delta)
-            .await
-    }
-
-    /// Compaction's equivalent of calling `session_manager.replace_conversation`
-    /// followed by `update_compaction_metrics`, but
-    /// atomic: both writes commit or roll back together (see
-    /// `SessionManager::replace_conversation_and_record_usage`).
-    pub(crate) async fn replace_conversation_and_update_metrics(
-        &self,
-        session_id: &str,
-        conversation: &Conversation,
-        usage: &ProviderUsage,
-    ) -> Result<()> {
-        let manager = self.config.session_manager.clone();
-        let session = manager.get_session(session_id, false).await?;
-        let cost_delta = session
-            .provider_name
-            .as_deref()
-            .and_then(|pn| self.estimate_usage_cost(usage, pn));
-
-        let current_usage = compacted_context_usage(conversation).await?;
-
-        manager
-            .replace_conversation_and_record_usage(
+            .commit_compaction(
                 session_id,
-                conversation,
+                if temporary {
+                    None
+                } else {
+                    Some(&result.conversation)
+                },
                 current_usage,
-                usage.usage,
+                result.usage.usage,
                 cost_delta,
+                revision,
             )
-            .await
+            .await?;
+        Ok(result.conversation)
     }
 
     fn estimate_usage_cost(&self, usage: &ProviderUsage, provider_name: &str) -> Option<f64> {

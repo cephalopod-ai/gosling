@@ -224,7 +224,7 @@ impl Agent {
         if cancellation.is_cancelled() {
             return Ok(None);
         }
-        let (compacted_conversation, usage) = match result {
+        let result = match result {
             Ok(result) => result,
             Err(error) => {
                 return Ok(Some(
@@ -236,13 +236,8 @@ impl Agent {
             }
         };
 
-        // Atomic: see `Agent::replace_conversation_and_update_metrics` — a crash
-        // between a separately-committed conversation replacement and usage
-        // update used to leave `sessions.total_tokens` stale-high relative to
-        // the now-compacted conversation, spuriously re-triggering
-        // auto-compaction on the next turn.
-        self.replace_conversation_and_update_metrics(session_id, &compacted_conversation, &usage)
-            .await?;
+        // The conversation, usage, and history revision commit atomically.
+        self.commit_compaction(session_id, result, false).await?;
 
         Ok(Some(user_only_assistant_text("Compaction complete")))
     }
