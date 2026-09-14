@@ -166,6 +166,13 @@ impl SessionStorage {
                         ),
                     }
                 }
+                let mut cleanup = self.pool.begin_with("BEGIN IMMEDIATE").await?;
+                Self::cleanup_compaction_history_in_tx(
+                    &mut cleanup,
+                    &super::CompactionHistoryPolicyV1::configured(),
+                )
+                .await?;
+                cleanup.commit().await?;
                 Ok::<(), anyhow::Error>(())
             })
             .await?;

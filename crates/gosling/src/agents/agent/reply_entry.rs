@@ -654,7 +654,7 @@ impl Agent {
         cancel_token: Option<&CancellationToken>,
     ) -> Result<Conversation> {
         let cancellation = cancel_token.cloned().unwrap_or_default();
-        let (compacted_conversation, usage) = tokio::select! {
+        let result = tokio::select! {
             biased;
             _ = cancellation.cancelled() => anyhow::bail!("Compaction canceled before saving"),
             result = compact_messages(
@@ -674,8 +674,8 @@ impl Agent {
         // A compacted resume contains only a tail: its context may be folded in memory,
         // but replacing durable history would delete messages that were never loaded.
         if session_config.compacted_context {
-            self.update_compaction_metrics(&session_config.id, &compacted_conversation, &usage)
-                .await?;
+            self.commit_compaction(&session_config.id, result, true)
+                .await
         } else {
             // Atomic: a crash between a committed conversation replacement and a
             // separate usage update used to leave `sessions.total_tokens` stale-high
@@ -684,14 +684,9 @@ impl Agent {
             // stored value wins `resolve_context_usage`'s undercounting guard).
             // Failure here now means neither write landed — the plain
             // `compaction_failure_message` ("original session is intact") applies.
-            self.replace_conversation_and_update_metrics(
-                &session_config.id,
-                &compacted_conversation,
-                &usage,
-            )
-            .await?;
+            self.commit_compaction(&session_config.id, result, false)
+                .await
         }
-        Ok(compacted_conversation)
     }
 
     /// Runs the Context Manager (`GOSLING_CONTEXT_MANAGER`) ahead of a provider

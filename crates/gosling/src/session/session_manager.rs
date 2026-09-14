@@ -1,4 +1,5 @@
 mod artifacts_storage;
+mod compaction_history_storage;
 mod handoff_storage;
 mod legacy_import;
 mod library_storage;
@@ -64,7 +65,11 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 use utoipa::ToSchema;
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 35;
+pub const CURRENT_SCHEMA_VERSION: i32 = 36;
+
+pub use compaction_history_storage::{
+    CompactionHistoryPolicyV1, CompactionRevision, CompactionRevisionDraft,
+};
 
 pub use output_revisions_storage::OutputCapture;
 pub const SESSIONS_FOLDER: &str = "sessions";
@@ -1022,6 +1027,38 @@ impl SessionManager {
         self.storage.replace_conversation(id, conversation).await
     }
 
+    pub async fn commit_compaction(
+        &self,
+        session_id: &str,
+        conversation: Option<&Conversation>,
+        current_usage: Usage,
+        accumulated_delta: Usage,
+        cost_delta: Option<f64>,
+        revision: CompactionRevisionDraft,
+    ) -> Result<()> {
+        self.storage
+            .commit_compaction(
+                session_id,
+                conversation,
+                current_usage,
+                accumulated_delta,
+                cost_delta,
+                revision,
+            )
+            .await
+    }
+
+    pub async fn list_compaction_revisions(
+        &self,
+        session_id: &str,
+        limit: usize,
+        before_generation: Option<u64>,
+    ) -> Result<Vec<CompactionRevision>> {
+        self.storage
+            .list_compaction_revisions(session_id, limit, before_generation)
+            .await
+    }
+
     /// Atomic pairing of `replace_conversation` and `record_usage`, for
     /// compaction call sites that must not let the two commit separately.
     pub async fn replace_conversation_and_record_usage(
@@ -1071,7 +1108,7 @@ impl SessionManager {
             .await
     }
 
-    pub(crate) async fn record_context_estimate(
+    pub async fn record_context_estimate(
         &self,
         session_id: &str,
         current_usage: Usage,
@@ -6118,5 +6155,132 @@ mod tests {
             .release()
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn compaction_history_is_append_only_and_clear_does_not_reuse_generations() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = SessionManager::new(temp_dir.path().to_path_buf());
+        let session = manager
+            .create_session(
+                temp_dir.path().join("workspace"),
+                "Compaction ledger".to_string(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        let compacted = Conversation::new_unvalidated(vec![Message::user()
+            .with_text("summary")
+            .with_generated_id()]);
+
+        for summary in ["first summary", "second summary"] {
+            let result = crate::context_mgmt::CompactionResult {
+                conversation: compacted.clone(),
+                usage: gosling_providers::conversation::token_usage::ProviderUsage::new(
+                    "resolved-model".to_string(),
+                    Usage::new(Some(4), Some(2), Some(6)),
+                ),
+                summary: summary.to_string(),
+                source_message_ids: vec!["source-1".to_string()],
+                source_message_count: 1,
+                source_hash: format!("source-{summary}"),
+                summary_hash: format!("summary-{summary}"),
+                prompt_hash: "prompt".to_string(),
+                estimated_tokens_before: 100,
+                estimated_tokens_after: 20,
+                trigger: crate::context_mgmt::CompactionTrigger::Manual,
+            };
+            let draft = CompactionRevisionDraft::from_result(&session, &result, false, Some(20));
+            manager
+                .commit_compaction(
+                    &session.id,
+                    Some(&compacted),
+                    Usage::new(Some(20), None, Some(20)),
+                    result.usage.usage,
+                    None,
+                    draft,
+                )
+                .await
+                .unwrap();
+        }
+
+        let revisions = manager
+            .list_compaction_revisions(&session.id, 20, None)
+            .await
+            .unwrap();
+        assert_eq!(revisions.len(), 2);
+        assert_eq!(revisions[0].generation, 2);
+        assert_eq!(
+            revisions[0].parent_revision_id.as_deref(),
+            Some(revisions[1].revision_id.as_str())
+        );
+        assert!(revisions[0].payload_json.contains("second summary"));
+
+        manager
+            .replace_conversation(&session.id, &Conversation::default())
+            .await
+            .unwrap();
+        assert!(manager
+            .list_compaction_revisions(&session.id, 20, None)
+            .await
+            .unwrap()
+            .is_empty());
+        let next_generation: i64 = sqlx::query_scalar(
+            "SELECT next_generation FROM session_compaction_state WHERE session_id = ?",
+        )
+        .bind(&session.id)
+        .fetch_one(manager.storage().pool().await.unwrap())
+        .await
+        .unwrap();
+        assert_eq!(next_generation, 3);
+    }
+
+    #[tokio::test]
+    async fn compaction_history_schema_migrates_from_schema_35() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = SessionManager::new(temp_dir.path().to_path_buf());
+        let pool = manager.storage().pool().await.unwrap();
+        sqlx::query("DROP TABLE session_compaction_revisions")
+            .execute(pool)
+            .await
+            .unwrap();
+        sqlx::query("DROP TABLE session_compaction_state")
+            .execute(pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM schema_version")
+            .execute(pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO schema_version(version) VALUES (35)")
+            .execute(pool)
+            .await
+            .unwrap();
+        drop(manager);
+
+        let migrated = SessionManager::new(temp_dir.path().to_path_buf());
+        let pool = migrated.storage().pool().await.unwrap();
+        let table_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('session_compaction_revisions', 'session_compaction_state')",
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        let index_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name IN ('idx_session_compaction_generation', 'idx_session_compaction_purge')",
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        assert_eq!(table_count, 2);
+        assert_eq!(index_count, 2);
+        assert_eq!(
+            sqlx::query_scalar::<_, i32>("SELECT MAX(version) FROM schema_version")
+                .fetch_one(pool)
+                .await
+                .unwrap(),
+            CURRENT_SCHEMA_VERSION
+        );
     }
 }

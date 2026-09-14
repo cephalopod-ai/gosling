@@ -307,6 +307,49 @@ struct SummarizeContext {
     summary_target_characters: usize,
 }
 
+#[derive(Debug)]
+pub enum CompactionTrigger {
+    Manual,
+    AutomaticThreshold,
+    OverflowRecovery,
+}
+
+#[derive(Debug)]
+pub struct CompactionResult {
+    pub conversation: Conversation,
+    pub usage: ProviderUsage,
+    pub summary: String,
+    pub source_message_ids: Vec<String>,
+    pub source_message_count: usize,
+    pub source_hash: String,
+    pub summary_hash: String,
+    pub prompt_hash: String,
+    pub estimated_tokens_before: usize,
+    pub estimated_tokens_after: usize,
+    pub trigger: CompactionTrigger,
+}
+
+fn hash_parts<'a>(domain: &str, parts: impl IntoIterator<Item = &'a [u8]>) -> String {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(domain.as_bytes());
+    for part in parts {
+        hasher.update(&(part.len() as u64).to_be_bytes());
+        hasher.update(part);
+    }
+    hasher.finalize().to_hex().to_string()
+}
+
+fn canonical_messages_hash(messages: &[Message]) -> Result<String> {
+    let encoded = messages
+        .iter()
+        .map(serde_json::to_vec)
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(hash_parts(
+        "gosling.compaction.source.v1",
+        encoded.iter().map(Vec::as_slice),
+    ))
+}
+
 /// Compact messages by summarizing them
 ///
 /// This function performs the actual compaction by summarizing messages and updating
@@ -326,9 +369,8 @@ struct SummarizeContext {
 ///   trim. See `auto_compaction_check`.
 ///
 /// # Returns
-/// * A tuple containing:
-///   - `Conversation`: The compacted messages
-///   - `ProviderUsage`: Provider usage from summarization
+/// A structured result containing the compacted conversation, provider usage,
+/// exact summary, source coverage, token estimates, and integrity hashes.
 pub async fn compact_messages(
     provider: &dyn Provider,
     model_config: &ModelConfig,
@@ -336,7 +378,7 @@ pub async fn compact_messages(
     conversation: &Conversation,
     manual_compact: bool,
     tokens_to_remove: Option<usize>,
-) -> Result<(Conversation, ProviderUsage)> {
+) -> Result<CompactionResult> {
     info!("Performing message compaction");
 
     let messages = conversation.messages();
@@ -452,20 +494,22 @@ pub async fn compact_messages(
         .map(|split| compaction_bands(&turn_starts, split, protect_last_n.max(1)))
         .unwrap_or_default();
 
-    let (summary_message, summarization_usage) = if bands.is_empty() {
-        do_compact(
+    let (summary_message, summarization_usage, prompt_hashes) = if bands.is_empty() {
+        let (message, usage, prompt_hash) = do_compact(
             provider,
             model_config,
             session_id,
             messages_to_compact,
             COMPACTION_SUMMARY_TARGET_CHARACTERS,
         )
-        .await?
+        .await?;
+        (message, usage, vec![prompt_hash])
     } else {
         let mut combined = String::new();
         let mut total_usage: Option<ProviderUsage> = None;
+        let mut prompt_hashes = Vec::new();
         for band in &bands {
-            let (band_msg, band_usage) = do_compact(
+            let (band_msg, band_usage, prompt_hash) = do_compact(
                 provider,
                 model_config,
                 session_id,
@@ -473,6 +517,7 @@ pub async fn compact_messages(
                 band.target_characters,
             )
             .await?;
+            prompt_hashes.push(prompt_hash);
             combine_usage(&mut total_usage, band_usage);
             if let Some(text) = extract_text(&band_msg) {
                 if !combined.is_empty() {
@@ -484,8 +529,21 @@ pub async fn compact_messages(
         (
             Message::user().with_text(combined),
             total_usage.expect("at least one band ran when bands is non-empty"),
+            prompt_hashes,
         )
     };
+
+    let summary = summary_message.as_concat_text();
+    let source_message_ids = messages_to_compact
+        .iter()
+        .filter_map(|message| message.id.clone())
+        .collect();
+    let source_hash = canonical_messages_hash(messages_to_compact)?;
+    let summary_hash = hash_parts("gosling.compaction.summary.v1", [summary.as_bytes()]);
+    let prompt_hash = hash_parts(
+        "gosling.compaction.prompts.v1",
+        prompt_hashes.iter().map(String::as_bytes),
+    );
 
     // Create the final message list with updated visibility metadata:
     // 1. Original messages become user_visible but not agent_visible
@@ -579,10 +637,32 @@ pub async fn compact_messages(
         }
     }
 
-    Ok((
-        Conversation::new_unvalidated(final_messages),
-        summarization_usage,
-    ))
+    let conversation = Conversation::new_unvalidated(final_messages);
+    let token_counter = crate::token_counter::shared_token_counter()
+        .await
+        .map_err(|error| anyhow::anyhow!("Failed to create token counter: {error}"))?;
+    let estimated_tokens_before = token_counter.count_chat_tokens("", messages, &[]);
+    let estimated_tokens_after = token_counter.count_chat_tokens("", conversation.messages(), &[]);
+
+    Ok(CompactionResult {
+        conversation,
+        usage: summarization_usage,
+        summary,
+        source_message_ids,
+        source_message_count: messages_to_compact.len(),
+        source_hash,
+        summary_hash,
+        prompt_hash,
+        estimated_tokens_before,
+        estimated_tokens_after,
+        trigger: if manual_compact {
+            CompactionTrigger::Manual
+        } else if tokens_to_remove.is_some() {
+            CompactionTrigger::AutomaticThreshold
+        } else {
+            CompactionTrigger::OverflowRecovery
+        },
+    })
 }
 
 /// Generates a human-readable continuation briefing for handing a
@@ -1091,8 +1171,14 @@ async fn do_compact(
     session_id: &str,
     messages: &[Message],
     target_characters: usize,
-) -> Result<(Message, ProviderUsage), anyhow::Error> {
-    do_summarize(
+) -> Result<(Message, ProviderUsage, String), anyhow::Error> {
+    let context = SummarizeContext {
+        messages: "Conversation history is supplied in bounded user-message chunks.".to_string(),
+        summary_target_characters: target_characters,
+    };
+    let prompt = render_template("compaction.md", &context)?;
+    let prompt_hash = hash_parts("gosling.compaction.prompt.v1", [prompt.as_bytes()]);
+    let (message, usage) = do_summarize(
         provider,
         model_config,
         session_id,
@@ -1100,7 +1186,8 @@ async fn do_compact(
         target_characters,
         "compaction.md",
     )
-    .await
+    .await?;
+    Ok((message, usage, prompt_hash))
 }
 
 /// Shared reduction machinery behind both in-session compaction and a
@@ -1581,7 +1668,7 @@ mod tests {
 
         let conversation = Conversation::new_unvalidated(basic_conversation);
         let model_config = provider.config.clone();
-        let (compacted_conversation, _usage) = compact_messages(
+        let compacted_conversation = compact_messages(
             &provider,
             &model_config,
             "test-session-id",
@@ -1590,7 +1677,8 @@ mod tests {
             None,
         )
         .await
-        .unwrap();
+        .unwrap()
+        .conversation;
 
         let agent_conversation = compacted_conversation.agent_visible_messages();
 
@@ -1616,7 +1704,7 @@ mod tests {
         // should survive untouched while turns 1-3 get folded into the summary.
         let conversation = Conversation::new_unvalidated(turns(13));
         let model_config = provider.config.clone();
-        let (compacted_conversation, _usage) = compact_messages(
+        let compacted_conversation = compact_messages(
             &provider,
             &model_config,
             "test-session-id",
@@ -1625,7 +1713,8 @@ mod tests {
             None,
         )
         .await
-        .unwrap();
+        .unwrap()
+        .conversation;
 
         let agent_visible_text: Vec<&str> = compacted_conversation
             .messages()
@@ -1680,7 +1769,7 @@ mod tests {
         let tokens_to_remove =
             token_counter.count_chat_tokens("", &conversation.messages()[..4], &[]);
 
-        let (compacted_conversation, _usage) = compact_messages(
+        let compacted_conversation = compact_messages(
             &provider,
             &provider.config,
             "test-session-id",
@@ -1689,7 +1778,8 @@ mod tests {
             Some(tokens_to_remove),
         )
         .await
-        .unwrap();
+        .unwrap()
+        .conversation;
 
         let agent_visible_text: Vec<&str> = compacted_conversation
             .messages()
@@ -2217,7 +2307,7 @@ mod tests {
             agent_only_msg,
         ]);
 
-        let (compacted, _usage) = compact_messages(
+        let compacted = compact_messages(
             &provider,
             &model_config,
             "test-session-id",
@@ -2226,7 +2316,8 @@ mod tests {
             None,
         )
         .await
-        .unwrap();
+        .unwrap()
+        .conversation;
 
         let preserved = compacted.messages().iter().find(|msg| {
             msg.is_agent_visible()

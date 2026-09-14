@@ -46,6 +46,7 @@ for the relationship to cephalopod-ai/gosling.
 - [adr/0018-output-contribution-history.md](adr/0018-output-contribution-history.md) — agent/model attribution, saved output revisions, comparison, export, and guarded restore
 - [adr/0019-full-session-handoff-continuity.md](adr/0019-full-session-handoff-continuity.md) — bounded, redacted checkpoints and atomic provider/model continuity
 - [adr/0020-host-enforced-plan-lifecycle.md](adr/0020-host-enforced-plan-lifecycle.md) — persisted, revision-bound planning with a non-widenable host capability boundary
+- [adr/0021-context-compaction-history.md](adr/0021-context-compaction-history.md) — append-only local compaction provenance, retention, and atomic capture contract
 - [build/](build/) — build documentation
 - [build/context-compaction-failsafe-plan.md](build/context-compaction-failsafe-plan.md) — recurring oversized-session compaction repair plan and acceptance criteria
 - [build/host-enforced-planning/README.md](build/host-enforced-planning/README.md) — ADR-0020 implementation sequence, release gates, evidence, and resumable status

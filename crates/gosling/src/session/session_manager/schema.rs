@@ -178,6 +178,7 @@ impl SessionStorage {
         Self::create_session_handoff_schema(&mut tx).await?;
 
         Self::create_session_plan_schema(&mut tx).await?;
+        Self::create_compaction_history_schema(&mut tx).await?;
 
         sqlx::query(
             r#"

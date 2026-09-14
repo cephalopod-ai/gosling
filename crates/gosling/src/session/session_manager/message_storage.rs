@@ -84,7 +84,7 @@ impl SessionStorage {
         Ok(Self::stale_open_plan_in_tx(tx, session_id, reason).await?)
     }
 
-    async fn publish_stale_plan_update(&self, session_id: &str, staled: bool) {
+    pub(super) async fn publish_stale_plan_update(&self, session_id: &str, staled: bool) {
         if !staled {
             return;
         }
@@ -737,6 +737,10 @@ impl SessionStorage {
             "conversation history was cleared or edited",
         )
         .await?;
+        sqlx::query("DELETE FROM session_compaction_revisions WHERE session_id = ?")
+            .bind(session_id)
+            .execute(&mut *tx)
+            .await?;
         Self::replace_conversation_in_tx(&mut tx, session_id, conversation).await?;
         tx.commit().await?;
         self.publish_stale_plan_update(session_id, staled).await;
