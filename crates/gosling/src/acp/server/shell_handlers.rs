@@ -511,7 +511,7 @@ impl GoslingAcpAgent {
             "DOMAIN_SESSION_UNAVAILABLE",
         )
         .await?;
-        self.require_normal_domain_action_policy(&request.session_id, "domain_action")
+        self.require_normal_app_action_policy(&request.session_id, "domain_action")
             .await?;
         self.shell_runtime.perform_domain_action(request).await
     }
@@ -526,12 +526,12 @@ impl GoslingAcpAgent {
             "DOMAIN_SESSION_UNAVAILABLE",
         )
         .await?;
-        self.require_normal_domain_action_policy(&request.session_id, "domain_action_confirm")
+        self.require_normal_app_action_policy(&request.session_id, "domain_action_confirm")
             .await?;
         self.shell_runtime.confirm_domain_action(request).await
     }
 
-    async fn require_normal_domain_action_policy(
+    pub(super) async fn require_normal_app_action_policy(
         &self,
         session_id: &str,
         operation: &str,
@@ -549,7 +549,7 @@ impl GoslingAcpAgent {
                     security.reason = "planning_capability_denied",
                     operation,
                     session.id = session_id,
-                    "host planning boundary denied an app-direct domain action"
+                    "host planning boundary denied an app-direct action"
                 );
                 Err(
                     agent_client_protocol::Error::invalid_params().data(serde_json::json!({
@@ -566,7 +566,7 @@ impl GoslingAcpAgent {
                     operation,
                     session.id = session_id,
                     error = %error,
-                    "host planning boundary could not verify durable state for an app-direct domain action"
+                    "host planning boundary could not verify durable state for an app-direct action"
                 );
                 Err(
                     agent_client_protocol::Error::internal_error().data(serde_json::json!({

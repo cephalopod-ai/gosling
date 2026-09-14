@@ -11,6 +11,7 @@ use rmcp::transport::streamable_http_server::{
 use rmcp::{
     tool, tool_handler, tool_router, ErrorData as McpError, RoleServer, ServerHandler, Service,
 };
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::task::JoinHandle;
 
@@ -37,13 +38,19 @@ impl<R: ServiceRole> HasMeta for NotificationContext<R> {
 struct ValidatingService<S> {
     inner: S,
     expected_session_id: Arc<dyn ExpectedSessionId>,
+    list_tools_calls: Arc<AtomicUsize>,
 }
 
 impl<S> ValidatingService<S> {
-    fn new(inner: S, expected_session_id: Arc<dyn ExpectedSessionId>) -> Self {
+    fn new(
+        inner: S,
+        expected_session_id: Arc<dyn ExpectedSessionId>,
+        list_tools_calls: Arc<AtomicUsize>,
+    ) -> Self {
         Self {
             inner,
             expected_session_id,
+            list_tools_calls,
         }
     }
 
@@ -65,6 +72,9 @@ impl<S: Service<RoleServer>> Service<RoleServer> for ValidatingService<S> {
         request: ClientRequest,
         context: RequestContext<RoleServer>,
     ) -> Result<rmcp::model::ServerResult, McpError> {
+        if matches!(&request, ClientRequest::ListToolsRequest(_)) {
+            self.list_tools_calls.fetch_add(1, Ordering::SeqCst);
+        }
         if !matches!(request, ClientRequest::InitializeRequest(_)) {
             self.validate(&context)?;
         }
@@ -122,6 +132,7 @@ impl ServerHandler for McpFixtureServer {
 
 pub struct McpFixture {
     pub url: String,
+    list_tools_calls: Arc<AtomicUsize>,
     handle: JoinHandle<()>,
 }
 
@@ -136,11 +147,15 @@ type McpServiceFactory =
 
 impl McpFixture {
     pub async fn new(expected_session_id: Arc<dyn ExpectedSessionId>) -> Self {
+        let list_tools_calls = Arc::new(AtomicUsize::new(0));
+        let service_list_tools_calls = Arc::clone(&list_tools_calls);
         let service_factory: McpServiceFactory = Box::new(move || {
-            Ok(
-                ValidatingService::new(McpFixtureServer::new(), expected_session_id.clone())
-                    .into_dyn(),
+            Ok(ValidatingService::new(
+                McpFixtureServer::new(),
+                expected_session_id.clone(),
+                Arc::clone(&service_list_tools_calls),
             )
+            .into_dyn())
         });
 
         let service = StreamableHttpService::new(
@@ -157,6 +172,14 @@ impl McpFixture {
             axum::serve(listener, router).await.unwrap();
         });
 
-        Self { url, handle }
+        Self {
+            url,
+            list_tools_calls,
+            handle,
+        }
+    }
+
+    pub fn list_tools_call_count(&self) -> usize {
+        self.list_tools_calls.load(Ordering::SeqCst)
     }
 }

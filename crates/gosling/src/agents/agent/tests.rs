@@ -2704,10 +2704,23 @@ async fn planning_turn_suppresses_session_prompt_steer_and_stop_hooks() -> Resul
             GoslingMode::Auto,
         )
         .await?;
+    let planning_subdir = session.working_dir.join("planning-subdir");
+    std::fs::create_dir_all(&planning_subdir)?;
     std::fs::write(
-        session.working_dir.join("planning-evidence.txt"),
-        "evidence",
+        session
+            .working_dir
+            .join(crate::hints::GOSLING_HINTS_FILENAME),
+        "PLANNING_ROOT_HINT_MUST_NOT_LOAD @planning-secret.txt",
     )?;
+    std::fs::write(
+        session.working_dir.join("planning-secret.txt"),
+        "PLANNING_REFERENCED_SECRET_MUST_NOT_LOAD",
+    )?;
+    std::fs::write(
+        planning_subdir.join(crate::hints::GOSLING_HINTS_FILENAME),
+        "PLANNING_SUBDIRECTORY_HINT_MUST_NOT_LOAD",
+    )?;
+    std::fs::write(planning_subdir.join("planning-evidence.txt"), "evidence")?;
     agent
         .update_provider(
             provider.clone(),
@@ -2747,6 +2760,10 @@ async fn planning_turn_suppresses_session_prompt_steer_and_stop_hooks() -> Resul
     while let Some(event) = reply.next().await {
         event?;
     }
+    let planning_prompts = provider.system_prompts().await;
+    assert_eq!(planning_prompts.len(), 1);
+    assert!(!planning_prompts[0].contains("PLANNING_ROOT_HINT_MUST_NOT_LOAD"));
+    assert!(!planning_prompts[0].contains("PLANNING_REFERENCED_SECRET_MUST_NOT_LOAD"));
     agent
         .emit_hook(crate::hooks::HookEvent::SessionEnd, &session.id)
         .await;
@@ -2758,7 +2775,7 @@ async fn planning_turn_suppresses_session_prompt_steer_and_stop_hooks() -> Resul
     let planning_read =
         CallToolRequestParams::new("workspace_read_text").with_arguments(rmcp::object!({
             "root_id": "primary",
-            "path": "planning-evidence.txt"
+            "path": "planning-subdir/planning-evidence.txt"
         }));
     session_manager
         .add_message(
@@ -2786,6 +2803,15 @@ async fn planning_turn_suppresses_session_prompt_steer_and_stop_hooks() -> Resul
             .as_ref()
             .is_ok_and(|result| result.is_error != Some(true)),
         "allowed planning read failed: {terminal_result:?}"
+    );
+    assert!(
+        agent
+            .subdirectory_hint_tracker
+            .lock()
+            .await
+            .collect_new_hints(&session.working_dir)
+            .is_none(),
+        "planning tool arguments must not trigger subdirectory hint reads"
     );
 
     assert_eq!(provider.call_count(), 1);

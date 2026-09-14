@@ -85,6 +85,8 @@ impl GoslingAcpAgent {
         req: GoslingToolCallRequest,
     ) -> Result<GoslingToolCallResponse, agent_client_protocol::Error> {
         let session_id = &req.session_id;
+        self.require_normal_app_action_policy(session_id, "tool_call")
+            .await?;
         let agent = self.get_session_agent(&req.session_id).await?;
         let tools = agent
             .list_tools(session_id, None)

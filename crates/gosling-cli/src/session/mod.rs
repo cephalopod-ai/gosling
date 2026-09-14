@@ -1334,6 +1334,17 @@ impl CliSession {
     }
 
     async fn run_status_hook(&self, status: &str) {
+        self.run_status_hook_with(status, output::run_status_hook)
+            .await;
+    }
+
+    async fn run_status_hook_with(&self, status: &str, run_hook: impl FnOnce(&str)) {
+        if self.status_hook_allowed().await {
+            run_hook(status);
+        }
+    }
+
+    async fn status_hook_allowed(&self) -> bool {
         match self
             .agent
             .config
@@ -1342,7 +1353,7 @@ impl CliSession {
             .interaction_policy(&self.session_id)
             .await
         {
-            Ok(InteractionPolicy::Normal) => output::run_status_hook(status),
+            Ok(InteractionPolicy::Normal) => true,
             Ok(InteractionPolicy::Planning { .. }) => {
                 warn!(
                     security.event_type = "planning_side_channel_denied",
@@ -1350,6 +1361,7 @@ impl CliSession {
                     session.id = self.session_id.as_str(),
                     "host planning boundary suppressed the configured CLI status hook"
                 );
+                false
             }
             Err(error) => {
                 warn!(
@@ -1359,6 +1371,7 @@ impl CliSession {
                     error = %error,
                     "host planning boundary could not verify durable state for the configured CLI status hook"
                 );
+                false
             }
         }
     }
@@ -3443,9 +3456,6 @@ mod tests {
     #[tokio::test]
     async fn configured_status_hooks_are_suppressed_while_a_plan_is_open() {
         let temp = tempfile::tempdir().unwrap();
-        let marker = temp.path().join("status-hook-invoked");
-        let hook = format!("printf invoked > \"{}\"; :", marker.display());
-        let _guard = env_lock::lock_env([("GOSLING_STATUS_HOOK", Some(hook.as_str()))]);
         let (cli, manager, session_id) = cli_session_with_messages(&temp, &[]).await;
         let provider = PlanningTestProvider::new(false, false);
 
@@ -3457,15 +3467,12 @@ mod tests {
                 .unwrap(),
             InteractionPolicy::Normal
         ));
-        cli.run_status_hook("normal-test").await;
-        for _ in 0..100 {
-            if marker.exists() {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-        assert!(marker.exists(), "the configured status hook must be active");
-        std::fs::remove_file(&marker).unwrap();
+        let hook_calls = AtomicUsize::new(0);
+        cli.run_status_hook_with("normal-test", |_| {
+            hook_calls.fetch_add(1, Ordering::SeqCst);
+        })
+        .await;
+        assert_eq!(hook_calls.load(Ordering::SeqCst), 1);
 
         manager
             .plans()
@@ -3481,12 +3488,11 @@ mod tests {
                 .unwrap(),
             InteractionPolicy::Planning { .. }
         ));
-        cli.run_status_hook("planning-test").await;
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        assert!(
-            !marker.exists(),
-            "an open plan must suppress the configured status hook"
-        );
+        cli.run_status_hook_with("planning-test", |_| {
+            hook_calls.fetch_add(1, Ordering::SeqCst);
+        })
+        .await;
+        assert_eq!(hook_calls.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test]

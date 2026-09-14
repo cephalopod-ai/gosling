@@ -188,22 +188,19 @@ impl GoslingAcpAgent {
             .is_some_and(|snapshot| snapshot.plan.status == PlanStatus::Drafting);
         let permitted_capabilities = if provider_supports_host_enforced_planning && drafting {
             let available_tools = match agent {
-                Some(agent) => agent
-                    .list_tools_including_internal(session_id, None)
-                    .await
-                    .unwrap_or_default(),
+                Some(agent) => {
+                    agent
+                        .extension_manager
+                        .get_planning_tools_without_external_catalog()
+                        .await
+                }
                 None => Vec::new(),
             };
             let permission_manager = self.permission_manager();
-            PlanningCapability::fixed_v1_capabilities()
-                .filter_map(|(capability, extension, tool)| {
-                    let prefixed_name = format!("{extension}__{tool}");
-                    let catalog_tool = available_tools.iter().find(|candidate| {
-                        crate::agents::extension_manager::get_tool_owner(candidate).as_deref()
-                            == Some(extension)
-                            && (candidate.name.as_ref() == tool
-                                || candidate.name.as_ref() == prefixed_name.as_str())
-                    })?;
+            available_tools
+                .into_iter()
+                .filter_map(|(catalog_tool, identity)| {
+                    let capability = PlanningCapability::from_host_identity(&identity)?;
                     capability
                         .is_permitted_for_catalog(
                             permission_manager.get_user_permission(catalog_tool.name.as_ref()),

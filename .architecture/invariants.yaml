@@ -94,11 +94,14 @@ invariants:
       - crates/gosling/src/agents/agent/extensions.rs
       - crates/gosling/src/agents/agent/frontend_extensions.rs
       - crates/gosling/src/agents/agent/hooks.rs
+      - crates/gosling/src/agents/agent/prompt_apis.rs
       - crates/gosling/src/agents/agent/reply_context.rs
       - crates/gosling/src/agents/agent/reply_entry.rs
       - crates/gosling/src/agents/agent/reply_stream.rs
       - crates/gosling/src/agents/agent/provider_transitions.rs
       - crates/gosling/src/agents/agent/tool_dispatch.rs
+      - crates/gosling/src/agents/prompt_manager.rs
+      - crates/gosling/src/agents/extension_manager/tool_catalog.rs
       - crates/gosling/src/agents/extension_manager/tool_dispatch.rs
       - crates/gosling/src/agents/extension_manager/tool_metadata.rs
       - crates/gosling/src/agents/extension_manager.rs
@@ -112,6 +115,7 @@ invariants:
       - crates/gosling/src/agents/tool_execution.rs
       - crates/gosling/src/context_mgmt/memory.rs
       - crates/gosling/src/context_mgmt/summarizer
+      - crates/gosling/src/hints
       - crates/gosling/src/providers
       - crates/gosling/src/session/plans.rs
       - crates/gosling/src/session/diagnostics.rs
@@ -123,6 +127,9 @@ invariants:
       - crates/gosling/src/session/session_manager/tool_operations.rs
       - crates/gosling/src/session/session_manager/session_crud.rs
       - crates/gosling/src/acp/server/plans.rs
+      - crates/gosling/src/acp/server/shell_handlers.rs
+      - crates/gosling/src/acp/server/tools.rs
+      - crates/gosling-cli/src/session
       - crates/gosling/src/workspace/planning_access.rs
       - crates/gosling/tests/fixtures/planning_dispatch_conformance.json
     rule: an immutable planning-turn policy and its durable drafting generation form a non-widenable host allowlist; only fixed Gosling-authored capability identities from host-mediated model dispatch may execute, and provider or client metadata, saved permissions, authorization modes, and nested dispatch cannot widen that set
@@ -131,6 +138,7 @@ invariants:
       - frontend, app-direct, agent-direct, code-mode-nested, toolshim, provider-owned, and non-host extension identities are denied during planning
       - durable status, generation, and capability-policy version are revalidated in the same transaction that begins or replays a tool operation
       - a planning turn never falls back to Normal after a terminal or concurrent plan-state change, and denial occurs before approval prompts, frontend emission, hooks, raw-argument logging, ledger insertion, or side effects
+      - planning denial precedes external tool-catalog resolution, app-direct tool and domain actions, configured CLI hooks, and implicit root, referenced, or subdirectory hint-file reads
       - providers that execute tools outside Gosling are rejected for planning and provider or model transitions are blocked while a plan is open
 
   - id: ARC-012

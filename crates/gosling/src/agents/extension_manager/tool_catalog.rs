@@ -5,6 +5,47 @@
 use super::*;
 
 impl ExtensionManager {
+    /// Build the planning catalog from Gosling's compiled-in tool schemas and
+    /// live host extension registry. This path must not enumerate arbitrary
+    /// extension clients: planning authorization cannot depend on a cold
+    /// external catalog lookup having no side effects.
+    pub(crate) async fn get_planning_tools_without_external_catalog(
+        &self,
+    ) -> Vec<(Tool, crate::agents::interaction_policy::HostToolIdentity)> {
+        let candidates = [
+            crate::agents::platform_extensions::planning::PlanningClient::get_tools(),
+            crate::agents::platform_extensions::session_history::SessionHistoryClient::get_tools(),
+        ]
+        .into_iter()
+        .flatten();
+        let mut tools = Vec::new();
+
+        for mut tool in candidates {
+            let tool_name = tool.name.to_string();
+            let Some(resolved) = self.resolve_planning_tool_without_catalog(&tool_name).await
+            else {
+                continue;
+            };
+            if crate::agents::interaction_policy::PlanningCapability::from_host_identity(
+                &resolved.host_identity,
+            )
+            .is_none()
+            {
+                continue;
+            }
+
+            let mut meta_map = tool.meta.take().map(|meta| meta.0).unwrap_or_default();
+            meta_map.insert(
+                TOOL_EXTENSION_META_KEY.to_string(),
+                serde_json::Value::String(resolved.extension_name),
+            );
+            tool.meta = Some(rmcp::model::Meta(meta_map));
+            tools.push((tool, resolved.host_identity));
+        }
+
+        tools
+    }
+
     pub async fn get_prefixed_tools(
         &self,
         session_id: &str,

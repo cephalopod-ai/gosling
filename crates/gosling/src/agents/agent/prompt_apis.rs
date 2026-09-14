@@ -93,13 +93,14 @@ impl Agent {
         Err(anyhow!("Prompt '{}' not found", name))
     }
 
-    pub async fn get_plan_prompt(&self, session_id: &str) -> Result<String> {
+    pub async fn get_plan_prompt(&self, _session_id: &str) -> Result<String> {
         let tools = self
             .extension_manager
-            .get_prefixed_tools(session_id, None)
-            .await?;
+            .get_planning_tools_without_external_catalog()
+            .await;
         let tools_info = tools
             .into_iter()
+            .map(|(tool, _)| tool)
             .map(|tool| {
                 ToolInfo::new(
                     &tool.name,

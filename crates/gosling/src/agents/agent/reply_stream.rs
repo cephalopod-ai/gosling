@@ -1318,7 +1318,7 @@ impl Agent {
                         .await?;
                 }
 
-                if !planning_review_committed {
+                if !planning_review_committed && !planning_turn {
                     let hint_text = self
                         .subdirectory_hint_tracker
                         .lock()

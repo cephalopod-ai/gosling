@@ -3,7 +3,7 @@
 mod common_tests;
 
 use agent_client_protocol::schema::v1::{
-    ContentBlock, PromptRequest, SessionUpdate, StopReason, TextContent,
+    ContentBlock, McpServer, McpServerHttp, PromptRequest, SessionUpdate, StopReason, TextContent,
 };
 use common_tests::fixtures::server::AcpServerConnection;
 use common_tests::fixtures::{
@@ -14,7 +14,7 @@ use gosling::acp::server::AcpProviderFactory;
 use gosling::providers::base::{MessageStream, Provider};
 use gosling_providers::errors::ProviderError;
 use gosling_providers::model::ModelConfig;
-use gosling_test_support::{EnforceSessionId, IgnoreSessionId};
+use gosling_test_support::{EnforceSessionId, IgnoreSessionId, McpFixture};
 use serial_test::serial;
 use std::path::PathBuf;
 use std::sync::{Arc, LazyLock, Mutex};
@@ -615,6 +615,90 @@ fn test_custom_plan_lifecycle_and_notifications() {
         assert_eq!(
             update.status,
             gosling::acp::custom_requests::PlanStatusDto::Abandoned
+        );
+    });
+}
+
+#[test]
+#[serial]
+fn test_custom_plan_acp_paths_do_not_enumerate_external_catalog() {
+    write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
+    run_test(async move {
+        let openai = OpenAiFixture::new(vec![], Arc::new(EnforceSessionId::default())).await;
+        let catalog_sentinel = McpFixture::new(Arc::new(IgnoreSessionId)).await;
+        let data_root = tempfile::tempdir().unwrap();
+        let mut conn = AcpServerConnection::new(
+            TestConnectionConfig {
+                data_root: data_root.path().to_path_buf(),
+                mcp_servers: vec![McpServer::Http(McpServerHttp::new(
+                    "catalog-sentinel",
+                    &catalog_sentinel.url,
+                ))],
+                ..Default::default()
+            },
+            openai,
+        )
+        .await;
+
+        let SessionData { session, .. } = conn.new_session().await.unwrap();
+        let session_id = session.session_id().0.to_string();
+        assert_eq!(
+            catalog_sentinel.list_tools_call_count(),
+            0,
+            "new-session setup must leave the external catalog cold"
+        );
+
+        let started = send_custom(
+            conn.cx(),
+            "_gosling/unstable/session/plan/start",
+            serde_json::json!({ "sessionId": session_id }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(started["snapshot"]["plan"]["status"], "drafting");
+        assert!(started["permittedCapabilities"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("workspace_read_text")));
+        assert_eq!(
+            catalog_sentinel.list_tools_call_count(),
+            0,
+            "starting a plan must not enumerate an external catalog"
+        );
+
+        let current = send_custom(
+            conn.cx(),
+            "_gosling/unstable/session/plan/get",
+            serde_json::json!({ "sessionId": session_id }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(current["snapshot"]["plan"]["status"], "drafting");
+        assert_eq!(
+            catalog_sentinel.list_tools_call_count(),
+            0,
+            "reading an open plan must not enumerate an external catalog"
+        );
+
+        let denied_tool = send_custom(
+            conn.cx(),
+            "_gosling/unstable/tools/call",
+            serde_json::json!({
+                "sessionId": session_id,
+                "name": "catalog-sentinel__get_code",
+                "arguments": {},
+            }),
+        )
+        .await
+        .expect_err("planning must pre-deny app-direct tool calls");
+        let denied_tool = serde_json::to_value(denied_tool).unwrap();
+        assert_eq!(denied_tool["data"]["code"], "planning_capability_denied");
+        assert_eq!(denied_tool["data"]["retryable"], false);
+        assert_eq!(denied_tool["data"]["approvalAvailable"], false);
+        assert_eq!(
+            catalog_sentinel.list_tools_call_count(),
+            0,
+            "denied app-direct tool calls must not enumerate an external catalog"
         );
     });
 }

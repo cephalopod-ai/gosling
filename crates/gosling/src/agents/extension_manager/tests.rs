@@ -14,6 +14,7 @@ use rmcp::model::ListToolsResult;
 use rmcp::model::ReadResourceResult;
 use rmcp::model::ServerNotification;
 
+use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 use tokio::sync::mpsc;
 
 #[tokio::test]
@@ -192,6 +193,30 @@ async fn start_detached_container_process(container_name: &str, argv: &[String],
 struct MockClient {}
 
 struct FailingListToolsClient;
+
+struct ListToolsSentinelClient {
+    calls: Arc<AtomicUsize>,
+}
+
+struct PlanningTestProvider;
+
+#[async_trait::async_trait]
+impl crate::providers::base::Provider for PlanningTestProvider {
+    fn get_name(&self) -> &str {
+        "planning-test"
+    }
+
+    async fn stream(
+        &self,
+        _model_config: &gosling_providers::model::ModelConfig,
+        _system: &str,
+        _messages: &[crate::conversation::message::Message],
+        _tools: &[Tool],
+    ) -> Result<crate::providers::base::MessageStream, gosling_providers::errors::ProviderError>
+    {
+        unreachable!("the dispatch-boundary test never invokes the provider")
+    }
+}
 
 struct PaginatedDiscoveryClient {
     repeat_tool_cursor: bool,
@@ -503,6 +528,74 @@ impl McpClientTrait for FailingListToolsClient {
     }
 }
 
+#[async_trait::async_trait]
+impl McpClientTrait for ListToolsSentinelClient {
+    fn get_info(&self) -> Option<&InitializeResult> {
+        None
+    }
+
+    async fn list_resources(
+        &self,
+        _session_id: &str,
+        _next_cursor: Option<String>,
+        _cancellation_token: CancellationToken,
+    ) -> Result<ListResourcesResult, Error> {
+        Err(Error::TransportClosed)
+    }
+
+    async fn read_resource(
+        &self,
+        _session_id: &str,
+        _uri: &str,
+        _cancellation_token: CancellationToken,
+    ) -> Result<ReadResourceResult, Error> {
+        Err(Error::TransportClosed)
+    }
+
+    async fn list_tools(
+        &self,
+        _session_id: &str,
+        _next_cursor: Option<String>,
+        _cancellation_token: CancellationToken,
+    ) -> Result<ListToolsResult, Error> {
+        self.calls.fetch_add(1, AtomicOrdering::SeqCst);
+        Err(Error::TransportClosed)
+    }
+
+    async fn call_tool(
+        &self,
+        _ctx: &ToolCallContext,
+        _name: &str,
+        _arguments: Option<JsonObject>,
+        _cancellation_token: CancellationToken,
+    ) -> Result<CallToolResult, Error> {
+        Err(Error::TransportClosed)
+    }
+
+    async fn list_prompts(
+        &self,
+        _session_id: &str,
+        _next_cursor: Option<String>,
+        _cancellation_token: CancellationToken,
+    ) -> Result<ListPromptsResult, Error> {
+        Err(Error::TransportClosed)
+    }
+
+    async fn get_prompt(
+        &self,
+        _session_id: &str,
+        _name: &str,
+        _arguments: Value,
+        _cancellation_token: CancellationToken,
+    ) -> Result<GetPromptResult, Error> {
+        Err(Error::TransportClosed)
+    }
+
+    async fn subscribe(&self) -> mpsc::Receiver<ServerNotification> {
+        mpsc::channel(1).1
+    }
+}
+
 fn extension_manager_with_runtime(
     data_dir: std::path::PathBuf,
     runtime: CodeExecutionRuntime,
@@ -614,6 +707,75 @@ async fn test_dispatch_tool_call() {
     } else {
         panic!("Expected ErrorData with ErrorCode::RESOURCE_NOT_FOUND");
     }
+}
+
+#[tokio::test]
+async fn planning_denial_precedes_external_tool_catalog_resolution() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let extension_manager = ExtensionManager::new_without_provider(temp_dir.path().to_path_buf());
+    let session_manager = Arc::clone(&extension_manager.get_context().session_manager);
+    let session = session_manager
+        .create_session(
+            temp_dir.path().to_path_buf(),
+            "planning catalog boundary".to_string(),
+            crate::session::SessionType::Hidden,
+            crate::config::GoslingMode::Auto,
+        )
+        .await
+        .unwrap();
+    let provider = PlanningTestProvider;
+    session_manager
+        .plans()
+        .start_or_resume(&session.id, &provider, None, None)
+        .await
+        .unwrap();
+    let policy = session_manager
+        .plans()
+        .interaction_policy(&session.id)
+        .await
+        .unwrap();
+    let list_tools_calls = Arc::new(AtomicUsize::new(0));
+    extension_manager
+        .add_mock_extension(
+            "external".to_string(),
+            Arc::new(ListToolsSentinelClient {
+                calls: Arc::clone(&list_tools_calls),
+            }),
+        )
+        .await;
+
+    for (origin, tool_name) in [
+        (
+            crate::agents::interaction_policy::DispatchOrigin::CodeModeNested,
+            "workspace_tree",
+        ),
+        (
+            crate::agents::interaction_policy::DispatchOrigin::ModelNative,
+            "external__read_only",
+        ),
+    ] {
+        let ctx = ToolCallContext::new(session.id.clone(), None, None)
+            .with_interaction_policy(policy.clone())
+            .with_dispatch_origin(origin);
+        let error = match extension_manager
+            .dispatch_tool_call(
+                &ctx,
+                CallToolRequestParams::new(tool_name),
+                CancellationToken::new(),
+            )
+            .await
+        {
+            Ok(_) => panic!("planning dispatch reached external catalog resolution"),
+            Err(error) => error,
+        };
+        assert!(error.to_string().contains("planning_"));
+    }
+
+    assert_eq!(
+        list_tools_calls.load(AtomicOrdering::SeqCst),
+        0,
+        "planning denial must not invoke an external list_tools side effect"
+    );
 }
 
 #[tokio::test]

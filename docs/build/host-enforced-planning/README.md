@@ -28,7 +28,7 @@ execution on approval, and independent `/goal` verification.
 | --- | --- |
 | Branch and revision | `main` at `bd064a5168fd4b26016b51ffd6f8d0f10e82dd6e` |
 | Initial worktree | clean |
-| Final validation anchor | the shared `main` branch advanced during validation to `2aab6af43cb87790344a429097c95a332c5313ac`; the final turn-loop lint repair and record reconciliation remain visible in the working tree |
+| Final validation anchor | the shared `main` branch advanced during validation through `c030041f9a6d37ce1be097e1c03ffaf2543dfd2e`; the final model-native catalog isolation, live planning-template wiring, implicit-hint suppression, and record reconciliation remain visible in the working tree |
 | Session schema | v34 in `session_manager.rs` |
 | Plan source | 2026-09-13 architectural plan, 1,823 lines, read in full |
 | Toolchain | repository pin `1.92`; activated `rustc 1.92.0`, `cargo 1.92.0` |
@@ -91,8 +91,8 @@ later rollback note.
 | 3. Domain, schema v35, and canonical hashes | complete | fresh/migrated schemas, byte-exact hash fixtures, mutation invalidation, and cross-plan corruption rejection are covered |
 | 4. PlanService transitions and mutation fences | complete | compare-and-swap decisions, immutable turn policy, provider-transition blocking, and stale-state handling are implemented and tested |
 | 5. Bounded workspace helpers | complete | planning reads/search/tree walk use cap-std roots with explicit result, byte, depth, and match bounds |
-| 6. Internal planning capability/readiness | complete | five typed planning capabilities are host-injected only for eligible planning turns and excluded from ordinary/public extension state |
-| 7. Atomic dispatch enforcement and plan-policy corpus | complete | policy revalidation and durable operation begin/replay share one transaction before hooks, prompts, frontend emission, tracing, or side effects |
+| 6. Internal planning capability/readiness | complete | five dedicated planning tools plus two reused session-history capabilities use compiled-in host schemas, are injected only for eligible planning turns, and are excluded from ordinary/public extension state |
+| 7. Atomic dispatch enforcement and plan-policy corpus | complete | policy revalidation and durable operation begin/replay share one transaction before hooks, prompts, frontend emission, tracing, or side effects; external catalog resolution, app-direct tool/domain actions, CLI hooks, and implicit hint reads are pre-denied |
 | 8. Typed ACP/SDK | complete | get/start/feedback/approve/abandon/export requests and plan notifications are generated, typed, and exercised through ACP |
 | 9. Core continuity and native transfer | complete | copy, fork, import/export, handoff, archive, and deletion preserve or invalidate plan authority according to the accepted contract |
 | 10. CLI lifecycle | complete | `/plan` lifecycle commands replace the process-local implementation without clearing history or mutating global authorization mode |
@@ -125,7 +125,8 @@ claim:
   schema/migration diagnostics, ACP, and CLI paths;
 - `security.planning_execution_boundary` owns the existing immutable turn
   policy, typed capability identity, provider-readiness, dispatch fences, and
-  every hook, naming, memory, summarizer, and rollup side-effect gate;
+  every hook, implicit hint, naming, memory, summarizer, domain-action, and
+  rollup side-effect gate;
 - `desktop.plan_review` owns the typed Desktop plan adapter and first-party
   review controls that bind feedback and decisions to an exact revision;
 - ARC-011 scopes the current enforcement and provider-readiness paths and checks
@@ -159,6 +160,13 @@ Completed evidence includes:
 - old sessions with explicit enabled-extension state proving planning tools are
   available only through internal policy and never ordinary configuration;
 - planning-turn terminal-state races proving no mid-turn fallback to `Normal`;
+- cold-cache direct, nested, primary model-native, reply-loop, unknown planning,
+  and ACP start/get/app-direct dispatch paths plus planning prompt construction
+  proving authorization never requires external `list_tools`; the agent-level
+  test also proves denied calls create no ledger row and the durable turn
+  renders the live `plan.md` template;
+- tests proving root/referenced/subdirectory hints, ACP domain actions, and
+  configured CLI/plugin hooks stay suppressed;
 - authenticated HTTP/WebSocket, local stdio, and explicit dangerous
   unauthenticated ACP admission behavior;
 - provider/model transition rejection for both `drafting` and
@@ -169,9 +177,10 @@ Completed evidence includes:
 The validation ledger is intentionally qualified:
 
 - the full `cargo test --locked` workspace run passed in a hermetic path root:
-  the main library reported 2,105 passed and four intentionally ignored tests,
-  the CLI library reported 273 passed, providers reported 479 passed, and every
-  enabled integration and documentation suite completed without a failure;
+  the main library reported 2,107 passed and four intentionally ignored tests,
+  the CLI library reported 274 passed, providers reported 479 passed, the ACP
+  custom-request integration reported 25 passed, and every enabled integration
+  and documentation suite completed without a failure;
 - `cargo fmt --check`, `cargo clippy --locked --all-targets -- -D warnings`, the
   full CLI suite, the 171-file/1,354-test Desktop Vitest suite, focused Electron
   plan review, documentation build, and targeted ACP/schema checks passed;

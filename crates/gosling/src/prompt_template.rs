@@ -27,10 +27,7 @@ static TEMPLATE_REGISTRY: &[(&str, &str)] = &[
         "permission_judge.md",
         "Prompt for analyzing tool operations for read-only detection",
     ),
-    (
-        "plan.md",
-        "Prompt used when gosling creates step-by-step plans. CLI only",
-    ),
+    ("plan.md", "Prompt used for host-enforced planning turns"),
     (
         "tiny_model_system.md",
         "System prompt for tiny local models using shell command emulation",

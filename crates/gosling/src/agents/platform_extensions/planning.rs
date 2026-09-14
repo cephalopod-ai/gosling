@@ -253,7 +253,7 @@ impl PlanningClient {
         result_json(serde_json::to_value(snapshot).map_err(|error| error.to_string())?)
     }
 
-    fn get_tools() -> Vec<Tool> {
+    pub(crate) fn get_tools() -> Vec<Tool> {
         vec![
             planning_tool::<WorkspaceTreeParams>("workspace_tree", "List a bounded directory tree inside the session workspace roots.", true),
             planning_tool::<WorkspaceReadTextParams>("workspace_read_text", "Read a bounded, redacted page of one UTF-8 file inside the session workspace roots.", true),

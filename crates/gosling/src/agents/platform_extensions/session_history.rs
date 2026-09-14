@@ -307,7 +307,7 @@ impl SessionHistoryClient {
         Err("message_id was not found in the current session continuity lineage".to_string())
     }
 
-    fn get_tools() -> Vec<Tool> {
+    pub(crate) fn get_tools() -> Vec<Tool> {
         vec![
             Tool::new(
                 "session_search".to_string(),

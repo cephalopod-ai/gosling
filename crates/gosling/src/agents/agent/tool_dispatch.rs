@@ -183,15 +183,23 @@ impl Agent {
         let tool_name = tool_call.name.to_string();
         let is_frontend = self.is_frontend_tool(&tool_call.name).await;
         let mut resolution_error = None;
-        let resolved_tool = if is_frontend
-            || matches!(
-                interaction_policy,
-                crate::session::InteractionPolicy::Planning { .. }
-            ) && !matches!(
+        let planning = matches!(
+            interaction_policy,
+            crate::session::InteractionPolicy::Planning { .. }
+        );
+        let resolved_tool = if is_frontend {
+            None
+        } else if planning {
+            if matches!(
                 dispatch_origin,
                 crate::agents::interaction_policy::DispatchOrigin::ModelNative
             ) {
-            None
+                self.extension_manager
+                    .resolve_planning_tool_without_catalog(&tool_name)
+                    .await
+            } else {
+                None
+            }
         } else {
             match self
                 .extension_manager
@@ -281,11 +289,6 @@ impl Agent {
         };
         let mut operation_guard =
             ToolOperationGuard::new(self.config.session_manager.clone(), operation_id.clone());
-        let planning = matches!(
-            interaction_policy,
-            crate::session::InteractionPolicy::Planning { .. }
-        );
-
         if crate::providers::utils::local_transcript_persistence_enabled() {
             let input_summary = serde_json::json!({
                 "tool": tool_call.name,
@@ -342,16 +345,15 @@ impl Agent {
             }
         }
 
-        self.subdirectory_hint_tracker
-            .lock()
-            .await
-            .record_tool_arguments(&tool_call.arguments, &session.working_dir);
-
         let tool_input_for_extended = tool_call
             .arguments
             .as_ref()
             .map(|a| serde_json::Value::Object(a.clone()));
         if !planning {
+            self.subdirectory_hint_tracker
+                .lock()
+                .await
+                .record_tool_arguments(&tool_call.arguments, &session.working_dir);
             self.emit_pre_tool_extended_hooks(
                 &tool_call.name,
                 tool_input_for_extended.as_ref(),

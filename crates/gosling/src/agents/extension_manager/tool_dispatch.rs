@@ -36,17 +36,6 @@ impl ExtensionManager {
         self.host_identity_for_owner(&owner, actual_tool_name).await
     }
 
-    pub(crate) async fn resolve_host_tool_identity(
-        &self,
-        session_id: &str,
-        tool_name: &str,
-    ) -> Result<crate::agents::interaction_policy::HostToolIdentity, ErrorData> {
-        Ok(self
-            .resolve_tool(session_id, tool_name)
-            .await?
-            .host_identity)
-    }
-
     pub(crate) async fn resolve_tool(
         &self,
         session_id: &str,
@@ -180,6 +169,45 @@ impl ExtensionManager {
         ))
     }
 
+    pub(crate) async fn resolve_planning_tool_without_catalog(
+        &self,
+        tool_name: &str,
+    ) -> Option<ResolvedTool> {
+        let (_, extension_name, actual_tool_name) =
+            crate::agents::interaction_policy::PlanningCapability::fixed_v1_capabilities().find(
+                |(_, registered_extension, registered_tool)| {
+                    *registered_tool == tool_name
+                        || tool_name.strip_prefix(&format!("{registered_extension}__"))
+                            == Some(*registered_tool)
+                },
+            )?;
+        let extension_name = name_to_key(extension_name);
+        let (client, host_identity, available) = self
+            .extensions
+            .lock()
+            .await
+            .get(&extension_name)
+            .map(|extension| {
+                (
+                    extension.get_client(),
+                    crate::agents::interaction_policy::HostToolIdentity::from_extension_config(
+                        &extension.config,
+                        actual_tool_name,
+                    ),
+                    extension.config.is_tool_available(actual_tool_name),
+                )
+            })?;
+        available.then(|| ResolvedTool {
+            tool_name: tool_name.to_string(),
+            extension_name,
+            actual_tool_name: actual_tool_name.to_string(),
+            host_identity,
+            client,
+            tool_meta: None,
+            resource_uri: None,
+        })
+    }
+
     pub async fn dispatch_tool_call(
         &self,
         ctx: &ToolCallContext,
@@ -187,7 +215,6 @@ impl ExtensionManager {
         cancellation_token: CancellationToken,
     ) -> Result<ToolCallResult> {
         let tool_name_str = tool_call.name.to_string();
-        let resolved = self.resolve_tool(&ctx.session_id, &tool_name_str).await?;
         let interaction_policy = match &ctx.interaction_policy {
             Some(policy) => policy.clone(),
             None => self
@@ -200,16 +227,34 @@ impl ExtensionManager {
                     ErrorData::new(ErrorCode::INTERNAL_ERROR, error.to_string(), None)
                 })?,
         };
+
+        // Planning must never enumerate an external catalog merely to discover
+        // that a direct, nested, or unknown call is forbidden. Resolve the
+        // fixed host-owned capability set from the live host registry only;
+        // full authorization below still revalidates durable plan state.
+        let resolved = match &interaction_policy {
+            crate::session::InteractionPolicy::Planning { .. } => {
+                self.resolve_planning_tool_without_catalog(&tool_name_str)
+                    .await
+            }
+            crate::session::InteractionPolicy::Normal => {
+                Some(self.resolve_tool(&ctx.session_id, &tool_name_str).await?)
+            }
+        };
         crate::agents::interaction_policy::authorize_tool_execution(
             self.context.session_manager.as_ref(),
             None,
             &ctx.session_id,
             &interaction_policy,
             ctx.dispatch_origin,
-            Some(&resolved.host_identity),
+            resolved.as_ref().map(|tool| &tool.host_identity),
             &tool_name_str,
         )
         .await?;
+
+        let resolved = resolved.expect(
+            "planning authorization cannot succeed without a fixed live host capability identity",
+        );
 
         self.dispatch_authorized_tool_call(ctx, resolved, tool_call, cancellation_token)
             .await

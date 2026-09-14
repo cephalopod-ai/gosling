@@ -233,13 +233,13 @@ impl Agent {
                 ));
                 continue;
             }
-            let identity = match self
+            let resolved = match self
                 .extension_manager
-                .resolve_host_tool_identity(session_id, &tool_name)
+                .resolve_planning_tool_without_catalog(&tool_name)
                 .await
             {
-                Ok(identity) => identity,
-                Err(_) => {
+                Some(resolved) => resolved,
+                None => {
                     denied.push((
                         request,
                         crate::agents::interaction_policy::policy_denial(&tool_name),
@@ -253,7 +253,7 @@ impl Agent {
                 session_id,
                 interaction_policy,
                 crate::agents::interaction_policy::DispatchOrigin::ModelNative,
-                Some(&identity),
+                Some(&resolved.host_identity),
                 &tool_name,
             )
             .await
