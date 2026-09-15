@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { IntlTestWrapper } from '../../../i18n/test-utils';
@@ -84,4 +84,31 @@ it('previews retention impact before applying it', async () => {
   expect(await screen.findByText(/3 will be marked expired, 1 will be deleted now/)).toBeVisible();
   await user.click(screen.getByRole('button', { name: 'Apply policy' }));
   expect(applyContextHistoryPolicy).toHaveBeenCalledWith(policy, 'reviewed-state');
+});
+
+it('reloads the effective policy when apply fails after a save', async () => {
+  const user = userEvent.setup();
+  vi.mocked(applyContextHistoryPolicy).mockRejectedValue(
+    new Error('Policy was saved but cleanup could not be confirmed')
+  );
+  render(<ContextHistorySettings />, { wrapper: IntlTestWrapper });
+
+  await screen.findByRole('button', { name: 'Review changes' });
+  vi.mocked(readContextHistoryPolicy).mockResolvedValueOnce({
+    policy: { ...policy, retentionDays: 30 },
+    stats: {
+      revisionCount: 8,
+      pinnedCount: 2,
+      payloadBytes: 8192,
+      pinnedBytes: 2048,
+      purgedCount: 1,
+    },
+    managedByEnvironment: false,
+  });
+  await user.click(screen.getByRole('button', { name: 'Review changes' }));
+  await user.click(await screen.findByRole('button', { name: 'Apply policy' }));
+
+  await waitFor(() => expect(readContextHistoryPolicy).toHaveBeenCalledTimes(2));
+  expect(screen.getByRole('alert')).toHaveTextContent('cleanup could not be confirmed');
+  expect(screen.getByRole('spinbutton', { name: 'Keep for (days)' })).toHaveValue(30);
 });

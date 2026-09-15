@@ -33,6 +33,8 @@ pub enum CompactionHistoryError {
     Conflict(String),
     #[error("{0}")]
     Validation(String),
+    #[error("{0}")]
+    Partial(String),
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -968,7 +970,7 @@ impl SessionManager {
         &self,
         policy: CompactionHistoryPolicyV1,
     ) -> Result<ApplyCompactionHistoryPolicyResponse> {
-        self.apply_compaction_history_policy_inner(policy, None, || Ok(()))
+        self.apply_compaction_history_policy_inner(policy, None, false, || Ok(()))
             .await
     }
 
@@ -984,6 +986,7 @@ impl SessionManager {
         self.apply_compaction_history_policy_inner(
             policy,
             Some(expected_preview_hash),
+            true,
             persist_policy,
         )
         .await
@@ -993,14 +996,15 @@ impl SessionManager {
         &self,
         policy: CompactionHistoryPolicyV1,
         expected_preview_hash: Option<&str>,
+        persisted_to_config: bool,
         persist_policy: F,
     ) -> Result<ApplyCompactionHistoryPolicyResponse>
     where
         F: FnOnce() -> Result<()> + Send,
     {
         policy.validate()?;
-        let _write_guard = self.storage.acquire_write_guard().await;
-        let pool = self.storage.pool().await?;
+        let write_guard = self.storage.acquire_write_guard().await;
+        let pool = self.storage.pool().await?.clone();
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
         let current_preview =
             SessionStorage::preview_compaction_history_policy_in_tx(&mut tx, &policy).await?;
@@ -1011,12 +1015,61 @@ impl SessionManager {
             )
             .into());
         }
-        persist_policy()?;
         let before = current_preview.impact.current;
         SessionStorage::reconcile_compaction_expiration_in_tx(&mut tx, &policy).await?;
         SessionStorage::cleanup_compaction_history_in_tx(&mut tx, &policy).await?;
         let remaining = SessionStorage::compaction_history_stats_in_tx(&mut tx, None).await?;
-        tx.commit().await?;
+        persist_policy()?;
+        let commit_policy = policy.clone();
+        // The config save is durable; finish SQLite work even if the ACP request is cancelled.
+        let remaining = tokio::spawn(async move {
+            let _write_guard = write_guard;
+            match tx.commit().await {
+                Ok(()) => Ok(remaining),
+                Err(commit_error) => {
+                    let recovery = async {
+                        let mut recovery_tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+                        SessionStorage::reconcile_compaction_expiration_in_tx(
+                            &mut recovery_tx,
+                            &commit_policy,
+                        )
+                        .await?;
+                        SessionStorage::cleanup_compaction_history_in_tx(
+                            &mut recovery_tx,
+                            &commit_policy,
+                        )
+                        .await?;
+                        let recovered =
+                            SessionStorage::compaction_history_stats_in_tx(&mut recovery_tx, None)
+                                .await?;
+                        recovery_tx.commit().await?;
+                        Ok::<_, anyhow::Error>(recovered)
+                    }
+                    .await;
+                    match recovery {
+                        Ok(recovered) => Ok(recovered),
+                        Err(recovery_error) if persisted_to_config => {
+                            Err(CompactionHistoryError::Partial(format!(
+                                "Context History policy was saved, but snapshot cleanup could not be confirmed ({commit_error}); immediate recovery failed ({recovery_error}). The saved policy will be reconciled when session storage opens again"
+                            ))
+                            .into())
+                        }
+                        Err(recovery_error) => Err(recovery_error),
+                    }
+                }
+            }
+        })
+        .await
+        .map_err(|join_error| -> anyhow::Error {
+            if persisted_to_config {
+                CompactionHistoryError::Partial(format!(
+                    "Context History policy was saved, but snapshot cleanup could not be confirmed because the commit task stopped ({join_error}). The saved policy will be reconciled when session storage opens again"
+                ))
+                .into()
+            } else {
+                join_error.into()
+            }
+        })??;
         Ok(ApplyCompactionHistoryPolicyResponse {
             policy: policy.into(),
             cleanup: PurgeCompactionHistoryResponse {

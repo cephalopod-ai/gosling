@@ -156,8 +156,19 @@ export default function ContextHistorySettings() {
       );
       await load();
     } catch (reason) {
-      setError(errorMessage(reason));
       setPreview(null);
+      setNotice(null);
+      const applyError = errorMessage(reason);
+      try {
+        const response = await readContextHistoryPolicy();
+        setCurrent(response);
+        setDraft(response.policy);
+        setError(applyError);
+      } catch (reloadReason) {
+        setCurrent(null);
+        setDraft(null);
+        setError(`${applyError} ${errorMessage(reloadReason)}`);
+      }
     } finally {
       setBusy(false);
     }

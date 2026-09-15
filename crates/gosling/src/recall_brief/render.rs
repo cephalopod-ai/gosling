@@ -29,10 +29,7 @@ pub fn evidence_only_brief(
     model_name: &str,
     reason: &str,
 ) -> RecallBriefResponse {
-    let retrieval_partial = bundle
-        .receipt
-        .as_ref()
-        .is_some_and(|receipt| receipt.partial == Some(true));
+    let retrieval_partial = bundle.receipt.as_ref().is_some_and(receipt_reports_partial);
     let status = if bundle.omitted_count > 0 || retrieval_partial {
         RecallBriefStatus::Partial
     } else if bundle.returned_count == 0 {
@@ -80,10 +77,7 @@ pub(super) fn synthesized_brief(
     findings: Vec<RecallFinding>,
     unresolved: Vec<RecallUnresolved>,
 ) -> RecallBriefResponse {
-    let partial = bundle
-        .receipt
-        .as_ref()
-        .is_some_and(|receipt| receipt.partial == Some(true));
+    let partial = bundle.receipt.as_ref().is_some_and(receipt_reports_partial);
     let notice = format!(
         "Selected Muninn excerpts were sent to {provider_name} / {model_name}. This report describes returned memory evidence; it does not verify autobiography or external world facts."
     );
@@ -257,7 +251,7 @@ fn escape_markdown(value: &str) -> String {
 }
 
 fn receipt_is_exceptional(receipt: &RecallReceipt) -> bool {
-    receipt.partial == Some(true)
+    receipt_reports_partial(receipt)
         || receipt.selected_count == Some(0)
         || receipt
             .next_cursor
@@ -268,25 +262,28 @@ fn receipt_is_exceptional(receipt: &RecallReceipt) -> bool {
             .facets_empty
             .as_ref()
             .is_some_and(|facets| !facets.is_empty())
-        || receipt
-            .facets_failed
-            .as_ref()
-            .is_some_and(|facets| !facets.is_empty())
         || matches!(
             receipt.stop_reason.as_deref(),
             Some("configured_ceiling" | "lanes_exhausted")
         )
-        || receipt.lanes.iter().any(|lane| {
-            matches!(
-                lane.state.as_str(),
-                "failed" | "success_empty" | "unsearched"
-            )
-        })
+        || receipt
+            .lanes
+            .iter()
+            .any(|lane| matches!(lane.state.as_str(), "success_empty" | "unsearched"))
         || matches!((receipt.unique_findings, receipt.min_unique), (Some(found), Some(minimum)) if found < minimum)
 }
 
+fn receipt_reports_partial(receipt: &RecallReceipt) -> bool {
+    receipt.partial == Some(true)
+        || receipt
+            .facets_failed
+            .as_ref()
+            .is_some_and(|facets| !facets.is_empty())
+        || receipt.lanes.iter().any(|lane| lane.state == "failed")
+}
+
 fn render_receipt(rendered: &mut String, receipt: &RecallReceipt) {
-    if receipt.partial == Some(true) {
+    if receipt_reports_partial(receipt) {
         rendered.push_str("- recall was partial; some lanes failed\n");
     }
     for (label, value) in [

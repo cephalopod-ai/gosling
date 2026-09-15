@@ -6416,6 +6416,29 @@ mod tests {
             .await
             .unwrap();
         sqlx::query("UPDATE session_compaction_revisions SET created_at = ? WHERE session_id = ?")
+            .bind("invalid timestamp")
+            .bind(&session.id)
+            .execute(manager.storage().pool().await.unwrap())
+            .await
+            .unwrap();
+        let no_retention = CompactionHistoryPolicyV1 {
+            retention_days: None,
+            ..Default::default()
+        };
+        let preview = manager
+            .preview_compaction_history_policy(no_retention.clone())
+            .await
+            .unwrap();
+        let error = manager
+            .apply_compaction_history_policy_if_unchanged(
+                no_retention,
+                &preview.preview_hash,
+                || panic!("policy must not be saved before reconciliation succeeds"),
+            )
+            .await
+            .expect_err("invalid revision timestamps must reject policy apply");
+        assert!(error.downcast_ref::<chrono::ParseError>().is_some());
+        sqlx::query("UPDATE session_compaction_revisions SET created_at = ? WHERE session_id = ?")
             .bind((Utc::now() - chrono::Duration::days(3)).to_rfc3339())
             .bind(&session.id)
             .execute(manager.storage().pool().await.unwrap())
@@ -6434,6 +6457,59 @@ mod tests {
         assert_eq!(preview.impact.would_expire_count, 1);
         assert_eq!(preview.impact.would_purge_now_count, 1);
         assert_eq!(preview.impact.projected_revision_count, 0);
+
+        let pool = manager.storage().pool().await.unwrap();
+        sqlx::query("CREATE TABLE policy_apply_failure (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES policy_apply_failure(id) DEFERRABLE INITIALLY DEFERRED)")
+            .execute(pool)
+            .await
+            .unwrap();
+        sqlx::query("CREATE TRIGGER policy_apply_commit_failure AFTER UPDATE OF expires_at ON session_compaction_revisions BEGIN INSERT INTO policy_apply_failure(parent_id) VALUES (999999); END")
+            .execute(pool)
+            .await
+            .unwrap();
+        let config = crate::config::Config::new_with_file_secrets(
+            temp_dir.path().join("config.yaml"),
+            temp_dir.path().join("secrets.yaml"),
+        )
+        .unwrap();
+        let error = manager
+            .apply_compaction_history_policy_if_unchanged(
+                policy.clone(),
+                &preview.preview_hash,
+                || {
+                    config
+                        .set_param("GOSLING_COMPACTION_HISTORY_POLICY", &policy)
+                        .map_err(Into::into)
+                },
+            )
+            .await
+            .expect_err("deferred constraint failure must report a partial apply");
+        assert_eq!(
+            config
+                .get_param::<CompactionHistoryPolicyV1>("GOSLING_COMPACTION_HISTORY_POLICY")
+                .unwrap(),
+            policy
+        );
+        assert!(matches!(
+            error.downcast_ref::<CompactionHistoryError>(),
+            Some(CompactionHistoryError::Partial(_))
+        ));
+        assert_eq!(
+            manager
+                .compaction_history_stats(None)
+                .await
+                .unwrap()
+                .revision_count,
+            1
+        );
+        sqlx::query("DROP TRIGGER policy_apply_commit_failure")
+            .execute(pool)
+            .await
+            .unwrap();
+        sqlx::query("DROP TABLE policy_apply_failure")
+            .execute(pool)
+            .await
+            .unwrap();
 
         let applied = manager
             .apply_compaction_history_policy(policy)

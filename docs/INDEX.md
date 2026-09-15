@@ -35,6 +35,7 @@ for the relationship to cephalopod-ai/gosling.
 - [logs/](logs/) — retained session evidence and logging conventions
 - [logs/session/2026-09-13-consolidated-audit-merge-install.md](logs/session/2026-09-13-consolidated-audit-merge-install.md) — local fast-forward merge, documentation refresh, release rebuild, CLI/Desktop reinstall, and installed Keychain-startup limit
 - [logs/session/2026-09-14-recall-brief-implementation.md](logs/session/2026-09-14-recall-brief-implementation.md) — source implementation, plan revisions, and focused validation evidence
+- [logs/session/2026-09-15-audit-findings-repair.md](logs/session/2026-09-15-audit-findings-repair.md) — disposition and validation of the three findings in the 2026-09-15 private-skills audit
 - [logs/session/2026-09-09-v1.2.5-release-documentation.md](logs/session/2026-09-09-v1.2.5-release-documentation.md) — v1.2.5 local version and release-documentation preparation, validation, and open publication gates
 - [adr/](adr/) — architecture decision records
 - [adr/0010-project-shell-consumer-composition.md](adr/0010-project-shell-consumer-composition.md) — accepted project-shell consumer/composition topology

@@ -77,6 +77,10 @@ pub(super) fn compaction_history_error(error: anyhow::Error) -> agent_client_pro
             agent_client_protocol::Error::invalid_params(),
             "compaction_history_validation",
         ),
+        Some(CompactionHistoryError::Partial(_)) => (
+            agent_client_protocol::Error::internal_error(),
+            "compaction_history_partial_apply",
+        ),
         None if matches!(
             error.downcast_ref::<sqlx::Error>(),
             Some(sqlx::Error::RowNotFound)

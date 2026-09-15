@@ -147,6 +147,63 @@ fn failed_and_empty_facets_remain_distinct_and_make_the_report_partial() {
 }
 
 #[test]
+fn failed_receipt_details_make_evidence_only_reports_partial_without_a_partial_flag() {
+    for flag in [Value::Null, json!(false)] {
+        for failure in ["facet", "lane"] {
+            let mut payload = santa_payload();
+            let meta = &mut payload["MemorySearchResult"]["meta"];
+            meta["recall"]["partial"] = flag.clone();
+            if failure == "facet" {
+                meta["facet_coverage"]["facets_failed"] = json!(["literal gift-deliverer"]);
+            } else {
+                meta["recall"]["lanes"] = json!([
+                    {"lane": "facet:1", "state": "failed", "candidates_fetched": 0}
+                ]);
+            }
+            let report = evidence_only_brief(
+                normalize_recall_result(&CallToolResult::structured(payload)).unwrap(),
+                "mock",
+                "mock-model",
+                "test",
+            );
+            assert_eq!(report.status, RecallBriefStatus::Partial, "{failure}");
+            assert!(report.notice.contains("Partial recall"));
+            assert!(report.rendered.contains("recall was partial"));
+            assert_eq!(report.receipt.unwrap().partial, flag.as_bool());
+        }
+    }
+
+    let mut payload = santa_payload();
+    payload["MemorySearchResult"]["meta"]["recall"]["partial"] = json!(false);
+    payload["MemorySearchResult"]["meta"]["recall"]["lanes"] = json!([
+        {"lane": "facet:0", "state": "success_empty", "candidates_fetched": 0},
+        {"lane": "facet:1", "state": "unsearched", "candidates_fetched": 0}
+    ]);
+    let report = evidence_only_brief(
+        normalize_recall_result(&CallToolResult::structured(payload)).unwrap(),
+        "mock",
+        "mock-model",
+        "test",
+    );
+    assert_eq!(report.status, RecallBriefStatus::EvidenceOnly);
+
+    let mut empty = santa_payload();
+    empty["MemorySearchResult"]["hits"] = json!([]);
+    empty["MemorySearchResult"]["meta"]["recall"]["partial"] = Value::Null;
+    empty["MemorySearchResult"]["meta"]["recall"]["lanes"] = json!([
+        {"lane": "facet:1", "state": "failed", "candidates_fetched": 0}
+    ]);
+    let report = evidence_only_brief(
+        normalize_recall_result(&CallToolResult::structured(empty)).unwrap(),
+        "mock",
+        "mock-model",
+        "test",
+    );
+    assert_eq!(report.status, RecallBriefStatus::Partial);
+    assert!(report.rendered.contains("None returned."));
+}
+
+#[test]
 fn unpinned_or_mismatched_windows_cannot_be_cited() {
     let mut payload = santa_payload();
     payload["MemorySearchResult"]["hits"][0]["resource_uri"] =
@@ -263,6 +320,21 @@ async fn valid_santa_proposal_reports_beliefs_and_leaves_world_existence_unresol
         .rendered
         .contains("Does a literal gift-deliverer exist?"));
     assert!(!report.rendered.contains("Verified world fact"));
+
+    let mut failed_payload = santa_payload();
+    failed_payload["MemorySearchResult"]["meta"]["recall"]["partial"] = json!(false);
+    failed_payload["MemorySearchResult"]["meta"]["facet_coverage"]["facets_failed"] =
+        json!(["literal gift-deliverer"]);
+    let failed_report = synthesize_brief(
+        "test-session",
+        normalize_recall_result(&CallToolResult::structured(failed_payload)).unwrap(),
+        &provider,
+        &ModelConfig::new("mock-model"),
+    )
+    .await;
+    assert_eq!(failed_report.status, RecallBriefStatus::Partial);
+    assert!(failed_report.notice.contains("Partial recall"));
+    assert!(failed_report.rendered.contains("recall was partial"));
 }
 
 #[tokio::test]

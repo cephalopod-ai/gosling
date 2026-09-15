@@ -2976,11 +2976,49 @@ mod continuity_tests {
         );
     }
 
-    #[test]
-    fn unshipped_schema_35_corrects_hash_v1_in_place() {
-        assert_eq!(crate::session::session_manager::CURRENT_SCHEMA_VERSION, 35);
-        assert_eq!(PLAN_SOURCE_HASH_VERSION, "source_hash_v1");
-        assert_eq!(PLAN_SCOPE_HASH_VERSION, "scope_hash_v1");
+    #[tokio::test]
+    async fn schema_35_plan_hashes_survive_migration_to_current_schema() {
+        let (temp_dir, manager, before) = session_with_revision().await;
+        assert!(before.plan.source_hash.starts_with("source_hash_v1:"));
+        assert!(before.plan.scope_hash.starts_with("scope_hash_v1:"));
+        let pool = manager.storage().pool().await.unwrap();
+        sqlx::query("DROP TABLE session_compaction_revisions")
+            .execute(pool)
+            .await
+            .unwrap();
+        sqlx::query("DROP TABLE session_compaction_state")
+            .execute(pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM schema_version")
+            .execute(pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO schema_version(version) VALUES (35)")
+            .execute(pool)
+            .await
+            .unwrap();
+        drop(manager);
+
+        let migrated = SessionManager::new(temp_dir.path().join("data"));
+        let pool = migrated.storage().pool().await.unwrap();
+        let version: i64 = sqlx::query_scalar("SELECT MAX(version) FROM schema_version")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            version,
+            i64::from(crate::session::session_manager::CURRENT_SCHEMA_VERSION)
+        );
+        let after = migrated
+            .plans()
+            .snapshot(&before.plan.session_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(after.plan.source_hash, before.plan.source_hash);
+        assert_eq!(after.plan.scope_hash, before.plan.scope_hash);
+        assert_eq!(after.active_revision, before.active_revision);
     }
 
     #[test]

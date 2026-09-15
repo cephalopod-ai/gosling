@@ -85,6 +85,12 @@ ship together. List operations return metadata only; a client retrieves the
 full summary and provenance for the selected generation, keeping routine
 browsing bounded. Policy changes recalculate expiration for existing unpinned
 rows and reject application when the reviewed database state has changed.
+The policy apply path finishes SQLite reconciliation and cleanup before saving
+the config key. Once the key is saved, the commit and any immediate recovery
+continue even if the ACP request is cancelled. If recovery cannot confirm the
+cleanup, the request reports a partial apply; Desktop rereads the effective
+policy, and session-storage initialization retries reconciliation from that
+saved policy on a later open.
 
 Desktop comparison is derived only after the user enables it. The client loads
 the previous independent snapshot, computes a bounded word- or line-level diff,
