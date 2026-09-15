@@ -80,17 +80,20 @@ pub const MAX_SESSION_MESSAGE_PAGE_LIMIT: usize = 200;
 
 type PlanSourceHashCache = std::collections::HashMap<(String, i64), (String, Option<i64>, String)>;
 
-/// Result of importing a local transcript file. Identical content and a
-/// changed source path are both prevented from creating a duplicate full
-/// transcript; callers get the original session instead.
+/// Result of a session import, from any transport. Identical content and,
+/// for file imports, a changed source path are both prevented from creating
+/// a duplicate full transcript; callers get the original session instead.
+/// The dedup check and the session creation run inside one transaction, so
+/// two concurrent imports of identical content cannot both create a session.
 #[derive(Debug, Clone)]
-pub enum SessionFileImportResult {
+pub enum SessionImportOutcome {
     Imported(Session),
     AlreadyImported(Session),
-    /// The same canonical source file was imported before, but its content
-    /// fingerprint has changed. Refuse to ingest the whole transcript again:
-    /// that would duplicate all of the earlier messages. A future explicit
-    /// refresh operation can merge new source records by their durable IDs.
+    /// File imports only: the same canonical source file was imported
+    /// before, but its content fingerprint has changed. Refuse to ingest the
+    /// whole transcript again: that would duplicate all of the earlier
+    /// messages. A future explicit refresh operation can merge new source
+    /// records by their durable IDs.
     SourceChanged(Session),
 }
 
@@ -1159,19 +1162,11 @@ impl SessionManager {
         session_type_override: Option<SessionType>,
         working_dir: PathBuf,
         transport: super::import_formats::SessionImportTransport,
-    ) -> Result<Session> {
+    ) -> Result<SessionImportOutcome> {
         let source_sha256 = Sha256::digest(json.as_bytes())
             .iter()
             .map(|byte| format!("{byte:02x}"))
             .collect::<String>();
-        if let Some(session) = self
-            .storage
-            .imported_session_by_sha256(&source_sha256)
-            .await?
-        {
-            return Ok(session);
-        }
-
         self.storage
             .import_session(
                 self,
@@ -1193,32 +1188,14 @@ impl SessionManager {
         path: &Path,
         session_type_override: Option<SessionType>,
         working_dir: PathBuf,
-    ) -> Result<SessionFileImportResult> {
+    ) -> Result<SessionImportOutcome> {
         let source_path = fs::canonicalize(path)?;
-        let source_path_string = source_path.to_string_lossy().to_string();
         let json = super::import_formats::read_session_import_file(&source_path)?;
         let source_sha256 = Sha256::digest(json.as_bytes())
             .iter()
             .map(|byte| format!("{byte:02x}"))
             .collect::<String>();
-
-        if let Some(session) = self
-            .storage
-            .imported_session_by_sha256(&source_sha256)
-            .await?
-        {
-            return Ok(SessionFileImportResult::AlreadyImported(session));
-        }
-        if let Some(session) = self
-            .storage
-            .imported_session_by_path(&source_path_string)
-            .await?
-        {
-            return Ok(SessionFileImportResult::SourceChanged(session));
-        }
-
-        let session = self
-            .storage
+        self.storage
             .import_session(
                 self,
                 &json,
@@ -1227,8 +1204,7 @@ impl SessionManager {
                 super::import_formats::SessionImportTransport::CliFile,
                 Some((Some(&source_path), source_sha256)),
             )
-            .await?;
-        Ok(SessionFileImportResult::Imported(session))
+            .await
     }
 
     pub async fn copy_session(&self, session_id: &str, new_name: String) -> Result<Session> {
@@ -3769,7 +3745,7 @@ mod tests {
         .unwrap();
 
         let exported = sm.export_session(&original.id).await.unwrap();
-        let imported = sm
+        let outcome = sm
             .import_session(
                 &exported,
                 None,
@@ -3778,6 +3754,9 @@ mod tests {
             )
             .await
             .unwrap();
+        let SessionImportOutcome::Imported(imported) = outcome else {
+            panic!("first import of new content must create a session");
+        };
 
         assert_ne!(imported.id, original.id);
         assert_eq!(imported.name, DESCRIPTION);
@@ -4135,7 +4114,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let sm = SessionManager::new(temp_dir.path().to_path_buf());
 
-        let imported = sm
+        let outcome = sm
             .import_session(
                 OLD_FORMAT_JSON,
                 None,
@@ -4144,6 +4123,9 @@ mod tests {
             )
             .await
             .unwrap();
+        let SessionImportOutcome::Imported(imported) = outcome else {
+            panic!("first import of new content must create a session");
+        };
 
         assert_eq!(imported.name, "Old format session");
         assert!(imported.user_set_name);
@@ -4181,7 +4163,7 @@ mod tests {
             .import_session_file(&source, None, temp_dir.path().to_path_buf())
             .await
             .unwrap();
-        let SessionFileImportResult::Imported(imported) = imported else {
+        let SessionImportOutcome::Imported(imported) = imported else {
             panic!("first file import must create a session");
         };
         let provenance =
@@ -4201,7 +4183,7 @@ mod tests {
             .import_session_file(&source, None, temp_dir.path().to_path_buf())
             .await
             .unwrap();
-        let SessionFileImportResult::AlreadyImported(repeated) = repeated else {
+        let SessionImportOutcome::AlreadyImported(repeated) = repeated else {
             panic!("replaying the same file must not duplicate the session");
         };
         assert_eq!(repeated.id, imported.id);
@@ -4215,6 +4197,9 @@ mod tests {
             )
             .await
             .unwrap();
+        let SessionImportOutcome::AlreadyImported(repeated_over_json) = repeated_over_json else {
+            panic!("identical content imported over a different transport must not duplicate the session");
+        };
         assert_eq!(repeated_over_json.id, imported.id);
         assert_eq!(sm.list_all_sessions().await.unwrap().len(), 1);
 
@@ -4235,10 +4220,74 @@ mod tests {
             .import_session_file(&source, None, temp_dir.path().to_path_buf())
             .await
             .unwrap();
-        let SessionFileImportResult::SourceChanged(changed) = changed else {
+        let SessionImportOutcome::SourceChanged(changed) = changed else {
             panic!("a changed source must not duplicate the earlier transcript");
         };
         assert_eq!(changed.id, imported.id);
+        assert_eq!(sm.list_all_sessions().await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn concurrent_identical_imports_create_exactly_one_session() {
+        // CON regression: the content-hash dedup check used to run before
+        // the write-guarded creation transaction (check-then-act), so two
+        // concurrent imports of identical content could both pass the check
+        // and both create a session. The dedup lookup now runs inside the
+        // same `BEGIN IMMEDIATE` transaction as the creation, so SQLite
+        // serializes the racing callers and only one of them creates a row.
+        let temp_dir = TempDir::new().unwrap();
+        let sm = std::sync::Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
+        let json = r#"{
+            "id": "20240101_1",
+            "name": "Racing import",
+            "working_dir": "/tmp/test",
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-01T00:00:00Z",
+            "extension_data": {},
+            "message_count": 0
+        }"#;
+
+        let mut handles = Vec::new();
+        for _ in 0..20 {
+            let sm = std::sync::Arc::clone(&sm);
+            let working_dir = temp_dir.path().to_path_buf();
+            handles.push(tokio::spawn(async move {
+                sm.import_session(
+                    json,
+                    None,
+                    working_dir,
+                    crate::session::import_formats::SessionImportTransport::Json,
+                )
+                .await
+            }));
+        }
+
+        let mut imported_count = 0;
+        let mut already_imported_count = 0;
+        let mut session_ids = std::collections::HashSet::new();
+        for handle in handles {
+            match handle.await.unwrap().unwrap() {
+                SessionImportOutcome::Imported(session) => {
+                    imported_count += 1;
+                    session_ids.insert(session.id);
+                }
+                SessionImportOutcome::AlreadyImported(session) => {
+                    already_imported_count += 1;
+                    session_ids.insert(session.id);
+                }
+                SessionImportOutcome::SourceChanged(_) => {
+                    panic!("a JSON-string import never carries a source path")
+                }
+            }
+        }
+
+        assert_eq!(imported_count, 1, "exactly one racing import must create");
+        assert_eq!(already_imported_count, 19);
+        assert_eq!(
+            session_ids.len(),
+            1,
+            "every caller must see the same session"
+        );
         assert_eq!(sm.list_all_sessions().await.unwrap().len(), 1);
     }
 
@@ -4261,7 +4310,7 @@ mod tests {
             .await
             .unwrap();
 
-        let imported = sm
+        let outcome = sm
             .import_session(
                 r#"{
                     "id": "20240101_1",
@@ -4278,6 +4327,9 @@ mod tests {
             )
             .await
             .unwrap();
+        let SessionImportOutcome::Imported(imported) = outcome else {
+            panic!("first import of new content must create a session");
+        };
 
         assert_eq!(imported.name, "Imported after unrelated damage");
     }

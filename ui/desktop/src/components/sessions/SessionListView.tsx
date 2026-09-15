@@ -45,6 +45,10 @@ const i18n = defineMessages({
     id: 'sessions.toast.imported',
     defaultMessage: 'Session imported successfully',
   },
+  importAlreadyImported: {
+    id: 'sessions.toast.alreadyImported',
+    defaultMessage: 'Already imported from this exact source; opened the existing session',
+  },
   importFailed: {
     id: 'sessions.toast.importFailed',
     defaultMessage: 'Failed to import session: {error}',
@@ -103,6 +107,15 @@ const SessionListView: React.FC<SessionListViewProps> = ({
     return result.filePaths[0];
   }, [intl]);
 
+  const showImportOutcomeToast = useCallback(
+    (alreadyImported: boolean) => {
+      toast.success(
+        intl.formatMessage(alreadyImported ? i18n.importAlreadyImported : i18n.importSuccess)
+      );
+    },
+    [intl]
+  );
+
   const handleImportClick = useCallback(async () => {
     const native = window.electron?.selectImportSessionFile;
     if (typeof native === 'function') {
@@ -115,8 +128,8 @@ const SessionListView: React.FC<SessionListViewProps> = ({
         }
         const workingDir = await selectImportWorkingDirectory();
         if (!workingDir) return;
-        await acpImportSession(result.contents, 'json', workingDir);
-        toast.success(intl.formatMessage(i18n.importSuccess));
+        const { alreadyImported } = await acpImportSession(result.contents, 'json', workingDir);
+        showImportOutcomeToast(alreadyImported);
         notifySessionCreated();
       } catch (error) {
         toast.error(
@@ -129,7 +142,7 @@ const SessionListView: React.FC<SessionListViewProps> = ({
     }
 
     fileInputRef.current?.click();
-  }, [intl, notifySessionCreated, selectImportWorkingDirectory]);
+  }, [intl, notifySessionCreated, selectImportWorkingDirectory, showImportOutcomeToast]);
 
   const handleImportSession = useCallback(
     async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -143,8 +156,8 @@ const SessionListView: React.FC<SessionListViewProps> = ({
         const json = await file.text();
         const workingDir = await selectImportWorkingDirectory();
         if (!workingDir) return;
-        await acpImportSession(json, 'json', workingDir);
-        toast.success(intl.formatMessage(i18n.importSuccess));
+        const { alreadyImported } = await acpImportSession(json, 'json', workingDir);
+        showImportOutcomeToast(alreadyImported);
         notifySessionCreated();
       } catch (error) {
         toast.error(
@@ -158,7 +171,7 @@ const SessionListView: React.FC<SessionListViewProps> = ({
         }
       }
     },
-    [intl, notifySessionCreated, selectImportWorkingDirectory]
+    [intl, notifySessionCreated, selectImportWorkingDirectory, showImportOutcomeToast]
   );
 
   const handleImportNostrLink = useCallback(async () => {
@@ -169,10 +182,10 @@ const SessionListView: React.FC<SessionListViewProps> = ({
     try {
       const workingDir = await selectImportWorkingDirectory();
       if (!workingDir) return;
-      await acpImportSession(deeplink, 'nostr', workingDir);
+      const { alreadyImported } = await acpImportSession(deeplink, 'nostr', workingDir);
       setNostrImportLink('');
       setShowImportLinkModal(false);
-      toast.success(intl.formatMessage(i18n.importSuccess));
+      showImportOutcomeToast(alreadyImported);
       notifySessionCreated();
     } catch (error) {
       toast.error(
@@ -183,7 +196,13 @@ const SessionListView: React.FC<SessionListViewProps> = ({
     } finally {
       setIsImportingNostr(false);
     }
-  }, [intl, nostrImportLink, notifySessionCreated, selectImportWorkingDirectory]);
+  }, [
+    intl,
+    nostrImportLink,
+    notifySessionCreated,
+    selectImportWorkingDirectory,
+    showImportOutcomeToast,
+  ]);
 
   return (
     <>

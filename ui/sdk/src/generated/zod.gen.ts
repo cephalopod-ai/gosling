@@ -1058,6 +1058,125 @@ export const zExportSessionPlanResponse_unstable = z.object({
     markdown: z.string()
 });
 
+export const zRecallArtifactKind = z.enum(['chat', 'code']);
+
+export const zRecallRetrievalContext = z.object({
+    activeRepository: z.string(),
+    activePathPrefix: z.string().nullish()
+});
+
+export const zRecallSelectors = z.object({
+    artifactKind: zRecallArtifactKind.nullish(),
+    conversationId: z.string().nullish(),
+    repository: z.string().nullish(),
+    repositoryPathPrefix: z.string().nullish(),
+    repositoryId: z.string().nullish(),
+    retrievalContext: zRecallRetrievalContext.nullish(),
+    since: z.string().nullish(),
+    until: z.string().nullish(),
+    storeId: z.string().nullish()
+});
+
+export const zRecallBriefRequest_unstable = z.object({
+    sessionId: z.string(),
+    extensionName: z.string(),
+    query: z.string(),
+    facets: z.array(z.string()).nullish(),
+    cursor: z.string().nullish(),
+    selectors: zRecallSelectors.nullish()
+});
+
+export const zRecallBriefStatus = z.enum([
+    'synthesized',
+    'evidence_only',
+    'empty',
+    'partial',
+    'unavailable'
+]);
+
+export const zRecallClaimKind = z.enum([
+    'record_exists',
+    'reported_belief',
+    'reported_change',
+    'reported_world_assertion',
+    'historical_referent_report',
+    'inference'
+]);
+
+export const zRecallEvidenceQuote = z.object({
+    sourceKey: z.string(),
+    quote: z.string()
+});
+
+export const zRecallFinding = z.object({
+    claimKind: zRecallClaimKind,
+    statement: z.string(),
+    subject: z.string(),
+    referentSense: z.string(),
+    timeLabel: z.string().nullish(),
+    sourceEvidence: z.array(zRecallEvidenceQuote),
+    inference: z.string().nullish()
+});
+
+export const zRecallSourceEvidence = z.object({
+    sourceKey: z.string(),
+    resourceUri: z.string(),
+    storeId: z.string(),
+    memoryId: z.string(),
+    revision: z.number().int().gte(0),
+    title: z.string(),
+    quote: z.string(),
+    contentTruncated: z.boolean(),
+    sourceRef: z.string(),
+    sourceRefTruncated: z.boolean(),
+    sourceKind: z.string(),
+    trustTier: z.string(),
+    status: z.string(),
+    recordedAt: z.string(),
+    validTime: z.unknown().optional(),
+    contentSafety: z.unknown()
+});
+
+export const zRecallUnresolved = z.object({
+    question: z.string(),
+    reason: z.string(),
+    examinedSources: z.array(z.string())
+});
+
+export const zRecallFacetState = z.object({
+    lane: z.string(),
+    state: z.string(),
+    candidatesFetched: z.number().int().gte(0).nullish()
+});
+
+export const zRecallReceipt = z.object({
+    partial: z.boolean().nullish(),
+    minUnique: z.number().int().gte(0).nullish(),
+    targetUnique: z.number().int().gte(0).nullish(),
+    itemBudget: z.number().int().gte(0).nullish(),
+    selectedCount: z.number().int().gte(0).nullish(),
+    uniqueFindings: z.number().int().gte(0).nullish(),
+    stopReason: z.string().nullish(),
+    nextCursor: z.string().nullish(),
+    generationChanged: z.boolean().nullish(),
+    facetsCovered: z.array(z.string()).nullish(),
+    facetsEmpty: z.array(z.string()).nullish(),
+    facetsFailed: z.array(z.string()).nullish(),
+    lanes: z.array(zRecallFacetState).optional().default([])
+});
+
+export const zRecallBriefResponse_unstable = z.object({
+    status: zRecallBriefStatus,
+    providerName: z.string(),
+    modelName: z.string(),
+    findings: z.array(zRecallFinding),
+    sourceEvidence: z.array(zRecallSourceEvidence),
+    unresolved: z.array(zRecallUnresolved),
+    receipt: zRecallReceipt.nullish(),
+    rendered: z.string(),
+    notice: z.string()
+});
+
 export const zDiagnosticsReportLevel = z.enum(['summary', 'full']);
 
 export const zDiagnosticsGetRequest_unstable = z.object({
@@ -1863,13 +1982,17 @@ export const zImportSessionRequest_unstable = z.object({
 });
 
 /**
- * Import session response — metadata about the newly created session.
+ * Import session response — metadata about the session the import resolved
+ * to. `already_imported` distinguishes a fresh import from a replayed
+ * request that matched an earlier import's exact content and returned the
+ * existing session instead of creating a duplicate.
  */
 export const zImportSessionResponse_unstable = z.object({
     sessionId: z.string(),
     title: z.string().nullish(),
     updatedAt: z.string().nullish(),
-    messageCount: z.number().int().gte(0)
+    messageCount: z.number().int().gte(0),
+    alreadyImported: z.boolean().optional().default(false)
 });
 
 export const zShareSessionNostrRequest_unstable = z.object({
@@ -3203,6 +3326,7 @@ export const zExtRequest = z.object({
             zApproveSessionPlanRequest_unstable,
             zAbandonSessionPlanRequest_unstable,
             zExportSessionPlanRequest_unstable,
+            zRecallBriefRequest_unstable,
             zDiagnosticsGetRequest_unstable,
             zListPromptsRequest_unstable,
             zGetPromptRequest_unstable,
@@ -3338,6 +3462,7 @@ export const zExtResponse = z.union([
                 zSteerSessionResponse_unstable,
                 zSessionPlanResponse_unstable,
                 zExportSessionPlanResponse_unstable,
+                zRecallBriefResponse_unstable,
                 zDiagnosticsGetResponse_unstable,
                 zListPromptsResponse_unstable,
                 zGetPromptResponse_unstable,

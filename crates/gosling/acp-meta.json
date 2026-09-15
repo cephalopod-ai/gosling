@@ -171,6 +171,11 @@
       "responseType": "ExportSessionPlanResponse_unstable"
     },
     {
+      "method": "_gosling/unstable/session/recall/brief",
+      "requestType": "RecallBriefRequest_unstable",
+      "responseType": "RecallBriefResponse_unstable"
+    },
+    {
       "method": "_gosling/unstable/diagnostics/get",
       "requestType": "DiagnosticsGetRequest_unstable",
       "responseType": "DiagnosticsGetResponse_unstable"

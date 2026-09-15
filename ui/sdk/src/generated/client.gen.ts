@@ -164,6 +164,8 @@ import type {
   ReadResourceResponse_unstable,
   ReadSessionHandoffCheckpointRequest_unstable,
   ReadSessionHandoffCheckpointResponse_unstable,
+  RecallBriefRequest_unstable,
+  RecallBriefResponse_unstable,
   RecordSessionModelSwitchRequest_unstable,
   RecordSessionModelSwitchResponse_unstable,
   RefreshProviderInventoryRequest_unstable,
@@ -309,6 +311,7 @@ import {
   zReadCompactionHistoryPolicyResponse_unstable,
   zReadResourceResponse_unstable,
   zReadSessionHandoffCheckpointResponse_unstable,
+  zRecallBriefResponse_unstable,
   zRecordSessionModelSwitchResponse_unstable,
   zRefreshProviderInventoryResponse_unstable,
   zRestoreOutputRevisionResponse_unstable,
@@ -731,6 +734,18 @@ export class GoslingExtClient {
     return zExportSessionPlanResponse_unstable.parse(
       raw,
     ) as ExportSessionPlanResponse_unstable;
+  }
+
+  async sessionRecallBrief_unstable(
+    params: RecallBriefRequest_unstable,
+  ): Promise<RecallBriefResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/session/recall/brief",
+      params,
+    );
+    return zRecallBriefResponse_unstable.parse(
+      raw,
+    ) as RecallBriefResponse_unstable;
   }
 
   async diagnosticsGet_unstable(

@@ -2685,7 +2685,9 @@ mod continuity_tests {
     use super::*;
     use crate::config::GoslingMode;
     use crate::conversation::{message::Message, Conversation};
-    use crate::session::{NewPlanFeedback, NewPlanRevision, SessionManager, SessionType};
+    use crate::session::{
+        NewPlanFeedback, NewPlanRevision, SessionImportOutcome, SessionManager, SessionType,
+    };
     use gosling_providers::conversation::token_usage::Usage;
     use rmcp::model::CallToolRequestParams;
     use std::time::{Duration, Instant};
@@ -4146,7 +4148,7 @@ mod continuity_tests {
             .await
             .unwrap();
         assert_eq!(session_count_after_invalid, session_count_before_invalid);
-        let imported = manager
+        let outcome = manager
             .import_session(
                 &exported,
                 Some(SessionType::User),
@@ -4155,6 +4157,9 @@ mod continuity_tests {
             )
             .await
             .unwrap();
+        let SessionImportOutcome::Imported(imported) = outcome else {
+            panic!("first import of new content must create a session");
+        };
         let imported_plan = manager
             .plans()
             .snapshot(&imported.id)
@@ -4179,7 +4184,7 @@ mod continuity_tests {
             .as_object_mut()
             .unwrap()
             .remove(NATIVE_PLAN_HISTORY_KEY);
-        let legacy_import = manager
+        let legacy_outcome = manager
             .import_session(
                 &serde_json::to_string(&legacy_value).unwrap(),
                 Some(SessionType::User),
@@ -4188,6 +4193,9 @@ mod continuity_tests {
             )
             .await
             .unwrap();
+        let SessionImportOutcome::Imported(legacy_import) = legacy_outcome else {
+            panic!("importing a different session id must create a session");
+        };
         assert!(manager
             .plans()
             .snapshot(&legacy_import.id)
@@ -4280,7 +4288,7 @@ mod continuity_tests {
         );
 
         let exported = manager.export_session(session_id).await.unwrap();
-        let imported = manager
+        let outcome = manager
             .import_session(
                 &exported,
                 Some(SessionType::User),
@@ -4289,6 +4297,9 @@ mod continuity_tests {
             )
             .await
             .unwrap();
+        let SessionImportOutcome::Imported(imported) = outcome else {
+            panic!("first import of new content must create a session");
+        };
         let imported_statuses = sqlx::query_scalar::<_, String>(
             "SELECT status FROM session_plans WHERE session_id = ? ORDER BY generation",
         )

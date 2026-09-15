@@ -3931,5 +3931,8 @@
   },
   "contextHistory.viewSourceMessages": {
     "defaultMessage": "View source messages"
+  },
+  "sessions.toast.alreadyImported": {
+    "defaultMessage": "Already imported from this exact source; opened the existing session"
   }
 }

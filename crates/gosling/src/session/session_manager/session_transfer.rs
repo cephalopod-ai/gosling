@@ -15,7 +15,7 @@
 //! explicit `crate::session::import_formats::...` path (same fix already
 //! applied in session_listing.rs for last_message_snippet).
 
-use super::{Session, SessionManager, SessionStorage, SessionType};
+use super::{Session, SessionImportOutcome, SessionManager, SessionStorage, SessionType};
 use crate::config::GoslingMode;
 use crate::conversation::Conversation;
 use crate::session::extension_data::{EnabledExtensionsState, ExtensionState};
@@ -24,6 +24,7 @@ use chrono::Utc;
 use gosling_providers::model::ModelConfig;
 use gosling_sdk_types::session_handoff::{SessionHandoffSnapshotV1Dto, SessionHandoffStatusDto};
 use serde_json::Value;
+use sqlx::{Sqlite, Transaction};
 use std::path::{Path, PathBuf};
 
 impl SessionStorage {
@@ -39,11 +40,15 @@ impl SessionStorage {
         }
     }
 
-    async fn imported_session_by_provenance(
-        &self,
+    /// Looks up a session by an `import_provenance.v1` field inside the same
+    /// transaction the caller is about to create a session in, so a
+    /// concurrent duplicate import cannot slip between this check and the
+    /// creation it guards.
+    async fn imported_session_id_by_provenance_in_tx(
+        tx: &mut Transaction<'_, Sqlite>,
         json_path: &str,
         value: &str,
-    ) -> Result<Option<Session>> {
+    ) -> Result<Option<String>> {
         let session_id = sqlx::query_scalar::<_, String>(
             r#"
             SELECT id
@@ -57,38 +62,18 @@ impl SessionStorage {
         )
         .bind(json_path)
         .bind(value)
-        .fetch_optional(self.pool().await?)
+        .fetch_optional(&mut **tx)
         .await?;
-
-        match session_id {
-            Some(session_id) => self.get_session(&session_id, false).await.map(Some),
-            None => Ok(None),
-        }
-    }
-
-    pub(super) async fn imported_session_by_sha256(
-        &self,
-        source_sha256: &str,
-    ) -> Result<Option<Session>> {
-        self.imported_session_by_provenance(
-            r#"$."import_provenance.v1".source_sha256"#,
-            source_sha256,
-        )
-        .await
-    }
-
-    pub(super) async fn imported_session_by_path(
-        &self,
-        source_path: &str,
-    ) -> Result<Option<Session>> {
-        self.imported_session_by_provenance(r#"$."import_provenance.v1".source_path"#, source_path)
-            .await
+        Ok(session_id)
     }
 
     pub(super) async fn export_session(&self, id: &str) -> Result<String> {
-        let _write_guard = self.acquire_write_guard().await;
+        // Read-only: a consistent snapshot only needs a deferred transaction,
+        // not the process-wide write guard or a write-reserving BEGIN
+        // IMMEDIATE. Exporting a large session must not block every other
+        // session's writes for its duration.
         let pool = self.pool().await?;
-        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+        let mut tx = pool.begin().await?;
         let session = Self::get_session_with_messages_in_tx(&mut tx, id).await?;
         let plan_history =
             Self::native_plan_history_in_tx(&mut tx, id, super::PlanHistorySelection::All).await?;
@@ -116,7 +101,7 @@ impl SessionStorage {
         working_dir: PathBuf,
         transport: crate::session::import_formats::SessionImportTransport,
         source: Option<(Option<&Path>, String)>,
-    ) -> Result<Session> {
+    ) -> Result<SessionImportOutcome> {
         let source_format = crate::session::import_formats::detect_format(json);
         let normalized = crate::session::import_formats::convert_to_gosling_session_json(json)?;
         let mut normalized_value: Value = serde_json::from_str(&normalized)?;
@@ -139,6 +124,10 @@ impl SessionStorage {
             crate::session::SystemPromptExtrasState::EXTENSION_NAME,
             crate::session::SystemPromptExtrasState::VERSION,
         );
+        let source_path_string = source
+            .as_ref()
+            .and_then(|(path, _)| path.map(|path| path.to_string_lossy().to_string()));
+        let source_sha256 = source.map(|(_, sha256)| sha256);
         crate::session::import_formats::SessionImportProvenance {
             schema_version: 1,
             transport,
@@ -147,10 +136,8 @@ impl SessionStorage {
             effective_working_dir: effective_working_dir.to_string_lossy().to_string(),
             imported_at: Utc::now(),
             history_trusted: false,
-            source_path: source
-                .as_ref()
-                .and_then(|(path, _)| path.map(|path| path.to_string_lossy().to_string())),
-            source_sha256: source.map(|(_, sha256)| sha256),
+            source_path: source_path_string.clone(),
+            source_sha256: source_sha256.clone(),
         }
         .to_extension_data(&mut extension_data)?;
 
@@ -163,14 +150,44 @@ impl SessionStorage {
             ))
         });
 
-        // Session creation, the metadata update, and the conversation replace
-        // all run in one transaction so a process interruption between them
-        // can't leave an empty, partially-imported session stray behind — a
-        // single commit makes the whole import atomic instead of each step
-        // being its own independently committed transaction.
+        // The dedup check and the session creation share one write-guarded
+        // transaction so two concurrent imports of identical content cannot
+        // both pass the check and both create a session. Session creation,
+        // the metadata update, and the conversation replace also all run in
+        // this same transaction so a process interruption between them can't
+        // leave an empty, partially-imported session stray behind — a single
+        // commit makes the whole import atomic instead of each step being
+        // its own independently committed transaction.
         let _write_guard = self.acquire_write_guard().await;
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+
+        if let Some(sha256) = source_sha256.as_deref() {
+            if let Some(session_id) = Self::imported_session_id_by_provenance_in_tx(
+                &mut tx,
+                r#"$."import_provenance.v1".source_sha256"#,
+                sha256,
+            )
+            .await?
+            {
+                tx.rollback().await?;
+                let session = self.get_session(&session_id, true).await?;
+                return Ok(SessionImportOutcome::AlreadyImported(session));
+            }
+        }
+        if let Some(path) = source_path_string.as_deref() {
+            if let Some(session_id) = Self::imported_session_id_by_provenance_in_tx(
+                &mut tx,
+                r#"$."import_provenance.v1".source_path"#,
+                path,
+            )
+            .await?
+            {
+                tx.rollback().await?;
+                let session = self.get_session(&session_id, true).await?;
+                return Ok(SessionImportOutcome::SourceChanged(session));
+            }
+        }
 
         let session = Self::create_session_in_tx(
             &mut tx,
@@ -213,7 +230,9 @@ impl SessionStorage {
         #[cfg(feature = "telemetry")]
         crate::posthog::emit_session_started();
 
-        self.get_session(&session.id, true).await
+        Ok(SessionImportOutcome::Imported(
+            self.get_session(&session.id, true).await?,
+        ))
     }
 
     pub(super) async fn copy_session(

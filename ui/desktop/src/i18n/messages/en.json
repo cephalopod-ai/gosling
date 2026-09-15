@@ -3068,6 +3068,9 @@
   "sessions.tab.archived": {
     "defaultMessage": "Archived"
   },
+  "sessions.toast.alreadyImported": {
+    "defaultMessage": "Already imported from this exact source; opened the existing session"
+  },
   "sessions.toast.archiveFailed": {
     "defaultMessage": "Failed to archive session \"{name}\": {error}"
   },

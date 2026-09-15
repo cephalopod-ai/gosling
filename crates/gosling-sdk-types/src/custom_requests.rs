@@ -1736,7 +1736,10 @@ pub struct ShareSessionNostrResponse {
     pub relays: Vec<String>,
 }
 
-/// Import session response — metadata about the newly created session.
+/// Import session response — metadata about the session the import resolved
+/// to. `already_imported` distinguishes a fresh import from a replayed
+/// request that matched an earlier import's exact content and returned the
+/// existing session instead of creating a duplicate.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportSessionResponse {
@@ -1744,6 +1747,8 @@ pub struct ImportSessionResponse {
     pub title: Option<String>,
     pub updated_at: Option<String>,
     pub message_count: u64,
+    #[serde(default)]
+    pub already_imported: bool,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]

@@ -3169,6 +3169,496 @@
       "x-side": "agent",
       "x-method": "_gosling/unstable/session/plan/export"
     },
+    "RecallBriefRequest_unstable": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "extensionName": {
+          "type": "string"
+        },
+        "query": {
+          "type": "string"
+        },
+        "facets": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "cursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "selectors": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RecallSelectors"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "sessionId",
+        "extensionName",
+        "query"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/session/recall/brief"
+    },
+    "RecallSelectors": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "artifactKind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RecallArtifactKind"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "conversationId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "repository": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "repositoryPathPrefix": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "repositoryId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "retrievalContext": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RecallRetrievalContext"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "since": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "until": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "storeId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "RecallArtifactKind": {
+      "type": "string",
+      "enum": [
+        "chat",
+        "code"
+      ]
+    },
+    "RecallRetrievalContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "activeRepository": {
+          "type": "string"
+        },
+        "activePathPrefix": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "activeRepository"
+      ]
+    },
+    "RecallBriefResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/RecallBriefStatus"
+        },
+        "providerName": {
+          "type": "string"
+        },
+        "modelName": {
+          "type": "string"
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RecallFinding"
+          }
+        },
+        "sourceEvidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RecallSourceEvidence"
+          }
+        },
+        "unresolved": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RecallUnresolved"
+          }
+        },
+        "receipt": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RecallReceipt"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rendered": {
+          "type": "string"
+        },
+        "notice": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "providerName",
+        "modelName",
+        "findings",
+        "sourceEvidence",
+        "unresolved",
+        "rendered",
+        "notice"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/session/recall/brief"
+    },
+    "RecallBriefStatus": {
+      "type": "string",
+      "enum": [
+        "synthesized",
+        "evidence_only",
+        "empty",
+        "partial",
+        "unavailable"
+      ]
+    },
+    "RecallFinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "claimKind": {
+          "$ref": "#/$defs/RecallClaimKind"
+        },
+        "statement": {
+          "type": "string"
+        },
+        "subject": {
+          "type": "string"
+        },
+        "referentSense": {
+          "type": "string"
+        },
+        "timeLabel": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sourceEvidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RecallEvidenceQuote"
+          }
+        },
+        "inference": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "claimKind",
+        "statement",
+        "subject",
+        "referentSense",
+        "sourceEvidence"
+      ]
+    },
+    "RecallClaimKind": {
+      "type": "string",
+      "enum": [
+        "record_exists",
+        "reported_belief",
+        "reported_change",
+        "reported_world_assertion",
+        "historical_referent_report",
+        "inference"
+      ]
+    },
+    "RecallEvidenceQuote": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sourceKey": {
+          "type": "string"
+        },
+        "quote": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sourceKey",
+        "quote"
+      ]
+    },
+    "RecallSourceEvidence": {
+      "type": "object",
+      "properties": {
+        "sourceKey": {
+          "type": "string"
+        },
+        "resourceUri": {
+          "type": "string"
+        },
+        "storeId": {
+          "type": "string"
+        },
+        "memoryId": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "title": {
+          "type": "string"
+        },
+        "quote": {
+          "type": "string"
+        },
+        "contentTruncated": {
+          "type": "boolean"
+        },
+        "sourceRef": {
+          "type": "string"
+        },
+        "sourceRefTruncated": {
+          "type": "boolean"
+        },
+        "sourceKind": {
+          "type": "string"
+        },
+        "trustTier": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "recordedAt": {
+          "type": "string"
+        },
+        "validTime": {},
+        "contentSafety": {}
+      },
+      "required": [
+        "sourceKey",
+        "resourceUri",
+        "storeId",
+        "memoryId",
+        "revision",
+        "title",
+        "quote",
+        "contentTruncated",
+        "sourceRef",
+        "sourceRefTruncated",
+        "sourceKind",
+        "trustTier",
+        "status",
+        "recordedAt",
+        "contentSafety"
+      ]
+    },
+    "RecallUnresolved": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "question": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "examinedSources": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "question",
+        "reason",
+        "examinedSources"
+      ]
+    },
+    "RecallReceipt": {
+      "type": "object",
+      "properties": {
+        "partial": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "minUnique": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "targetUnique": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "itemBudget": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "selectedCount": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "uniqueFindings": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "stopReason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "nextCursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "generationChanged": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "facetsCovered": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "facetsEmpty": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "facetsFailed": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "lanes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RecallFacetState"
+          },
+          "default": []
+        }
+      }
+    },
+    "RecallFacetState": {
+      "type": "object",
+      "properties": {
+        "lane": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "candidatesFetched": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      },
+      "required": [
+        "lane",
+        "state"
+      ]
+    },
     "DiagnosticsGetRequest_unstable": {
       "type": "object",
       "properties": {
@@ -5508,13 +5998,17 @@
         "messageCount": {
           "type": "integer",
           "minimum": 0
+        },
+        "alreadyImported": {
+          "type": "boolean",
+          "default": false
         }
       },
       "required": [
         "sessionId",
         "messageCount"
       ],
-      "description": "Import session response — metadata about the newly created session.",
+      "description": "Import session response — metadata about the session the import resolved\nto. `already_imported` distinguishes a fresh import from a replayed\nrequest that matched an earlier import's exact content and returned the\nexisting session instead of creating a duplicate.",
       "x-side": "agent",
       "x-method": "_gosling/unstable/session/import"
     },
@@ -10015,6 +10509,15 @@
                 {
                   "allOf": [
                     {
+                      "$ref": "#/$defs/RecallBriefRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/session/recall/brief",
+                  "title": "RecallBriefRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
                       "$ref": "#/$defs/DiagnosticsGetRequest_unstable"
                     }
                   ],
@@ -11143,6 +11646,14 @@
                         }
                       ],
                       "title": "ExportSessionPlanResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/RecallBriefResponse_unstable"
+                        }
+                      ],
+                      "title": "RecallBriefResponse_unstable"
                     },
                     {
                       "allOf": [

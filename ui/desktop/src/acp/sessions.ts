@@ -600,9 +600,10 @@ export async function acpImportSession(
   input: string,
   source: SessionImportSource,
   workingDir: string
-): Promise<void> {
+): Promise<{ alreadyImported: boolean }> {
   const client = await getAcpClient();
-  await client.gosling.sessionImport_unstable({ input, source, workingDir });
+  const response = await client.gosling.sessionImport_unstable({ input, source, workingDir });
+  return { alreadyImported: response.alreadyImported ?? false };
 }
 
 export async function acpShareSessionNostr(sessionId: string, relays: string[]) {

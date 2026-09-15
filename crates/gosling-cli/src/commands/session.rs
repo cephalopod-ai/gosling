@@ -666,40 +666,36 @@ pub async fn handle_session_import(
     );
 
     let session_manager = SessionManager::instance();
-    if is_nostr {
+    let result = if is_nostr {
         let format = gosling::session::import_formats::detect_format(&json);
         println!("Detected format: {}", format.label());
-        let session = session_manager
+        session_manager
             .import_session(
                 &json,
                 Some(SessionType::User),
                 working_dir,
                 gosling::session::import_formats::SessionImportTransport::Nostr,
             )
-            .await?;
-        println!("Session imported:");
-        println!("{} - {}", session.id, session.name);
+            .await?
     } else {
-        let result = session_manager
+        session_manager
             .import_session_file(Path::new(&input), Some(SessionType::User), working_dir)
-            .await?;
-        match result {
-            gosling::session::session_manager::SessionFileImportResult::Imported(session) => {
-                println!("Session imported:");
-                println!("{} - {}", session.id, session.name);
-            }
-            gosling::session::session_manager::SessionFileImportResult::AlreadyImported(
-                session,
-            ) => {
-                println!("Session already imported from this exact source:");
-                println!("{} - {}", session.id, session.name);
-            }
-            gosling::session::session_manager::SessionFileImportResult::SourceChanged(session) => {
-                println!(
-                    "Source file changed after its first import; skipped to prevent duplicate transcript history:"
-                );
-                println!("{} - {}", session.id, session.name);
-            }
+            .await?
+    };
+    match result {
+        gosling::session::session_manager::SessionImportOutcome::Imported(session) => {
+            println!("Session imported:");
+            println!("{} - {}", session.id, session.name);
+        }
+        gosling::session::session_manager::SessionImportOutcome::AlreadyImported(session) => {
+            println!("Session already imported from this exact source:");
+            println!("{} - {}", session.id, session.name);
+        }
+        gosling::session::session_manager::SessionImportOutcome::SourceChanged(session) => {
+            println!(
+                "Source file changed after its first import; skipped to prevent duplicate transcript history:"
+            );
+            println!("{} - {}", session.id, session.name);
         }
     }
 

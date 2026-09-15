@@ -403,7 +403,7 @@ impl GoslingAcpAgent {
             )
         };
 
-        let session = self
+        let outcome = self
             .session_manager
             .import_session(
                 &data,
@@ -414,6 +414,15 @@ impl GoslingAcpAgent {
             .await
             .internal_err()?;
 
+        // `SourceChanged` cannot occur here: this request never carries a
+        // local source path, so the storage layer never runs that check.
+        // Treat it the same as `AlreadyImported` rather than assume it is
+        // unreachable, in case that invariant ever changes upstream.
+        let (session, already_imported) = match outcome {
+            SessionImportOutcome::Imported(session) => (session, false),
+            SessionImportOutcome::AlreadyImported(session)
+            | SessionImportOutcome::SourceChanged(session) => (session, true),
+        };
         let msg_count = session.message_count as u64;
 
         Ok(ImportSessionResponse {
@@ -421,6 +430,7 @@ impl GoslingAcpAgent {
             title: Some(session.name),
             updated_at: Some(session.updated_at.to_rfc3339()),
             message_count: msg_count,
+            already_imported,
         })
     }
 

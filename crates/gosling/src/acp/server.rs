@@ -46,8 +46,9 @@ use crate::providers::inventory::{
 use crate::session::{
     AcpPromptRunState, EnabledExtensionsState, ExtensionData, ExtensionState,
     NewSessionLibraryContent, Session, SessionArtifact, SessionArtifactProvenance,
-    SessionArtifactRelation, SessionLibraryItem, SessionLibraryItemKind, SessionLibraryScope,
-    SessionManager, SessionType, DEFAULT_SESSION_TAIL_LIMIT, MAX_SESSION_MESSAGE_PAGE_LIMIT,
+    SessionArtifactRelation, SessionImportOutcome, SessionLibraryItem, SessionLibraryItemKind,
+    SessionLibraryScope, SessionManager, SessionType, DEFAULT_SESSION_TAIL_LIMIT,
+    MAX_SESSION_MESSAGE_PAGE_LIMIT,
 };
 use crate::source_roots::SourceRoot;
 use crate::utils::sanitize_unicode_tags;

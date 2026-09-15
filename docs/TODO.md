@@ -1,5 +1,31 @@
 # TODO
 
+## 2026-09-15 session-transfer dataflow/workflow/architecture audit and repair
+
+- [x] **CAS-GSL-EXPORT-001** — Repaired: `export_session` no longer takes the process-wide write
+      guard or a `BEGIN IMMEDIATE` transaction for what is a pure read; it now uses a plain deferred
+      transaction, so exporting a large session no longer blocks every other session's writes in the
+      same process.
+- [x] **CON-GSL-IMPORT-001** — Repaired: the session-import content-hash dedup check now runs inside
+      the same write-guarded transaction as creation, closing a check-then-act race that let two
+      concurrent identical imports (reachable from the primary Desktop import UI, not just the CLI)
+      create duplicate sessions. New regression test:
+      `concurrent_identical_imports_create_exactly_one_session`.
+- [x] **WFG-GSL-IMPORT-001** — Repaired: `ImportSessionResponse` gained an additive
+      `alreadyImported` field; all three Desktop import entry points and the CLI's Nostr import
+      branch now show a truthful, distinct message when an import resolved to a pre-existing session
+      instead of always claiming success.
+- [x] **ARC-GSL-SCHEMA-001** — Repaired as a side effect of regenerating the schema for the above:
+      `acp-schema.json`/`acp-meta.json`/`ui/sdk/src/generated/*` had not been regenerated since
+      commit `97ffa1077`, so they were missing the entire Recall Brief method family registered in
+      `c5cddc428` and later. Regeneration is committed; verified deterministic (byte-identical on a
+      second run).
+- [ ] **CI-GSL-SCHEMA-001** — Why CI's "Check ACP Schema is Up-to-Date" gate did not catch the schema
+      drift above through three feature commits is unexplained. Worth a short, separate
+      investigation if it matters going forward.
+
+See the [session log](logs/session/2026-09-15-session-transfer-audit-repair.md).
+
 ## 2026-09-15 documentation currency pass
 
 - [ ] **DOC-EVID-001** — `docs/cloud/2026-09-08-evening-audit-repair.md` links to reports under
