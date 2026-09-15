@@ -341,7 +341,7 @@ export function getThinkingContent(message: Message): string | null {
     }
   }
 
-  return parts.length > 0 ? parts.join('') : null;
+  return parts.length > 0 ? parts.join('\n\n') : null;
 }
 
 export function getToolRequests(message: Message): (ToolRequest & { type: 'toolRequest' })[] {
