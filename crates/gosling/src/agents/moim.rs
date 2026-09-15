@@ -56,9 +56,9 @@ pub async fn inject_moim(
     let session_model_config = session
         .as_ref()
         .and_then(|session| session.model_config.clone());
+    let provider = extension_manager.get_provider().lock().await.clone();
     let context_limit = if let Some(model_config) = session_model_config.as_ref() {
-        let provider = extension_manager.get_provider().lock().await.clone();
-        match provider {
+        match provider.as_ref() {
             Some(provider) => provider
                 .get_context_limit(model_config)
                 .await
@@ -69,6 +69,10 @@ pub async fn inject_moim(
     } else {
         None
     };
+    let gosling_owns_context = provider.as_ref().is_none_or(|provider| {
+        provider.capabilities().context_ownership
+            == crate::providers::base::ContextOwnership::Gosling
+    });
     if should_skip_moim(context_limit) {
         return None;
     }
@@ -86,9 +90,12 @@ pub async fn inject_moim(
     let extension_parts = extension_manager.collect_moim_parts(session_id).await;
     let moim = compose_moim(
         &working_dir,
-        total_tokens,
-        context_limit,
-        compaction_threshold,
+        CompactionStatus {
+            total_tokens,
+            context_limit,
+            threshold: compaction_threshold,
+            gosling_owns_context,
+        },
         turns_taken,
         max_turns,
         extension_parts,
@@ -130,11 +137,16 @@ fn should_skip_moim(context_limit: Option<usize>) -> bool {
     context_limit.is_some_and(|limit| limit < MIN_CONTEXT_FOR_MOIM)
 }
 
-fn compose_moim(
-    working_dir: &Path,
+struct CompactionStatus {
     total_tokens: Option<i32>,
     context_limit: Option<usize>,
-    compaction_threshold: f64,
+    threshold: f64,
+    gosling_owns_context: bool,
+}
+
+fn compose_moim(
+    working_dir: &Path,
+    compaction: CompactionStatus,
     turns_taken: u32,
     max_turns: u32,
     extension_parts: Vec<String>,
@@ -146,10 +158,17 @@ fn compose_moim(
         tag(WORKING_DIRECTORY_TAG, &working_dir.display().to_string()),
     ];
 
-    if let Some(value) =
-        compaction_remaining_line(total_tokens, context_limit, compaction_threshold)
-    {
-        lines.push(tag("compaction", &value));
+    // A provider that manages its own conversation context owns compaction,
+    // so gosling's countdown — derived from last-request usage that can
+    // include cache reads — would be misleading there (CMP-OWN-001).
+    if compaction.gosling_owns_context {
+        if let Some(value) = compaction_remaining_line(
+            compaction.total_tokens,
+            compaction.context_limit,
+            compaction.threshold,
+        ) {
+            lines.push(tag("compaction", &value));
+        }
     }
     if let Some(value) = turn_budget_line(turns_taken, max_turns) {
         lines.push(tag("turn-budget", &value));
@@ -364,6 +383,50 @@ mod tests {
         assert_eq!(msgs[2].content.len(), 1);
     }
 
+    #[test]
+    fn compaction_line_present_when_gosling_owns_context() {
+        let block = compose_moim(
+            Path::new("/test/dir"),
+            CompactionStatus {
+                total_tokens: Some(150_000),
+                context_limit: Some(200_000),
+                threshold: 0.8,
+                gosling_owns_context: true,
+            },
+            0,
+            0,
+            vec![],
+        );
+        assert!(
+            block.contains("<compaction>"),
+            "a gosling-managed context at 150k/200k tokens must carry the countdown:\n{block}"
+        );
+    }
+
+    #[test]
+    fn compaction_line_suppressed_when_provider_owns_context() {
+        let block = compose_moim(
+            Path::new("/test/dir"),
+            CompactionStatus {
+                total_tokens: Some(150_000),
+                context_limit: Some(200_000),
+                threshold: 0.8,
+                gosling_owns_context: false,
+            },
+            0,
+            0,
+            vec![],
+        );
+        assert!(
+            !block.contains("<compaction>"),
+            "a provider-managed context must not receive gosling's countdown (CMP-OWN-001):\n{block}"
+        );
+        assert!(
+            block.contains(&format!("<{WORKING_DIRECTORY_TAG}>")),
+            "suppressing the countdown must not drop the rest of the turn context:\n{block}"
+        );
+    }
+
     /// The turn-context block is produced here (`compose_moim`, in gosling) but
     /// recognized in a different crate (`is_turn_context_text`, in
     /// gosling-providers) by matching its textual shape. That recognition is the
@@ -385,9 +448,12 @@ mod tests {
         ) -> String {
             compose_moim(
                 Path::new("/Users/me/code/gosling"),
-                total_tokens,
-                context_limit,
-                0.8,
+                CompactionStatus {
+                    total_tokens,
+                    context_limit,
+                    threshold: 0.8,
+                    gosling_owns_context: true,
+                },
                 turns_taken,
                 max_turns,
                 extension_parts,

@@ -42,13 +42,12 @@ and [campaign execution log](logs/session/2026-09-13-consolidated-audit-repair-c
 
 ## 2026-09-09 provider-managed compaction ownership
 
-- [ ] **CMP-OWN-001** — Suppress gosling's `<compaction>` remaining-token line when the active
-      provider owns context management. `agents/moim.rs` currently derives the line from the last
-      request's usage without receiving provider context ownership, so cache-heavy requests can
-      produce a negative or oscillating value and prompt unnecessary fresh-session advice. A zero
-      clamp is insufficient because the field itself is not authoritative for provider-managed
-      sessions. Add ownership-aware projection and regressions for gosling-managed and
-      provider-managed contexts before publishing v1.2.5.
+- [x] **CMP-OWN-001** — Repaired 2026-09-15: `inject_moim` now reads the active provider's
+      context ownership and `compose_moim` suppresses the `<compaction>` remaining-token line for
+      provider-managed contexts while keeping the rest of the turn context. Regression tests cover
+      the gosling-managed and provider-managed projections; `/compact`'s existing ownership refusal
+      is unchanged. See
+      [the session log](logs/session/2026-09-15-compaction-ownership-repair.md).
 
 ## 2026-09-08 evening independent audit repairs
 
