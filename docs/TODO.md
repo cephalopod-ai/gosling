@@ -1,5 +1,22 @@
 # TODO
 
+## 2026-09-15 documentation currency pass
+
+- [ ] **DOC-EVID-001** — `docs/cloud/2026-09-08-evening-audit-repair.md` links to reports under
+      `generated/today-audit/`, which `.gitignore` excludes. Decide whether to commit those reports
+      or mark the links as machine-local evidence.
+- [ ] **DOC-LOG-001** — The `.gitignore` allowlist for `docs/logs/session/` stops at 2026-09-08, so
+      every later log needs `git add -f`. Decide between extending the allowlist by pattern and
+      keeping the explicit per-file opt-in.
+- [ ] **ARC-REG-001** — ADR-0021 now has a `core.context_compaction_history` component entry but no
+      `ARC-` invariant, unlike planning (ARC-011/012) and the Recall Brief (ARC-013). Decide whether
+      its export, sharing, and telemetry exclusions need their own review gate.
+- [ ] **DOC-CMP-001** — `documentation/docs/guides/goose-comparison.md` is pinned to gosling v1.2.3
+      against Goose v1.49.0 as of 2026-09-08. Its CLI row no longer lists the current command
+      surface; refresh it with the next upstream check rather than editing the dated snapshot.
+
+See the [session log](logs/session/2026-09-15-documentation-currency-pass.md).
+
 ## 2026-09-13 consolidated audit repair
 
 - [x] **GSL-PT-20260913-001/002/003/004/005** — Repair provider-aware doctor checks,

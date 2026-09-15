@@ -19,6 +19,8 @@ This file is the durable map for the repository's documentation surface.
 - [guides](./docs/guides/)
 - [creating plans](./docs/guides/context-engineering/creating-plans.md)
 - [session handoff](./docs/guides/sessions/session-handoff.md)
+- [smart context management and Context History](./docs/guides/sessions/smart-context-management.md)
+- [gosling CLI commands](./docs/guides/gosling-cli-commands.md)
 - [workspaces guide](./docs/guides/workspaces.md)
 - [Goose and gosling feature comparison](./docs/guides/goose-comparison.md) — Goose v1.49.0 / gosling v1.2.3, checked 2026-09-08
 - [historical Goose v1.47 compatibility record](./docs/guides/goose-v1-47-compatibility.md)
@@ -63,7 +65,7 @@ This file is the durable map for the repository's documentation surface.
 - Root `README.md` is the product entry point; `documentation/README.md` is the docs-site build and publishing guide.
 - Session-share deep links are documented with the `gosling://` scheme only. Legacy `goose://` share-link compatibility is not part of the current docs contract.
 - Durable documentation governance artifacts currently live in this directory as point-in-time records rather than a full log/archive program.
-- The current source candidate is `v1.2.5` as of 2026-09-13. The latest published GitHub release is named `v1.2.4` and uses the historical `release_v1.2.4` tag. The local arm64 package/install passed version, hash, and ad-hoc signature checks, but UI launch remained blocked in macOS Keychain before renderer creation. Local packaging and installation do not complete the separate tagging, distributable signing/notarization, clean-machine, publication, or updater-promotion gates; see [the release process](../RELEASE.md).
+- The current source candidate is `v1.2.5` as of 2026-09-15, and now also carries host-enforced planning, the Context History compaction ledger, and the opt-in Recall Brief ACP action. The latest published GitHub release is named `v1.2.4` and uses the historical `release_v1.2.4` tag. The local arm64 package/install passed version, hash, and ad-hoc signature checks, but UI launch remained blocked in macOS Keychain before renderer creation. Local packaging and installation do not complete the separate tagging, distributable signing/notarization, clean-machine, publication, or updater-promotion gates; see [the release process](../RELEASE.md).
 
 ## follow-up disposition
 

@@ -1,10 +1,11 @@
 # Test ledger
 
-Last focused refresh: 2026-09-13 consolidated audit repair. Older rows retain their original
+Last focused refresh: 2026-09-15 documentation currency pass. Older rows retain their original
 point-in-time scope rather than being rewritten as current evidence.
 
 | Test area | Command / evidence | Last known result | Coverage meaning | Gaps |
 |---|---|---|---|---|
+| 2026-09-15 documentation currency | `cd documentation && npm run build`, `npm test`, `npm run typecheck`; repo-local Markdown link check; `mermaid.parse` over every diagram block; `git diff --check` | Production build passed and exported 171 Markdown pages with `onBrokenLinks: "throw"`; 16 documentation tests passed; typecheck passed; all 7 Mermaid blocks parsed; one stale relative link repaired | Proves the documentation site compiles, its internal links resolve, and the repository's diagrams are syntactically valid after the planning, Context History, Recall Brief, and CLI-surface updates | Documentation only: no Rust build, test, or Clippy run, and no runtime verification of the documented commands |
 | 2026-09-13 local package/install | `source bin/activate-hermit && just package-ui`; artifact hash/version/signature checks; installed CLI and Desktop smoke | Build/install and CLI smoke passed; installed UI blocked before renderer/backend creation in macOS `SecItemCopyMatching` | Proves this arm64 checkout was packaged, ad-hoc signed, installed, and matched byte-for-byte at the CLI/backend surfaces | Not a distributable signature/notarization or clean-machine pass; installed UI did not reach a window |
 | 2026-09-13 consolidated audit repair | See `docs/cloud/2026-09-13-consolidated-audit-repair.md` | 13 findings repaired; Rust format and all-target Clippy passed; complete CLI suite passed; every non-baseline/non-keychain-order core target passed; 593 other Rust and 1,321 Desktop tests passed | Covers the repaired cancellation, stateless-run, subagent, memory, research, database-init, handoff/import, doctor, and Desktop error paths | Five documented baseline failures remain; four macOS Keychain suite-order cases pass only in isolation; literal workspace run is blocked by `gosling-test-support`; no full 127-card or signed-app replay |
 | Rust formatting | source bin/activate-hermit && cargo fmt --all -- --check | passed on 2026-08-27 | Rust style is clean. | Does not validate behavior. |
