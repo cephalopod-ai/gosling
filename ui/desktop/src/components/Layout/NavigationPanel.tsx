@@ -13,7 +13,13 @@ import {
 import { AppEvents } from '../../constants/events';
 import { InlineEditText } from '../common/InlineEditText';
 import { SessionIndicators } from '../SessionIndicators';
-import { acpDeleteSession, acpRenameSession, type SessionListItem } from '../../acp/sessions';
+import {
+  acpDeleteSession,
+  acpForkSession,
+  acpRenameSession,
+  type SessionListItem,
+} from '../../acp/sessions';
+import { pairSessionPath } from '../../hooks/useNavigationSessions';
 import { cn } from '../../utils';
 import { defineMessages, useIntl } from '../../i18n';
 import {
@@ -74,6 +80,10 @@ const i18n = defineMessages({
   renameSession: {
     id: 'navigationPanel.renameSession',
     defaultMessage: 'Rename session',
+  },
+  branchSession: {
+    id: 'navigationPanel.branchSession',
+    defaultMessage: 'Branch session',
   },
   archiveSession: {
     id: 'navigationPanel.archiveSession',
@@ -146,6 +156,10 @@ const i18n = defineMessages({
     id: 'navigationPanel.deleteArchiveFileFailed',
     defaultMessage: 'Deleted session, but failed to remove archive file on disk.',
   },
+  branchFailed: {
+    id: 'navigationPanel.branchFailed',
+    defaultMessage: 'Failed to branch session "{name}": {error}',
+  },
 });
 
 const navItemClass = (active: boolean) =>
@@ -183,6 +197,7 @@ interface SessionRowProps {
   status: SessionStatus | undefined;
   onClick: () => void;
   onRenameRequested: (sessionId: string) => void;
+  onBranchRequested: (session: SessionListItem) => void;
   onArchiveRequested: (session: SessionListItem) => void;
   onDeleteRequested: (session: SessionListItem) => void;
   renameToken?: number;
@@ -194,6 +209,7 @@ const SessionRow: React.FC<SessionRowProps> = ({
   status,
   onClick,
   onRenameRequested,
+  onBranchRequested,
   onArchiveRequested,
   onDeleteRequested,
   renameToken,
@@ -248,6 +264,9 @@ const SessionRow: React.FC<SessionRowProps> = ({
           <DropdownMenuContent align="end" className="w-44">
             <DropdownMenuItem onSelect={() => onRenameRequested(session.id)}>
               {intl.formatMessage(i18n.renameSession)}
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => onBranchRequested(session)}>
+              {intl.formatMessage(i18n.branchSession)}
             </DropdownMenuItem>
             <DropdownMenuItem disabled={isStreaming} onSelect={() => onArchiveRequested(session)}>
               {intl.formatMessage(i18n.archiveSession)}
@@ -511,6 +530,25 @@ export const Navigation: React.FC<{ className?: string }> = ({ className }) => {
     [intl, navigate]
   );
 
+  const handleBranchRequested = useCallback(
+    async (session: SessionListItem) => {
+      try {
+        const newSessionId = await acpForkSession(session.id);
+        window.dispatchEvent(new CustomEvent(AppEvents.SESSION_CREATED));
+        await fetchSessions();
+        navigate(pairSessionPath(newSessionId));
+      } catch (error) {
+        toast.error(
+          intl.formatMessage(i18n.branchFailed, {
+            name: session.name,
+            error: errorMessage(error, 'Unknown error'),
+          })
+        );
+      }
+    },
+    [fetchSessions, intl, navigate]
+  );
+
   const handleDeleteRequested = useCallback(async (session: SessionListItem) => {
     const filePath = await getTrackedArchiveFile(session.id);
     setDeleteDialog({
@@ -676,6 +714,7 @@ export const Navigation: React.FC<{ className?: string }> = ({ className }) => {
                       token: prev?.token && prev.sessionId === sessionId ? prev.token + 1 : 1,
                     }))
                   }
+                  onBranchRequested={(session) => void handleBranchRequested(session)}
                   onArchiveRequested={(session) => void handleArchiveRequested(session)}
                   onDeleteRequested={(session) => void handleDeleteRequested(session)}
                   renameToken={
