@@ -5,7 +5,7 @@ for the relationship to cephalopod-ai/gosling.
 
 ## Standard sections
 
-- [architecture.md](architecture.md) — system architecture
+- [architecture.md](architecture.md) — system architecture, including plan lifecycle, Context History, and Recall Brief boundaries
 - [architecture/shell-foundation.md](architecture/shell-foundation.md) — focused shell identity, provisioning, runtime, adapter, handoff, and host foundation
 - [architecture/shell-productization-contracts.md](architecture/shell-productization-contracts.md) — accepted product profile, process/preload, compatibility, lifecycle, diagnostics, release, and threat-model contracts
 - [architecture/shell-productization-r1-contracts.md](architecture/shell-productization-r1-contracts.md) — accepted R1 consumer manifest, application-runtime, and domain-adapter contracts (companion to ADR-0010–0012)
@@ -34,6 +34,8 @@ for the relationship to cephalopod-ai/gosling.
 - [polish/test-ledger.md](polish/test-ledger.md) — current validation commands, results, and evidence limits
 - [logs/](logs/) — retained session evidence and logging conventions
 - [logs/session/2026-09-13-consolidated-audit-merge-install.md](logs/session/2026-09-13-consolidated-audit-merge-install.md) — local fast-forward merge, documentation refresh, release rebuild, CLI/Desktop reinstall, and installed Keychain-startup limit
+- [logs/session/2026-09-13-host-enforced-planning.md](logs/session/2026-09-13-host-enforced-planning.md) — ADR-0020 staged implementation, decision register, and hermetic validation runs
+- [logs/session/2026-09-14-context-compaction-history.md](logs/session/2026-09-14-context-compaction-history.md) — ADR-0021 ledger, CLI and Desktop surfaces, changes-only diffs, and validation evidence
 - [logs/session/2026-09-14-recall-brief-implementation.md](logs/session/2026-09-14-recall-brief-implementation.md) — source implementation, plan revisions, and focused validation evidence
 - [logs/session/2026-09-15-audit-findings-repair.md](logs/session/2026-09-15-audit-findings-repair.md) — disposition and validation of the three findings in the 2026-09-15 private-skills audit
 - [logs/session/2026-09-09-v1.2.5-release-documentation.md](logs/session/2026-09-09-v1.2.5-release-documentation.md) — v1.2.5 local version and release-documentation preparation, validation, and open publication gates

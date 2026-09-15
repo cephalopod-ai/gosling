@@ -63,6 +63,19 @@ gosling info
 
 ---
 
+#### doctor
+Check that your gosling setup is usable. `doctor` prints system information and the configuration
+file location, then verifies that a provider and model are configured and that the configured
+provider answers a live check. It exits non-zero and names the problem when no provider or model is
+set, when the provider is not in the registry, or when the provider check fails.
+
+**Usage:**
+```bash
+gosling doctor
+```
+
+---
+
 #### version
 Check the current gosling version you have installed.
 
@@ -333,6 +346,8 @@ Export sessions in different formats for backup, sharing, migration, or document
 - **`--path <path>`**: Export a specific session by file path (legacy)
 - **`-o, --output <file>`**: Save exported content to a file (default: stdout)
 - **`--format <format>`**: Output format: `markdown`, `json`, `yaml`. Default is `markdown`
+- **`--nostr`**: Publish the JSON export as an encrypted Nostr event and print a `gosling://` share link
+- **`--relay <url>`**: Nostr relay to publish to; repeat the flag to use several relays
 
 **Export Formats:**
 - **`json`**: Complete session backup preserving all data including conversation history, metadata, and settings
@@ -356,6 +371,34 @@ gosling session export -n my-session --format yaml
 
 # Export session by path (legacy)
 gosling session export --path ./my-session.jsonl -o exported.md
+```
+
+---
+
+#### session import [options]
+Import a session into the local database. The input can be a gosling JSON session export, a Claude
+Code, Codex, or Pi `.jsonl` transcript, or a `gosling://sessions/nostr` share link.
+
+**Arguments and options:**
+- **`<input>`**: Path to the export or transcript, or the share link to import
+- **`--nostr`**: Treat the input as an encrypted Nostr share link
+- **`--working-dir <dir>`**: Trusted working directory for the imported session. Defaults to the current directory
+
+Import is history transfer, not authority transfer. Imported messages are marked as untrusted
+history, the new session starts in Approve mode with tools restricted to its working directory, and
+provider, model, workspace, credential profile, and folder grants stay at safe new-session defaults
+until you select them locally.
+
+**Usage:**
+```bash
+# Import a gosling JSON export into the current directory's context
+gosling session import session-backup.json
+
+# Import a foreign transcript and pin the session to a specific directory
+gosling session import ~/transcripts/claude-code-run.jsonl --working-dir ~/projects/api
+
+# Import from an encrypted share link
+gosling session import --nostr "gosling://sessions/nostr/..."
 ```
 
 ---
@@ -577,6 +620,46 @@ This command is automatically invoked by ACP-compatible clients and is not typic
 
 ---
 
+#### review [range] [options]
+Review the current diff with gosling. `review` assembles a review request from the working tree (or
+an explicit diff range), discovers `**/.agents/checks/*.md` subagent reviewers and
+`**/.agents/REVIEW.md` scoped prompt overrides, and runs the main correctness pass together with
+those checks.
+
+**Arguments and options:**
+- **`<range>`**: Diff range to review, such as `main...HEAD`. Defaults to the working tree against `HEAD`
+- **`--prompt <file>`**: Markdown file that replaces the embedded base review prompt
+- **`--provider <provider>` / `--model <model>`**: Provider and default model for the main review agent and for checks that declare no `model:`
+- **`--override-model <model>`**: Force every discovered check to use this model
+- **`--turn-limit <n>`**: Default turn limit for orchestrated subprocesses and for checks that declare none
+- **`-i, --instructions <text>`**: Extra free-form context prepended to the review
+- **`-f, --files <file>...`**: Restrict the assembled diff sent to checks to these files
+- **`-c, --check-filter <name>...`**: Run only the checks with these names
+- **`-s, --check-scope <dir>`**: Search this directory for `.agents/checks/*.md` instead of the repository root
+- **`--checks-only`**: Skip the main correctness pass and run only the check subagents
+- **`--summary-only`**: Print only the diff summary
+- **`--severity <level>`**: Minimum severity to display. Default is `medium`; pass `low` to surface every finding
+- **`--dry-run`**: Print the assembled prompt and discovered checks without running the review
+- **`--no-orchestrate`**: Disable the parallel orchestrator and use the single-prompt delegation path
+- **`-q, --quiet`**: Suppress non-result output from the underlying agent
+
+By default the orchestrator dispatches one `gosling run` subprocess per check, capped at four
+concurrent checks.
+
+**Usage:**
+```bash
+# Review uncommitted work
+gosling review
+
+# Review a branch against main and show every finding
+gosling review main...HEAD --severity low
+
+# Inspect what would run, without calling a model
+gosling review --dry-run
+```
+
+---
+
 ### Project Management
 
 #### project
@@ -618,6 +701,27 @@ Ask gosling questions directly from your shell prompt, with command history incl
 
 ---
 
+#### tui [args...]
+Launch the gosling terminal UI, a full-screen alternative to the line-based interactive session.
+Extra arguments are forwarded to the TUI unchanged.
+
+gosling resolves the TUI in this order:
+
+1. `GOSLING_TUI_SCRIPT`, when it points at an existing `dist/tui.js`
+2. A local checkout's `ui/text/dist/tui.js`, for development
+3. `npx --yes --package <spec> -- gosling-tui` for installed builds, where the spec defaults to
+   `@repo-makeover/gosling@latest` and can be overridden with `GOSLING_TUI_NPM_SPEC`
+
+Local script mode needs `node` on `PATH`; the npx path needs `npx`. gosling names the missing
+executable instead of failing silently.
+
+**Usage:**
+```bash
+gosling tui
+```
+
+---
+
 ## Interactive Session Features
 
 ### Slash Commands
@@ -632,6 +736,9 @@ Once you're in an interactive session (via `gosling session` or `gosling run --i
 - **`/exit` or `/quit`** - Exit the session
 - **`/extension <command>`** - Add a stdio extension (format: ENV1=val1 command args...)
 - **`/mode <name>`** - Set the gosling mode to use ('auto', 'approve', 'chat', 'smart_approve')
+- **`/model`** - Show the session's current model and provider
+- **`/model <name>`** - Switch this session to another model from the same provider. Providers that manage their own conversation context reject the switch
+- **`/edit [text]`** - Compose the next message in your configured external editor, optionally prefilled. See [External Editor Mode](#external-editor-mode)
 - **`/plan [prompt]`** - Start or resume a durable plan and optionally submit one planning prompt
 - **`/plan-status`** - Show the current plan generation, status, revision, and content
 - **`/plan-feedback <text>`** - Record feedback against the exact review revision and request an update
@@ -645,6 +752,7 @@ Once you're in an interactive session (via `gosling session` or `gosling run --i
 - **`/compact`** - Compact and summarize the current conversation to reduce context length while preserving key information
 - **`/r`** - Toggle full tool output display (show complete tool parameters without truncation)
 - **`/skills`** - List available skills
+- **`/status`** - Show the session's provider, model, mode, token usage, context usage, and any open plan
 - **`/t`** - Toggle between `light`, `dark`, and `ansi` themes. [More info](#themes).
 - **`/t <name>`** - Set theme directly (light, dark, ansi)
 

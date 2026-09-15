@@ -109,7 +109,7 @@ raised against that commit is resolved. The operator's explicit CA-7 GO/NO-GO de
 this audit, remains the only condition still outstanding.
 
 This audit closes the CA-0 through CA-6 packages of the Default Shell corrective closure campaign
-against [`../../architecture/default-shell-template.md`](../../architecture/default-shell-template.md)'s
+against [`../../../architecture/default-shell-template.md`](../../../architecture/default-shell-template.md)'s
 DS-7 exit condition: "DS-1–DS-6 are revision-bound and green; no critical/high open finding
 applies; the operator accepts GUI implementation." Following this campaign's own evidence rule
 (and PG-50's precedent in

@@ -29,7 +29,7 @@ flowchart LR
     Store --> JSON[(workspaces.json)]
     Credentials --> Config[Config secure storage]
     Config --> Keyring[(OS keyring / protected fallback)]
-    Handlers --> Sessions[SessionManager v33 snapshots, handoffs, and turn lease]
+    Handlers --> Sessions[SessionManager v36 snapshots, handoffs, plans, compaction history, and turn lease]
     Sessions --> DB[(sessions.db)]
     Agent[Agent / provider construction] --> Service
     Agent --> Credentials
@@ -206,6 +206,96 @@ forking, bootstrap, and acknowledgement support. It replaces provider-name branc
 the legacy context-ownership boolean as a derived compatibility projection. Native adapters must
 return an acknowledgement or provider session identity; otherwise the coordinator uses supported
 bootstrap fallback or fails the transition.
+
+## Host-enforced plan lifecycle
+
+Planning is a core-owned session lifecycle (ADR-0020, schema v35) that is separate from
+`GoslingMode`. At most one generation is open per session, and revisions are immutable, ordered,
+and content-hashed. Feedback, approval, and implementation references bind the exact generation,
+revision identity, content hash, transcript source hash, and workspace scope hash through
+compare-and-swap expectations, so a stale client cannot approve text the user did not review.
+
+```mermaid
+stateDiagram-v2
+    [*] --> drafting: start generation
+    drafting --> awaiting_review: request review
+    awaiting_review --> drafting: feedback or line comment
+    awaiting_review --> approved: approve the exact revision
+    drafting --> abandoned: abandon or end planning
+    awaiting_review --> abandoned: abandon or end planning
+    drafting --> stale: replaced by a new generation
+    awaiting_review --> stale: replaced by a new generation
+    approved --> [*]
+    abandoned --> [*]
+    stale --> [*]
+```
+
+Each turn captures an immutable interaction policy. A planning turn derives authority only from
+fixed host-owned capability identities, and provider metadata, saved permissions, authorization
+modes, and nested dispatch cannot widen that set. While a generation is open, gosling denies
+app-direct actions, command-backed hooks, implicit hint-file reads, provider-owned tool runtimes,
+side-channel actions such as the Recall Brief report, and provider or model transitions. Durable
+plan status, generation, and capability-policy version are revalidated in the same transaction that
+begins or replays a tool operation.
+
+Approval records a decision. It neither executes work nor changes the authorization mode;
+implementation is a separate explicit submission that references the approved revision. Native
+export carries the optional top-level `plan_history_v1` section, and copy, fork, and import remap
+identities and store every transferred generation as stale history, so approval authority does not
+cross a session boundary. The surfaces are the `_gosling/unstable/session/plan/*` ACP methods, the
+CLI `/plan` command family, and the first-party Desktop review workflow. ARC-011 and ARC-012 are
+active review gates rather than shipped-conformance claims.
+
+## Context compaction history
+
+Context History is an append-only local ledger (ADR-0021, schema v36) in `sessions.db`. Every
+successful manual or automatic compaction appends one independent, versioned JSON payload holding
+the exact summary and the stable IDs it covered; there is no delta chain, so any revision can be
+read, expired, or pinned without its ancestors. Indexed columns record a never-reused per-session
+generation, parent revision, trigger, durable or temporary effect, source coverage, provider with
+requested and resolved models, provider usage, token estimates, lifecycle timestamps, payload size,
+and BLAKE3 integrity hashes over domain-separated, length-prefixed streams. The sibling
+`session_compaction_state` row keeps the next generation and an aggregate purge count, so deleted
+gaps stay visible without an unbounded deletion log.
+
+Durable compaction commits the conversation rewrite, the usage update, and the ledger append in one
+immediate transaction. A compacted-tail Desktop resume records a `temporary` revision without
+replacing unloaded history, and failed or cancelled provider work reaches neither commit path.
+`GOSLING_COMPACTION_HISTORY_POLICY` is one validated version-one object covering capture, retention,
+grace, per-session count, and total payload bytes; pinned rows are exempt from expiry and cleanup.
+Ordinary history replacement such as `/clear` removes that session's ledger, session deletion
+cascades through both tables, and archiving does not delete history.
+
+The surfaces are the `_gosling/unstable/session/compactions/{history,revision,pin,delete,purge}` and
+`_gosling/unstable/context-history/policy{,/preview,/apply}` ACP methods, the
+`gosling session context-history` CLI commands, Desktop **View Context History**, and
+**Settings → App → Context History**. Because the policy lives in the configuration file while the
+ledger lives in SQLite, reconciliation, cleanup, and statistics complete inside the pending SQLite
+transaction before the configuration setter runs, and an unresolved post-save failure is reported as
+a partial apply rather than a plain storage error. This is local walkthrough and recovery history,
+not a compliance-grade or tamper-proof audit log: hashes detect corruption only against a trusted
+digest, deletion is logical, and normal session exports and sharing continue to exclude these
+payloads.
+
+## Recall Brief reporting
+
+The Recall Brief (ADR-0022, ARC-013) is an explicit, read-only ACP action at
+`_gosling/unstable/session/recall/brief`. It adds no table and no migration. The caller names an
+enrolled Muninn MCP extension in the current session; the adapter rejects an open plan before
+catalog lookup or model access, reserves the session operation gate, and dispatches the advertised
+`muninn_recall` through the existing app-direct permission and inspection path rather than trusting
+the server's read-only annotation.
+
+Each displayed source is bound to its pinned `muninn://memory/` store, memory ID, and revision,
+cross-checked against the hit and the returned content window; a missing pin is never replaced with
+a mutable head. The selected gosling-managed provider receives a bounded packet of untrusted
+excerpts through a one-shot completion with no tools, and gosling checks every proposed source key
+and quote against the authorized windows before rendering fixed sections. Claim kinds cover reported
+beliefs, reported changes, reported source assertions, historical referent reports, and labeled
+inference; there is no verified-world-fact kind. An invalid or unavailable proposal degrades to an
+evidence-only report, and partial retrieval, failed lanes, and empty successful retrieval remain
+distinct outcomes. Memory excerpts are untrusted data, and the action writes no memory, summary,
+fact ledger, or promotion record.
 
 ## Error taxonomy
 

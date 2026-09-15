@@ -110,6 +110,29 @@ components:
       - the first source entrypoint is typed ACP; CLI and Desktop UX entrypoints are not implemented in this slice
       - source tests check structural provenance, not arbitrary paraphrase or external-world truth
 
+  - id: core.context_compaction_history
+    owners: [core_maintainers]
+    paths:
+      - crates/gosling/src/session/session_manager/compaction_history_storage.rs
+      - crates/gosling/src/session/session_manager/schema.rs
+      - crates/gosling/src/session/session_manager/migrations.rs
+      - crates/gosling/src/acp/server/compaction_history.rs
+      - crates/gosling/src/context_mgmt/summarizer
+      - crates/gosling-sdk-types/src/custom_requests.rs
+      - crates/gosling-cli/src/commands/session.rs
+      - ui/desktop/src/acp/contextHistory.ts
+      - ui/desktop/src/components/conversation/ContextHistoryDialog.tsx
+      - ui/desktop/src/components/conversation/ContextHistoryDiff.tsx
+      - ui/desktop/src/components/settings/app/ContextHistorySettings.tsx
+    responsibilities:
+      - append one independent versioned revision per successful compaction inside the committing transaction
+      - own retention, grace, count, and byte policy together with pinning and purge accounting
+      - keep compaction payloads out of ordinary session export, sharing, and telemetry
+      - project read and policy operations through typed ACP to the CLI and Desktop surfaces
+    notes:
+      - the config file and the SQLite ledger are separate durability stores; an unresolved post-save failure is reported as a partial apply
+      - this is local walkthrough and recovery history, not a tamper-proof or compliance-grade audit log
+
   - id: desktop.plan_review
     owners: [core_maintainers]
     paths:

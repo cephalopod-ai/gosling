@@ -95,6 +95,19 @@ Recent append-only memories remain available beyond the bounded read window, res
 checks stay fail-closed, fresh session databases initialize safely across processes, and session
 import/handoff storage avoids unnecessary whole-store or per-row work.
 
+The current source also adds durable, host-enforced planning and Context History. A session-scoped
+plan lifecycle keeps immutable, content-hashed revisions, binds feedback and approval to the exact
+revision a user reviewed, and treats approval as a decision rather than as permission to start work;
+while a plan is open, gosling denies app-direct actions, command-backed hooks, implicit hint-file
+reads, provider-owned tool runtimes, and provider or model transitions. Context History appends one
+independent, versioned record for each successful compaction, so a summary, the messages it covered,
+its provider and model, and its token reduction can be inspected, compared, pinned, exported, or
+deleted from Desktop (**View Context History** and **Settings → App → Context History**) or from
+`gosling session context-history`. Both are source-candidate surfaces with recorded automated
+validation, not published-release claims; see [ADR-0020](docs/adr/0020-host-enforced-plan-lifecycle.md),
+[ADR-0021](docs/adr/0021-context-compaction-history.md), and
+[Smart Context Management](documentation/docs/guides/sessions/smart-context-management.md#context-history).
+
 The current source also adds an opt-in [Recall Brief ACP action](docs/RECALL_BRIEF.md)
 for a selected enrolled Muninn extension. It returns a report with pinned
 memory-revision citations, separates reported beliefs from world claims, and
@@ -108,7 +121,7 @@ or Desktop workflow or a published-release claim.
 - **Credential profiles in chat** - the chat composer exposes the credential-profile selector and manager, shows a session's pinned profile, and keeps missing-profile failures visible instead of silently choosing another credential.
 - **Desktop lifecycle and windowing reliability** - startup, shutdown, backend cleanup, single-instance behavior, packaged loopback connectivity, and native multi-window actions have dedicated repair and replay evidence.
 - **Session and CLI correctness** - persisted interrupted turns, provider failures, machine-readable output, malformed configuration, doctor behavior, empty-input rejection, and ACP lifecycle handling were repaired through the 2026-07-20 playtest campaign.
-- **Context and memory** - local summarization, durable file-backed facts, backend-specific routing, compacted-session resume paging, bounded session handoff checkpoints, and a Safe-by-default crash-recovery policy support longer-running work without raw-history replay.
+- **Context and memory** - local summarization, durable file-backed facts, backend-specific routing, compacted-session resume paging, bounded session handoff checkpoints, an append-only Context History of past compactions, and a Safe-by-default crash-recovery policy support longer-running work without raw-history replay.
 - **Security hardening** - tool inspection fails closed, secret and session storage use restricted permissions, sensitive writes are atomic, provider clients are bounded, and plugin/cache/path handling rejects unsafe inputs.
 - **ACP, MCP, and provider integration** - custom ACP requests, generated ACP SDK types, MCP app proxy routes, external extensions, and subscription-backed provider adapters remain part of the supported integration model. The removed REST/OpenAPI implementation is not a supported compatibility surface.
 - **Independent project stewardship** - release, contributor, provenance, architecture, test-scenario, audit, and user-manual surfaces now identify gosling's independent maintenance boundary without erasing inherited authorship.
@@ -150,12 +163,15 @@ evidence decisions, and one was rejected under ADR-0018. Focused live replays an
 regressions passed. A local arm64 Desktop package was rebuilt, ad-hoc signed, hash-verified, and
 installed on 2026-09-13, but its UI launch remained blocked in a macOS Keychain lookup before a
 renderer or backend appeared. The complete 127-card suite and distributable signed/notarized,
-updater, and clean-machine matrix were not rerun.
+updater, and clean-machine matrix were not rerun. Host-enforced planning, Context History, and the
+Recall Brief action landed after that playtest, so they carry their own focused automated evidence
+rather than live 127-card coverage.
 
 Current source candidate: `v1.2.5`. See the
 [v1.2.5 release notes](documentation/docs/release-notes/v1.2.5.md) for Full Session Handoff
 continuity, Safe-by-default crash recovery, multiline prompt composition, output-preview repairs,
-the ACP-only architecture cleanup, and the 2026-09-13 audit repairs since `v1.2.4`. It has not been
+the ACP-only architecture cleanup, host-enforced planning, Context History, the Recall Brief action,
+and the 2026-09-13 through 2026-09-15 audit repairs since `v1.2.4`. It has not been
 tagged or published. The latest published GitHub release is named `v1.2.4` and is attached to the
 historical `release_v1.2.4` tag; the matching annotated `v1.2.4` tag identifies the same source
 commit but has no release object. These tags are preserved rather than moved. Local packaging and
@@ -206,6 +222,7 @@ for configuration, trust, and removal guidance.
 - [Documentation index](documentation/INDEX.md) - user manuals, architecture, publishing, and stewardship
 - [v1.2.5 source-candidate notes](documentation/docs/release-notes/v1.2.5.md), [v1.2.4 release notes](documentation/docs/release-notes/v1.2.4.md), and [release-note archive](documentation/docs/release-notes/)
 - [Release process](RELEASE.md) and [release checklist](RELEASE_CHECKLIST.md)
+- [Context History and compaction](documentation/docs/guides/sessions/smart-context-management.md#context-history) and [CLI commands](documentation/docs/guides/gosling-cli-commands.md)
 - [Known issues](documentation/docs/troubleshooting/known-issues.md)
 - [Current validation ledger](docs/polish/test-ledger.md)
 - [Custom Distributions](CUSTOM_DISTROS.md) - build your own distro with preconfigured providers, extensions, and branding
