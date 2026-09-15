@@ -302,6 +302,14 @@ impl GoslingAcpAgent {
         self.on_export_session_plan(req).await
     }
 
+    #[custom_method(RecallBriefRequest)]
+    async fn dispatch_recall_brief(
+        &self,
+        req: RecallBriefRequest,
+    ) -> Result<RecallBriefResponse, agent_client_protocol::Error> {
+        self.on_recall_brief(req).await
+    }
+
     #[custom_method(DiagnosticsGetRequest)]
     async fn dispatch_get_diagnostics(
         &self,

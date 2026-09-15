@@ -183,3 +183,92 @@ impl McpFixture {
         self.list_tools_calls.load(Ordering::SeqCst)
     }
 }
+
+#[derive(Clone)]
+struct MuninnRecallFixtureServer {
+    payload: serde_json::Value,
+    call_count: Arc<AtomicUsize>,
+}
+
+#[tool_router]
+impl MuninnRecallFixtureServer {
+    #[tool(
+        description = "Read-only Muninn recall fixture",
+        annotations(read_only_hint = true)
+    )]
+    fn muninn_recall(&self) -> Result<CallToolResult, McpError> {
+        self.call_count.fetch_add(1, Ordering::SeqCst);
+        Ok(CallToolResult::structured(self.payload.clone()))
+    }
+}
+
+#[tool_handler]
+impl ServerHandler for MuninnRecallFixtureServer {
+    fn get_info(&self) -> ServerInfo {
+        InitializeResult::new(ServerCapabilities::builder().enable_tools().build())
+            .with_protocol_version(ProtocolVersion::V_2025_03_26)
+            .with_server_info(Implementation::new("muninn-recall-fixture", "1.0.0"))
+    }
+}
+
+pub struct MuninnRecallFixture {
+    pub url: String,
+    call_count: Arc<AtomicUsize>,
+    list_tools_calls: Arc<AtomicUsize>,
+    handle: JoinHandle<()>,
+}
+
+impl Drop for MuninnRecallFixture {
+    fn drop(&mut self) {
+        self.handle.abort();
+    }
+}
+
+impl MuninnRecallFixture {
+    pub async fn new(
+        payload: serde_json::Value,
+        expected_session_id: Arc<dyn ExpectedSessionId>,
+    ) -> Self {
+        let call_count = Arc::new(AtomicUsize::new(0));
+        let list_tools_calls = Arc::new(AtomicUsize::new(0));
+        let service_call_count = Arc::clone(&call_count);
+        let service_list_tools_calls = Arc::clone(&list_tools_calls);
+        let service_factory: McpServiceFactory = Box::new(move || {
+            Ok(ValidatingService::new(
+                MuninnRecallFixtureServer {
+                    payload: payload.clone(),
+                    call_count: Arc::clone(&service_call_count),
+                },
+                expected_session_id.clone(),
+                Arc::clone(&service_list_tools_calls),
+            )
+            .into_dyn())
+        });
+        let service = StreamableHttpService::new(
+            service_factory,
+            LocalSessionManager::default().into(),
+            StreamableHttpServerConfig::default(),
+        );
+        let router = axum::Router::new().nest_service("/mcp", service);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let url = format!("http://{addr}/mcp");
+        let handle = tokio::spawn(async move {
+            axum::serve(listener, router).await.unwrap();
+        });
+        Self {
+            url,
+            call_count,
+            list_tools_calls,
+            handle,
+        }
+    }
+
+    pub fn call_count(&self) -> usize {
+        self.call_count.load(Ordering::SeqCst)
+    }
+
+    pub fn list_tools_call_count(&self) -> usize {
+        self.list_tools_calls.load(Ordering::SeqCst)
+    }
+}

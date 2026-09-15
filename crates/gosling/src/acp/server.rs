@@ -124,6 +124,7 @@ mod presentation;
 mod prompt_execution;
 mod prompts;
 mod providers;
+mod recall_brief;
 mod research_completion;
 mod resources;
 mod session_activation;

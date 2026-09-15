@@ -14,7 +14,7 @@ use gosling::acp::server::AcpProviderFactory;
 use gosling::providers::base::{MessageStream, Provider};
 use gosling_providers::errors::ProviderError;
 use gosling_providers::model::ModelConfig;
-use gosling_test_support::{EnforceSessionId, IgnoreSessionId, McpFixture};
+use gosling_test_support::{EnforceSessionId, IgnoreSessionId, McpFixture, MuninnRecallFixture};
 use serial_test::serial;
 use std::path::PathBuf;
 use std::sync::{Arc, LazyLock, Mutex};
@@ -799,6 +799,165 @@ fn test_custom_plan_acp_paths_do_not_enumerate_external_catalog() {
             0,
             "denied app-direct tool calls must not enumerate an external catalog"
         );
+    });
+}
+
+#[test]
+#[serial]
+fn test_recall_brief_dispatches_selected_muninn_tool_and_preserves_exact_sources() {
+    write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
+    run_test(async move {
+        let payload: serde_json::Value =
+            serde_json::from_str(include_str!("fixtures/recall_brief_santa.json")).unwrap();
+        let muninn = MuninnRecallFixture::new(payload, Arc::new(IgnoreSessionId)).await;
+        let openai = OpenAiFixture::new(
+            vec![(
+                "I believed in Santa Claus when I was 7".to_string(),
+                include_str!("acp_test_data/openai_recall_brief_santa.txt"),
+            )],
+            Arc::new(IgnoreSessionId),
+        )
+        .await;
+        let root = tempfile::tempdir().unwrap();
+        let mut conn = AcpServerConnection::new(
+            TestConnectionConfig {
+                data_root: root.path().to_path_buf(),
+                mcp_servers: vec![McpServer::Http(McpServerHttp::new("muninn", &muninn.url))],
+                gosling_mode: gosling::config::GoslingMode::Auto,
+                current_model: "gpt-4o".to_string(),
+                ..Default::default()
+            },
+            openai,
+        )
+        .await;
+        let SessionData { session, .. } = conn.new_session().await.unwrap();
+        let session_id = session.session_id().0.to_string();
+        let response = send_custom(
+            conn.cx(),
+            "_gosling/unstable/session/recall/brief",
+            serde_json::json!({
+                "sessionId": session_id,
+                "extensionName": "muninn",
+                "query": "Santa beliefs",
+            }),
+        )
+        .await
+        .expect("selected read-only recall should succeed");
+        assert_eq!(response["status"], "synthesized", "{response}");
+        assert_eq!(response["providerName"], "openai");
+        assert_eq!(response["sourceEvidence"].as_array().unwrap().len(), 2);
+        assert_eq!(response["sourceEvidence"][0]["revision"], 1);
+        assert_eq!(response["sourceEvidence"][1]["revision"], 2);
+        assert_eq!(response["findings"].as_array().unwrap().len(), 3);
+        assert_eq!(response["findings"][0]["claimKind"], "reported_belief");
+        assert_eq!(response["findings"][1]["claimKind"], "reported_belief");
+        assert_eq!(response["findings"][2]["claimKind"], "inference");
+        assert!(response["rendered"]
+            .as_str()
+            .unwrap()
+            .contains("Does a literal gift-deliverer exist?"));
+        assert_eq!(muninn.call_count(), 1);
+        assert!(muninn.list_tools_call_count() > 0);
+    });
+}
+
+#[test]
+#[serial]
+fn test_recall_brief_is_pre_denied_while_plan_is_open() {
+    write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
+    run_test(async move {
+        let payload: serde_json::Value =
+            serde_json::from_str(include_str!("fixtures/recall_brief_santa.json")).unwrap();
+        let muninn = MuninnRecallFixture::new(payload, Arc::new(IgnoreSessionId)).await;
+        let openai = OpenAiFixture::new(vec![], Arc::new(IgnoreSessionId)).await;
+        let root = tempfile::tempdir().unwrap();
+        let mut conn = AcpServerConnection::new(
+            TestConnectionConfig {
+                data_root: root.path().to_path_buf(),
+                mcp_servers: vec![McpServer::Http(McpServerHttp::new("muninn", &muninn.url))],
+                ..Default::default()
+            },
+            openai,
+        )
+        .await;
+        let SessionData { session, .. } = conn.new_session().await.unwrap();
+        let session_id = session.session_id().0.to_string();
+        assert_eq!(muninn.list_tools_call_count(), 0);
+        let started = send_custom(
+            conn.cx(),
+            "_gosling/unstable/session/plan/start",
+            serde_json::json!({"sessionId": session_id}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(started["snapshot"]["plan"]["status"], "drafting");
+        let denied = send_custom(
+            conn.cx(),
+            "_gosling/unstable/session/recall/brief",
+            serde_json::json!({
+                "sessionId": session_id,
+                "extensionName": "muninn",
+                "query": "Santa beliefs"
+            }),
+        )
+        .await
+        .expect_err("planning must pre-deny recall before MCP or model access");
+        let denied = serde_json::to_value(denied).unwrap();
+        assert_eq!(denied["data"]["code"], "planning_capability_denied");
+        assert_eq!(muninn.list_tools_call_count(), 0);
+        assert_eq!(muninn.call_count(), 0);
+    });
+}
+
+#[test]
+#[serial]
+fn test_recall_brief_requires_selected_enrollment_and_mcp_permission() {
+    write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
+    run_test(async move {
+        let payload: serde_json::Value =
+            serde_json::from_str(include_str!("fixtures/recall_brief_santa.json")).unwrap();
+        let muninn = MuninnRecallFixture::new(payload, Arc::new(IgnoreSessionId)).await;
+        let openai = OpenAiFixture::new(vec![], Arc::new(IgnoreSessionId)).await;
+        let root = tempfile::tempdir().unwrap();
+        let mut conn = AcpServerConnection::new(
+            TestConnectionConfig {
+                data_root: root.path().to_path_buf(),
+                mcp_servers: vec![McpServer::Http(McpServerHttp::new("muninn", &muninn.url))],
+                gosling_mode: gosling::config::GoslingMode::Approve,
+                ..Default::default()
+            },
+            openai,
+        )
+        .await;
+        let SessionData { session, .. } = conn.new_session().await.unwrap();
+        let session_id = session.session_id().0.to_string();
+        let wrong_extension = send_custom(
+            conn.cx(),
+            "_gosling/unstable/session/recall/brief",
+            serde_json::json!({
+                "sessionId": session_id,
+                "extensionName": "unselected",
+                "query": "Santa beliefs"
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(wrong_extension["status"], "unavailable");
+        assert_eq!(muninn.list_tools_call_count(), 0);
+        let denied = send_custom(
+            conn.cx(),
+            "_gosling/unstable/session/recall/brief",
+            serde_json::json!({
+                "sessionId": session_id,
+                "extensionName": "muninn",
+                "query": "Santa beliefs"
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(denied["status"], "unavailable", "{denied}");
+        assert_eq!(muninn.call_count(), 0);
+        assert!(muninn.list_tools_call_count() > 0);
     });
 }
 

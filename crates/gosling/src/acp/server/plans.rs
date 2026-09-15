@@ -44,6 +44,10 @@ impl GoslingAcpAgent {
                 "the current session provider is unavailable".to_string(),
             ))
         })?;
+        let operation_gate = self.session_operation_gate(&request.session_id).await?;
+        let _guard = operation_gate
+            .begin_prompt(&format!("plan_start_{}", Uuid::new_v4().simple()))
+            .await?;
         let planner_model = session
             .model_config
             .as_ref()

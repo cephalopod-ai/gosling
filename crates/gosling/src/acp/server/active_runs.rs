@@ -307,7 +307,7 @@ impl GoslingAcpAgent {
         Some(active_run.operation_guard)
     }
 
-    async fn session_operation_gate(
+    pub(super) async fn session_operation_gate(
         &self,
         session_id: &str,
     ) -> Result<Arc<SessionOperationGate>, agent_client_protocol::Error> {

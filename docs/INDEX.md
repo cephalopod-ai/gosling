@@ -26,6 +26,7 @@ for the relationship to cephalopod-ai/gosling.
 - [SHELL_PRODUCTS.md](SHELL_PRODUCTS.md) — strict product-profile roots, local package/readback commands, fixtures, and extension recipe
 - [INTENT.md](INTENT.md) — fork intent and scope
 - [TODO.md](TODO.md) — outstanding work
+- [RECALL_BRIEF.md](RECALL_BRIEF.md) — ACP user guide for opt-in, exact-revision Muninn Recall Brief reporting
 - [polish/](polish/) — code-polish, documentation-stewardship, and release-readiness evidence
 - [polish/documentation-inventory.md](polish/documentation-inventory.md) — canonical documentation surfaces, ownership, and retention
 - [polish/structure-compliance.md](polish/structure-compliance.md) — documentation layout findings and repo-specific dispositions
@@ -33,6 +34,7 @@ for the relationship to cephalopod-ai/gosling.
 - [polish/test-ledger.md](polish/test-ledger.md) — current validation commands, results, and evidence limits
 - [logs/](logs/) — retained session evidence and logging conventions
 - [logs/session/2026-09-13-consolidated-audit-merge-install.md](logs/session/2026-09-13-consolidated-audit-merge-install.md) — local fast-forward merge, documentation refresh, release rebuild, CLI/Desktop reinstall, and installed Keychain-startup limit
+- [logs/session/2026-09-14-recall-brief-implementation.md](logs/session/2026-09-14-recall-brief-implementation.md) — source implementation, plan revisions, and focused validation evidence
 - [logs/session/2026-09-09-v1.2.5-release-documentation.md](logs/session/2026-09-09-v1.2.5-release-documentation.md) — v1.2.5 local version and release-documentation preparation, validation, and open publication gates
 - [adr/](adr/) — architecture decision records
 - [adr/0010-project-shell-consumer-composition.md](adr/0010-project-shell-consumer-composition.md) — accepted project-shell consumer/composition topology
@@ -47,6 +49,7 @@ for the relationship to cephalopod-ai/gosling.
 - [adr/0019-full-session-handoff-continuity.md](adr/0019-full-session-handoff-continuity.md) — bounded, redacted checkpoints and atomic provider/model continuity
 - [adr/0020-host-enforced-plan-lifecycle.md](adr/0020-host-enforced-plan-lifecycle.md) — persisted, revision-bound planning with a non-widenable host capability boundary
 - [adr/0021-context-compaction-history.md](adr/0021-context-compaction-history.md) — append-only local compaction provenance, retention, and atomic capture contract
+- [adr/0022-provenance-safe-recall-brief.md](adr/0022-provenance-safe-recall-brief.md) — explicit ACP report gate, exact Muninn revision citations, and epistemic limits
 - [build/](build/) — build documentation
 - [build/context-compaction-failsafe-plan.md](build/context-compaction-failsafe-plan.md) — recurring oversized-session compaction repair plan and acceptance criteria
 - [build/host-enforced-planning/README.md](build/host-enforced-planning/README.md) — ADR-0020 implementation sequence, release gates, evidence, and resumable status

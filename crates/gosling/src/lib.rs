@@ -31,6 +31,7 @@ pub mod plugins;
 pub mod posthog;
 pub mod prompt_template;
 pub mod providers;
+pub mod recall_brief;
 pub mod security;
 pub mod session;
 pub mod session_context;

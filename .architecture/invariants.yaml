@@ -177,3 +177,20 @@ invariants:
       - approval changes only durable plan state; any implementation submission is a separate explicit client action using the approved revision
       - the optional native plan_history_v1 section is bounded and identity-remapped on import or copy, and every transferred generation is stored as stale history
       - copy, fork, import, export, provider transition, and scope or history mutation either preserve these semantics atomically or fail closed while a plan is open
+
+  - id: ARC-013
+    title: Recall Brief evidence retains exact revision and reported-claim boundaries
+    status: active
+    scope:
+      - crates/gosling/src/recall_brief
+      - crates/gosling/src/acp/server/recall_brief.rs
+      - crates/gosling-sdk-types/src/recall_brief.rs
+      - crates/gosling/tests/recall_brief.rs
+      - crates/gosling/tests/fixtures/recall_brief_santa.json
+    rule: the explicit Recall Brief action may display only returned authorized pinned Muninn revisions, labels model inference and reported beliefs or source assertions without a verified-world claim kind, discloses partial or degraded results, and performs no memory write or promotion
+    checks:
+      - distinct store, memory, or revision identities remain separately cited even when effort_group matches; unpinned or mismatched identities are omitted with a partial status
+      - model-proposed source keys and exact quotes are checked against the returned windows and every displayed source has content evidence
+      - open planning denies recall before external catalog, MCP, provider, or approval access and the session operation gate prevents overlap with plan start
+      - invalid model output produces evidence-only sections with no inference and receipt fields preserve failed, empty, and unsearched lanes without invented zeros
+      - the recall path calls no summarizer writer, Muninn staging or promotion tool, or persistent report store

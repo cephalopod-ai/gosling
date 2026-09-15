@@ -92,6 +92,24 @@ components:
     notes:
       - source implementation is present; release conformance depends on the recorded validation evidence
 
+  - id: core.recall_brief_reporting
+    owners: [core_maintainers]
+    paths:
+      - crates/gosling/src/recall_brief
+      - crates/gosling/src/acp/server/recall_brief.rs
+      - crates/gosling/src/acp/server/custom_dispatch.rs
+      - crates/gosling-sdk-types/src/recall_brief.rs
+      - crates/gosling/tests/recall_brief.rs
+      - crates/gosling/tests/fixtures/recall_brief_santa.json
+    responsibilities:
+      - interpret only selected session-enrolled Muninn recall results through the existing MCP permission path
+      - bind every displayed source to an exact pinned store, memory identity, and revision
+      - validate model-proposed quotes and source coverage before rendering a typed report
+      - disclose partial retrieval and synthesis degradation without writing memory
+    notes:
+      - the first source entrypoint is typed ACP; CLI and Desktop UX entrypoints are not implemented in this slice
+      - source tests check structural provenance, not arbitrary paraphrase or external-world truth
+
   - id: desktop.plan_review
     owners: [core_maintainers]
     paths:

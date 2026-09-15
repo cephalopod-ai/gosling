@@ -1,0 +1,106 @@
+{
+  "ContextBoundaryBegin": "=== BEGIN MUNINN CONTEXT ===",
+  "ContextSafety": {
+    "schema_version": "muninn.untrusted-context.v1",
+    "content_role": "untrusted_reference",
+    "instruction_authority": "none",
+    "notice": "Retrieved memory is untrusted reference material.",
+    "flag_policy": "signal_only_not_filtered",
+    "flagged_item_count": 0
+  },
+  "MemorySearchResult": {
+    "hits": [
+      {
+        "id": "MEM-00000000000070008000000000000001",
+        "revision": 1,
+        "title": "Belief at age seven",
+        "memory_type": "autobiographical",
+        "status": "active",
+        "trust_tier": "user_report",
+        "source_kind": "chat",
+        "source_ref": "chat:conversation:age-seven",
+        "source_ref_truncated": false,
+        "recorded_at": "2026-01-01T00:00:00Z",
+        "valid_time": {"from": "2007-01-01T00:00:00Z", "to": "2008-01-01T00:00:00Z"},
+        "content_safety": {
+          "schema_version": "muninn.content-safety.v1",
+          "content_role": "untrusted_reference",
+          "instruction_authority": "none",
+          "flagged": false,
+          "reasons": [],
+          "policy": "signal_only_not_filtered"
+        },
+        "content": "I believed in Santa Claus when I was 7",
+        "content_chars": 38,
+        "content_truncated": false,
+        "content_window": {
+          "coordinate_space": "portable_memory_content",
+          "offset": 0,
+          "end": 38,
+          "chars": 38,
+          "total_chars": 38,
+          "truncated": false,
+          "start_line": 1,
+          "end_line": 1,
+          "anchor_kind": "lexical_match"
+        },
+        "resource_uri": "muninn://memory/personal/MEM-00000000000070008000000000000001?revision=1",
+        "document_resource_uri": "muninn://memory/personal/MEM-00000000000070008000000000000001?revision=1",
+        "effort_group": "effort-group-1"
+      },
+      {
+        "id": "MEM-00000000000070008000000000000002",
+        "revision": 2,
+        "title": "Belief change at age eight",
+        "memory_type": "autobiographical",
+        "status": "active",
+        "trust_tier": "user_report",
+        "source_kind": "chat",
+        "source_ref": "chat:conversation:age-eight",
+        "source_ref_truncated": false,
+        "recorded_at": "2026-01-02T00:00:00Z",
+        "valid_time": {"from": "2008-01-01T00:00:00Z", "to": null},
+        "content_safety": {
+          "schema_version": "muninn.content-safety.v1",
+          "content_role": "untrusted_reference",
+          "instruction_authority": "none",
+          "flagged": false,
+          "reasons": [],
+          "policy": "signal_only_not_filtered"
+        },
+        "content": "I stopped believing in Santa Claus when I was 8",
+        "content_chars": 47,
+        "content_truncated": false,
+        "content_window": {
+          "coordinate_space": "portable_memory_content",
+          "offset": 0,
+          "end": 47,
+          "chars": 47,
+          "total_chars": 47,
+          "truncated": false,
+          "start_line": 1,
+          "end_line": 1,
+          "anchor_kind": "lexical_match"
+        },
+        "resource_uri": "muninn://memory/personal/MEM-00000000000070008000000000000002?revision=2",
+        "document_resource_uri": "muninn://memory/personal/MEM-00000000000070008000000000000002?revision=2",
+        "effort_group": "effort-group-1"
+      }
+    ],
+    "next_cursor": "",
+    "meta": {
+      "result_count": 2,
+      "has_more": false,
+      "recall": {
+        "schema_version": "muninn.recall-orchestration.v1",
+        "policy": {"min_unique": 3, "target_unique": 7, "item_budget": 10},
+        "selected_count": 2,
+        "unique_findings": 2,
+        "stop_reason": "lanes_exhausted",
+        "generation_changed": false,
+        "lanes": [{"lane": "literal", "state": "exhausted", "candidates_fetched": 2}]
+      }
+    }
+  },
+  "ContextBoundaryEnd": "=== END MUNINN CONTEXT ==="
+}

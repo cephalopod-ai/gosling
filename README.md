@@ -95,6 +95,13 @@ Recent append-only memories remain available beyond the bounded read window, res
 checks stay fail-closed, fresh session databases initialize safely across processes, and session
 import/handoff storage avoids unnecessary whole-store or per-row work.
 
+The current source also adds an opt-in [Recall Brief ACP action](docs/RECALL_BRIEF.md)
+for a selected enrolled Muninn extension. It returns a report with pinned
+memory-revision citations, separates reported beliefs from world claims, and
+shows partial or evidence-only outcomes when retrieval or synthesis cannot be
+validated. This is an ACP integration surface in source, not a dedicated CLI
+or Desktop workflow or a published-release claim.
+
 ## What's included
 
 - **Workspace-aware Desktop chats** - workspace rows filter the chat list without changing the default for future chats. Starting a chat from a workspace action preselects that workspace, while the global New Chat flow preselects the active/default workspace and still allows a per-chat override.

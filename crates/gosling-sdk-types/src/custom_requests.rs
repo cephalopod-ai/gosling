@@ -4,6 +4,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+pub use crate::recall_brief::*;
 pub use crate::session_handoff::*;
 pub use crate::shell::*;
 pub use crate::workspace::*;
