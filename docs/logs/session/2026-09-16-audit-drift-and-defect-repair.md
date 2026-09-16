@@ -127,3 +127,43 @@ behaviour is unchanged from before the patch; only failure *visibility* improves
   appear across `docs/cloud/`. With `ARC-001`/`ARC-002` restored the registry is
   self-consistent, but a bare `ARC-010` in prose remains ambiguous. Namespacing the
   registry ids would resolve it and is a larger change than this patch set.
+
+## Addendum — two follow-ups closed the same day
+
+The user authorised closing the two `AGENTS.md`-related follow-ups recorded above.
+Appended rather than edited into the sections above, per `docs/logs/README.md`
+("do not rewrite historical results to match current state").
+
+Investigating them changed the approach to both. `AGENTS.md:151-217` is a
+Giles-owned template block (`<!-- GILES:DOCS-GOVERNANCE:START -->` ... `:END`)
+containing the required read order, authority rules, documentation-patch rules,
+validation expectations, **and** the logging section. The repository's own rules end
+at line 149. Both follow-ups therefore pointed at fleet-managed text, and the
+`GEMINI.md` references are template boilerplate assuming every fleet repo ships a
+Gemini adapter — this one ships `CLAUDE.md` instead.
+
+- **Session-log allowlist — documented in `docs/logs/README.md`, not `AGENTS.md`.**
+  The original follow-up proposed adding a line to the `AGENTS.md` logging section.
+  That section sits inside the Giles block, where repo-local `.gitignore` mechanics
+  do not belong and may not survive a rescan. `docs/logs/README.md` is repo-owned,
+  tracked, and already the canonical home for session-log conventions, so the
+  allowlist rule went there.
+- **`GEMINI.md` created as an adapter.** Removing the references would have edited
+  the Giles block and deleted declared constraints, which this repo's
+  documentation-patch rules forbid without an explicit request. Creating the file
+  touches nothing fleet-managed and makes `AGENTS.md`'s own mandated validation
+  command satisfiable instead of permanently failing. It carries the
+  `GILES:GEMINI-DOCS-GOVERNANCE` marker pair, states the deference relationship
+  `AGENTS.md:171` already declares, and records honestly that no Gemini-specific
+  deviations currently apply. It is deliberately not indexed in `docs/INDEX.md`,
+  matching the existing treatment of `CLAUDE.md` — that index lists the canonical
+  contract, not adapters.
+
+Both mandated greps now pass: `GILES:DOCS-GOVERNANCE:START` in `AGENTS.md` (2) and
+`GILES:GEMINI-DOCS-GOVERNANCE:START` in `GEMINI.md` (1). `AGENTS.md` itself remains
+unmodified.
+
+Still open and not agent-owned: the root cause is that the fleet template names
+`GEMINI.md` where this repo has `CLAUDE.md`. Pointing the template at the adapter a
+repo actually ships would fix this fleet-wide rather than per-repo, and needs a Giles
+change rather than an edit here.
