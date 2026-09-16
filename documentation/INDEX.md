@@ -22,7 +22,7 @@ This file is the durable map for the repository's documentation surface.
 - [smart context management and Context History](./docs/guides/sessions/smart-context-management.md)
 - [gosling CLI commands](./docs/guides/gosling-cli-commands.md)
 - [workspaces guide](./docs/guides/workspaces.md)
-- [Goose and gosling feature comparison](./docs/guides/goose-comparison.md) — Goose v1.49.0 / gosling v1.2.3, checked 2026-09-08
+- [Goose and gosling feature comparison](./docs/guides/goose-comparison.md) — Goose v1.50.1 / gosling v1.2.5 source, checked 2026-09-16
 - [historical Goose v1.47 compatibility record](./docs/guides/goose-v1-47-compatibility.md)
 - [troubleshooting](./docs/troubleshooting/)
 - [v1.0.0 release notes](./docs/release-notes/v1.0.0.md)

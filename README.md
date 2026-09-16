@@ -40,19 +40,20 @@ gosling's current source includes these controls. Their presence is not a securi
 * **Option Injection Protection**: Added `--` end-of-options guards to `git clone` during plugin installation, preventing command/option injection attacks via malicious URL strings starting with a hyphen.
 * **Persisted Permission Denials**: A stored denial takes precedence over an allow in the same policy category; unreadable permission state is treated as denied. Ordinary actions can still proceed automatically in Autonomous mode.
 
-### Dated feature comparison (Goose v1.49.0 vs. gosling v1.2.3 source)
+### Dated feature comparison (Goose v1.50.1 vs. gosling v1.2.5 source)
 
-Checked **2026-09-08** against [Goose's latest stable release, v1.49.0](https://github.com/aaif-goose/goose/releases/tag/v1.49.0)
-(published September 3) and the gosling `v1.2.3` source snapshot.
+Checked **2026-09-16** against [Goose's latest stable release, v1.50.1](https://github.com/aaif-goose/goose/releases/tag/v1.50.1)
+(published September 14) and the gosling `v1.2.5` source on `main`.
 These are source observations, not runtime parity or security certification.
 The [detailed comparison](documentation/docs/guides/goose-comparison.md) pins the
 upstream commit, links the evidence, and records the refresh procedure.
 
-| Feature | Goose v1.49.0 | gosling v1.2.3 source |
+| Feature | Goose v1.50.1 | gosling v1.2.5 source |
 |---|---|---|
 | **Agent, MCP, and providers** | Chat/tool loops, MCP extensions, cloud and local-service providers | Same capability categories; provider and extension coverage must be checked individually |
 | **Local models** | Ollama plus integrated llama.cpp inference and optional MLX support | Ollama and other configured services; no bundled inference runtime |
-| **CLI** | Sessions, run, ACP, serve, MCP, skills, plugins; also recipes, schedules, gateways, local-model management | Sessions, run, ACP, serve, MCP, skills, plugins; also review, projects, terminal integration, and TUI; no recipe/schedule/gateway/local-models commands |
+| **Fast-model routing** | Removed in v1.50.0 | Retained: `GOSLING_FAST_MODEL` or the provider default handles naming, compaction, and summaries |
+| **CLI** | Sessions, run, ACP, serve, MCP, skills, plugins, review, terminal integration; also recipes, schedules, gateways, local-model management, and optional peer-to-peer `roam` | Same shared commands; also projects, stored secrets, shell-document validation, and TUI; no recipe/schedule/gateway/local-models/roam commands |
 | **Context and memory** | Conversation compaction and a built-in memory MCP extension | Conversation compaction, summarization, and file-backed retrieved memory |
 | **Desktop Git branch menu** | Branch display and switching | Branch display and local switching through authorized-directory IPC |
 | **Registered OAuth clients for HTTP MCP** | `client_id`, `client_secret_key`, `scopes` | Same configuration fields, with gosling's own resolver and transport implementation |

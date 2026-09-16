@@ -31,7 +31,7 @@ under `docs/`. See `docs/polish/documentation-inventory.md` for the later layout
 | `documentation/package.json` | Docs validation/build scripts | canonical | Docusaurus docs | Reviewed 2026-07-03 | Source of docs commands: `build`, `test`, `typecheck`. |
 | `documentation/docs/getting-started/` | User docs | current | Docusaurus docs | Updated 2026-09-13 | Installation distinguishes the v1.2.5 source candidate and local installs from published downloads. |
 | `documentation/docs/guides/` | User guides | current | Docusaurus docs | Discovered 2026-07-03 | Keep as primary feature guide section. |
-| `documentation/docs/guides/goose-comparison.md` | Feature comparison | current dated source comparison | Documentation governance | Checked 2026-09-08 | Pins Goose v1.49.0 source and compares it with gosling v1.2.3; records evidence and refresh steps. |
+| `documentation/docs/guides/goose-comparison.md` | Feature comparison | current dated source comparison | Documentation governance | Checked 2026-09-16 | Pins Goose v1.50.1 source and compares it with gosling v1.2.5 source; records evidence and refresh steps. |
 | `documentation/docs/guides/goose-v1-47-compatibility.md` | Compatibility guide | historical import snapshot | Documentation governance | Marked historical 2026-09-08 | Preserves the gosling v1.1.0 Git branch, static OAuth, and recent-model import record. |
 | `documentation/docs/guides/workspaces.md` | User guide | current Outputs behavior | Desktop source | Updated 2026-09-08 | Documents extension-based listing, repository filtering, and workspace preselection. |
 | `documentation/docs/gosling-architecture/` | Architecture docs | current | Docusaurus docs | Discovered 2026-07-03 | Review naming during branding/provenance audit. |
