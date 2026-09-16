@@ -9,10 +9,20 @@ cache_root="$cache_base"
 lock_dir=""
 download_tmp=""
 archive_tmp=""
+lock_pidless_grace_seconds="${GOSLING_V8_LOCK_GRACE_SECONDS:-10}"
 
 fail() {
   printf 'error: %s\n' "$*" >&2
   exit 1
+}
+
+release_lock() {
+  [[ -n "$lock_dir" ]] || return 0
+  if [[ -f "$lock_dir/pid" && "$(<"$lock_dir/pid")" == "$$" ]]; then
+    rm -f -- "$lock_dir/pid"
+    rmdir "$lock_dir" 2>/dev/null || true
+  fi
+  lock_dir=""
 }
 
 cleanup() {
@@ -22,14 +32,7 @@ cleanup() {
   if [[ -n "$archive_tmp" ]]; then
     rm -f -- "$archive_tmp"
   fi
-  if [[ -n "$lock_dir" && -f "$lock_dir/pid" ]]; then
-    local owner
-    owner="$(<"$lock_dir/pid")"
-    if [[ "$owner" == "$$" ]]; then
-      rm -f -- "$lock_dir/pid"
-      rmdir "$lock_dir" 2>/dev/null || true
-    fi
-  fi
+  release_lock
 }
 
 trap cleanup EXIT
@@ -54,6 +57,32 @@ archive_valid() {
   size="$(archive_size "$archive")" || return 1
   [[ "$size" -ge 10000000 ]] || return 1
   ar -t "$archive" >/dev/null 2>&1
+}
+
+ar_usable() {
+  local probe_dir probe_archive status
+  probe_dir="$(mktemp -d)" || return 1
+  printf 'probe\n' > "$probe_dir/probe.txt"
+  probe_archive="$probe_dir/probe.a"
+  status=1
+  if ar -rc "$probe_archive" "$probe_dir/probe.txt" >/dev/null 2>&1 \
+    && ar -t "$probe_archive" >/dev/null 2>&1; then
+    status=0
+  fi
+  rm -rf -- "$probe_dir"
+  return "$status"
+}
+
+# archive_valid() proves an archive with `ar`, so an `ar` that cannot run at all
+# is indistinguishable from a corrupt download unless it is probed separately.
+require_ar() {
+  if ar_usable; then
+    return 0
+  fi
+  fail "'ar' cannot run, so V8 archive validation is impossible.
+On macOS this is usually an unaccepted Xcode license or a stale developer dir:
+check 'xcode-select -p', then either run 'sudo xcodebuild -license accept' or
+build with DEVELOPER_DIR=/Library/Developer/CommandLineTools."
 }
 
 sha256_file() {
@@ -113,7 +142,7 @@ expected_gzip_sha256() {
 
 acquire_lock() {
   lock_dir="$cache_dir/.lock"
-  local attempt owner
+  local attempt owner pidless=0
   for ((attempt = 1; attempt <= 120; attempt += 1)); do
     if mkdir "$lock_dir" 2>/dev/null; then
       printf '%s\n' "$$" > "$lock_dir/pid"
@@ -127,10 +156,23 @@ acquire_lock() {
     if [[ -n "$owner" && ! "$owner" =~ ^[0-9]+$ ]]; then
       owner=""
     fi
-    if [[ -n "$owner" ]] && ! kill -0 "$owner" 2>/dev/null; then
-      rm -f -- "$lock_dir/pid"
-      rmdir "$lock_dir" 2>/dev/null || true
-      continue
+    if [[ -n "$owner" ]]; then
+      pidless=0
+      if ! kill -0 "$owner" 2>/dev/null; then
+        rm -f -- "$lock_dir/pid"
+        rmdir "$lock_dir" 2>/dev/null || true
+        continue
+      fi
+    else
+      # A holder killed between mkdir and the pid write leaves no owner to probe;
+      # without this every later run blocks for the full timeout and then fails.
+      pidless=$((pidless + 1))
+      if ((pidless >= lock_pidless_grace_seconds)); then
+        rm -f -- "$lock_dir/pid"
+        rmdir "$lock_dir" 2>/dev/null || true
+        pidless=0
+        continue
+      fi
     fi
     sleep 1
   done
@@ -164,7 +206,15 @@ download_to_cache() {
   archive_valid "$archive_tmp" || fail "downloaded V8 archive failed validation"
   mv -f "$archive_tmp" "$cache_archive"
   archive_tmp=""
+  rm -f -- "$download_tmp"
+  download_tmp=""
   sha256_file "$cache_archive" > "$cache_archive.sha256"
+}
+
+cached_archive_ready() {
+  archive_valid "$cache_archive" \
+    && [[ -f "$cache_archive.sha256" ]] \
+    && [[ "$(<"$cache_archive.sha256")" == "$(sha256_file "$cache_archive")" ]]
 }
 
 ensure_cache() {
@@ -190,15 +240,16 @@ ensure_cache() {
       ;;
   esac
 
+  require_ar
+
   cache_archive="$cache_dir/$archive_name"
-  if archive_valid "$cache_archive" && [[ -f "$cache_archive.sha256" ]] && [[ "$(<"$cache_archive.sha256")" == "$(sha256_file "$cache_archive")" ]]; then
-    printf '%s\n' "$cache_archive"
+  if cached_archive_ready; then
     return
   fi
 
   acquire_lock
-  if archive_valid "$cache_archive" && [[ -f "$cache_archive.sha256" ]] && [[ "$(<"$cache_archive.sha256")" == "$(sha256_file "$cache_archive")" ]]; then
-    printf '%s\n' "$cache_archive"
+  if cached_archive_ready; then
+    release_lock
     return
   fi
 
@@ -219,14 +270,15 @@ ensure_cache() {
       download_to_cache
     fi
   fi
-  printf '%s\n' "$cache_archive"
+  release_lock
 }
 
 if [[ "${1:-}" == '--prepare' ]]; then
   ensure_cache
+  printf '%s\n' "$cache_archive"
   exit 0
 fi
 
 [[ "$#" -gt 0 ]] || fail 'usage: scripts/with-rusty-v8-cache.sh [--prepare | command ...]'
-archive="$(ensure_cache "$@")"
-exec env RUSTY_V8_ARCHIVE="$archive" "$@"
+ensure_cache "$@"
+exec env RUSTY_V8_ARCHIVE="$cache_archive" "$@"

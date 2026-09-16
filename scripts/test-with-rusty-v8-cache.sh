@@ -37,6 +37,15 @@ assert_fails() {
   assert_contains "$output" "$expected"
 }
 
+assert_no_match() {
+  local root="$1"
+  local pattern="$2"
+  local message="$3"
+  local found
+  found="$(find "$root" -name "$pattern" 2>/dev/null)"
+  [[ -z "$found" ]] || fail "$message: $found"
+}
+
 make_seed_archive() {
   local dir="$1"
   mkdir -p "$dir"
@@ -193,4 +202,35 @@ debug_archive="$(V8_FORCE_DEBUG=true GOSLING_V8_CACHE_DIR="$test_root/debug-cach
 assert_contains "$debug_archive" '_debug_'
 assert_file "$debug_archive"
 
-printf 'PASS: V8 helper cache, integrity, target, failure, lock, profile, and propagation behavior\n'
+release_cache="$test_root/release-cache"
+released="$(GOSLING_V8_CACHE_DIR="$release_cache" GOSLING_V8_SEED_ARCHIVE="$seed" "$helper" --prepare)"
+assert_file "$released"
+assert_no_match "$release_cache" '.lock' 'lock survived a successful prepare'
+assert_no_match "$release_cache" '*.partial.*' 'partial file survived a successful prepare'
+
+exec_cache="$test_root/exec-release-cache"
+GOSLING_V8_CACHE_DIR="$exec_cache" GOSLING_V8_SEED_ARCHIVE="$seed" "$helper" "$probe" > /dev/null
+assert_no_match "$exec_cache" '.lock' 'lock survived the exec path'
+
+failed_cache="$test_root/failed-run-cache"
+assert_fails 'checksum mismatch' env PATH="$checksum_bin:$PATH" GOSLING_V8_CACHE_DIR="$failed_cache" "$helper" cargo test --target "$download_target"
+assert_no_match "$failed_cache" '*.partial.*' 'partial file survived a failed download'
+assert_no_match "$failed_cache" '.lock' 'lock survived a failed download'
+
+broken_ar_bin="$test_root/broken-ar-bin"
+mkdir -p "$broken_ar_bin"
+cat > "$broken_ar_bin/ar" <<'EOF'
+#!/usr/bin/env bash
+printf 'ar: simulated unusable toolchain\n' >&2
+exit 1
+EOF
+chmod +x "$broken_ar_bin/ar"
+assert_fails "'ar' cannot run" env PATH="$broken_ar_bin:$PATH" GOSLING_V8_CACHE_DIR="$test_root/broken-ar-cache" GOSLING_V8_SEED_ARCHIVE="$seed" "$helper" --prepare
+
+pidless_cache="$test_root/pidless-cache"
+v8_version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' "$repo_root/vendor/v8/Cargo.toml" | head -n 1)"
+mkdir -p "$pidless_cache/v$v8_version/.lock"
+pidless_archive="$(GOSLING_V8_LOCK_GRACE_SECONDS=2 GOSLING_V8_CACHE_DIR="$pidless_cache" GOSLING_V8_SEED_ARCHIVE="$seed" "$helper" --prepare)"
+assert_file "$pidless_archive"
+
+printf 'PASS: V8 helper cache, integrity, target, failure, lock, lock recovery, toolchain, cleanup, profile, and propagation behavior\n'
