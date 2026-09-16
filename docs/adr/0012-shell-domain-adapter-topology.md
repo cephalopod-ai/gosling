@@ -3,6 +3,11 @@
 Date: 2026-08-13
 Status: accepted — R1 operator authorization recorded 2026-08-13; see
 `pre-gui-backend-implementation-plan.md` PG-13 and `project-shell-readiness-plan.md` §4.2
+Amendment 2026-09-16: the `gosling-server` crate was removed in `9f470b5b9`. The
+decision below still stands; its references to `gosling-server` are historical and
+name a crate that no longer exists. The payload-ownership constraint continues to
+apply to `gosling-cli` and the shared Electron host. Body left unchanged as the
+record of what was decided on 2026-08-13.
 Requirements affected: SHP-REQ-002, SHP-REQ-006, SHP-REQ-007, SHP-REQ-010, SHP-REQ-018,
 SHP-REQ-036, SHP-REQ-042
 

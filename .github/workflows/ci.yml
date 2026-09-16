@@ -85,8 +85,13 @@ jobs:
         run: |
           gnome-keyring-daemon --components=secrets --daemonize --unlock <<< 'foobar'
           export CARGO_INCREMENTAL=0
-          cargo test -- --skip scenario_tests::scenarios::tests
-          cargo test --jobs 1 scenario_tests::scenarios::tests
+          # Run both suites to completion and report every failure: without
+          # --no-fail-fast cargo stops at the first failing test binary, and
+          # without the status latch a failure here would skip the scenario run.
+          status=0
+          cargo test --no-fail-fast -- --skip scenario_tests::scenarios::tests || status=1
+          cargo test --no-fail-fast --jobs 1 scenario_tests::scenarios::tests || status=1
+          exit "$status"
         working-directory: crates
         env:
           RUST_MIN_STACK: 8388608

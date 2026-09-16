@@ -1,6 +1,30 @@
 version: 1
 
 invariants:
+  - id: ARC-001
+    title: Route adapters stay thin
+    status: retired
+    retired_in: 9f470b5b
+    retired_note: The gosling-server crate was removed from Gosling; this invariant
+      is retained for id stability and historical review context. Its scope paths
+      intentionally name code that no longer exists.
+    scope:
+      - crates/gosling-server/src/routes
+    rule: route modules may own transport parsing and framing, but shared reply workflow belongs in a service-layer owner
+    checks:
+      - sibling route modules do not import business-flow helpers from each other
+
+  - id: ARC-002
+    title: Reply lifecycle has one owner
+    status: retired
+    retired_in: 9f470b5b
+    retired_note: The gosling-server crate was removed from Gosling; this invariant
+      is retained for id stability and historical review context. Its scope paths
+      intentionally name code that no longer exists.
+    scope:
+      - crates/gosling-server/src/routes/reply_service.rs
+    rule: override handling, rollback policy, reply stream iteration, event normalization, and reply-path telemetry are implemented once and reused by every reply transport
+
   - id: ARC-003
     title: Electron privilege boundary is contract-backed
     status: active

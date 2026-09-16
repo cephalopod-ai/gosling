@@ -95,7 +95,7 @@ fn test_prompt_codemode() {
 }
 
 #[test]
-#[ignore = "ensure_session lazy-creates sessions so deleted ones reappear"]
+#[ignore = "delete is a server-side custom method not routed through the provider"]
 fn test_prompt_error_session_not_found() {
     run_test(async { run_prompt_error::<AcpProviderConnection>().await });
 }
