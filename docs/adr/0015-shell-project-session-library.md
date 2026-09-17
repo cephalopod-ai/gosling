@@ -17,7 +17,10 @@ Gosling owns a separate durable input library in the session database. An item h
 name, kind, MIME type, byte size, status, and either `session` or `project` scope. Session scope is
 visible only to one session. Project scope is keyed by project ID, then workspace ID, then a digest
 of the canonical working directory, so sessions in the same project share it without exposing that
-key.
+key. Explicitly copying or branching a session clones its session-scoped input entries with new
+opaque IDs. Linked files keep pointers to their original paths; pasted text and images retain
+their stored payloads. Each session owns its entries independently, so removing an input or deleting
+the source session does not remove a branch's inputs. Project inputs continue to use the shared key.
 
 The Electron main process owns native file selection. A renderer requests `linkFile` with a user
 gesture, scope, generation, and active session ID; it cannot submit or receive a path. Main sends the

@@ -242,8 +242,8 @@ impl SessionStorage {
         new_name: String,
         conversation_before: Option<i64>,
     ) -> Result<Session> {
-        // Session creation, the metadata update, the conversation replace,
-        // and the artifact copy all run in one transaction so a process
+        // Session creation, metadata updates, conversation replacement,
+        // and input/artifact metadata copies run in one transaction so a process
         // interruption between them can't leave an empty stray copy behind —
         // see import_session's identical comment.
         let _write_guard = self.acquire_write_guard().await;
@@ -304,6 +304,32 @@ impl SessionStorage {
                 .bind(conversation_before)
                 .execute(&mut *tx)
                 .await?;
+        }
+
+        let library_item_ids = sqlx::query_scalar::<_, String>(
+            "SELECT id FROM session_library_items WHERE scope = 'session' AND scope_key = ?",
+        )
+        .bind(format!("session:{session_id}"))
+        .fetch_all(&mut *tx)
+        .await?;
+        for item_id in library_item_ids {
+            // Each branch owns its input entries; linked files keep their original paths.
+            sqlx::query(
+                r#"
+                INSERT INTO session_library_items (
+                    id, scope, scope_key, name, kind, mime_type, size_bytes,
+                    text_content, image_data, file_path, created_at
+                )
+                SELECT ?, scope, ?, name, kind, mime_type, size_bytes,
+                       text_content, image_data, file_path, created_at
+                FROM session_library_items WHERE id = ?
+                "#,
+            )
+            .bind(format!("lib_{}", uuid::Uuid::new_v4()))
+            .bind(format!("session:{}", new_session.id))
+            .bind(item_id)
+            .execute(&mut *tx)
+            .await?;
         }
 
         sqlx::query(

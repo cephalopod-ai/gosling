@@ -16,20 +16,31 @@ impl GoslingAcpAgent {
             .get_session(source_session_id, false)
             .await
             .internal_err()?;
-        let fork_name = if source.name.trim().is_empty() {
-            "(copy)".to_string()
+        let source_name = source
+            .name
+            .strip_prefix("branch:")
+            .unwrap_or(&source.name)
+            .trim();
+        let fork_name = if source_name.is_empty() {
+            "branch:".to_string()
         } else {
-            format!("{} (copy)", source.name)
+            format!("branch: {source_name}")
         };
 
         let new_session = self
             .session_manager
-            .fork_session(source_session_id, fork_name, conversation_before)
+            .fork_session(source_session_id, fork_name.clone(), conversation_before)
             .await
             .internal_err()?;
         let new_session_id = new_session.id.clone();
 
         let result = async {
+            self.session_manager
+                .update(&new_session_id)
+                .user_provided_name(fork_name)
+                .apply()
+                .await
+                .internal_err()?;
             let new_session = self
                 .session_manager
                 .get_session(&new_session_id, false)

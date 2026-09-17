@@ -33,6 +33,7 @@ for the relationship to cephalopod-ai/gosling.
 - [polish/documentation-stewardship-report.md](polish/documentation-stewardship-report.md) — latest stewardship gate results and remaining risks
 - [polish/test-ledger.md](polish/test-ledger.md) — current validation commands, results, and evidence limits
 - [logs/](logs/) — retained session evidence and logging conventions
+- [logs/session/2026-09-16-branch-input-inheritance.md](logs/session/2026-09-16-branch-input-inheritance.md) — branch input pointers, independent library entries, branch title labels, and focused validation
 - [logs/session/2026-09-13-consolidated-audit-merge-install.md](logs/session/2026-09-13-consolidated-audit-merge-install.md) — local fast-forward merge, documentation refresh, release rebuild, CLI/Desktop reinstall, and installed Keychain-startup limit
 - [logs/session/2026-09-13-host-enforced-planning.md](logs/session/2026-09-13-host-enforced-planning.md) — ADR-0020 staged implementation, decision register, and hermetic validation runs
 - [logs/session/2026-09-14-context-compaction-history.md](logs/session/2026-09-14-context-compaction-history.md) — ADR-0021 ledger, CLI and Desktop surfaces, changes-only diffs, and validation evidence
