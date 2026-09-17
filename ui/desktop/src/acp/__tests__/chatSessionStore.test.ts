@@ -4,7 +4,7 @@ import type {
   SessionNotification,
 } from '@agentclientprotocol/sdk';
 import { act, renderHook } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
   GoslingSessionNotification_unstable,
   SessionArtifactDto,
@@ -182,10 +182,80 @@ describe('acpChatSessionStore', () => {
   };
 
   afterEach(() => {
+    vi.useRealTimers();
     for (const id of sessionIds) {
       acpChatSessionActions.deleteSnapshot(id);
     }
     sessionIds.clear();
+  });
+
+  it('records real stream activity while excluding local steers, empty chunks, and metadata', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1000);
+    const id = sessionId('activity-session');
+    acpChatSessionActions.startPromptAttempt(id, 'attempt-1');
+    expect(acpChatSessionStore.getSnapshot(id)).toMatchObject({
+      promptStartedAt: 1000,
+      lastActivityAt: null,
+    });
+    vi.setSystemTime(2000);
+    acpChatSessionActions.applyAcpSessionNotification(activeRunNotification(id, 'run-1'));
+    acpChatSessionActions.applyAcpSessionNotification(
+      userSteerChunkNotification(id, 'steer-1', 'Still working?')
+    );
+    acpChatSessionActions.applyAcpSessionNotification(
+      agentMessageChunkNotification(id, 'empty-1', '')
+    );
+    expect(acpChatSessionStore.getSnapshot(id)?.lastActivityAt).toBeNull();
+    acpChatSessionActions.applyAcpSessionNotification(
+      agentMessageChunkNotification(id, 'assistant-1', 'Found a source')
+    );
+    expect(acpChatSessionStore.getSnapshot(id)?.lastActivityAt).toBe(2000);
+    vi.setSystemTime(3000);
+    acpChatSessionActions.applyAcpSessionNotification(toolProgressNotification(id));
+    expect(acpChatSessionStore.getSnapshot(id)?.lastActivityAt).toBe(3000);
+    acpChatSessionActions.finishPromptAttemptIfCurrent(id, 'attempt-1');
+    acpChatSessionActions.startPromptAttempt(id, 'attempt-2');
+    expect(acpChatSessionStore.getSnapshot(id)).toMatchObject({
+      promptStartedAt: 3000,
+      lastActivityAt: null,
+    });
+  });
+
+  it('retains a background task reference from live ACP delegate notifications after the reply ends', () => {
+    const id = sessionId('background-activity-session');
+    acpChatSessionActions.startPromptAttempt(id, 'attempt-1');
+    acpChatSessionActions.applyAcpSessionNotification({
+      sessionId: id,
+      update: {
+        sessionUpdate: 'tool_call',
+        toolCallId: 'delegate-1',
+        title: 'Delegate',
+        rawInput: { async: true },
+        _meta: { gosling: { toolCall: { toolName: 'delegate', extensionName: 'summon' } } },
+      },
+    });
+    acpChatSessionActions.applyAcpSessionNotification({
+      sessionId: id,
+      update: {
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'delegate-1',
+        status: 'completed',
+        content: [
+          {
+            type: 'content',
+            content: {
+              type: 'text',
+              text: 'Task 20260916_1 started in background: "Verify\nsources"\nResolved delegate authority: extensions = []',
+            },
+          },
+        ],
+      },
+    });
+    acpChatSessionActions.finishPromptAttemptIfCurrent(id, 'attempt-1');
+    expect(acpChatSessionStore.getSnapshot(id)?.backgroundTasks).toEqual([
+      { id: '20260916_1', description: 'Verify\nsources', state: 'running' },
+    ]);
   });
 
   it('applies artifact notifications idempotently per session', () => {

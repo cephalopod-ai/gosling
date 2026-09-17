@@ -21,6 +21,7 @@ import type { ElicitationStatus } from './adapter/elicitations';
 import { cloneMessage } from './adapter/shared';
 import type { AcpElicitationRequest } from './elicitationRequests';
 import type { AcpResumeIntegrity } from './sessions';
+import { discoverBackgroundTasks, type BackgroundTaskReference } from './backgroundTasks';
 
 export interface AcpChatSessionSnapshot {
   session: Session | undefined;
@@ -40,6 +41,9 @@ export interface AcpChatSessionSnapshot {
   resumeIntegrity: AcpResumeIntegrity;
   activePromptAttemptId: string | null;
   activeRunId: string | null;
+  promptStartedAt: number | null;
+  lastActivityAt: number | null;
+  backgroundTasks: BackgroundTaskReference[];
   pendingCancelPromptAttemptId: string | null;
   /** Ids of local steer echoes not yet applied by the agent — see `addPendingLocalSteerMessage`. */
   pendingLocalSteerMessageIds: ReadonlySet<string>;
@@ -284,6 +288,9 @@ function createAcpChatSessionStoreInternal(): AcpChatSessionStoreInternal {
       resumeIntegrity: 'unknown',
       activePromptAttemptId: null,
       activeRunId: null,
+      promptStartedAt: null,
+      lastActivityAt: null,
+      backgroundTasks: [],
       pendingCancelPromptAttemptId: null,
       promptCancellationRestoreState: null,
       pendingUserInputRequestIds: new Set(),
@@ -376,6 +383,7 @@ function createAcpChatSessionStoreInternal(): AcpChatSessionStoreInternal {
   const setMessages: AcpChatSessionActions['setMessages'] = (sessionId, messages) => {
     const entry = getOrCreateEntry(sessionId);
     entry.messages = cloneMessages(messages);
+    entry.backgroundTasks = discoverBackgroundTasks(entry.messages);
     retainPendingLocalSteerMessageIds(entry);
     entry.adapter = createAdapterForEntry(entry);
     return notify(sessionId, entry);
@@ -470,6 +478,7 @@ function createAcpChatSessionStoreInternal(): AcpChatSessionStoreInternal {
       return true;
     });
     entry.messages = [...olderMessages, ...entry.messages];
+    entry.backgroundTasks = discoverBackgroundTasks(entry.messages);
     entry.historyCursor = nextCursor;
     entry.historyHasMore = nextCursor !== null;
     entry.historyLoading = false;
@@ -542,6 +551,8 @@ function createAcpChatSessionStoreInternal(): AcpChatSessionStoreInternal {
     discardPendingLocalSteerMessages(entry);
     entry.activePromptAttemptId = promptAttemptId;
     entry.activeRunId = null;
+    entry.promptStartedAt = Date.now();
+    entry.lastActivityAt = null;
     entry.pendingCancelPromptAttemptId = null;
     entry.promptCancellationRestoreState = null;
     entry.pendingUserInputRequestIds.clear();
@@ -685,6 +696,29 @@ function createAcpChatSessionStoreInternal(): AcpChatSessionStoreInternal {
     const entry = getOrCreateEntry(notification.sessionId);
     const changes = entry.adapter.apply(notification);
     applyChatStateChanges(entry, changes);
+    const update = notification.update;
+    if (
+      update.sessionUpdate === 'tool_call' ||
+      (update.sessionUpdate === 'tool_call_update' &&
+        (update.status === 'completed' || update.status === 'failed'))
+    ) {
+      entry.backgroundTasks = discoverBackgroundTasks(entry.messages);
+    }
+    if (
+      entry.activePromptAttemptId &&
+      changes.some(
+        (change) => change.type === 'messageUpserted' || change.type === 'notification'
+      ) &&
+      update.sessionUpdate !== 'user_message_chunk' &&
+      !(
+        (update.sessionUpdate === 'agent_message_chunk' ||
+          update.sessionUpdate === 'agent_thought_chunk') &&
+        update.content.type === 'text' &&
+        update.content.text.length === 0
+      )
+    ) {
+      entry.lastActivityAt = Date.now();
+    }
     return notify(notification.sessionId, entry);
   };
 
@@ -693,6 +727,9 @@ function createAcpChatSessionStoreInternal(): AcpChatSessionStoreInternal {
       const entry = getOrCreateEntry(notification.sessionId);
       const changes = entry.adapter.applyGosling(notification);
       applyChatStateChanges(entry, changes);
+      if (entry.activePromptAttemptId && notification.update.sessionUpdate === 'status_message') {
+        entry.lastActivityAt = Date.now();
+      }
       return notify(notification.sessionId, entry);
     };
 
@@ -910,6 +947,9 @@ function resetReplayState(entry: StoreEntry): void {
   entry.tokenState = { ...initialTokenState };
   entry.notifications = [];
   entry.activeRunId = null;
+  entry.promptStartedAt = null;
+  entry.lastActivityAt = null;
+  entry.backgroundTasks = [];
   entry.pendingCancelPromptAttemptId = null;
   entry.promptCancellationRestoreState = null;
   entry.pendingUserInputRequestIds.clear();
@@ -1028,6 +1068,9 @@ function snapshotFromEntry(entry: StoreEntry): AcpChatSessionSnapshot {
     resumeIntegrity: entry.resumeIntegrity,
     activePromptAttemptId: entry.activePromptAttemptId,
     activeRunId: entry.activeRunId,
+    promptStartedAt: entry.promptStartedAt,
+    lastActivityAt: entry.lastActivityAt,
+    backgroundTasks: entry.backgroundTasks,
     pendingCancelPromptAttemptId: entry.pendingCancelPromptAttemptId,
     pendingLocalSteerMessageIds: new Set(entry.pendingLocalSteerMessageIds),
     plan: {

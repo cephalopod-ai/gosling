@@ -18,6 +18,8 @@ import { useNavigationContextSafe } from './Layout/NavigationContext';
 import { cn } from '../utils';
 import { getMotionAwareScrollBehavior } from '../utils/motion';
 import { useChatSession } from '../hooks/useChatSession';
+import { useRunStatus } from '../hooks/useRunStatus';
+import { RunStatusControl } from './RunStatusControl';
 import { acpSetSessionMode, acpUpdateWorkingDir } from '../acp/sessions';
 import type { GoslingMode } from '../types/session';
 import { useNavigation } from '../hooks/useNavigation';
@@ -159,10 +161,15 @@ export default function BaseChat({
   const { isOpen: isArtifactWorkbenchOpen, setVisibleSession: setVisibleArtifactSession } =
     useArtifactWorkbench();
   const acpSessionSnapshot = useAcpChatSessionSnapshot(sessionId);
+  const runStatus = useRunStatus(sessionId, acpSessionSnapshot);
   const { setVisibleSessionArtifacts, setVisibleSessionWorkspaceId } = useArtifactRouter();
   const setView = useNavigation();
   const isNavCollapsed = !navContext?.isNavExpanded;
-  const contentClassName = cn('pr-1 pb-10 pt-12', (isMobile || isNavCollapsed) && 'pt-16');
+  const contentClassName = cn(
+    'pr-1 pb-10 pt-12',
+    runStatus.visible && 'pt-20',
+    (isMobile || isNavCollapsed) && (runStatus.visible ? 'pt-24' : 'pt-16')
+  );
   const { droppedFiles, setDroppedFiles, handleDrop, handleDragOver } = useFileDrop();
   const [isRecoveryModelPickerOpen, setIsRecoveryModelPickerOpen] = useState(false);
   const [isPlanReviewOpen, setIsPlanReviewOpen] = useState(false);
@@ -827,6 +834,12 @@ export default function BaseChat({
                 surface="header"
               />
             </div>
+            <RunStatusControl
+              status={runStatus}
+              onOpenTask={(taskId) => {
+                window.electron.createChatWindow({ resumeSessionId: taskId, viewType: 'pair' });
+              }}
+            />
           </div>
 
           <SessionActionsHeader session={session} onSessionChange={updateSession} />

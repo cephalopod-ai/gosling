@@ -779,11 +779,16 @@ pub(crate) fn mutation_paths(
     };
     let mut paths = Vec::new();
     let mut current_dir = working_dir.to_path_buf();
-    for segment in analyze_shell(command).segments {
-        if !segment.read_only {
+    let analysis = analyze_shell(command);
+    let has_mutations = analysis.segments.iter().any(|segment| !segment.read_only);
+    for segment in analysis.segments {
+        let directory_target = cd_target(&segment.words);
+        // Keep the navigation guard for mixed scripts: bare relative write targets
+        // are not collected as explicit paths, so dropping it could hide an escape.
+        if !segment.read_only || (has_mutations && directory_target.is_some()) {
             collect_shell_segment_paths(&segment.words, &current_dir, &mut paths);
         }
-        if let Some(target) = cd_target(&segment.words) {
+        if let Some(target) = directory_target {
             current_dir = normalize_resolved_path(resolve(target, &current_dir));
         }
     }
@@ -905,6 +910,7 @@ fn shell_segment_is_read_only(segment: &[String]) -> bool {
         | "type" | "printenv" | "date" | "diff" | "du" | "df" | "basename" | "dirname"
         | "realpath" | "readlink" | "jq" | "md5" | "md5sum" | "shasum" | "sha256sum" | "cut"
         | "tr" | "whoami" | "uname" | "hostname" | "id" => true,
+        "cd" => cd_target(segment).is_some(),
         "sort" => !words
             .iter()
             .any(|token| token == "-o" || token.starts_with("-o") || token.starts_with("--output")),
@@ -923,7 +929,7 @@ fn shell_segment_is_read_only(segment: &[String]) -> bool {
         "git" => words.get(1).is_some_and(|subcommand| {
             matches!(
                 subcommand.as_str(),
-                "diff" | "grep" | "log" | "show" | "status"
+                "diff" | "grep" | "log" | "show" | "status" | "rev-parse"
             )
         }),
         _ => false,

@@ -3934,5 +3934,86 @@
   },
   "sessions.toast.alreadyImported": {
     "defaultMessage": "Already imported from this exact source; opened the existing session"
+  },
+  "navigationPanel.branchFailed": {
+    "defaultMessage": "Failed to branch session \"{name}\": {error}"
+  },
+  "navigationPanel.branchSession": {
+    "defaultMessage": "Branch session"
+  },
+  "runStatus.activity": {
+    "defaultMessage": "Activity"
+  },
+  "runStatus.backend": {
+    "defaultMessage": "Backend answered the last check. This alone does not confirm progress."
+  },
+  "runStatus.background": {
+    "defaultMessage": "{count,plural,one{# background agent} other{# background agents}}"
+  },
+  "runStatus.cadence": {
+    "defaultMessage": "Status checks every 15 minutes"
+  },
+  "runStatus.cancelled": {
+    "defaultMessage": "Cancelled"
+  },
+  "runStatus.checkNow": {
+    "defaultMessage": "Check now"
+  },
+  "runStatus.checking": {
+    "defaultMessage": "Checking status…"
+  },
+  "runStatus.completed": {
+    "defaultMessage": "Completed"
+  },
+  "runStatus.failed": {
+    "defaultMessage": "Background task failed"
+  },
+  "runStatus.finished": {
+    "defaultMessage": "Background work finished"
+  },
+  "runStatus.idle": {
+    "defaultMessage": "Idle: {count} min"
+  },
+  "runStatus.lastCheck": {
+    "defaultMessage": "Last check: {time}"
+  },
+  "runStatus.lastOutput": {
+    "defaultMessage": "Last output: {time}"
+  },
+  "runStatus.noCheck": {
+    "defaultMessage": "No verified status check yet"
+  },
+  "runStatus.noOutput": {
+    "defaultMessage": "No output received yet"
+  },
+  "runStatus.quiet": {
+    "defaultMessage": "No recent progress"
+  },
+  "runStatus.quietHint": {
+    "defaultMessage": "No output for at least 15 minutes. Work may be slow or stalled. Review activity before deciding whether to interrupt the task."
+  },
+  "runStatus.running": {
+    "defaultMessage": "Running"
+  },
+  "runStatus.taskFailed": {
+    "defaultMessage": "Failed"
+  },
+  "runStatus.turns": {
+    "defaultMessage": "{count,plural,one{# turn} other{# turns}}"
+  },
+  "runStatus.unavailable": {
+    "defaultMessage": "Status unavailable"
+  },
+  "runStatus.unavailableHint": {
+    "defaultMessage": "Liveness could not be verified. Check again or review the task in its chat."
+  },
+  "runStatus.unknown": {
+    "defaultMessage": "Unverified"
+  },
+  "runStatus.waiting": {
+    "defaultMessage": "Waiting for you"
+  },
+  "runStatus.openTask": {
+    "defaultMessage": "Open agent chat"
   }
 }

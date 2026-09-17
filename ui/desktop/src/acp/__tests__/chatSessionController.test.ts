@@ -141,6 +141,9 @@ function snapshotWithActivePrompt(activePromptAttemptId: string | null): AcpChat
     resumeIntegrity: 'unknown',
     activePromptAttemptId,
     activeRunId: activePromptAttemptId ? 'run-1' : null,
+    promptStartedAt: activePromptAttemptId ? Date.now() : null,
+    lastActivityAt: null,
+    backgroundTasks: [],
     pendingCancelPromptAttemptId: null,
     pendingLocalSteerMessageIds: new Set(),
     plan: {

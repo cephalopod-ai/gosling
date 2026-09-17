@@ -1,6 +1,6 @@
 # Active TODO ledger
 
-Date: 2026-09-13
+Date: 2026-09-16
 
 [`docs/TODO.md`](../TODO.md) is the canonical backlog. This mirror contains
 only items that are still active, partial, blocked, or externally gated.
@@ -8,6 +8,7 @@ Completed work remains in the canonical backlog and session logs.
 
 | ID | Status | Priority | Area | Source | Opened | Last evidence | Exit criteria |
 |---|---|---|---|---|---|---|---|
+| WDS-GSL-002 | needs-verification | P1 | Workspace permissions | `docs/TODO.md` | 2026-09-16 | 2026-09-16 | Execute the read-only navigation/write-boundary regressions and verify the installed app permits reference diagnostics without repeated approval. |
 | AUD-DAT-001 | needs-decision | P0 | Context privacy | `docs/TODO.md` | 2026-09-13 | 2026-09-13 | Approve workspace-memory scope and migration semantics, then prove isolation and intended recall compatibility. |
 | GSL-PT-20260913-006 | needs-design | P3 | Credential lifecycle | `docs/TODO.md` | 2026-09-13 | 2026-09-13 | Record secret ownership/shared references and prove extension removal cannot delete another consumer's credential. |
 | AUD-DAT-010 | needs-decision | P3 | Session schema | `docs/TODO.md` | 2026-09-13 | 2026-09-13 | Approve a legacy-column migration and prove fresh/upgraded schema parity. |

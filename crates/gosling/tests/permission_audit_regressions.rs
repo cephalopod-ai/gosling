@@ -30,6 +30,160 @@ fn shell_request(id: &str, command: &str) -> ToolRequest {
 }
 
 #[tokio::test]
+async fn workspace_read_only_shell_navigation_does_not_require_approval() {
+    for access in [
+        WorkspaceFolderAccess::ReadWrite,
+        WorkspaceFolderAccess::Read,
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let (sessions, session) = workspace(&root, access).await;
+        let inspector = WorkingDirScopeInspector::new(sessions);
+        let outside = non_temporary_target("references");
+        let other = non_temporary_target("skills");
+        let requests = [
+            shell_request("navigation", &format!("cd '{}'", outside.display())),
+            shell_request(
+                "research-diagnostics",
+                &format!(
+                    "cd '{}'; grep -n -i 'research\\|planning\\|architecture' docs/INDEX.md | head -45; sed -n '1,130p' src/prompts.ts; cd '{}'; cat SKILL.md; date -u",
+                    outside.display(),
+                    other.display()
+                ),
+            ),
+            shell_request(
+                "repository-diagnostics",
+                &format!(
+                    "cd '{}' && git status --short && git rev-parse HEAD && cat AGENTS.md",
+                    outside.display()
+                ),
+            ),
+            shell_request(
+                "wrapped-navigation",
+                &format!("builtin cd -- '{}'\nrg -n research ./docs", outside.display()),
+            ),
+        ];
+        let results = inspector
+            .inspect(&session.id, &requests, &[], GoslingMode::Auto)
+            .await
+            .unwrap();
+        assert!(
+            results.is_empty(),
+            "read-only navigation prompted: {results:?}"
+        );
+        assert!(!outside.exists(), "inspection must not execute the command");
+    }
+}
+
+#[tokio::test]
+async fn workspace_shell_navigation_preserves_outside_write_approvals() {
+    let root = tempfile::tempdir().unwrap();
+    let (sessions, session) = workspace(&root, WorkspaceFolderAccess::ReadWrite).await;
+    let inspector = WorkingDirScopeInspector::new(sessions);
+    let outside = non_temporary_target("references");
+    let requests = [
+        shell_request(
+            "relative-redirect",
+            &format!("cd '{}'; printf x > report.md", outside.display()),
+        ),
+        shell_request(
+            "relative-remove",
+            &format!("cd '{}' && rm report.md", outside.display()),
+        ),
+        shell_request(
+            "absolute-write",
+            &format!(
+                "cd '{}'; touch '{}'",
+                session.working_dir.display(),
+                outside.join("report.md").display()
+            ),
+        ),
+        shell_request(
+            "nested-write",
+            &format!("cd '{}'; bash -c 'printf x > report.md'", outside.display()),
+        ),
+        shell_request(
+            "substitution-write",
+            &format!(
+                "cd '{}'; grep \"$(touch '{}')\" docs/INDEX.md",
+                session.working_dir.display(),
+                outside.join("report.md").display()
+            ),
+        ),
+    ];
+    let results = inspector
+        .inspect(&session.id, &requests, &[], GoslingMode::Auto)
+        .await
+        .unwrap();
+    assert_eq!(results.len(), requests.len());
+    for (result, request) in results.iter().zip(&requests) {
+        assert_eq!(result.tool_request_id, request.id);
+        match &result.action {
+            InspectionAction::RequireApproval(Some(message)) => {
+                assert!(message.contains(outside.to_str().unwrap()), "{message}");
+            }
+            other => panic!("expected outside write approval, got {other:?}"),
+        }
+    }
+    assert!(!outside.exists(), "inspection must not write a file");
+}
+
+#[tokio::test]
+async fn workspace_shell_navigation_preserves_read_only_write_denials() {
+    let root = tempfile::tempdir().unwrap();
+    let (sessions, session) = workspace(&root, WorkspaceFolderAccess::Read).await;
+    let results = WorkingDirScopeInspector::new(sessions)
+        .inspect(
+            &session.id,
+            &[shell_request(
+                "read-only-write",
+                &format!(
+                    "cd '{}'; printf x > report.md",
+                    session.working_dir.display()
+                ),
+            )],
+            &[],
+            GoslingMode::Auto,
+        )
+        .await
+        .unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].action, InspectionAction::Deny);
+    assert!(!session.working_dir.join("report.md").exists());
+}
+
+#[tokio::test]
+async fn restricted_workspace_shell_navigation_still_prompts_for_outside_reads() {
+    let root = tempfile::tempdir().unwrap();
+    let (sessions, session) = workspace(&root, WorkspaceFolderAccess::ReadWrite).await;
+    sessions
+        .update(&session.id)
+        .restrict_tools_to_working_dirs(true)
+        .apply()
+        .await
+        .unwrap();
+    let outside = non_temporary_target("references");
+    let results = WorkingDirScopeInspector::new(sessions)
+        .inspect(
+            &session.id,
+            &[shell_request(
+                "restricted-read",
+                &format!("cd '{}'; grep research docs/INDEX.md", outside.display()),
+            )],
+            &[],
+            GoslingMode::Auto,
+        )
+        .await
+        .unwrap();
+    assert_eq!(results.len(), 1);
+    match &results[0].action {
+        InspectionAction::RequireApproval(Some(message)) => {
+            assert!(message.contains("turned on"), "{message}");
+        }
+        other => panic!("expected restricted read approval, got {other:?}"),
+    }
+}
+
+#[tokio::test]
 async fn workspace_scratch_redirections_do_not_require_approval() {
     let root = tempfile::tempdir().unwrap();
     let (sessions, session) = workspace(&root, WorkspaceFolderAccess::ReadWrite).await;

@@ -270,6 +270,16 @@ evidence are recorded in
       verification remain pending. See the
       [repair record](logs/session/2026-09-07-shell-comment-scope-prompts.md).
 
+### Read-only shell navigation approvals (2026-09-16)
+
+- [ ] **WDS-GSL-002** — the Dawes research chat classifies `cd` into a reference
+      repository and `git rev-parse HEAD` as mutations, repeatedly prompting in
+      Autonomous mode. Source repair recognizes read-only navigation and retains
+      directory-change guards for mixed scripts with writes. Four inspector
+      regression tests are added; execution and installed-app verification remain
+      pending under the repository's explicit Cargo test/build authorization rule.
+      See the [repair record](logs/session/2026-09-16-read-only-navigation-approvals.md).
+
 ### Remaining Medium decisions and external prerequisites
 
 - [x] **DAT-GSL-002** — workspace deletion preserves workspace-keyed project
