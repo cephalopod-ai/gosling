@@ -308,16 +308,10 @@ fn extract_bounded_pdf_text(
     let mut text = String::new();
     for page in pages.keys().copied() {
         let page_text = document.extract_text(&[page])?;
-        if text.len().saturating_add(page_text.len()) > text_limit {
-            let remaining = text_limit.saturating_sub(text.len());
-            let mut boundary = remaining.min(page_text.len());
-            while !page_text.is_char_boundary(boundary) {
-                boundary -= 1;
-            }
-            text.push_str(page_text.get(..boundary).unwrap_or_default());
-            text.push_str("\n[Content truncated]");
-            break;
-        }
+        anyhow::ensure!(
+            text.len().saturating_add(page_text.len()) <= text_limit,
+            "PDF text exceeds the extraction budget; no partial text was returned"
+        );
         text.push_str(&page_text);
     }
     Ok(text)

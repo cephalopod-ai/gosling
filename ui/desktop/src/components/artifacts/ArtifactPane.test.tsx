@@ -10,10 +10,12 @@ import { useArtifactRouter } from '../../contexts/ArtifactRouterContext';
 import { IntlTestWrapper } from '../../i18n/test-utils';
 import {
   addSessionLibraryText,
+  compileSessionLibraryInputs,
   linkSessionLibraryFile,
   listSessionLibraryInputs,
 } from '../../acp/sessionLibraryInputs';
 import { acpChatSessionController } from '../../acp/chatSessionController';
+import { acpListSessionArtifacts } from '../../acp/sessions';
 import {
   clearSelectedSessionInputs,
   getSelectedSessionInputs,
@@ -22,11 +24,14 @@ import { ArtifactPane } from './ArtifactPane';
 import { ARTIFACT_TIMESTAMPS_REFRESH_EVENT } from '../../types/artifactFileTimestamps';
 
 vi.mock('../../contexts/ArtifactRouterContext', () => ({ useArtifactRouter: vi.fn() }));
-vi.mock('../../acp/sessionLibraryInputs', () => ({
+vi.mock('../../acp/sessionLibraryInputs', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../acp/sessionLibraryInputs')>()),
   listSessionLibraryInputs: vi.fn(),
   addSessionLibraryText: vi.fn(),
   linkSessionLibraryFile: vi.fn(),
+  compileSessionLibraryInputs: vi.fn(),
 }));
+vi.mock('../../acp/sessions', () => ({ acpListSessionArtifacts: vi.fn() }));
 vi.mock('../../acp/chatSessionController', () => ({
   acpChatSessionController: { loadSession: vi.fn() },
 }));
@@ -186,6 +191,7 @@ describe('ArtifactPane', () => {
       truncated: false,
     });
     vi.mocked(listSessionLibraryInputs).mockResolvedValue([]);
+    vi.mocked(acpListSessionArtifacts).mockResolvedValue([]);
     vi.mocked(useArtifactRouter).mockReturnValue({
       saveArtifact,
       setVisibleSessionArtifacts: vi.fn(),
@@ -753,6 +759,53 @@ describe('ArtifactPane', () => {
     mimeType: 'text/plain',
     sizeBytes: 12,
   };
+
+  it('selects all 19 inputs, shows the byte budget, and compiles unchecked sources too', async () => {
+    const items = Array.from({ length: 19 }, (_, index) => ({
+      ...addedInput,
+      id: `input-${index}`,
+      name: `Source ${index}`,
+      sizeBytes: 50_000,
+    }));
+    vi.mocked(listSessionLibraryInputs).mockResolvedValue(items);
+    vi.mocked(compileSessionLibraryInputs).mockResolvedValue({
+      filePath: '/chat/compiled.md',
+      sourceCount: 19,
+      sizeBytes: 950_000,
+      promptText: 'Read compiled.md',
+    });
+    renderInputs();
+    fireEvent.click(await screen.findByRole('button', { name: 'Select all' }));
+    expect(getSelectedSessionInputs('session-inputs')).toHaveLength(19);
+    expect(screen.getByText(/19 selected · 928 \/ 512 KiB text/)).toBeInTheDocument();
+    expect(screen.getByText(/This selection exceeds the inline limit/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Clear selection' }));
+    expect(getSelectedSessionInputs('session-inputs')).toEqual([]);
+    fireEvent.click(screen.getByRole('button', { name: 'Compile all inputs' }));
+    expect(await screen.findByText('Compiled 19 inputs into one source file.')).toBeInTheDocument();
+    expect(compileSessionLibraryInputs).toHaveBeenCalledWith(
+      'session-inputs',
+      items.map((item) => item.id)
+    );
+    expect(screen.getByRole('button', { name: 'Open compilation' })).toBeEnabled();
+  });
+
+  it('reports a failed compilation without claiming any sources were compiled', async () => {
+    vi.mocked(listSessionLibraryInputs).mockResolvedValue([addedInput]);
+    vi.mocked(compileSessionLibraryInputs).mockRejectedValue({
+      message: 'Invalid params',
+      data: {
+        code: 'SHELL_LIBRARY_COMPILATION_FAILED',
+        message: 'No extractable text in scanned.pdf',
+      },
+    });
+    renderInputs();
+    fireEvent.click(await screen.findByRole('button', { name: 'Compile all inputs' }));
+    expect(
+      await screen.findByText('Unable to compile inputs: No extractable text in scanned.pdf')
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Open compilation' })).not.toBeInTheDocument();
+  });
 
   it('waits for the session to load before listing inputs and offers retry on failure', async () => {
     let finishLoad!: (loaded: boolean) => void;

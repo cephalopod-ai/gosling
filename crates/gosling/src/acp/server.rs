@@ -131,6 +131,7 @@ mod resources;
 mod session_activation;
 mod session_configuration;
 mod shell_handlers;
+mod shell_library_compilation;
 mod shell_library_formats;
 mod slash_commands;
 

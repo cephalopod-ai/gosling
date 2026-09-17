@@ -28,6 +28,24 @@ export function parseAcpCreditsExhaustedError(error: unknown): AcpCreditsExhaust
 
 const DEEP_RESEARCH_AWAITING_REPLY_REASON = 'deep_research_awaiting_reply';
 
+export function parseAcpLibraryError(error: unknown): { code: string; message: string } | null {
+  const jsonRpcError = asAcpJsonRpcError(error);
+  if (!jsonRpcError || !isRecord(jsonRpcError.data)) return null;
+  const { code, message } = jsonRpcError.data;
+  if (typeof code !== 'string' || !code.startsWith('SHELL_LIBRARY_')) return null;
+  const messages: Record<string, string> = {
+    SHELL_LIBRARY_SELECTION_TOO_LARGE:
+      'Selected inputs exceed the inline limit (512 KiB text or 10 MiB images). Use Compile all inputs to create a complete source file.',
+    SHELL_LIBRARY_SELECTION_INVALID: 'Review the input selection, then resend your message.',
+    SHELL_LIBRARY_ITEM_UNAVAILABLE:
+      'An input is missing or could not be read. Check the Inputs pane, restore or deselect it, then resend your message.',
+  };
+  return {
+    code,
+    message: typeof message === 'string' ? message : (messages[code] ?? describeAcpError(error)),
+  };
+}
+
 /** A Deep Research turn ended on a question to the user rather than a report. */
 export function isAcpAwaitingReplyError(error: unknown): boolean {
   const jsonRpcError = asAcpJsonRpcError(error);

@@ -41,8 +41,11 @@ import {
 import { listSessionLibraryInputs } from '../../acp/sessionLibraryInputs';
 import { acpChatSessionController } from '../../acp/chatSessionController';
 import { describeAcpError } from '../../acp/errors';
-import { setSessionInputSelected, useSelectedSessionInputs } from '../../acp/sessionInputSelection';
-import { MAX_RESEARCH_INITIAL_INPUTS } from '../../types/sessionExperience';
+import {
+  MAX_SESSION_INPUT_SELECTION,
+  setSessionInputSelected,
+  useSelectedSessionInputs,
+} from '../../acp/sessionInputSelection';
 import { SessionInputControls } from './SessionInputControls';
 import type { ResearchLibraryFile } from '../../utils/researchLibrary';
 import { documentTitleFromContent, supportsDocumentTitle } from '../../utils/documentTitle';
@@ -893,6 +896,7 @@ export function ArtifactPane() {
           <SessionInputControls
             key={visibleSessionId}
             sessionId={visibleSessionId}
+            items={inputs}
             onAdded={() => {
               if (visibleSessionIdRef.current === visibleSessionId) {
                 setInputsRevision((revision) => revision + 1);
@@ -942,7 +946,7 @@ export function ArtifactPane() {
                     disabled={
                       !selectedInputs.includes(input.id) &&
                       (input.status === 'missing' ||
-                        selectedInputs.length >= MAX_RESEARCH_INITIAL_INPUTS)
+                        selectedInputs.length >= MAX_SESSION_INPUT_SELECTION)
                     }
                     aria-label={intl.formatMessage(i18n.selectInput, { name: input.name })}
                     onChange={(event) => {

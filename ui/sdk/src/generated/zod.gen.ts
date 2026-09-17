@@ -355,6 +355,18 @@ export const zShellLibraryResolveResponse_unstable = z.object({
     items: z.array(zShellLibraryResolvedItem).optional().default([])
 });
 
+export const zShellLibraryCompileRequest_unstable = z.object({
+    sessionId: z.string(),
+    itemIds: z.array(z.string())
+});
+
+export const zShellLibraryCompileResponse_unstable = z.object({
+    filePath: z.string(),
+    sourceCount: z.number().int().gte(0),
+    sizeBytes: z.number().int().gte(0),
+    promptText: z.string()
+});
+
 export const zDomainSnapshotRequest_unstable = z.object({
     input: z.unknown().optional().default(null)
 });
@@ -3304,6 +3316,7 @@ export const zExtRequest = z.object({
             zShellLibraryLinkFileRequest_unstable,
             zShellLibraryRemoveRequest_unstable,
             zShellLibraryResolveRequest_unstable,
+            zShellLibraryCompileRequest_unstable,
             zDomainSnapshotRequest_unstable,
             zDomainActionRequest_unstable,
             zDomainActionConfirmRequest_unstable,
@@ -3449,6 +3462,7 @@ export const zExtResponse = z.union([
                 zShellLibraryAddResponse_unstable,
                 zShellLibraryRemoveResponse_unstable,
                 zShellLibraryResolveResponse_unstable,
+                zShellLibraryCompileResponse_unstable,
                 zDomainSnapshotResponse_unstable,
                 zDomainActionResponse_unstable,
                 zDomainActionConfirmResponse_unstable,

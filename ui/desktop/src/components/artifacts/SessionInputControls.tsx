@@ -1,13 +1,28 @@
 import { useRef, useState } from 'react';
 import { FilePlus, ClipboardPaste } from 'lucide-react';
 import type { ShellLibraryItemSummary } from '@repo-makeover/gosling-sdk';
-import { addSessionLibraryText, linkSessionLibraryFile } from '../../acp/sessionLibraryInputs';
-import { setSessionInputSelected } from '../../acp/sessionInputSelection';
-import { describeAcpError } from '../../acp/errors';
+import {
+  addSessionLibraryText,
+  compileSessionLibraryInputs,
+  linkSessionLibraryFile,
+  sessionInputSelectionSize,
+} from '../../acp/sessionLibraryInputs';
+import {
+  clearSelectedSessionInputs,
+  setSessionInputSelected,
+  useSelectedSessionInputs,
+} from '../../acp/sessionInputSelection';
+import { describeAcpError, parseAcpLibraryError } from '../../acp/errors';
 import { acpChatSessionController } from '../../acp/chatSessionController';
+import { acpChatSessionActions } from '../../acp/chatSessionStore';
+import { acpListSessionArtifacts } from '../../acp/sessions';
+import { useArtifactWorkbench } from '../../contexts/ArtifactWorkbenchContext';
 import { defineMessages, useIntl } from '../../i18n';
 import {
   MAX_RESEARCH_INITIAL_TEXT_BYTES,
+  MAX_RESEARCH_INITIAL_INPUTS,
+  MAX_RESEARCH_INITIAL_TOTAL_TEXT_BYTES,
+  MAX_RESEARCH_INITIAL_TOTAL_IMAGE_BYTES,
   RESEARCH_INITIAL_FILE_ACCEPT,
   researchInitialTextBytes,
 } from '../../types/sessionExperience';
@@ -37,7 +52,42 @@ const i18n = defineMessages({
   help: {
     id: 'sessionInputs.help',
     defaultMessage:
-      'Files stay in their original location. Selected inputs are included with your next message. Select up to 16 at a time.',
+      'Selected inputs accompany your next message. Large selections are compiled into a source file for the agent to read in sections.',
+  },
+  selectAll: { id: 'sessionInputs.selectAll', defaultMessage: 'Select all' },
+  clearSelection: { id: 'sessionInputs.clearSelection', defaultMessage: 'Clear selection' },
+  compileAll: { id: 'sessionInputs.compileAll', defaultMessage: 'Compile all inputs' },
+  compiling: { id: 'sessionInputs.compiling', defaultMessage: 'Compiling complete sources…' },
+  compiled: {
+    id: 'sessionInputs.compiled',
+    defaultMessage: 'Compiled {count} inputs into one source file.',
+  },
+  openCompilation: { id: 'sessionInputs.openCompilation', defaultMessage: 'Open compilation' },
+  selectionBudget: {
+    id: 'sessionInputs.selectionBudget',
+    defaultMessage: '{count} selected · {text} / 512 KiB text · {images} / 10 MiB images',
+  },
+  linkedBudget: {
+    id: 'sessionInputs.linkedBudget',
+    defaultMessage: 'Linked-file content is checked when sending.',
+  },
+  compilationNeeded: {
+    id: 'sessionInputs.compilationNeeded',
+    defaultMessage:
+      'This selection exceeds the inline limit. Sending will save a complete source compilation in the chat folder and attach its location.',
+  },
+  compilationHelp: {
+    id: 'sessionInputs.compilationHelp',
+    defaultMessage:
+      'Compile all inputs saves every listed source, including unchecked inputs. It preserves source text and citations; ask the agent to write the synthesized report.',
+  },
+  compileFailed: {
+    id: 'sessionInputs.compileFailed',
+    defaultMessage: 'Unable to compile inputs: {error}',
+  },
+  outputRefreshFailed: {
+    id: 'sessionInputs.outputRefreshFailed',
+    defaultMessage: 'Compilation saved, but Outputs could not be refreshed: {error}',
   },
   noSession: {
     id: 'sessionInputs.noSession',
@@ -47,9 +97,11 @@ const i18n = defineMessages({
 
 export function SessionInputControls({
   sessionId,
+  items,
   onAdded,
 }: {
   sessionId: string | null;
+  items: ShellLibraryItemSummary[];
   onAdded: (item: ShellLibraryItemSummary) => void;
 }) {
   const intl = useIntl();
@@ -60,6 +112,15 @@ export function SessionInputControls({
   const [text, setText] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [compiling, setCompiling] = useState(false);
+  const [compiled, setCompiled] = useState<{ filePath: string; sourceCount: number } | null>(null);
+  const selected = useSelectedSessionInputs(sessionId);
+  const size = sessionInputSelectionSize(items, selected);
+  const needsCompilation =
+    selected.length > MAX_RESEARCH_INITIAL_INPUTS ||
+    size.textBytes > MAX_RESEARCH_INITIAL_TOTAL_TEXT_BYTES ||
+    size.imageBytes > MAX_RESEARCH_INITIAL_TOTAL_IMAGE_BYTES;
+  const { openFile } = useArtifactWorkbench();
   const textTooLarge = researchInitialTextBytes(text) > MAX_RESEARCH_INITIAL_TEXT_BYTES;
 
   const add = async (operation: () => Promise<ShellLibraryItemSummary>) => {
@@ -126,6 +187,104 @@ export function SessionInputControls({
       <p className="text-xs text-text-secondary">
         {intl.formatMessage(sessionId ? i18n.help : i18n.noSession)}
       </p>
+      {sessionId && items.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={compiling}
+              onClick={() =>
+                items.forEach((item) => setSessionInputSelected(sessionId, item.id, true))
+              }
+            >
+              {intl.formatMessage(i18n.selectAll)}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={compiling || selected.length === 0}
+              onClick={() => clearSelectedSessionInputs(sessionId, selected)}
+            >
+              {intl.formatMessage(i18n.clearSelection)}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={compiling || saving}
+              onClick={async () => {
+                setCompiling(true);
+                setCompiled(null);
+                setError(null);
+                try {
+                  if (!(await acpChatSessionController.loadSession(sessionId)))
+                    throw new Error('The session could not be loaded. Retry after reconnecting.');
+                  const result = await compileSessionLibraryInputs(
+                    sessionId,
+                    items.map((item) => item.id)
+                  );
+                  setCompiled(result);
+                  try {
+                    const artifacts = await acpListSessionArtifacts(sessionId);
+                    acpChatSessionActions.setArtifacts(sessionId, artifacts);
+                  } catch (cause) {
+                    setError(
+                      intl.formatMessage(i18n.outputRefreshFailed, {
+                        error: describeAcpError(cause),
+                      })
+                    );
+                  }
+                } catch (cause) {
+                  setError(
+                    intl.formatMessage(i18n.compileFailed, {
+                      error: parseAcpLibraryError(cause)?.message ?? describeAcpError(cause),
+                    })
+                  );
+                } finally {
+                  setCompiling(false);
+                }
+              }}
+            >
+              {intl.formatMessage(i18n.compileAll)}
+            </Button>
+          </div>
+          <p className="text-xs text-text-secondary" aria-live="polite">
+            {intl.formatMessage(i18n.selectionBudget, {
+              count: selected.length,
+              text: Math.ceil(size.textBytes / 1024),
+              images: (size.imageBytes / (1024 * 1024)).toFixed(1),
+            })}
+            {size.linkedFiles > 0 && <> {intl.formatMessage(i18n.linkedBudget)}</>}
+          </p>
+          {needsCompilation && (
+            <p role="status" className="text-xs text-text-secondary">
+              {intl.formatMessage(i18n.compilationNeeded)}
+            </p>
+          )}
+          <p className="text-xs text-text-secondary">{intl.formatMessage(i18n.compilationHelp)}</p>
+          {compiling && (
+            <p role="status" className="text-xs text-text-secondary">
+              {intl.formatMessage(i18n.compiling)}
+            </p>
+          )}
+          {compiled && (
+            <div className="space-y-1 text-xs text-text-secondary" role="status">
+              <p>{intl.formatMessage(i18n.compiled, { count: compiled.sourceCount })}</p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => openFile(compiled.filePath)}
+              >
+                {intl.formatMessage(i18n.openCompilation)}
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
       {editing && sessionId && (
         <form
           className="min-w-0 space-y-2"

@@ -115,6 +115,10 @@ const i18n = defineMessages({
     id: 'baseChat.continueWithCheckpoint',
     defaultMessage: 'Continue with another model using session checkpoint',
   },
+  retryInputs: {
+    id: 'baseChat.retryInputs',
+    defaultMessage: 'Retry with current inputs',
+  },
   researchBadge: {
     id: 'baseChat.researchBadge',
     defaultMessage: 'Deep Research',
@@ -959,6 +963,15 @@ export default function BaseChat({
                 className="shrink-0 rounded-md border border-border-primary px-3 py-1.5 text-sm hover:bg-background-secondary"
               >
                 {intl.formatMessage(i18n.reconnect)}
+              </button>
+            ) : promptError?.recovery === 'inputs' ? (
+              <button
+                type="button"
+                disabled={chatState !== ChatState.Idle}
+                onClick={() => void handleSubmit({ msg: '', images: [] })}
+                className="max-w-64 shrink-0 rounded-md border border-border-primary px-3 py-1.5 text-sm hover:bg-background-secondary disabled:opacity-50"
+              >
+                {intl.formatMessage(i18n.retryInputs)}
               </button>
             ) : promptError && !promptError.awaitingReply ? (
               <button

@@ -5,6 +5,7 @@ import {
   isAcpConnectionClosedError,
   parseAcpCreditsExhaustedError,
   parseAcpPlanError,
+  parseAcpLibraryError,
 } from '../errors';
 
 describe('isAcpAwaitingReplyError', () => {
@@ -33,6 +34,23 @@ describe('isAcpAwaitingReplyError', () => {
     ).toBe(false);
     expect(isAcpAwaitingReplyError({ code: -32603, message: 'x', data: 'plain text' })).toBe(false);
     expect(isAcpAwaitingReplyError(new Error('boom'))).toBe(false);
+  });
+});
+
+describe('parseAcpLibraryError', () => {
+  it('explains attachment limits and preserves specific compilation errors', () => {
+    expect(
+      parseAcpLibraryError({
+        error: { message: 'Invalid params', data: { code: 'SHELL_LIBRARY_SELECTION_TOO_LARGE' } },
+      })?.message
+    ).toContain('512 KiB');
+    expect(
+      parseAcpLibraryError({
+        message: 'Invalid params',
+        data: { code: 'SHELL_LIBRARY_COMPILATION_FAILED', message: 'Missing source 2' },
+      })?.message
+    ).toBe('Missing source 2');
+    expect(parseAcpLibraryError(new Error('Provider error'))).toBeNull();
   });
 });
 

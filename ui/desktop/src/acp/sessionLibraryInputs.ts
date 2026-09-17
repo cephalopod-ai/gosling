@@ -1,5 +1,6 @@
 import { getAcpClient } from './acpConnection';
 import type { ShellLibraryItemSummary } from '@repo-makeover/gosling-sdk';
+import { parseAcpLibraryError } from './errors';
 import type { ImageData } from '../types/message';
 import type { ResearchInitialInputs } from '../types/sessionExperience';
 import {
@@ -122,11 +123,29 @@ export async function resolveSessionLibraryInputs(
 ): Promise<{ assistantContext?: string; images: ImageData[] }> {
   if (itemIds.length === 0) return { images: [] };
 
-  const client = await getAcpClient();
-  const response = await client.gosling.shellSessionLibraryResolve_unstable({
-    sessionId,
-    itemIds,
+  const compile = async () => ({
+    assistantContext: (await compileSessionLibraryInputs(sessionId, itemIds)).promptText,
+    images: [],
   });
+  if (itemIds.length > MAX_RESEARCH_INITIAL_INPUTS) return compile();
+
+  const size = sessionInputSelectionSize(await listSessionLibraryInputs(sessionId), itemIds);
+  if (
+    size.textBytes > MAX_RESEARCH_INITIAL_TOTAL_TEXT_BYTES ||
+    size.imageBytes > MAX_RESEARCH_INITIAL_TOTAL_IMAGE_BYTES
+  )
+    return compile();
+
+  const client = await getAcpClient();
+  let response;
+  try {
+    response = await client.gosling.shellSessionLibraryResolve_unstable({ sessionId, itemIds });
+  } catch (error) {
+    if (parseAcpLibraryError(error)?.code === 'SHELL_LIBRARY_SELECTION_TOO_LARGE') {
+      return compile();
+    }
+    throw error;
+  }
   const text: string[] = [];
   const images: ImageData[] = [];
 
@@ -141,5 +160,23 @@ export async function resolveSessionLibraryInputs(
   return {
     ...(text.length > 0 ? { assistantContext: text.join('\n\n') } : {}),
     images,
+  };
+}
+
+export async function compileSessionLibraryInputs(sessionId: string, itemIds: string[]) {
+  const client = await getAcpClient();
+  return client.gosling.shellSessionLibraryCompile_unstable({ sessionId, itemIds });
+}
+
+export function sessionInputSelectionSize(items: ShellLibraryItemSummary[], itemIds: string[]) {
+  const selected = items.filter((item) => itemIds.includes(item.id));
+  return {
+    textBytes: selected
+      .filter((item) => item.kind === 'text')
+      .reduce((sum, item) => sum + item.sizeBytes, 0),
+    imageBytes: selected
+      .filter((item) => item.kind === 'image')
+      .reduce((sum, item) => sum + item.sizeBytes, 0),
+    linkedFiles: selected.filter((item) => item.kind === 'file').length,
   };
 }

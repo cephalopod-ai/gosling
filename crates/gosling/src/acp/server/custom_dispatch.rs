@@ -126,6 +126,14 @@ impl GoslingAcpAgent {
         self.on_resolve_shell_library(req).await
     }
 
+    #[custom_method(ShellLibraryCompileRequest)]
+    async fn dispatch_compile_shell_library(
+        &self,
+        req: ShellLibraryCompileRequest,
+    ) -> Result<ShellLibraryCompileResponse, agent_client_protocol::Error> {
+        self.on_compile_shell_library(req).await
+    }
+
     #[custom_method(DomainSnapshotRequest)]
     async fn dispatch_domain_snapshot(
         &self,

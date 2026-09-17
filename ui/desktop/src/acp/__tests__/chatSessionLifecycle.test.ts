@@ -155,6 +155,7 @@ describe('ACP chat session lifecycle', () => {
     expect(acpChatSessionStore.getSnapshot(SESSION_ID)?.promptError?.message).toContain(
       'Input file is unavailable'
     );
+    expect(acpChatSessionStore.getSnapshot(SESSION_ID)?.promptError?.recovery).toBe('inputs');
   });
 
   it('keeps selected inputs pending for commands and assistant continuations', async () => {

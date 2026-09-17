@@ -20,6 +20,7 @@ import {
   describeAcpError,
   isAcpConnectionClosedError,
   parseAcpCreditsExhaustedError,
+  parseAcpLibraryError,
   type AcpCreditsExhaustedError,
   isAcpAwaitingReplyError,
 } from './errors';
@@ -339,6 +340,7 @@ async function submitMessage(
   preparingPromptAttempts.add(promptAttemptId);
   acpChatSessionActions.startPromptAttempt(sessionId, promptAttemptId);
   let preserveRecoveryMarker = false;
+  let preparingInputs = selectedInputIds.length > 0;
 
   try {
     if (workingDir) {
@@ -361,6 +363,7 @@ async function submitMessage(
       );
       clearSelectedSessionInputs(sessionId, selectedInputIds);
     }
+    preparingInputs = false;
     preparingPromptAttempts.delete(promptAttemptId);
     if (finishPromptCancellation(sessionId, promptAttemptId)) {
       return;
@@ -401,8 +404,12 @@ async function submitMessage(
     const submitError = awaitingReply
       ? { message: '', connectionLost: false, awaitingReply: true }
       : {
-          message: 'Submit error: ' + describeAcpError(error),
+          message: preparingInputs
+            ? 'Could not attach inputs: ' +
+              (parseAcpLibraryError(error)?.message ?? describeAcpError(error))
+            : 'Submit error: ' + describeAcpError(error),
           connectionLost: isAcpConnectionClosedError(error),
+          ...(preparingInputs ? { recovery: 'inputs' as const } : {}),
         };
     preserveRecoveryMarker = submitError.connectionLost;
     if (

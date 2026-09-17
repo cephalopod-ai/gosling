@@ -3342,7 +3342,7 @@
     "defaultMessage": "Unable to add input: {error}"
   },
   "sessionInputs.help": {
-    "defaultMessage": "Files stay in their original location. Selected inputs are included with your next message. Select up to 16 at a time."
+    "defaultMessage": "Selected inputs accompany your next message. Large selections are compiled into a source file for the agent to read in sections."
   },
   "sessionInputs.name": {
     "defaultMessage": "Name (optional)"
@@ -4015,5 +4015,44 @@
   },
   "runStatus.openTask": {
     "defaultMessage": "Open agent chat"
+  },
+  "baseChat.retryInputs": {
+    "defaultMessage": "Retry with current inputs"
+  },
+  "sessionInputs.clearSelection": {
+    "defaultMessage": "Clear selection"
+  },
+  "sessionInputs.compilationHelp": {
+    "defaultMessage": "Compile all inputs saves every listed source, including unchecked inputs. It preserves source text and citations; ask the agent to write the synthesized report."
+  },
+  "sessionInputs.compilationNeeded": {
+    "defaultMessage": "This selection exceeds the inline limit. Sending will save a complete source compilation in the chat folder and attach its location."
+  },
+  "sessionInputs.compileAll": {
+    "defaultMessage": "Compile all inputs"
+  },
+  "sessionInputs.compileFailed": {
+    "defaultMessage": "Unable to compile inputs: {error}"
+  },
+  "sessionInputs.compiled": {
+    "defaultMessage": "Compiled {count} inputs into one source file."
+  },
+  "sessionInputs.compiling": {
+    "defaultMessage": "Compiling complete sources…"
+  },
+  "sessionInputs.linkedBudget": {
+    "defaultMessage": "Linked-file content is checked when sending."
+  },
+  "sessionInputs.openCompilation": {
+    "defaultMessage": "Open compilation"
+  },
+  "sessionInputs.outputRefreshFailed": {
+    "defaultMessage": "Compilation saved, but Outputs could not be refreshed: {error}"
+  },
+  "sessionInputs.selectAll": {
+    "defaultMessage": "Select all"
+  },
+  "sessionInputs.selectionBudget": {
+    "defaultMessage": "{count} selected · {text} / 512 KiB text · {images} / 10 MiB images"
   }
 }

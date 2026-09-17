@@ -3,6 +3,7 @@ import { getAcpClient } from './acpConnection';
 import {
   addResearchInitialInputs,
   addSessionLibraryText,
+  compileSessionLibraryInputs,
   linkSessionLibraryFile,
   listSessionLibraryInputs,
   resolveSessionLibraryInputs,
@@ -14,16 +15,26 @@ const addText = vi.fn();
 const linkFile = vi.fn();
 const list = vi.fn();
 const resolve = vi.fn();
+const compile = vi.fn();
 
 describe('session library research inputs', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    list.mockResolvedValue({ items: [] });
+    resolve.mockReset();
+    compile.mockReset().mockResolvedValue({
+      filePath: '/chat/compiled-inputs.md',
+      sourceCount: 19,
+      sizeBytes: 900_000,
+      promptText: 'Read all 19 sources at /chat/compiled-inputs.md in sections.',
+    });
     vi.mocked(getAcpClient).mockResolvedValue({
       gosling: {
         shellSessionLibraryAddText_unstable: addText,
         shellSessionLibraryLinkFile_unstable: linkFile,
         shellSessionLibraryList_unstable: list,
         shellSessionLibraryResolve_unstable: resolve,
+        shellSessionLibraryCompile_unstable: compile,
       },
     } as never);
     addText.mockResolvedValue({ item: { id: 'notes' } });
@@ -122,6 +133,65 @@ describe('session library research inputs', () => {
       })
     ).rejects.toThrow('up to 16 initial inputs');
     expect(getAcpClient).not.toHaveBeenCalled();
+  });
+
+  it('compiles a 19-source selection without submitting an invalid inline request', async () => {
+    const ids = Array.from({ length: 19 }, (_, index) => `source-${index}`);
+    await expect(resolveSessionLibraryInputs('chat', ids)).resolves.toEqual({
+      assistantContext: 'Read all 19 sources at /chat/compiled-inputs.md in sections.',
+      images: [],
+    });
+    expect(compile).toHaveBeenCalledWith({ sessionId: 'chat', itemIds: ids });
+    expect(resolve).not.toHaveBeenCalled();
+  });
+
+  it('preflights the combined stored text size and compiles without truncating', async () => {
+    const items = Array.from({ length: 15 }, (_, index) => ({
+      id: `s${index}`,
+      kind: 'text',
+      sizeBytes: 50_000,
+    }));
+    list.mockResolvedValue({ items });
+    await resolveSessionLibraryInputs(
+      'chat',
+      items.map((item) => item.id)
+    );
+    expect(compile).toHaveBeenCalledOnce();
+    expect(resolve).not.toHaveBeenCalled();
+  });
+
+  it('falls back to compilation when resolved linked-file content exceeds the inline limit', async () => {
+    resolve.mockRejectedValue({
+      message: 'Invalid params',
+      data: { code: 'SHELL_LIBRARY_SELECTION_TOO_LARGE' },
+    });
+    await resolveSessionLibraryInputs('chat', ['linked-document']);
+    expect(compile).toHaveBeenCalledWith({ sessionId: 'chat', itemIds: ['linked-document'] });
+  });
+
+  it('keeps exactly 512 KiB inline and excludes unselected sources from the budget', async () => {
+    list.mockResolvedValue({
+      items: [
+        { id: 'one', kind: 'text', sizeBytes: 256 * 1024 },
+        { id: 'two', kind: 'text', sizeBytes: 256 * 1024 },
+        { id: 'unselected', kind: 'text', sizeBytes: 256 * 1024 },
+      ],
+    });
+    resolve.mockResolvedValue({ items: [] });
+    await resolveSessionLibraryInputs('chat', ['one', 'two']);
+    expect(resolve).toHaveBeenCalledWith({ sessionId: 'chat', itemIds: ['one', 'two'] });
+    expect(compile).not.toHaveBeenCalled();
+  });
+
+  it('does not hide missing-source failures or compilation failures', async () => {
+    const error = { message: 'Invalid params', data: { code: 'SHELL_LIBRARY_ITEM_UNAVAILABLE' } };
+    resolve.mockRejectedValue(error);
+    await expect(resolveSessionLibraryInputs('chat', ['missing'])).rejects.toEqual(error);
+    expect(compile).not.toHaveBeenCalled();
+    compile.mockRejectedValue(new Error('Compilation too large'));
+    await expect(compileSessionLibraryInputs('chat', ['a'])).rejects.toThrow(
+      'Compilation too large'
+    );
   });
 
   it('rejects text and image byte limits before calling ACP', async () => {

@@ -201,6 +201,8 @@ import type {
   ShellLibraryAddImageRequest_unstable,
   ShellLibraryAddResponse_unstable,
   ShellLibraryAddTextRequest_unstable,
+  ShellLibraryCompileRequest_unstable,
+  ShellLibraryCompileResponse_unstable,
   ShellLibraryLinkFileRequest_unstable,
   ShellLibraryListRequest_unstable,
   ShellLibraryListResponse_unstable,
@@ -325,6 +327,7 @@ import {
   zShellDirectoryValidateResponse_unstable,
   zShellHandoffPrepareResponse_unstable,
   zShellLibraryAddResponse_unstable,
+  zShellLibraryCompileResponse_unstable,
   zShellLibraryListResponse_unstable,
   zShellLibraryRemoveResponse_unstable,
   zShellLibraryResolveResponse_unstable,
@@ -487,6 +490,18 @@ export class GoslingExtClient {
     return zShellLibraryResolveResponse_unstable.parse(
       raw,
     ) as ShellLibraryResolveResponse_unstable;
+  }
+
+  async shellSessionLibraryCompile_unstable(
+    params: ShellLibraryCompileRequest_unstable,
+  ): Promise<ShellLibraryCompileResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/shell/session/library/compile",
+      params,
+    );
+    return zShellLibraryCompileResponse_unstable.parse(
+      raw,
+    ) as ShellLibraryCompileResponse_unstable;
   }
 
   async shellDomainSnapshot_unstable(

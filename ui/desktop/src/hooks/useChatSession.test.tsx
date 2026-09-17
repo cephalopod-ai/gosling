@@ -146,6 +146,24 @@ describe('useChatSession history navigation', () => {
     });
   }
 
+  it('retries a failed input submission using the same message and current selection', async () => {
+    const original = message('comprehensive-report-request');
+    acpChatSessionActions.setMessages(SESSION_ID, [original]);
+    setSessionInputSelected(SESSION_ID, 'corrected-selection', true);
+    const { result } = renderHook(
+      () => useChatSession({ sessionId: SESSION_ID, onStreamFinish: vi.fn() }),
+      { wrapper: IntlTestWrapper }
+    );
+    await act(async () => result.current.handleSubmit({ msg: '', images: [] }));
+    expect(mocks.submitMessage).toHaveBeenCalledWith(
+      SESSION_ID,
+      original,
+      expect.objectContaining({ includeSelectedSessionInputs: true })
+    );
+    expect(acpChatSessionStore.getSnapshot(SESSION_ID)?.messages).toEqual([original]);
+    expect(getSelectedSessionInputs(SESSION_ID)).toEqual(['corrected-selection']);
+  });
+
   it('includes selected inputs when Send now steers a running reply', async () => {
     const { result } = renderActiveChat();
     await act(async () => {

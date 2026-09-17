@@ -632,6 +632,28 @@ pub struct ShellLibraryResolveResponse {
     pub items: Vec<ShellLibraryResolvedItem>,
 }
 
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_gosling/unstable/shell/session/library/compile",
+    response = ShellLibraryCompileResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellLibraryCompileRequest {
+    pub session_id: String,
+    pub item_ids: Vec<String>,
+}
+
+#[derive(
+    Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, JsonRpcResponse,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellLibraryCompileResponse {
+    pub file_path: String,
+    pub source_count: usize,
+    pub size_bytes: usize,
+    pub prompt_text: String,
+}
+
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DomainResourceReference {

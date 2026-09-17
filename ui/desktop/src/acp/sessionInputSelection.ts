@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react';
-import { MAX_RESEARCH_INITIAL_INPUTS } from '../types/sessionExperience';
+
+export const MAX_SESSION_INPUT_SELECTION = 128;
 
 const selections = new Map<string, string[]>();
 const listeners = new Set<() => void>();
@@ -11,7 +12,7 @@ export function getSelectedSessionInputs(sessionId: string): string[] {
 
 export function setSessionInputSelected(sessionId: string, itemId: string, selected: boolean) {
   const current = getSelectedSessionInputs(sessionId);
-  if (selected && (current.includes(itemId) || current.length >= MAX_RESEARCH_INITIAL_INPUTS)) {
+  if (selected && (current.includes(itemId) || current.length >= MAX_SESSION_INPUT_SELECTION)) {
     return;
   }
   const next = selected ? [...current, itemId] : current.filter((id) => id !== itemId);

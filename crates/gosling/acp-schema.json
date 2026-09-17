@@ -1040,6 +1040,53 @@
         }
       ]
     },
+    "ShellLibraryCompileRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "itemIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "sessionId",
+        "itemIds"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/shell/session/library/compile"
+    },
+    "ShellLibraryCompileResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "filePath": {
+          "type": "string"
+        },
+        "sourceCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sizeBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "promptText": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "filePath",
+        "sourceCount",
+        "sizeBytes",
+        "promptText"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/shell/session/library/compile"
+    },
     "DomainSnapshotRequest_unstable": {
       "type": "object",
       "properties": {
@@ -10311,6 +10358,15 @@
                 {
                   "allOf": [
                     {
+                      "$ref": "#/$defs/ShellLibraryCompileRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/shell/session/library/compile",
+                  "title": "ShellLibraryCompileRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
                       "$ref": "#/$defs/DomainSnapshotRequest_unstable"
                     }
                   ],
@@ -11542,6 +11598,14 @@
                         }
                       ],
                       "title": "ShellLibraryResolveResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/ShellLibraryCompileResponse_unstable"
+                        }
+                      ],
+                      "title": "ShellLibraryCompileResponse_unstable"
                     },
                     {
                       "allOf": [

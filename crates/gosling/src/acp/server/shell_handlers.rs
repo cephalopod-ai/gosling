@@ -10,13 +10,13 @@ const SHELL_ARTIFACT_LIMIT: usize = 100;
 const SHELL_ARTIFACT_NAME_LIMIT: usize = 256;
 const SHELL_LIBRARY_NAME_LIMIT: usize = 128;
 const SHELL_LIBRARY_TEXT_LIMIT: usize = 256 * 1024;
-const SHELL_LIBRARY_FILE_LIMIT: u64 = 20 * 1024 * 1024;
+pub(super) const SHELL_LIBRARY_FILE_LIMIT: u64 = 20 * 1024 * 1024;
 const SHELL_LIBRARY_IMAGE_LIMIT: usize = 5 * 1024 * 1024;
 const SHELL_LIBRARY_PROMPT_ITEM_LIMIT: usize = 16;
 const SHELL_LIBRARY_PROMPT_TEXT_LIMIT: usize = 512 * 1024;
 const SHELL_LIBRARY_PROMPT_IMAGE_LIMIT: usize = 10 * 1024 * 1024;
-const SHELL_LIBRARY_PDF_PAGE_LIMIT: usize = 256;
-const SHELL_LIBRARY_PDF_OBJECT_LIMIT: usize = 50_000;
+pub(super) const SHELL_LIBRARY_PDF_PAGE_LIMIT: usize = 256;
+pub(super) const SHELL_LIBRARY_PDF_OBJECT_LIMIT: usize = 50_000;
 // A failed lookup (timeout, panic, or read error) is usually transient — a locked keychain or a
 // momentarily unreadable workspace document — so callers back off for this long instead of
 // retrying on every request, but still retry on the next call after it elapses rather than
@@ -450,7 +450,16 @@ impl GoslingAcpAgent {
             if text_bytes > SHELL_LIBRARY_PROMPT_TEXT_LIMIT
                 || image_bytes > SHELL_LIBRARY_PROMPT_IMAGE_LIMIT
             {
-                return Err(shell_library_invalid("SHELL_LIBRARY_SELECTION_TOO_LARGE"));
+                return Err(agent_client_protocol::Error::invalid_params().data(
+                    serde_json::json!({
+                        "code": "SHELL_LIBRARY_SELECTION_TOO_LARGE",
+                        "textBytes": text_bytes,
+                        "textLimitBytes": SHELL_LIBRARY_PROMPT_TEXT_LIMIT,
+                        "imageBytes": image_bytes,
+                        "imageLimitBytes": SHELL_LIBRARY_PROMPT_IMAGE_LIMIT,
+                        "message": "Selected inputs exceed the inline attachment limit (512 KiB text or 10 MiB images). Compile the inputs into a source file to use the full collection."
+                    }),
+                ));
             }
             items.push(ShellLibraryResolvedItem {
                 id: item.id,
@@ -482,7 +491,7 @@ impl GoslingAcpAgent {
             .map_err(|_| shell_library_invalid("SHELL_LIBRARY_SESSION_UNAVAILABLE"))
     }
 
-    async fn require_library_session(
+    pub(super) async fn require_library_session(
         &self,
         session_id: &str,
     ) -> Result<(), agent_client_protocol::Error> {
@@ -606,11 +615,11 @@ impl GoslingAcpAgent {
     }
 }
 
-fn shell_library_invalid(code: &str) -> agent_client_protocol::Error {
+pub(super) fn shell_library_invalid(code: &str) -> agent_client_protocol::Error {
     agent_client_protocol::Error::invalid_params().data(serde_json::json!({ "code": code }))
 }
 
-fn shell_library_internal_error(error: anyhow::Error) -> agent_client_protocol::Error {
+pub(super) fn shell_library_internal_error(error: anyhow::Error) -> agent_client_protocol::Error {
     agent_client_protocol::Error::internal_error().data(error.to_string())
 }
 
@@ -717,13 +726,12 @@ fn resolve_shell_library_file(item: &SessionLibraryItem) -> Result<ResolvedShell
     match resolve_linked_file(
         std::path::Path::new(path),
         &item.mime_type,
-        SHELL_LIBRARY_PROMPT_TEXT_LIMIT,
+        super::shell_library_compilation::COMPILATION_BYTE_LIMIT,
         SHELL_LIBRARY_PDF_PAGE_LIMIT,
         SHELL_LIBRARY_PDF_OBJECT_LIMIT,
     )? {
         LinkedFileContent::Text(text) => {
-            let text = truncate_library_text(text);
-            let text_bytes = text.len().min(SHELL_LIBRARY_PROMPT_TEXT_LIMIT);
+            let text_bytes = text.len();
             Ok(ResolvedShellLibraryContent {
                 content: ShellLibraryResolvedContent::Text {
                     text: wrap_library_text(&item.name, &text),
@@ -748,19 +756,6 @@ fn resolve_shell_library_file(item: &SessionLibraryItem) -> Result<ResolvedShell
             })
         }
     }
-}
-
-fn truncate_library_text(mut text: String) -> String {
-    if text.len() <= SHELL_LIBRARY_PROMPT_TEXT_LIMIT {
-        return text;
-    }
-    let mut boundary = SHELL_LIBRARY_PROMPT_TEXT_LIMIT;
-    while !text.is_char_boundary(boundary) {
-        boundary -= 1;
-    }
-    text.truncate(boundary);
-    text.push_str("\n[Content truncated]");
-    text
 }
 
 fn wrap_library_text(name: &str, text: &str) -> String {
