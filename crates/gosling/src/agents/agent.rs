@@ -670,4 +670,6 @@ impl Agent {
 }
 
 #[cfg(test)]
+mod authority_boundary_tests;
+#[cfg(test)]
 mod tests;

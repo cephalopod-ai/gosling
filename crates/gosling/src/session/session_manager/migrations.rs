@@ -815,6 +815,7 @@ impl SessionStorage {
             }
             35 => Self::create_session_plan_schema(tx).await?,
             36 => Self::create_compaction_history_schema(tx).await?,
+            37 => Self::create_skill_admission_schema(tx).await?,
             _ => {
                 anyhow::bail!("Unknown migration version: {}", version);
             }

@@ -34,8 +34,13 @@ impl Agent {
 
         // Opt-in, off by default: flags out-of-scope paths when a session has
         // "restrict tools to working directories" turned on.
-        tool_inspection_manager
-            .add_inspector(Box::new(WorkingDirScopeInspector::new(session_manager)));
+        tool_inspection_manager.add_inspector(Box::new(WorkingDirScopeInspector::new(
+            session_manager.clone(),
+        )));
+
+        tool_inspection_manager.add_inspector(Box::new(
+            crate::permission::SkillAuthorityInspector::new(session_manager),
+        ));
 
         tool_inspection_manager.add_inspector(Box::new(RepetitionInspector::new(Some(3))));
 

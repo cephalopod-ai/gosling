@@ -297,6 +297,27 @@ evidence-only report, and partial retrieval, failed lanes, and empty successful 
 distinct outcomes. Memory excerpts are untrusted data, and the action writes no memory, summary,
 fact ledger, or promotion record.
 
+## Evidence, instruction admission, and execution authority
+
+ADR-0023 and ARC-014 separate four questions that content can blur: whether a record is retained,
+whether it is retrieved for a task, what it supports, and what the current execution may do.
+Retrieved documents, tool results, memories, Recall Brief evidence, summaries, handoff checkpoints,
+and imported history answer only the first three. Authority stays in host records: the permission
+store, the session's mode and folder grants, plan lifecycle rows, and `skill_admissions`.
+
+Skills pass through discovery, loading, admission, and authorization as separate steps. `load_skill`
+and skill slash commands build a `SkillAdmission` from the discovery adapter's source kind and the
+exact loaded bytes, verify a `sha256:` catalog `contentHash`, refuse a local skill that shadows a
+configured catalog id, and persist the admission against the current turn lease before returning
+text. `read_only`/`plan_only` labels (and unrecognized labels) impose a non-mutating ceiling and
+`destructive_admin` a human-approval ceiling. Under a ceiling the mandatory `skill_authority`
+inspector prompts for unverified calls, the tool-operation begin transaction denies unapproved
+unverified operations, and code-mode nested dispatch refuses them. Delegates inherit active
+restrictive admissions. Admissions end with the turn and never transfer through copy, fork, import,
+export, or handoff. Import drops file-supplied Deep Research paths, and compaction keeps
+imported-untrusted status on summaries of imported history. Provider-owned tool runtimes cannot be
+constrained, so restricted skill selection is refused there.
+
 ## Error taxonomy
 
 

@@ -1,0 +1,13 @@
+[
+  { "caseId": "EIA-LABEL-001", "label": null, "ceiling": "unrestricted", "mapping": "absent" },
+  { "caseId": "EIA-LABEL-002", "label": "read_only", "ceiling": "non_mutating", "mapping": "known" },
+  { "caseId": "EIA-LABEL-003", "label": "plan_only", "ceiling": "non_mutating", "mapping": "known" },
+  { "caseId": "EIA-LABEL-004", "label": "plan-only", "ceiling": "non_mutating", "mapping": "known" },
+  { "caseId": "EIA-LABEL-005", "label": "test_only", "ceiling": "unrestricted", "mapping": "known" },
+  { "caseId": "EIA-LABEL-006", "label": "low_risk_repair", "ceiling": "unrestricted", "mapping": "known" },
+  { "caseId": "EIA-LABEL-007", "label": "governed_repair", "ceiling": "unrestricted", "mapping": "known" },
+  { "caseId": "EIA-LABEL-008", "label": "destructive_admin", "ceiling": "human_approval_required", "mapping": "known" },
+  { "caseId": "EIA-LABEL-009", "label": "unrestricted", "ceiling": "non_mutating", "mapping": "unrecognized" },
+  { "caseId": "EIA-LABEL-010", "label": "admin", "ceiling": "non_mutating", "mapping": "unrecognized" },
+  { "caseId": "EIA-LABEL-011", "label": "READ_ONLY", "ceiling": "non_mutating", "mapping": "unrecognized" }
+]

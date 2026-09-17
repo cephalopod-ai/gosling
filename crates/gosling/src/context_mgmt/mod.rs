@@ -571,7 +571,18 @@ pub async fn compact_messages(
         final_messages.push(updated_msg);
     }
 
-    let summary_msg = summary_message.with_metadata(MessageMetadata::agent_only());
+    // A summary is derived from its inputs; if any input was imported
+    // untrusted history, the summary keeps that status instead of becoming
+    // indistinguishable from locally produced context.
+    let summary_metadata = if messages_to_compact
+        .iter()
+        .any(|message| message.metadata.imported_untrusted)
+    {
+        MessageMetadata::agent_only().with_imported_untrusted()
+    } else {
+        MessageMetadata::agent_only()
+    };
+    let summary_msg = summary_message.with_metadata(summary_metadata);
 
     let mut continuation_messages = vec![summary_msg];
 
@@ -1684,6 +1695,39 @@ mod tests {
 
         let _ = Conversation::new(agent_conversation)
             .expect("compaction should produce a valid conversation");
+    }
+
+    // EIA-COMPACT-002: a summary of imported untrusted history stays marked untrusted.
+    #[tokio::test]
+    async fn summary_of_imported_history_keeps_untrusted_provenance() {
+        for imported in [true, false] {
+            let provider =
+                MockProvider::new(Message::assistant().with_text("<mock summary>"), 10_000);
+            let mut messages = turns(4);
+            if imported {
+                for message in messages.iter_mut().take(4) {
+                    message.metadata = message.metadata.clone().with_imported_untrusted();
+                }
+            }
+            let model_config = provider.config.clone();
+            let compacted = compact_messages(
+                &provider,
+                &model_config,
+                "test-session-id",
+                &Conversation::new_unvalidated(messages),
+                false,
+                None,
+            )
+            .await
+            .unwrap()
+            .conversation;
+            let summary = compacted
+                .messages()
+                .iter()
+                .find(|message| message.as_concat_text().contains("<mock summary>"))
+                .expect("summary message");
+            assert_eq!(summary.metadata.imported_untrusted, imported);
+        }
     }
 
     fn turns(count: usize) -> Vec<Message> {

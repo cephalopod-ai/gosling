@@ -2,6 +2,7 @@
 //! built-ins) and the runtime MCP client (`client` submodule). User-facing
 //! CRUD lives in `crate::sources`, which generalizes across source types.
 
+pub mod admission;
 mod arguments;
 mod builtin;
 pub mod catalog;
@@ -13,6 +14,7 @@ pub use client::{SkillsClient, EXTENSION_NAME};
 use crate::config::paths::Paths;
 use crate::plugins::installed_plugin_skill_dirs;
 use crate::sources::parse_frontmatter;
+use admission::{AdmissionScope, SkillAdmission, SkillOrigin, SkillSourceKind};
 use agent_client_protocol::Error;
 use anyhow::Result;
 use arguments::apply_skill_arguments;
@@ -101,10 +103,17 @@ pub(crate) fn validate_skill_name(name: &str) -> Result<(), Error> {
     Ok(())
 }
 
-fn loaded_skill_context(skill: &SourceEntry, content: &str) -> String {
+fn loaded_skill_context(
+    skill: &SourceEntry,
+    content: &str,
+    admission: Option<(&SkillAdmission, AdmissionScope)>,
+) -> String {
     let title = format!("{} ({})", skill.name, skill.source_type);
+    let admission_section = admission
+        .map(|(admission, scope)| format!("{}\n\n", admission.render_host_section(scope)))
+        .unwrap_or_default();
     let mut output = format!(
-        "# Loaded Skill: {title}\n\n{}\n\n## Content\n\n{}\n",
+        "# Loaded Skill: {title}\n\n{}\n\n{admission_section}## Content\n\n{}\n",
         skill.description, content
     );
 
@@ -134,13 +143,41 @@ fn loaded_skill_context(skill: &SourceEntry, content: &str) -> String {
 }
 
 pub fn loaded_skill_context_with_args(skill: &SourceEntry, args: Option<&str>) -> Result<String> {
-    let content = if let Some(args) = args {
-        apply_skill_arguments(&skill.content, args, &skill_argument_names(skill))?
-    } else {
-        skill.content.clone()
-    };
+    Ok(loaded_skill_context(
+        skill,
+        &skill_content_with_args(skill, args)?,
+        None,
+    ))
+}
 
-    Ok(loaded_skill_context(skill, &content))
+pub(crate) fn admitted_skill_context(
+    skill: &SourceEntry,
+    args: Option<&str>,
+    admission: &SkillAdmission,
+    scope: AdmissionScope,
+) -> Result<String> {
+    Ok(loaded_skill_context(
+        skill,
+        &skill_content_with_args(skill, args)?,
+        Some((admission, scope)),
+    ))
+}
+
+fn skill_content_with_args(skill: &SourceEntry, args: Option<&str>) -> Result<String> {
+    match args {
+        Some(args) => apply_skill_arguments(&skill.content, args, &skill_argument_names(skill)),
+        None => Ok(skill.content.clone()),
+    }
+}
+
+/// Only non-catalog skills may declare an authority label in frontmatter
+/// (`metadata.execution.authority`); labels there can narrow, never widen.
+pub(crate) fn frontmatter_authority(skill: &SourceEntry) -> Option<&str> {
+    skill
+        .properties
+        .get("execution")
+        .and_then(|execution| execution.get("authority"))
+        .and_then(|authority| authority.as_str())
 }
 
 pub fn skill_argument_hint(skill: &SourceEntry) -> Option<String> {
@@ -292,34 +329,37 @@ pub(crate) fn parse_skill_frontmatter(raw: &str) -> (String, String) {
     }
 }
 
-fn project_skill_dirs(working_dir: Option<&Path>) -> Vec<(PathBuf, bool)> {
+fn project_skill_dirs(working_dir: Option<&Path>) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
 
     if let Some(wd) = working_dir {
-        dirs.push((wd.join(".agents").join("skills"), false));
-        dirs.push((wd.join(".gosling").join("skills"), false));
-        dirs.push((wd.join(".claude").join("skills"), false));
+        dirs.push(wd.join(".agents").join("skills"));
+        dirs.push(wd.join(".gosling").join("skills"));
+        dirs.push(wd.join(".claude").join("skills"));
     }
 
     dirs
 }
 
-fn global_skill_dirs() -> Vec<(PathBuf, bool)> {
+fn global_skill_dirs() -> Vec<(PathBuf, SkillSourceKind)> {
     let mut skill_dirs = Vec::new();
     let home = dirs::home_dir();
     if let Some(h) = home.as_ref() {
-        skill_dirs.push((h.join(".agents").join("skills"), true));
+        skill_dirs.push((h.join(".agents").join("skills"), SkillSourceKind::User));
     }
-    skill_dirs.push((Paths::config_dir().join("skills"), true));
+    skill_dirs.push((Paths::config_dir().join("skills"), SkillSourceKind::User));
     if let Some(h) = home.as_ref() {
-        skill_dirs.push((h.join(".claude").join("skills"), true));
-        skill_dirs.push((h.join(".config").join("agents").join("skills"), true));
+        skill_dirs.push((h.join(".claude").join("skills"), SkillSourceKind::User));
+        skill_dirs.push((
+            h.join(".config").join("agents").join("skills"),
+            SkillSourceKind::User,
+        ));
     }
 
     skill_dirs.extend(
         installed_plugin_skill_dirs()
             .into_iter()
-            .map(|dir| (dir, true)),
+            .map(|dir| (dir, SkillSourceKind::Plugin)),
     );
 
     skill_dirs
@@ -455,7 +495,11 @@ pub(crate) fn load_skill_dir(
     };
     let mut source = parse_skill_content(&content, skill_dir, global)?;
     source.writable = writable;
+    source.supporting_files = supporting_files(skill_dir);
+    Some(source)
+}
 
+fn supporting_files(skill_dir: &Path) -> Vec<String> {
     let mut files = Vec::new();
     let mut visited_support_dirs = HashSet::new();
     walk_files_recursively(
@@ -468,46 +512,121 @@ pub(crate) fn load_skill_dir(
             }
         },
     );
-    source.supporting_files = files;
-    Some(source)
+    files
 }
 
+#[cfg(test)]
 pub(crate) fn hydrate_skill_entry(skill: &SourceEntry) -> Option<SourceEntry> {
+    hydrate_skill_entry_with_bytes(skill)
+        .ok()
+        .map(|(entry, _)| entry)
+}
+
+pub(crate) enum HydrationFailure {
+    Unavailable,
+    OutsideDirectory,
+}
+
+/// Rehydrates a discovered entry and returns the exact SKILL.md bytes its
+/// content was parsed from, so an admission names the revision the model sees.
+pub(crate) fn hydrate_skill_entry_with_bytes(
+    skill: &SourceEntry,
+) -> Result<(SourceEntry, Vec<u8>), HydrationFailure> {
     if skill.source_type == SourceType::BuiltinSkill {
-        return Some(skill.clone());
+        let bytes = builtin::get_all()
+            .into_iter()
+            .find(|content| {
+                parse_skill_content(content, &PathBuf::new(), true)
+                    .is_some_and(|source| source.name == skill.name)
+            })
+            .map(|content| content.as_bytes().to_vec())
+            .ok_or(HydrationFailure::Unavailable)?;
+        return Ok((skill.clone(), bytes));
     }
 
-    let mut current = load_skill_dir(Path::new(&skill.path), skill.global, skill.writable)?;
-    if current.name != skill.name {
-        return None;
+    let skill_dir = Path::new(&skill.path);
+    let canonical_dir = skill_dir
+        .canonicalize()
+        .map_err(|_| HydrationFailure::Unavailable)?;
+    let canonical_file = skill_dir
+        .join("SKILL.md")
+        .canonicalize()
+        .map_err(|_| HydrationFailure::Unavailable)?;
+    if !canonical_file.starts_with(&canonical_dir) {
+        return Err(HydrationFailure::OutsideDirectory);
     }
+    let bytes = std::fs::read(&canonical_file).map_err(|_| HydrationFailure::Unavailable)?;
+    let raw = std::str::from_utf8(&bytes).map_err(|_| HydrationFailure::Unavailable)?;
+    let mut current =
+        parse_skill_content(raw, skill_dir, skill.global).ok_or(HydrationFailure::Unavailable)?;
+    if current.name != skill.name {
+        return Err(HydrationFailure::Unavailable);
+    }
+    current.writable = skill.writable;
+    current.supporting_files = supporting_files(skill_dir);
     current.description.clone_from(&skill.description);
     current.properties.extend(skill.properties.clone());
-    Some(current)
+    Ok((current, bytes))
+}
+
+/// A discovered skill together with the host-established facts about where
+/// discovery found it. Skill text and frontmatter cannot alter the origin.
+#[derive(Debug, Clone)]
+pub(crate) struct DiscoveredSkill {
+    pub entry: SourceEntry,
+    pub origin: SkillOrigin,
 }
 
 /// Discover skills from all configured filesystem locations and built-ins.
 /// Each returned entry has `global` set according to the directory it was
 /// found in (or `true` for built-ins).
 pub fn discover_skills(working_dir: Option<&Path>) -> Vec<SourceEntry> {
-    let mut sources: Vec<SourceEntry> = Vec::new();
+    discover_skills_with_origin(working_dir)
+        .into_iter()
+        .map(|skill| skill.entry)
+        .collect()
+}
+
+pub(crate) fn discover_skills_with_origin(working_dir: Option<&Path>) -> Vec<DiscoveredSkill> {
+    let mut sources: Vec<DiscoveredSkill> = Vec::new();
     let mut seen = HashSet::new();
 
-    for (dir, is_global) in project_skill_dirs(working_dir) {
-        for source in scan_skills_from_dir(&dir, is_global, &mut seen) {
-            sources.push(source);
+    for dir in project_skill_dirs(working_dir) {
+        for entry in scan_skills_from_dir(&dir, false, &mut seen) {
+            sources.push(DiscoveredSkill {
+                entry,
+                origin: SkillOrigin::new(SkillSourceKind::Project),
+            });
         }
     }
 
-    for source in catalog::load_configured_catalogs() {
-        if seen.insert(source.name.clone()) {
-            sources.push(source);
+    for (entry, facts) in catalog::load_configured_catalog_skills() {
+        if seen.insert(entry.name.clone()) {
+            sources.push(DiscoveredSkill {
+                entry,
+                origin: SkillOrigin {
+                    kind: SkillSourceKind::ConfiguredCatalog,
+                    catalog: Some(facts),
+                    shadowed_catalog_id: None,
+                },
+            });
+        } else if let Some(shadowing) = sources
+            .iter_mut()
+            .find(|source| source.entry.name == entry.name)
+        {
+            shadowing
+                .origin
+                .shadowed_catalog_id
+                .get_or_insert(facts.catalog_id);
         }
     }
 
-    for (dir, is_global) in global_skill_dirs() {
-        for source in scan_skills_from_dir(&dir, is_global, &mut seen) {
-            sources.push(source);
+    for (dir, kind) in global_skill_dirs() {
+        for entry in scan_skills_from_dir(&dir, true, &mut seen) {
+            sources.push(DiscoveredSkill {
+                entry,
+                origin: SkillOrigin::new(kind),
+            });
         }
     }
 
@@ -516,16 +635,34 @@ pub fn discover_skills(working_dir: Option<&Path>) -> Vec<SourceEntry> {
             if !seen.contains(&source.name) {
                 seen.insert(source.name.clone());
                 let path = format!("builtin://skills/{}", source.name);
-                sources.push(SourceEntry {
-                    source_type: SourceType::BuiltinSkill,
-                    path,
-                    ..source
+                sources.push(DiscoveredSkill {
+                    entry: SourceEntry {
+                        source_type: SourceType::BuiltinSkill,
+                        path,
+                        ..source
+                    },
+                    origin: SkillOrigin::new(SkillSourceKind::Builtin),
                 });
             }
         }
     }
 
     sources
+}
+
+pub(crate) fn skill_admission_for(
+    skill: &DiscoveredSkill,
+    loaded: &SourceEntry,
+    bytes: &[u8],
+    channel: admission::AdmissionChannel,
+) -> Result<SkillAdmission, admission::AdmissionRefusal> {
+    let frontmatter = skill
+        .origin
+        .catalog
+        .is_none()
+        .then(|| frontmatter_authority(loaded))
+        .flatten();
+    SkillAdmission::for_skill(&loaded.name, &skill.origin, frontmatter, bytes, channel)
 }
 
 pub fn list_installed_skills(working_dir: Option<&Path>) -> Vec<SourceEntry> {

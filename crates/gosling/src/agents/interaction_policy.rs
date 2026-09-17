@@ -53,6 +53,40 @@ impl HostToolIdentity {
     }
 }
 
+/// In-process Gosling tools whose implementation performs no external side
+/// effect, whatever arguments the model supplies. An admitted skill's authority
+/// ceiling lets these run without per-call approval. Identity comes from the
+/// host extension configuration, so an MCP server exposing a tool with the same
+/// name does not qualify. Shell, editor writes, and code execution are absent
+/// because Gosling cannot verify their effects from arguments.
+const VERIFIED_NON_MUTATING_PLATFORM_TOOLS: [(&str, &str); 7] = [
+    (crate::skills::EXTENSION_NAME, "load_skill"),
+    (crate::skills::EXTENSION_NAME, "find_skills"),
+    (crate::skills::EXTENSION_NAME, "refresh_skills"),
+    (SESSION_HISTORY_EXTENSION_NAME, "session_search"),
+    (SESSION_HISTORY_EXTENSION_NAME, "session_read"),
+    ("developer", "tree"),
+    ("developer", "read_image"),
+];
+
+pub(crate) fn is_verified_non_mutating(identity: &HostToolIdentity) -> bool {
+    identity.extension_kind == HostExtensionKind::Platform
+        && VERIFIED_NON_MUTATING_PLATFORM_TOOLS
+            .iter()
+            .any(|(extension, tool)| {
+                identity.extension_name == *extension && identity.tool_name == *tool
+            })
+}
+
+/// Pre-resolution check on the public name used to route a call to approval.
+/// These platform tools are exposed unprefixed; dispatch revalidates the
+/// resolved host identity before the call can begin without approval.
+pub(crate) fn public_name_may_be_verified_non_mutating(public_tool_name: &str) -> bool {
+    VERIFIED_NON_MUTATING_PLATFORM_TOOLS
+        .iter()
+        .any(|(_, tool)| public_tool_name == *tool)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PlanningCapability {
     WorkspaceTree,
@@ -369,6 +403,30 @@ mod tests {
             extension_name: extension.to_string(),
             tool_name: tool.to_string(),
         }
+    }
+
+    #[test]
+    fn verified_non_mutating_set_requires_platform_identity() {
+        assert!(is_verified_non_mutating(&identity(
+            HostExtensionKind::Platform,
+            "skills",
+            "load_skill"
+        )));
+        assert!(!is_verified_non_mutating(&identity(
+            HostExtensionKind::Stdio,
+            "skills",
+            "load_skill"
+        )));
+        assert!(!is_verified_non_mutating(&identity(
+            HostExtensionKind::Platform,
+            "developer",
+            "shell"
+        )));
+        assert!(!is_verified_non_mutating(&identity(
+            HostExtensionKind::Builtin,
+            "developer",
+            "tree"
+        )));
     }
 
     #[test]

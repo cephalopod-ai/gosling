@@ -40,29 +40,63 @@ pub fn format_installed_skills(working_dir: Option<&Path>) -> String {
     output
 }
 
-pub fn resolve_command(
+/// A skill the user explicitly selected with a slash command, hydrated and
+/// admitted but not yet recorded against the turn.
+pub(crate) struct PreparedSkillCommand {
+    command: String,
+    skill: SourceEntry,
+    pub(crate) admission: crate::skills::admission::SkillAdmission,
+}
+
+pub(crate) fn prepare_command(
     command: &str,
-    params_str: &str,
     working_dir: Option<&Path>,
-) -> Result<Option<String>, String> {
-    let Some(skill) = crate::skills::list_installed_skills(working_dir)
+) -> Result<Option<PreparedSkillCommand>, String> {
+    let wd_fallback;
+    let working_dir = match working_dir {
+        Some(path) => Some(path),
+        None => {
+            wd_fallback = std::env::current_dir().ok();
+            wd_fallback.as_deref()
+        }
+    };
+    let Some(discovered) = crate::skills::discover_skills_with_origin(working_dir)
         .into_iter()
-        .find(|skill| skill.name.eq_ignore_ascii_case(command))
+        .find(|skill| skill.entry.name.eq_ignore_ascii_case(command))
     else {
         return Ok(None);
     };
-
-    render_command(&skill, command, params_str).map(Some)
+    prepare_discovered(&discovered, command).map(Some)
 }
 
-fn render_command(skill: &SourceEntry, command: &str, params_str: &str) -> Result<String, String> {
-    let skill = crate::skills::hydrate_skill_entry(skill)
-        .ok_or_else(|| format!("Skill /{} is no longer available", command))?;
-    let args = (!params_str.is_empty()).then_some(params_str);
-    let prompt = crate::skills::loaded_skill_context_with_args(&skill, args)
-        .map_err(|e| format!("Skill /{}: {}", command, e))?;
+fn prepare_discovered(
+    discovered: &crate::skills::DiscoveredSkill,
+    command: &str,
+) -> Result<PreparedSkillCommand, String> {
+    let (skill, bytes) = crate::skills::hydrate_skill_entry_with_bytes(&discovered.entry)
+        .map_err(|_| format!("Skill /{} is no longer available", command))?;
+    let admission = crate::skills::skill_admission_for(
+        discovered,
+        &skill,
+        &bytes,
+        crate::skills::admission::AdmissionChannel::UserSlashCommand,
+    )
+    .map_err(|refusal| format!("Skill /{command} was not admitted: {refusal}."))?;
+    Ok(PreparedSkillCommand {
+        command: command.to_string(),
+        skill,
+        admission,
+    })
+}
 
-    Ok(prompt)
+pub(crate) fn render_prepared_command(
+    prepared: &PreparedSkillCommand,
+    params_str: &str,
+    scope: crate::skills::admission::AdmissionScope,
+) -> Result<String, String> {
+    let args = (!params_str.is_empty()).then_some(params_str);
+    crate::skills::admitted_skill_context(&prepared.skill, args, &prepared.admission, scope)
+        .map_err(|e| format!("Skill /{}: {}", prepared.command, e))
 }
 
 pub(super) fn commands_from_sources(sources: Vec<SourceEntry>) -> Vec<SlashCommandEntry> {
@@ -164,20 +198,32 @@ mod tests {
         )
         .unwrap();
 
-        let lightweight = SourceEntry {
-            source_type: SourceType::Skill,
-            name: "plan-example".to_string(),
-            description: "Catalog description".to_string(),
-            path: skill_dir.to_string_lossy().into_owned(),
-            global: true,
-            writable: false,
-            ..Default::default()
+        let lightweight = crate::skills::DiscoveredSkill {
+            entry: SourceEntry {
+                source_type: SourceType::Skill,
+                name: "plan-example".to_string(),
+                description: "Catalog description".to_string(),
+                path: skill_dir.to_string_lossy().into_owned(),
+                global: true,
+                writable: false,
+                ..Default::default()
+            },
+            origin: crate::skills::admission::SkillOrigin::new(
+                crate::skills::admission::SkillSourceKind::User,
+            ),
         };
 
-        let prompt = render_command(&lightweight, "plan-example", "").unwrap();
+        let prepared = prepare_discovered(&lightweight, "plan-example").unwrap();
+        let prompt = render_prepared_command(
+            &prepared,
+            "",
+            crate::skills::admission::AdmissionScope::Turn,
+        )
+        .unwrap();
 
         assert!(prompt.contains("Catalog description"));
         assert!(prompt.contains("Plan carefully."));
+        assert!(prompt.contains("## Host Admission"));
     }
 
     fn source_entry(source_type: SourceType, name: &str, description: &str) -> SourceEntry {

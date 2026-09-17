@@ -1,3 +1,4 @@
+use super::admission::CatalogDescriptorFacts;
 use crate::config::{Config, ConfigError};
 use anyhow::{bail, Context, Result};
 use gosling_sdk_types::custom_requests::{SourceEntry, SourceType};
@@ -129,9 +130,16 @@ fn configured_catalog_problems_with_config(config: &Config) -> Vec<String> {
 }
 
 pub fn load_configured_catalogs() -> Vec<SourceEntry> {
+    load_configured_catalog_skills()
+        .into_iter()
+        .map(|(entry, _)| entry)
+        .collect()
+}
+
+pub(crate) fn load_configured_catalog_skills() -> Vec<(SourceEntry, CatalogDescriptorFacts)> {
     configured_catalog_paths()
         .into_iter()
-        .flat_map(|path| match load_catalog(&path) {
+        .flat_map(|path| match load_catalog_with_facts(&path) {
             Ok(skills) => skills,
             Err(error) => {
                 tracing::warn!(
@@ -146,6 +154,17 @@ pub fn load_configured_catalogs() -> Vec<SourceEntry> {
 }
 
 pub fn load_catalog(path: &Path) -> Result<Vec<SourceEntry>> {
+    Ok(load_catalog_with_facts(path)?
+        .into_iter()
+        .map(|(entry, _)| entry)
+        .collect())
+}
+
+/// Loads a catalog and keeps the descriptor facts admission relies on apart
+/// from `SourceEntry::properties`, which SKILL.md frontmatter also populates.
+pub(crate) fn load_catalog_with_facts(
+    path: &Path,
+) -> Result<Vec<(SourceEntry, CatalogDescriptorFacts)>> {
     let raw = std::fs::read_to_string(path)
         .with_context(|| format!("Could not read skill catalog {}", path.display()))?;
     let catalog: SkillCatalog = serde_json::from_str(&raw)
@@ -204,7 +223,14 @@ pub fn load_catalog(path: &Path) -> Result<Vec<SourceEntry>> {
         source
             .properties
             .insert("catalog".to_string(), Value::Object(catalog_metadata));
-        sources.push(source);
+        let facts = CatalogDescriptorFacts {
+            catalog_id: catalog.catalog_id.clone(),
+            version: descriptor.version.clone(),
+            content_hash: descriptor.content_hash.clone(),
+            authority: descriptor.execution.authority.clone(),
+            requires_human_approval_for: descriptor.execution.requires_human_approval_for.clone(),
+        };
+        sources.push((source, facts));
     }
 
     Ok(sources)

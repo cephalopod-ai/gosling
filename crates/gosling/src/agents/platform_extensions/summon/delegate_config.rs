@@ -113,6 +113,13 @@ impl SummonClient {
             )
             .await
             .map_err(|e| format!("Failed to record subagent identity: {e}"))?;
+        self.context
+            .session_manager
+            .inherit_skill_admissions(session_id, &subagent_session.id)
+            .await
+            .map_err(|e| {
+                format!("Failed to carry admitted skill restrictions to the delegate: {e}")
+            })?;
 
         Ok(PreparedDelegate {
             spec,

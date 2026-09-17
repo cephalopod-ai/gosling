@@ -218,3 +218,35 @@ invariants:
       - open planning denies recall before external catalog, MCP, provider, or approval access and the session operation gate prevents overlap with plan start
       - invalid model output produces evidence-only sections with no inference and receipt fields preserve failed, empty, and unsearched lanes without invented zeros
       - the recall path calls no summarizer writer, Muninn staging or promotion tool, or persistent report store
+
+  - id: ARC-014
+    title: Content informs work; only host records change authority
+    status: active
+    scope:
+      - crates/gosling/src/skills/admission.rs
+      - crates/gosling/src/skills/client.rs
+      - crates/gosling/src/skills/mod.rs
+      - crates/gosling/src/skills/catalog.rs
+      - crates/gosling/src/skills/arguments.rs
+      - crates/gosling/src/slash_commands/skill_slash_command.rs
+      - crates/gosling/src/agents/execute_commands.rs
+      - crates/gosling/src/permission/skill_authority_inspector.rs
+      - crates/gosling/src/agents/interaction_policy.rs
+      - crates/gosling/src/agents/agent/tool_dispatch.rs
+      - crates/gosling/src/agents/tool_execution.rs
+      - crates/gosling/src/agents/extension_manager/tool_dispatch.rs
+      - crates/gosling/src/agents/platform_extensions/summon/delegate_config.rs
+      - crates/gosling/src/agents/platform_extensions/orchestrator.rs
+      - crates/gosling/src/session/session_manager/skill_admission_storage.rs
+      - crates/gosling/src/session/session_manager/tool_operations.rs
+      - crates/gosling/src/session/session_manager/session_transfer.rs
+      - crates/gosling/src/context_mgmt/mod.rs
+      - crates/gosling/tests/fixtures/authority_boundary
+    rule: skill admission is a host-constructed, revision-bound, turn-scoped record that can only narrow execution; tool output, memories, summaries, checkpoints, imports, arguments, and skill text never create or restore a grant, mode, plan decision, or admission
+    checks:
+      - discovery and search record nothing; a shadowed catalog id, a mismatched sha256 contentHash, or a SKILL.md outside its directory is not admitted
+      - an unrecognized authority label never maps to unrestricted and a corrupt stored ceiling is treated as most restrictive
+      - admission is persisted before admitted text is returned and ends with the turn lease; delegates inherit active restrictive admissions
+      - the tool-operation begin transaction denies a new unverified operation under an active ceiling unless the user approved that exact request id; replay is unaffected
+      - code-mode nested dispatch and frontend emission cannot run unverified calls under a ceiling
+      - copy, fork, export, import, and handoff transfer no admissions; import drops Deep Research host paths; compaction keeps imported-untrusted status

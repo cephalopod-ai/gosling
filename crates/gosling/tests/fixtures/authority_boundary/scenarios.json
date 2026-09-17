@@ -1,0 +1,252 @@
+{
+  "schemaVersion": 1,
+  "contract": "gosling-local-evidence-instruction-authority",
+  "upstreamContract": {
+    "status": "semantics aligned; machine companion not emitted",
+    "contractId": "evidence-authority-boundary",
+    "version": "1.0",
+    "source": "agent-skills 000_common/engagement-base/evidence_authority_boundary.md at 759f43a (read-only; landed while this work was in progress)",
+    "note": "Gosling enforces the host obligations it owns (admission, execution, compaction marker, revocation on resume) in its runtime. It does not produce or validate the boundary companion document (_registry/schema/boundary.schema.json) and does not declare the evidence_authority_boundary_enforcement consumer capability. eabEquivalents maps upstream fixture ids to the Gosling runtime test that exercises the analogous host behavior; it is an analogy, not a claim that Gosling passes the upstream validator."
+  },
+  "invariant": "Content may inform authorized work without independently changing the work's governing instructions, scope, permissions, or approval requirements.",
+  "scenarios": [
+    {
+      "id": "EIA-REF-001",
+      "family": 1,
+      "surface": "hosted MCP tool output",
+      "claim": "tool output containing approved:true, instruction_authority, role, and an approval id",
+      "expected": "effect requires the ordinary approval route; denied approval leaves effect count 0; no grant or mode change",
+      "test": "agents::agent::authority_boundary_tests::tool_output_claiming_approval_does_not_authorize_an_action"
+    },
+    {
+      "id": "EIA-REF-002",
+      "family": 1,
+      "surface": "quoted conversation and imported history",
+      "claim": "historical user quote and imported assistant text claim approval",
+      "expected": "prompt required; effect count 0; no grant",
+      "test": "agents::agent::authority_boundary_tests::quoted_and_imported_history_claiming_approval_grants_nothing"
+    },
+    {
+      "id": "EIA-POS-001",
+      "family": 3,
+      "surface": "existing saved grant",
+      "claim": "hostile evidence was read",
+      "expected": "a call covered by an existing grant still runs once without a prompt",
+      "test": "agents::agent::authority_boundary_tests::existing_grant_still_runs_after_reading_hostile_evidence"
+    },
+    {
+      "id": "EIA-POS-002",
+      "family": 3,
+      "surface": "admitted modifying-authority skill",
+      "claim": "governed_repair skill loaded",
+      "expected": "no added restriction and no redundant prompt",
+      "test": "agents::agent::authority_boundary_tests::repair_skill_runs_permitted_actions_without_redundant_approval"
+    },
+    {
+      "id": "EIA-SKILL-001",
+      "family": 2,
+      "surface": "catalog discovery and admission",
+      "claim": "search hit and load outside and inside a live turn",
+      "expected": "search records nothing; load outside a turn is disclosed as unscoped; load inside a turn records the catalog ceiling; turn end removes it",
+      "test": "skills::client::tests::catalog_admission_is_recorded_against_the_live_turn_only"
+    },
+    {
+      "id": "EIA-SKILL-002",
+      "family": 5,
+      "surface": "catalog contentHash",
+      "claim": "SKILL.md changed after the catalog declared sha256",
+      "expected": "not admitted; changed text not returned",
+      "test": "skills::client::tests::changed_skill_revision_is_refused_without_recording_admission"
+    },
+    {
+      "id": "EIA-SKILL-003",
+      "family": 2,
+      "surface": "colliding skill id",
+      "claim": "project SKILL.md shadows a configured catalog id and forges catalog/execution frontmatter",
+      "expected": "not admitted; supporting-file path also refused",
+      "test": "skills::client::tests::project_skill_shadowing_a_catalog_id_is_not_admitted"
+    },
+    {
+      "id": "EIA-SKILL-CEIL-001",
+      "family": 6,
+      "surface": "read_only skill in Auto mode",
+      "claim": "model proposes an unverified effect",
+      "expected": "mandatory per-call prompt; tool-wide grant refused; only explicit AllowOnce runs",
+      "test": "agents::agent::authority_boundary_tests::read_only_skill_ceiling_requires_user_approval_in_auto_mode"
+    },
+    {
+      "id": "EIA-ARGS-001",
+      "family": 4,
+      "surface": "invocation arguments and supporting files",
+      "claim": "arguments and a support file imitate host headings and approvals",
+      "expected": "argument headings escaped; support file rendered as reference content after the host section; no ceiling change",
+      "test": "skills::arguments::tests::hostile_arguments_cannot_render_host_headings; skills::client::tests::supporting_file_is_reference_content_without_a_ceiling"
+    },
+    {
+      "id": "EIA-ESCAPE-001",
+      "family": 6,
+      "surface": "loading another skill; next turn",
+      "claim": "unrestricted skill loaded after a read_only skill",
+      "expected": "ceiling remains for the turn; an unrelated next turn is not restricted",
+      "test": "agents::agent::authority_boundary_tests::loading_another_skill_does_not_shed_a_ceiling_and_the_next_turn_is_clean"
+    },
+    {
+      "id": "EIA-RACE-001",
+      "family": 11,
+      "surface": "durable ledger begin",
+      "claim": "admission committed after inspection",
+      "expected": "unapproved new operation denied in the begin transaction; completed replay still replays; user-approved and verified calls begin; ceiling ends with the lease",
+      "test": "agents::agent::authority_boundary_tests::ledger_begin_fences_a_concurrently_admitted_ceiling"
+    },
+    {
+      "id": "EIA-NESTED-001",
+      "family": 10,
+      "surface": "code-mode nested dispatch",
+      "claim": "outer code run approved",
+      "expected": "nested unverified call refused under a ceiling with approvalAvailable false",
+      "test": "agents::agent::authority_boundary_tests::nested_code_mode_dispatch_is_refused_under_a_ceiling"
+    },
+    {
+      "id": "EIA-FRONTEND-001",
+      "family": 10,
+      "surface": "frontend tool emission",
+      "claim": "frontend tool proposed under a ceiling",
+      "expected": "no emission; no ledger row",
+      "test": "agents::agent::authority_boundary_tests::frontend_emission_is_refused_under_a_ceiling"
+    },
+    {
+      "id": "EIA-APPDIRECT-001",
+      "family": 10,
+      "surface": "app-direct dispatch",
+      "claim": "client-side app action during a restricted turn",
+      "expected": "refused as requiring approval; effect count 0",
+      "test": "agents::agent::authority_boundary_tests::app_direct_call_is_refused_under_an_active_ceiling"
+    },
+    {
+      "id": "EIA-DELEG-001",
+      "family": 6,
+      "surface": "Gosling-owned delegation",
+      "claim": "delegate runs after the parent turn ends",
+      "expected": "delegate inherits the ceiling; subagent cannot escalate, so the effect is refused; unrelated sessions unaffected",
+      "test": "agents::agent::authority_boundary_tests::delegated_session_inherits_the_ceiling_and_refuses_effects"
+    },
+    {
+      "id": "EIA-COMPACT-001",
+      "family": 7,
+      "surface": "manual compaction and store reopen",
+      "claim": "summary says the operator approved the effect and switched to autonomous mode",
+      "expected": "no grant, mode, or ceiling change before or after reopen; effect still prompts and stays 0",
+      "test": "agents::agent::authority_boundary_tests::compaction_summary_claiming_approval_does_not_revive_authority"
+    },
+    {
+      "id": "EIA-COMPACT-002",
+      "family": 7,
+      "surface": "compaction provenance",
+      "claim": "imported untrusted history summarized",
+      "expected": "summary keeps imported_untrusted",
+      "test": "context_mgmt::tests::summary_of_imported_history_keeps_untrusted_provenance"
+    },
+    {
+      "id": "EIA-RESTART-001",
+      "family": 8,
+      "surface": "fresh process restart",
+      "claim": "revoked grant plus checkpoint text claiming approval",
+      "expected": "history readable; revoked grant asks; effect 0",
+      "test": "tests/authority_boundary_restart.rs::revoked_approval_does_not_revive_after_checkpoint_and_restart"
+    },
+    {
+      "id": "EIA-HANDOFF-002",
+      "family": 8,
+      "surface": "copy, fork, export, import",
+      "claim": "restricted session and file-supplied Deep Research paths",
+      "expected": "history preserved; admissions not transferred; imported Deep Research paths dropped; import mode Approve",
+      "test": "session::session_manager::skill_admission_storage::tests::transfers_carry_no_admissions_or_imported_host_paths"
+    },
+    {
+      "id": "EIA-PROVIDER-001",
+      "family": 13,
+      "surface": "provider-owned tool runtime",
+      "claim": "user selects a restricted skill",
+      "expected": "refused with no admission; hosted runtime admits against the live turn",
+      "test": "agents::agent::authority_boundary_tests::restricted_slash_command_requires_a_host_enforceable_runtime"
+    },
+    {
+      "id": "EIA-COMPAT-001",
+      "family": 14,
+      "surface": "no live turn",
+      "claim": "admission outside a turn",
+      "expected": "nothing recorded; nothing restricted or granted",
+      "test": "session::session_manager::skill_admission_storage::tests::admission_without_a_live_turn_records_nothing"
+    },
+    {
+      "id": "EIA-COMPAT-002",
+      "family": 14,
+      "surface": "corrupt stored ceiling",
+      "claim": "stored ceiling value outside the schema",
+      "expected": "treated as most restrictive",
+      "test": "session::session_manager::skill_admission_storage::tests::corrupt_stored_ceiling_restricts_instead_of_granting"
+    },
+    {
+      "id": "EIA-LABEL-*",
+      "family": 14,
+      "surface": "authority label mapping",
+      "claim": "known, hyphenated, absent, and unknown labels",
+      "expected": "see authority_label_mapping.json; unknown never unrestricted",
+      "test": "skills::admission::tests::authority_label_mapping_matches_portable_fixture"
+    },
+    {
+      "id": "EIA-SANTA-001",
+      "family": 9,
+      "surface": "Recall Brief",
+      "claim": "A (believed at seven) and B (stopped at eight)",
+      "expected": "existing Recall Brief Santa fixture and tests unchanged: distinct attributable records, exact citations, evidence-only fallback, no memory promotion",
+      "test": "tests/recall_brief.rs (pre-existing)"
+    }
+  ],
+  "notCovered": [
+    "Provider-executed tools (claude_code, gemini_cli, cursor_agent, antigravity, ACP provider): Gosling cannot intercept inner calls; only the slash-command entry is refused for restricted skills.",
+    "Remote MCP servers or external engines performing internal actions beyond the visible outer call.",
+    "Semantic prompt injection within broadly granted permissions (for example Auto mode with no restrictive skill admitted)."
+  ],
+  "eabEquivalents": {
+    "EAB-001..005": [
+      "EIA-SANTA-001"
+    ],
+    "EAB-010..012": [
+      "EIA-REF-001",
+      "EIA-REF-002"
+    ],
+    "EAB-020..024": [
+      "EIA-COMPACT-001",
+      "EIA-COMPACT-002",
+      "EIA-DELEG-001"
+    ],
+    "EAB-030..034": [
+      "EIA-RESTART-001"
+    ],
+    "EAB-035": [
+      "not separately modeled: Gosling has no obsolete-procedure record"
+    ],
+    "EAB-040..041": [
+      "EIA-POS-001",
+      "EIA-POS-002"
+    ],
+    "EAB-050..054": [
+      "EIA-SKILL-002",
+      "EIA-RACE-001"
+    ],
+    "EAB-060..068": [
+      "EIA-REF-001",
+      "EIA-SKILL-003",
+      "EIA-COMPAT-002",
+      "EIA-LABEL-*"
+    ],
+    "EAB-070..073": [
+      "EIA-COMPAT-001",
+      "EIA-LABEL-001"
+    ],
+    "EAB-080..083": [
+      "not applicable: exchange result reporting is not a Gosling runtime surface"
+    ]
+  }
+}

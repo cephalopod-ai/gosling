@@ -136,7 +136,7 @@ impl Agent {
                 let single_flagged_domain =
                     single_flagged_domain_for_request(&request.id, inspection_results);
 
-                let confirmation = loop {
+                let (confirmation, user_confirmed) = loop {
                     let mut mode_changes = self.gosling_mode_changes.subscribe();
                     let confirmation_rx = self.tool_confirmation_router.register(request.id.clone()).await;
                     let auto_approve = self.gosling_mode().await == crate::config::GoslingMode::Auto
@@ -155,30 +155,30 @@ impl Agent {
                         yield action_required_msg;
                     }
 
-                    let confirmation = if auto_approve {
-                        PermissionConfirmation {
+                    let (confirmation, user_confirmed) = if auto_approve {
+                        (PermissionConfirmation {
                             principal_type: PrincipalType::Tool,
                             permission: Permission::AllowOnce,
-                        }
+                        }, false)
                     } else {
                         let mut confirmation_rx = confirmation_rx;
                         loop {
                             tokio::select! {
                                 confirmation_result = &mut confirmation_rx => {
                                     break match confirmation_result {
-                                        Ok(confirmation) => confirmation,
-                                        Err(_) => PermissionConfirmation {
+                                        Ok(confirmation) => (confirmation, true),
+                                        Err(_) => (PermissionConfirmation {
                                             principal_type: PrincipalType::Tool,
                                             permission: Permission::Cancel,
-                                        },
+                                        }, false),
                                     };
                                 }
                                 changed = mode_changes.changed(), if security_message.is_none() => {
                                     if changed.is_ok() && *mode_changes.borrow() == crate::config::GoslingMode::Auto {
-                                        break PermissionConfirmation {
+                                        break (PermissionConfirmation {
                                             principal_type: PrincipalType::Tool,
                                             permission: Permission::AllowOnce,
-                                        };
+                                        }, false);
                                     }
                                 }
                             }
@@ -207,7 +207,7 @@ impl Agent {
                         )).user_only();
                         continue;
                     }
-                    break confirmation;
+                    break (confirmation, user_confirmed);
                 };
 
                 if let Some(finding_id) = get_security_finding_id_from_results(&request.id, inspection_results) {
@@ -230,7 +230,11 @@ impl Agent {
                     || confirmation.permission == Permission::AlwaysAllow
                     || confirmation.permission == Permission::AlwaysAllowDomain
                 {
-                    let (req_id, tool_result) = self.dispatch_conversation_tool_call(tool_call.clone(), request.id.clone(), cancellation_token.clone(), session, interaction_policy).await;
+                    let (req_id, tool_result) = if user_confirmed {
+                        self.dispatch_user_confirmed_conversation_tool_call(tool_call.clone(), request.id.clone(), cancellation_token.clone(), session, interaction_policy).await
+                    } else {
+                        self.dispatch_conversation_tool_call(tool_call.clone(), request.id.clone(), cancellation_token.clone(), session, interaction_policy).await
+                    };
 
                     tool_futures.push((req_id, match tool_result {
                         Ok(result) => tool_stream(
@@ -299,6 +303,10 @@ impl Agent {
                                     authorization,
                                     crate::agents::interaction_policy::ExecutionAuthorization::Planning(_)
                                 ),
+                                crate::session::SkillScopeGate::Evaluate {
+                                    verified_non_mutating: false,
+                                    user_approved: false,
+                                },
                             )
                             .await
                         {
@@ -324,12 +332,19 @@ impl Agent {
                                 ))?
                             }
                             Err(error) => {
-                                message_tool_response.add_tool_response_with_metadata(
-                                    expected_request_id,
-                                    Err(crate::agents::interaction_policy::atomic_policy_denial(
+                                let denial = match error.downcast_ref::<crate::skills::admission::SkillCeilingDenied>() {
+                                    Some(denied) => crate::skills::admission::skill_ceiling_denial(
+                                        tool_call.name.as_ref(),
+                                        denied,
+                                    ),
+                                    None => crate::agents::interaction_policy::atomic_policy_denial(
                                         tool_call.name.as_ref(),
                                         error,
-                                    )),
+                                    ),
+                                };
+                                message_tool_response.add_tool_response_with_metadata(
+                                    expected_request_id,
+                                    Err(denial),
                                     tool_request.metadata.as_ref(),
                                 );
                                 return;

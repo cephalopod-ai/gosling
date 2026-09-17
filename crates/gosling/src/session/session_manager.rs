@@ -13,6 +13,7 @@ mod session_crud;
 mod session_leases;
 mod session_listing;
 mod session_transfer;
+mod skill_admission_storage;
 mod summary_storage;
 mod tool_operations;
 
@@ -21,6 +22,7 @@ use summary_storage::summary_covers_history_before;
 
 pub(crate) use plan_storage::NATIVE_PLAN_HISTORY_KEY;
 use plan_storage::{NativePlanHistoryV1, PlanHistorySelection};
+pub(crate) use skill_admission_storage::SkillScopeGate;
 pub(crate) use tool_operations::ToolOperationStart;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,7 +67,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 use utoipa::ToSchema;
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 36;
+pub const CURRENT_SCHEMA_VERSION: i32 = 37;
 
 pub use compaction_history_storage::{
     CompactionHistoryError, CompactionHistoryPolicyV1, CompactionRevision, CompactionRevisionDraft,
@@ -941,6 +943,7 @@ impl SessionManager {
             .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn authorize_and_begin_tool_operation(
         &self,
         session_id: &str,
@@ -949,6 +952,7 @@ impl SessionManager {
         conversation_bound: bool,
         turn_policy: &crate::session::plans::InteractionPolicy,
         planning_capability_allowed: bool,
+        skill_scope: SkillScopeGate,
     ) -> Result<ToolOperationStart> {
         self.storage
             .begin_tool_operation_with_policy(
@@ -958,8 +962,37 @@ impl SessionManager {
                 conversation_bound,
                 turn_policy,
                 planning_capability_allowed,
+                skill_scope,
             )
             .await
+    }
+
+    pub(crate) async fn record_skill_admission(
+        &self,
+        session_id: &str,
+        admission: &crate::skills::admission::SkillAdmission,
+        tool_operation_id: Option<&str>,
+    ) -> Result<crate::skills::admission::AdmissionScope> {
+        self.storage
+            .record_skill_admission(session_id, admission, tool_operation_id)
+            .await
+    }
+
+    pub(crate) async fn inherit_skill_admissions(
+        &self,
+        parent_session_id: &str,
+        child_session_id: &str,
+    ) -> Result<usize> {
+        self.storage
+            .inherit_skill_admissions(parent_session_id, child_session_id)
+            .await
+    }
+
+    pub(crate) async fn active_skill_ceiling(
+        &self,
+        session_id: &str,
+    ) -> Result<crate::skills::admission::ActiveSkillCeiling> {
+        self.storage.active_skill_ceiling(session_id).await
     }
 
     pub(crate) async fn complete_tool_operation(

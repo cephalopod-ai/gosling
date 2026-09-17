@@ -53,7 +53,11 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "authority": { "type": "string", "minLength": 1 },
+        "authority": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Restricts, never grants. read_only, plan_only, destructive_admin, and unrecognized values require per-call approval for unverified tools during the turn; test_only, low_risk_repair, and governed_repair add no gosling restriction."
+        },
         "requiresHumanApprovalFor": { "$ref": "#/$defs/stringArray" },
         "criticRequired": { "type": "boolean", "default": false },
         "overlaysAllowed": { "type": "boolean", "default": false }
@@ -75,7 +79,11 @@
         "routing": { "$ref": "#/$defs/routing" },
         "execution": { "$ref": "#/$defs/execution" },
         "deprecated": { "type": "boolean", "default": false },
-        "contentHash": { "type": "string", "minLength": 1 }
+        "contentHash": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional. gosling verifies the form sha256:<64 lowercase hex> against the loaded SKILL.md bytes and refuses a mismatch; other forms are recorded as unverifiable."
+        }
       }
     },
     "routeMatch": {

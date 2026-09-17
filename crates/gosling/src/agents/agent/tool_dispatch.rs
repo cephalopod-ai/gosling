@@ -104,6 +104,7 @@ impl Agent {
                 false,
                 &interaction_policy,
                 crate::agents::interaction_policy::DispatchOrigin::AppDirect,
+                false,
             )
             .await;
         result
@@ -145,10 +146,13 @@ impl Agent {
             false,
             &interaction_policy,
             crate::agents::interaction_policy::DispatchOrigin::AgentDirect,
+            false,
         )
         .await
     }
 
+    /// Dispatches a model-proposed call that host policy (mode, saved grants,
+    /// inspectors) approved without asking the user.
     pub(crate) async fn dispatch_conversation_tool_call(
         &self,
         tool_call: CallToolRequestParams,
@@ -165,6 +169,32 @@ impl Agent {
             true,
             interaction_policy,
             crate::agents::interaction_policy::DispatchOrigin::ModelNative,
+            false,
+        )
+        .await
+    }
+
+    /// Dispatches a model-proposed call the user approved through the client
+    /// confirmation for this exact request id. The ledger binds that id to the
+    /// checkpointed payload, so the approval cannot be reused for other
+    /// arguments.
+    pub(crate) async fn dispatch_user_confirmed_conversation_tool_call(
+        &self,
+        tool_call: CallToolRequestParams,
+        request_id: String,
+        cancellation_token: Option<CancellationToken>,
+        session: &Session,
+        interaction_policy: &crate::session::InteractionPolicy,
+    ) -> (String, Result<ToolCallResult, ErrorData>) {
+        self.dispatch_tool_call_scoped(
+            tool_call,
+            request_id,
+            cancellation_token,
+            session,
+            true,
+            interaction_policy,
+            crate::agents::interaction_policy::DispatchOrigin::ModelNative,
+            true,
         )
         .await
     }
@@ -179,6 +209,7 @@ impl Agent {
         conversation_bound: bool,
         interaction_policy: &crate::session::InteractionPolicy,
         dispatch_origin: crate::agents::interaction_policy::DispatchOrigin,
+        user_confirmed: bool,
     ) -> (String, Result<ToolCallResult, ErrorData>) {
         let tool_name = tool_call.name.to_string();
         let is_frontend = self.is_frontend_tool(&tool_call.name).await;
@@ -243,6 +274,14 @@ impl Agent {
                     authorization,
                     crate::agents::interaction_policy::ExecutionAuthorization::Planning(_)
                 ),
+                crate::session::SkillScopeGate::Evaluate {
+                    verified_non_mutating: resolved_tool.as_ref().is_some_and(|resolved| {
+                        crate::agents::interaction_policy::is_verified_non_mutating(
+                            &resolved.host_identity,
+                        )
+                    }),
+                    user_approved: user_confirmed,
+                },
             )
             .await
         {
@@ -265,6 +304,16 @@ impl Agent {
                 );
             }
             Err(error) => {
+                if let Some(denied) =
+                    error.downcast_ref::<crate::skills::admission::SkillCeilingDenied>()
+                {
+                    return (
+                        request_id,
+                        Err(crate::skills::admission::skill_ceiling_denial(
+                            &tool_name, denied,
+                        )),
+                    );
+                }
                 if matches!(
                     interaction_policy,
                     crate::session::InteractionPolicy::Planning { .. }

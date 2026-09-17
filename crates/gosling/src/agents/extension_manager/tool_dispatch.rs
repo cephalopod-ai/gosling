@@ -256,6 +256,38 @@ impl ExtensionManager {
             "planning authorization cannot succeed without a fixed live host capability identity",
         );
 
+        // Nested calls have no approval route of their own, and approving the
+        // outer code run is not approval of each call it makes. Under an
+        // admitted skill's ceiling only verified read-only host tools may run.
+        if !crate::agents::interaction_policy::is_verified_non_mutating(&resolved.host_identity) {
+            let active = self
+                .context
+                .session_manager
+                .active_skill_ceiling(&ctx.session_id)
+                .await
+                .map_err(|error| {
+                    ErrorData::new(
+                        ErrorCode::INTERNAL_ERROR,
+                        format!("Could not verify admitted skill restrictions: {error}"),
+                        Some(serde_json::json!({
+                            "code": "skill_authority_state_unavailable",
+                            "retryable": false,
+                            "approvalAvailable": false
+                        })),
+                    )
+                })?;
+            if active.ceiling.is_restrictive() {
+                let mut denial = crate::skills::admission::skill_ceiling_denial(
+                    &tool_name_str,
+                    &crate::skills::admission::SkillCeilingDenied { ceiling: active },
+                );
+                if let Some(data) = denial.data.as_mut().and_then(|data| data.as_object_mut()) {
+                    data.insert("approvalAvailable".to_string(), false.into());
+                }
+                return Err(denial.into());
+            }
+        }
+
         self.dispatch_authorized_tool_call(ctx, resolved, tool_call, cancellation_token)
             .await
     }

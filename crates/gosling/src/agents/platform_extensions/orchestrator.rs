@@ -381,6 +381,7 @@ impl OrchestratorClient {
 
     async fn handle_start_agent(
         &self,
+        parent_session_id: &str,
         arguments: Option<JsonObject>,
     ) -> Result<CallToolResult, String> {
         let args = arguments.ok_or("Missing arguments")?;
@@ -427,6 +428,13 @@ impl OrchestratorClient {
             .create_session(path, name.clone(), SessionType::SubAgent, mode)
             .await
             .map_err(|e| format!("Failed to create session: {}", e))?;
+        self.context
+            .session_manager
+            .inherit_skill_admissions(parent_session_id, &session.id)
+            .await
+            .map_err(|e| {
+                format!("Failed to carry admitted skill restrictions to the new agent: {e}")
+            })?;
 
         let manager = self.get_agent_manager().await?;
         let agent = manager
@@ -614,7 +622,7 @@ impl McpClientTrait for OrchestratorClient {
         let result = match name {
             "list_sessions" => self.handle_list_sessions(arguments).await,
             "view_session" => self.handle_view_session(&ctx.session_id, arguments).await,
-            "start_agent" => self.handle_start_agent(arguments).await,
+            "start_agent" => self.handle_start_agent(&ctx.session_id, arguments).await,
             "send_message" => {
                 self.handle_send_message(&ctx.session_id, &cancel_token, arguments)
                     .await

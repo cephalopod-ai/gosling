@@ -43,10 +43,12 @@ impl SessionStorage {
             tool_call,
             conversation_bound,
             None,
+            super::SkillScopeGate::NotApplicable,
         )
         .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) async fn begin_tool_operation_with_policy(
         &self,
         session_id: &str,
@@ -55,6 +57,7 @@ impl SessionStorage {
         conversation_bound: bool,
         turn_policy: &crate::session::plans::InteractionPolicy,
         planning_capability_allowed: bool,
+        skill_scope: super::SkillScopeGate,
     ) -> Result<ToolOperationStart> {
         self.begin_tool_operation_inner(
             session_id,
@@ -62,6 +65,7 @@ impl SessionStorage {
             tool_call,
             conversation_bound,
             Some((turn_policy, planning_capability_allowed)),
+            skill_scope,
         )
         .await
     }
@@ -73,6 +77,7 @@ impl SessionStorage {
         tool_call: &CallToolRequestParams,
         conversation_bound: bool,
         policy_check: Option<(&crate::session::plans::InteractionPolicy, bool)>,
+        skill_scope: super::SkillScopeGate,
     ) -> Result<ToolOperationStart> {
         let _write_guard = self.acquire_write_guard().await;
         let pool = self.pool().await?;
@@ -127,6 +132,10 @@ impl SessionStorage {
                 other => anyhow::bail!("tool operation has invalid state {other}"),
             }
         } else {
+            // Replay and in-doubt outcomes above never dispatch again, so only
+            // a new operation is subject to the turn's current skill ceiling.
+            self.enforce_skill_scope_in_tx(&mut tx, session_id, conversation_bound, skill_scope)
+                .await?;
             if conversation_bound {
                 let checkpointed_content = sqlx::query_scalar::<_, String>(
                     r#"

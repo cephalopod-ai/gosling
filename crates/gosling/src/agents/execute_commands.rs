@@ -498,9 +498,29 @@ impl Agent {
             .ok()
             .map(|session| session.working_dir);
 
-        match skill_slash_command::resolve_command(command, params_str, working_dir.as_deref()) {
-            Ok(None) => Ok(None),
-            Ok(Some(prompt)) => Ok(Some(Message::user().with_text(prompt))),
+        let prepared = match skill_slash_command::prepare_command(command, working_dir.as_deref()) {
+            Ok(None) => return Ok(None),
+            Ok(Some(prepared)) => prepared,
+            Err(text) => return Ok(Some(Message::assistant().with_text(text))),
+        };
+        if prepared.admission.ceiling().is_restrictive() {
+            let provider_owns_tools = self
+                .provider()
+                .await
+                .is_ok_and(|provider| provider.executes_tools_outside_gosling());
+            if provider_owns_tools {
+                return Ok(Some(Message::assistant().with_text(format!(
+                    "Skill /{command} declares a restricted authority, and the current provider runs its own tools outside Gosling, so Gosling cannot enforce that restriction. Switch to a provider whose tools Gosling runs to use this skill."
+                ))));
+            }
+        }
+        let scope = self
+            .config
+            .session_manager
+            .record_skill_admission(session_id, &prepared.admission, None)
+            .await?;
+        match skill_slash_command::render_prepared_command(&prepared, params_str, scope) {
+            Ok(prompt) => Ok(Some(Message::user().with_text(prompt))),
             Err(text) => Ok(Some(Message::assistant().with_text(text))),
         }
     }

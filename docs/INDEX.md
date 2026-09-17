@@ -33,6 +33,7 @@ for the relationship to cephalopod-ai/gosling.
 - [polish/documentation-stewardship-report.md](polish/documentation-stewardship-report.md) — latest stewardship gate results and remaining risks
 - [polish/test-ledger.md](polish/test-ledger.md) — current validation commands, results, and evidence limits
 - [logs/](logs/) — retained session evidence and logging conventions
+- [logs/session/2026-09-16-evidence-instruction-authority.md](logs/session/2026-09-16-evidence-instruction-authority.md) — ADR-0023 implementation, baseline, validation, and the operator-config side effect of `tests/agent.rs`
 - [logs/session/2026-09-16-branch-input-inheritance.md](logs/session/2026-09-16-branch-input-inheritance.md) — branch input pointers, independent library entries, branch title labels, and focused validation
 - [logs/session/2026-09-13-consolidated-audit-merge-install.md](logs/session/2026-09-13-consolidated-audit-merge-install.md) — local fast-forward merge, documentation refresh, release rebuild, CLI/Desktop reinstall, and installed Keychain-startup limit
 - [logs/session/2026-09-13-host-enforced-planning.md](logs/session/2026-09-13-host-enforced-planning.md) — ADR-0020 staged implementation, decision register, and hermetic validation runs
@@ -54,9 +55,11 @@ for the relationship to cephalopod-ai/gosling.
 - [adr/0020-host-enforced-plan-lifecycle.md](adr/0020-host-enforced-plan-lifecycle.md) — persisted, revision-bound planning with a non-widenable host capability boundary
 - [adr/0021-context-compaction-history.md](adr/0021-context-compaction-history.md) — append-only local compaction provenance, retention, and atomic capture contract
 - [adr/0022-provenance-safe-recall-brief.md](adr/0022-provenance-safe-recall-brief.md) — explicit ACP report gate, exact Muninn revision citations, and epistemic limits
+- [adr/0023-evidence-instruction-authority-boundary.md](adr/0023-evidence-instruction-authority-boundary.md) — host-owned, revision-bound, turn-scoped skill admission; content never changes authority
 - [build/](build/) — build documentation
 - [build/context-compaction-failsafe-plan.md](build/context-compaction-failsafe-plan.md) — recurring oversized-session compaction repair plan and acceptance criteria
 - [build/host-enforced-planning/README.md](build/host-enforced-planning/README.md) — ADR-0020 implementation sequence, release gates, evidence, and resumable status
+- [build/evidence-authority-boundary/README.md](build/evidence-authority-boundary/README.md) — ADR-0023 integration handoff: types, coverage matrix, compatibility, shared `EIA-*` fixtures, and residual risk
 - [cloud/](cloud/) — audit and playtest reports (not cloud-hosting runbooks)
 - [cloud/2026-09-13-consolidated-audit-repair.md](cloud/2026-09-13-consolidated-audit-repair.md) — canonical reconciliation, disposition, repair commits, validation, local install addendum, and remaining decisions for both 2026-09-13 audits
 - [cloud/2026-09-13-live-all-scenarios-playtest.md](cloud/2026-09-13-live-all-scenarios-playtest.md) — historical 2026-09-13 live playtest report, with a disposition addendum linking to the repair campaign

@@ -124,6 +124,13 @@ impl SessionStorage {
             crate::session::SystemPromptExtrasState::EXTENSION_NAME,
             crate::session::SystemPromptExtrasState::VERSION,
         );
+        // Deep Research state names host paths that turn completion copies
+        // files between. Only session creation validates those paths against
+        // granted workspace folders, so a file must not supply them.
+        extension_data.remove_extension_state(
+            crate::session::extension_data::DeepResearchState::EXTENSION_NAME,
+            crate::session::extension_data::DeepResearchState::VERSION,
+        );
         let source_path_string = source
             .as_ref()
             .and_then(|(path, _)| path.map(|path| path.to_string_lossy().to_string()));

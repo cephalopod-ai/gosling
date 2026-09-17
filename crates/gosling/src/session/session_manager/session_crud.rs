@@ -552,6 +552,11 @@ impl SessionStorage {
 
         Self::delete_plan_history_in_tx(&mut tx, session_id).await?;
 
+        sqlx::query("DELETE FROM skill_admissions WHERE session_id = ?")
+            .bind(session_id)
+            .execute(&mut *tx)
+            .await?;
+
         sqlx::query("DELETE FROM session_summary_facts WHERE session_id = ?")
             .bind(session_id)
             .execute(&mut *tx)
