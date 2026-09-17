@@ -8,6 +8,7 @@ Completed work remains in the canonical backlog and session logs.
 
 | ID | Status | Priority | Area | Source | Opened | Last evidence | Exit criteria |
 |---|---|---|---|---|---|---|---|
+| CMP-ORDER-001 | needs-verification | P1 | Session history | `docs/TODO.md` | 2026-09-16 | 2026-09-16 | Execute compaction round-trip and rollback regressions plus planning invalidation checks, then verify the installed app continues compacted tool history on the same model. |
 | WDS-GSL-002 | needs-verification | P1 | Workspace permissions | `docs/TODO.md` | 2026-09-16 | 2026-09-16 | Execute the read-only navigation/write-boundary regressions and verify the installed app permits reference diagnostics without repeated approval. |
 | AUD-DAT-001 | needs-decision | P0 | Context privacy | `docs/TODO.md` | 2026-09-13 | 2026-09-13 | Approve workspace-memory scope and migration semantics, then prove isolation and intended recall compatibility. |
 | GSL-PT-20260913-006 | needs-design | P3 | Credential lifecycle | `docs/TODO.md` | 2026-09-13 | 2026-09-13 | Record secret ownership/shared references and prove extension removal cannot delete another consumer's credential. |

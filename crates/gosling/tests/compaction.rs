@@ -9,15 +9,140 @@ use gosling::providers::base::{
     stream_from_single_message, MessageStream, Provider, ProviderDef, ProviderMetadata,
 };
 use gosling::session::session_manager::SessionType;
-use gosling::session::Session;
+use gosling::session::{Session, SessionManager};
 use gosling_providers::conversation::token_usage::{ProviderUsage, Usage};
 use gosling_providers::errors::ProviderError;
 use gosling_providers::model::ModelConfig;
-use rmcp::model::Tool;
+use rmcp::model::{CallToolRequestParams, CallToolResult, Content, Tool};
 use serial_test::serial;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use tempfile::TempDir;
+
+fn compacted_tool_history() -> Conversation {
+    let mut messages = vec![
+        Message::user()
+            .with_text("Original request before compaction")
+            .with_id("original")
+            .with_visibility(true, false),
+        Message::user()
+            .with_text("Compacted summary before the retained tool exchange")
+            .with_id("summary")
+            .with_visibility(false, true),
+        Message::assistant()
+            .with_tool_request("retained-call", Ok(CallToolRequestParams::new("read")))
+            .with_id("request"),
+        Message::user()
+            .with_tool_response(
+                "retained-call",
+                Ok(CallToolResult::success(vec![Content::text(
+                    "Reference text",
+                )])),
+            )
+            .with_id("result"),
+        Message::assistant()
+            .with_text("Reference reviewed")
+            .with_id("assistant"),
+        Message::user()
+            .with_text("Continue the task")
+            .with_id("continue"),
+    ];
+    for (message, created) in messages.iter_mut().zip([50, 300, 100, 100, 200, 400]) {
+        message.created = created;
+    }
+    Conversation::new_unvalidated(messages)
+}
+
+#[tokio::test]
+async fn compacted_history_reload_preserves_summary_and_tool_exchange_order() -> Result<()> {
+    let root = TempDir::new()?;
+    let sessions = SessionManager::new(root.path().to_path_buf());
+    let session = sessions
+        .create_session(
+            root.path().to_path_buf(),
+            "Compacted history order".into(),
+            SessionType::User,
+            GoslingMode::default(),
+        )
+        .await?;
+    let original = compacted_tool_history();
+    sessions
+        .replace_conversation(&session.id, &original)
+        .await?;
+
+    let reloaded = sessions
+        .get_session(&session.id, true)
+        .await?
+        .conversation
+        .unwrap();
+    assert_eq!(reloaded, original);
+    let (fixed, issues) = gosling::conversation::fix_conversation(reloaded);
+    assert!(
+        issues.is_empty(),
+        "reloaded history required repair: {issues:?}"
+    );
+    assert_eq!(fixed, original);
+    assert!(Conversation::new(fixed.agent_visible_messages()).is_ok());
+    Ok(())
+}
+
+#[tokio::test]
+async fn compacted_history_rollback_from_message_preserves_newer_summary() -> Result<()> {
+    let root = TempDir::new()?;
+    let sessions = SessionManager::new(root.path().to_path_buf());
+    let session = sessions
+        .create_session(
+            root.path().to_path_buf(),
+            "Compacted history inclusive rollback".into(),
+            SessionType::User,
+            GoslingMode::default(),
+        )
+        .await?;
+    let original = compacted_tool_history();
+    sessions
+        .replace_conversation(&session.id, &original)
+        .await?;
+    sessions
+        .truncate_conversation_from_message(&session.id, "request")
+        .await?;
+
+    let reloaded = sessions
+        .get_session(&session.id, true)
+        .await?
+        .conversation
+        .unwrap();
+    assert_eq!(reloaded.messages(), &original.messages()[..2]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn compacted_history_rollback_after_message_preserves_tool_exchange() -> Result<()> {
+    let root = TempDir::new()?;
+    let sessions = SessionManager::new(root.path().to_path_buf());
+    let session = sessions
+        .create_session(
+            root.path().to_path_buf(),
+            "Compacted history exclusive rollback".into(),
+            SessionType::User,
+            GoslingMode::default(),
+        )
+        .await?;
+    let original = compacted_tool_history();
+    sessions
+        .replace_conversation(&session.id, &original)
+        .await?;
+    sessions
+        .truncate_conversation_after_message(&session.id, "result")
+        .await?;
+
+    let reloaded = sessions
+        .get_session(&session.id, true)
+        .await?
+        .conversation
+        .unwrap();
+    assert_eq!(reloaded.messages(), &original.messages()[..4]);
+    Ok(())
+}
 
 struct MockCompactionProvider {
     /// Tracks whether compaction has occurred (for context limit recovery case)

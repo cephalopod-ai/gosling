@@ -125,10 +125,9 @@ impl SessionStorage {
     pub(super) async fn get_conversation(&self, session_id: &str) -> Result<Conversation> {
         let pool = self.pool().await?;
         let rows = sqlx::query_as::<_, (String, String, i64, Option<String>, Option<String>)>(
-            // Order by created_timestamp, then by id to break ties. created_timestamp is in seconds,
-            // so messages created in the same second (e.g., tool request and response) need to
-            // maintain their insertion order via the auto-increment id.
-            "SELECT role, content_json, created_timestamp, metadata_json, message_id FROM messages WHERE session_id = ? ORDER BY created_timestamp, id",
+            // Compaction inserts a new summary before retained messages with older
+            // creation times. Ledger order preserves that context root and its tool pairs.
+            "SELECT role, content_json, created_timestamp, metadata_json, message_id FROM messages WHERE session_id = ? ORDER BY id",
         )
             .bind(session_id)
             .fetch_all(pool)
@@ -165,7 +164,7 @@ impl SessionStorage {
         session_id: &str,
     ) -> Result<Conversation> {
         let rows = sqlx::query_as::<_, (String, String, i64, Option<String>, Option<String>)>(
-            "SELECT role, content_json, created_timestamp, metadata_json, message_id FROM messages WHERE session_id = ? ORDER BY created_timestamp, id",
+            "SELECT role, content_json, created_timestamp, metadata_json, message_id FROM messages WHERE session_id = ? ORDER BY id",
         )
         .bind(session_id)
         .fetch_all(&mut **tx)
@@ -851,23 +850,21 @@ impl SessionStorage {
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
 
-        let boundary = sqlx::query_as::<_, (i64, i64)>(
-            "SELECT id, created_timestamp FROM messages WHERE session_id = ? AND message_id = ? ORDER BY created_timestamp, id LIMIT 1",
+        let boundary = sqlx::query_scalar::<_, i64>(
+            "SELECT id FROM messages WHERE session_id = ? AND message_id = ? ORDER BY id LIMIT 1",
         )
         .bind(session_id)
         .bind(message_id)
         .fetch_optional(&mut *tx)
         .await?;
 
-        if let Some((boundary_id, boundary_timestamp)) = boundary {
+        if let Some(boundary_id) = boundary {
             let affects_plan = match Self::open_plan_source_boundary_in_tx(&mut tx, session_id).await?
             {
                 Some(plan_boundary) => sqlx::query_scalar::<_, bool>(
-                    "SELECT EXISTS(SELECT 1 FROM messages WHERE session_id = ? AND (created_timestamp > ? OR (created_timestamp = ? AND id >= ?)) AND id <= ?)",
+                    "SELECT EXISTS(SELECT 1 FROM messages WHERE session_id = ? AND id >= ? AND id <= ?)",
                 )
                 .bind(session_id)
-                .bind(boundary_timestamp)
-                .bind(boundary_timestamp)
                 .bind(boundary_id)
                 .bind(plan_boundary)
                 .fetch_one(&mut *tx)
@@ -881,15 +878,11 @@ impl SessionStorage {
                 "conversation history was truncated through the plan source boundary",
             )
             .await?;
-            sqlx::query(
-                "DELETE FROM messages WHERE session_id = ? AND (created_timestamp > ? OR (created_timestamp = ? AND id >= ?))",
-            )
-            .bind(session_id)
-            .bind(boundary_timestamp)
-            .bind(boundary_timestamp)
-            .bind(boundary_id)
-            .execute(&mut *tx)
-            .await?;
+            sqlx::query("DELETE FROM messages WHERE session_id = ? AND id >= ?")
+                .bind(session_id)
+                .bind(boundary_id)
+                .execute(&mut *tx)
+                .await?;
             sqlx::query("DELETE FROM session_summary_facts WHERE session_id = ?")
                 .bind(session_id)
                 .execute(&mut *tx)
@@ -917,23 +910,21 @@ impl SessionStorage {
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
 
-        let boundary = sqlx::query_as::<_, (i64, i64)>(
-            "SELECT id, created_timestamp FROM messages WHERE session_id = ? AND message_id = ? ORDER BY created_timestamp, id LIMIT 1",
+        let boundary = sqlx::query_scalar::<_, i64>(
+            "SELECT id FROM messages WHERE session_id = ? AND message_id = ? ORDER BY id LIMIT 1",
         )
         .bind(session_id)
         .bind(message_id)
         .fetch_optional(&mut *tx)
         .await?;
 
-        if let Some((boundary_id, boundary_timestamp)) = boundary {
+        if let Some(boundary_id) = boundary {
             let affects_plan = match Self::open_plan_source_boundary_in_tx(&mut tx, session_id).await?
             {
                 Some(plan_boundary) => sqlx::query_scalar::<_, bool>(
-                    "SELECT EXISTS(SELECT 1 FROM messages WHERE session_id = ? AND (created_timestamp > ? OR (created_timestamp = ? AND id > ?)) AND id <= ?)",
+                    "SELECT EXISTS(SELECT 1 FROM messages WHERE session_id = ? AND id > ? AND id <= ?)",
                 )
                 .bind(session_id)
-                .bind(boundary_timestamp)
-                .bind(boundary_timestamp)
                 .bind(boundary_id)
                 .bind(plan_boundary)
                 .fetch_one(&mut *tx)
@@ -947,15 +938,11 @@ impl SessionStorage {
                 "conversation history was truncated through the plan source boundary",
             )
             .await?;
-            sqlx::query(
-                "DELETE FROM messages WHERE session_id = ? AND (created_timestamp > ? OR (created_timestamp = ? AND id > ?))",
-            )
-            .bind(session_id)
-            .bind(boundary_timestamp)
-            .bind(boundary_timestamp)
-            .bind(boundary_id)
-            .execute(&mut *tx)
-            .await?;
+            sqlx::query("DELETE FROM messages WHERE session_id = ? AND id > ?")
+                .bind(session_id)
+                .bind(boundary_id)
+                .execute(&mut *tx)
+                .await?;
             sqlx::query("DELETE FROM session_summary_facts WHERE session_id = ?")
                 .bind(session_id)
                 .execute(&mut *tx)

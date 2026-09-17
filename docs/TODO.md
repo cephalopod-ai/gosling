@@ -1,5 +1,17 @@
 # TODO
 
+## 2026-09-16 compacted tool-history ordering
+
+- [ ] **CMP-ORDER-001** — full conversation reload sorts a new compaction summary
+      behind retained tool exchanges by creation time; repair then drops the leading
+      call and leaves an orphan tool result, causing a Responses API 400. Source
+      repair preserves ledger order for full reads and message-ID rollback, with
+      three Rust regressions added. SQL probes, formatting and source checks are the
+      available validation; Cargo execution and installed-app verification remain
+      pending. Failover is opt-in and this malformed-history 400 is ineligible under
+      the existing policy. See the
+      [repair record](logs/session/2026-09-16-compacted-tool-history-order.md).
+
 ## 2026-09-15 session-transfer dataflow/workflow/architecture audit and repair
 
 - [x] **CAS-GSL-EXPORT-001** — Repaired: `export_session` no longer takes the process-wide write
