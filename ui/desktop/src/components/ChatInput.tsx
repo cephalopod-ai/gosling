@@ -35,7 +35,12 @@ import { trackFileAttached, trackVoiceDictation } from '../utils/analytics';
 import {
   getChatSubmitShortcutText,
   getNavigationShortcutText,
+  isBareEnter,
   isChatSubmitShortcut,
+  isEnterRunSubmit,
+  nextEnterRun,
+  NO_ENTER_RUN,
+  type EnterRun,
 } from '../utils/keyboardShortcuts';
 import { UserInput, ImageData } from '../types/message';
 import { compressImageDataUrl } from '../utils/conversionUtils';
@@ -244,6 +249,7 @@ export default function ChatInput({
   planControl,
 }: ChatInputProps) {
   const [_value, setValue] = useState(initialValue);
+  const enterRunRef = useRef<EnterRun>(NO_ENTER_RUN);
   const [displayValue, setDisplayValue] = useState(initialValue); // For immediate visual feedback
   const [isFocused, setIsFocused] = useState(false);
   const [pastedImages, setPastedImages] = useState<PastedImage[]>([]);
@@ -1232,7 +1238,25 @@ export default function ChatInput({
 
     handleHistoryNavigation(evt);
 
-    if (!isChatSubmitShortcut(evt) || isComposing || evt.nativeEvent.isComposing) {
+    const composing = isComposing || evt.nativeEvent.isComposing;
+
+    // A run of Enters sends. `evt.repeat` is excluded so holding the key cannot
+    // send, and any other key resets the run so paragraph breaks spread through
+    // normal typing never accumulate into one.
+    if (isBareEnter(evt) && !composing) {
+      if (evt.repeat) return;
+      const run = nextEnterRun(enterRunRef.current, Date.now());
+      enterRunRef.current = run;
+      if (!isEnterRunSubmit(run)) return;
+      enterRunRef.current = NO_ENTER_RUN;
+      evt.preventDefault();
+      if (handleInterruptionAndQueue()) return;
+      if (canSubmit) performSubmit();
+      return;
+    }
+    if (evt.key !== 'Enter') enterRunRef.current = NO_ENTER_RUN;
+
+    if (!isChatSubmitShortcut(evt) || composing) {
       return;
     }
 

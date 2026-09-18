@@ -22,6 +22,36 @@ export function getChatSubmitShortcutText(): string {
   return isMac() ? '⌘Enter' : 'Ctrl+Enter';
 }
 
+/// Enter writes a newline, so a quick run of them is the second way to send.
+export const CHAT_SUBMIT_ENTER_RUN = 3;
+export const CHAT_SUBMIT_ENTER_WINDOW_MS = 1000;
+
+/// `startedAt` anchors the window to the first Enter of the run, so "three within
+/// a second" means exactly that rather than three gaps of up to a second each.
+export interface EnterRun {
+  count: number;
+  startedAt: number;
+}
+
+export const NO_ENTER_RUN: EnterRun = { count: 0, startedAt: 0 };
+
+export function isBareEnter(event: ChatSubmitKeyEvent): boolean {
+  return (
+    event.key === 'Enter' && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey
+  );
+}
+
+export function nextEnterRun(previous: EnterRun, now: number): EnterRun {
+  const continues = previous.count > 0 && now - previous.startedAt <= CHAT_SUBMIT_ENTER_WINDOW_MS;
+  return continues
+    ? { count: previous.count + 1, startedAt: previous.startedAt }
+    : { count: 1, startedAt: now };
+}
+
+export function isEnterRunSubmit(run: EnterRun): boolean {
+  return run.count >= CHAT_SUBMIT_ENTER_RUN;
+}
+
 /**
  * Localised message for the "navigate messages with arrow keys" chat input placeholder.
  * Returns the legacy English string if no intl instance is supplied, so call sites that
