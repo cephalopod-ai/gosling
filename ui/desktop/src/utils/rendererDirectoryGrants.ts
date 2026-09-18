@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { writeJsonFileAtomicSync, readJsonFileWithRecoverySync } from './atomicJsonStore';
 
@@ -31,6 +32,13 @@ function canonicalDirectory(selectedPath: string): string {
   return fs.realpathSync.native(directoryPath);
 }
 
+/// A grant on the home directory or a filesystem root would subsume every other
+/// entry, so remembering it turns "folders you approved" into "everything".
+/// Such a root still works for the window that picked it; it is never stored.
+function isOverlyBroadRoot(root: string): boolean {
+  return root === path.parse(root).root || root === path.resolve(os.homedir());
+}
+
 export class RendererDirectoryGrantRegistry {
   private readonly persistedRoots = new Set<string>();
   private readonly transientRoots = new Map<number, Set<string>>();
@@ -44,7 +52,8 @@ export class RendererDirectoryGrantRegistry {
 
     for (const root of stored.value.roots) {
       try {
-        this.persistedRoots.add(canonicalDirectory(root));
+        const canonical = canonicalDirectory(root);
+        if (!isOverlyBroadRoot(canonical)) this.persistedRoots.add(canonical);
       } catch {
         // Missing or moved roots remain untrusted until the user selects them again.
       }
@@ -58,16 +67,19 @@ export class RendererDirectoryGrantRegistry {
     const roots = this.transientRoots.get(webContentsId) ?? new Set<string>();
     roots.add(root);
     this.transientRoots.set(webContentsId, roots);
-    if (persist) {
+    if (persist && !isOverlyBroadRoot(root)) {
       this.persistedRoots.add(root);
       this.persist();
     }
     return root;
   }
 
+  /// Folders the user approved stay approved across restarts and windows.
+  /// Scoping them to `webContentsId === 0` made the stored list inert for the UI,
+  /// so every launch re-prompted for the same folders. `isOverlyBroadRoot` is what
+  /// keeps that durable set from widening into the whole home directory.
   rootsFor(webContentsId: number): string[] {
-    const transientRoots = [...(this.transientRoots.get(webContentsId) ?? [])];
-    return webContentsId === 0 ? [...this.persistedRoots, ...transientRoots] : transientRoots;
+    return [...this.persistedRoots, ...(this.transientRoots.get(webContentsId) ?? [])];
   }
 
   isGrantedDirectory(webContentsId: number, directoryPath: string): boolean {

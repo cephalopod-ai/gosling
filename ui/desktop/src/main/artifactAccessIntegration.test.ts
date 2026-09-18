@@ -113,7 +113,7 @@ async function createMainFileIpc() {
   };
   const publish = (artifactFiles: string[]) =>
     invoke('set-artifact-routing-config', 7, { outputs: [], artifactFiles });
-  return { invoke, publish, reportPath, outputRoot, launchRoot };
+  return { invoke, publish, reportPath, outputRoot, launchRoot, directoryGrants };
 }
 
 describe('live main artifact authorization', () => {
@@ -367,6 +367,22 @@ describe('live main artifact authorization', () => {
     await invoke('reveal-artifact-file', 7, reportPath);
     expect(shell.openPath).toHaveBeenCalledWith(await fs.realpath(reportPath));
     expect(shell.showItemInFolder).toHaveBeenCalledWith(await fs.realpath(reportPath));
+    expect(dialog.showOpenDialog).not.toHaveBeenCalled();
+  });
+
+  it('previews a folder the user approved in an earlier run without asking again', async () => {
+    const { invoke, reportPath, outputRoot, directoryGrants } = await createMainFileIpc();
+
+    // What the picker records when the user clicks "Select this file to grant access".
+    directoryGrants.grantSelectedPath(7, outputRoot);
+
+    // A later window in a later run: the stored grant still counts, so an agent
+    // deliverable under that folder previews without a second authorization.
+    expect(await invoke('read-artifact-file', 8, reportPath)).toMatchObject({
+      content: '# Repair plan\n\nSession output.',
+      error: null,
+      found: true,
+    });
     expect(dialog.showOpenDialog).not.toHaveBeenCalled();
   });
 

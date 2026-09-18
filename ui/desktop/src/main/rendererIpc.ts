@@ -132,13 +132,18 @@ export function registerRendererIpcHandlers(
       rendererDirectoryGrants.grantSelectedPath(event.sender.id, result.filePaths[0]);
     return result;
   });
-  targetIpcMain.handle(desktopCommandChannels.sessionDirectoryChooser, () =>
-    dialog.showOpenDialog({
+  // Granting here matches directoryChooser: the user picked this folder in a native
+  // dialog, so work the agent does in it is previewable without a second prompt.
+  targetIpcMain.handle(desktopCommandChannels.sessionDirectoryChooser, async (event) => {
+    const result = await dialog.showOpenDialog({
       properties: ['openDirectory', 'createDirectory'],
       defaultPath: os.homedir(),
       title: 'Add directory to this session',
-    })
-  );
+    });
+    if (!result.canceled && result.filePaths[0])
+      rendererDirectoryGrants.grantSelectedPath(event.sender.id, result.filePaths[0]);
+    return result;
+  });
   targetIpcMain.handle(desktopCommandChannels.addRecentDir, (_event, dir: string) => {
     if (dir) addRecentDir(dir);
   });
