@@ -118,6 +118,16 @@ fn uses_responses_lite(model_name: &str) -> bool {
     matches!(model_name, "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna")
 }
 
+/// The route advertises a flat 272k `context_window` for every slug it lists —
+/// including placeholders like `gpt-reserve` — so it reports a backend default
+/// rather than each model's real window. Taking it at face value clamped
+/// gpt-6-astra's ~1M window to 258,400 and compacted sessions that had used a
+/// fifth of their context. Curated per-model limits win; the route only fills in
+/// slugs this build does not know yet.
+fn resolved_route_context_limit(model: &ChatGptCodexRouteModel) -> Option<usize> {
+    context_limit_for_model(&model.slug).or_else(|| effective_route_context_limit(model))
+}
+
 pub(crate) fn context_limit_for_model(model_name: &str) -> Option<usize> {
     match model_name {
         "gpt-6-astra" => Some(997_500),
@@ -1081,7 +1091,7 @@ impl ChatGptCodexProvider {
             .find(|model| model.slug == model_name)?;
         let mut model = ModelInfo::new(
             route_model.slug.clone(),
-            effective_route_context_limit(route_model)?,
+            resolved_route_context_limit(route_model)?,
         );
         model.reasoning = true;
         Some(model)
@@ -1276,7 +1286,7 @@ impl Provider for ChatGptCodexProvider {
                 .filter_map(|route_model| {
                     let mut model = ModelInfo::new(
                         route_model.slug.clone(),
-                        effective_route_context_limit(route_model)?,
+                        resolved_route_context_limit(route_model)?,
                     );
                     model.reasoning = true;
                     Some(model)
@@ -1736,6 +1746,61 @@ mod tests {
             effective_route_context_limit(&catalog.models[0]),
             Some(258_400)
         );
+    }
+
+    #[test]
+    fn curated_limits_survive_the_routes_generic_context_window() {
+        // The live route reports 272000 for every slug, so a model with a larger
+        // real window must not be clamped to the backend default. (Regression:
+        // gpt-6-astra reported 258,400 and compacted at roughly a fifth of its
+        // context.)
+        let catalog: ChatGptCodexModelsResponse = serde_json::from_value(json!({
+            "models": [
+                {
+                    "slug": "gpt-6-astra",
+                    "context_window": 272000,
+                    "effective_context_window_percent": 95,
+                    "supported_in_api": true
+                },
+                {
+                    "slug": "gpt-5.6-sol",
+                    "context_window": 272000,
+                    "effective_context_window_percent": 95,
+                    "supported_in_api": true
+                },
+                {
+                    "slug": "gpt-unreleased",
+                    "context_window": 272000,
+                    "effective_context_window_percent": 95,
+                    "supported_in_api": true
+                }
+            ]
+        }))
+        .unwrap();
+
+        let limits: Vec<Option<usize>> = catalog
+            .models
+            .iter()
+            .map(resolved_route_context_limit)
+            .collect();
+
+        assert_eq!(
+            limits,
+            vec![Some(997_500), Some(258_400), Some(258_400)],
+            "curated limits win; unknown slugs still fall back to the route"
+        );
+    }
+
+    #[test]
+    fn an_unknown_slug_without_a_usable_route_window_has_no_limit() {
+        let model = ChatGptCodexRouteModel {
+            slug: "gpt-unreleased".into(),
+            context_window: None,
+            effective_context_window_percent: 95,
+            supported_in_api: true,
+        };
+
+        assert_eq!(resolved_route_context_limit(&model), None);
     }
 
     #[test]
