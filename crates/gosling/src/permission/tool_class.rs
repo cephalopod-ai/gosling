@@ -32,10 +32,19 @@ const CODE_EXECUTION_TOOL_NAMES: &[&str] = &[
 ];
 
 /// Bare tool names that mutate the filesystem.
-const WRITE_TOOL_NAMES: &[&str] = &["write", "edit", "str_replace", "create", "patch", "apply"];
+const WRITE_TOOL_NAMES: &[&str] = &[
+    "write",
+    "write_document",
+    "edit",
+    "str_replace",
+    "create",
+    "patch",
+    "apply",
+];
 
 const WRITE_TOOL_SUFFIXES: &[&str] = &[
     "__write",
+    "__write_document",
     "__edit",
     "__str_replace",
     "__create",
@@ -147,6 +156,10 @@ mod tests {
         assert!(is_write_tool("write"));
         assert!(is_write_tool("developer__edit"));
         assert!(!is_write_tool("read"));
+        // write_document creates a file, so Smart Approve must not treat it as read-only.
+        assert!(is_write_tool("write_document"));
+        assert!(is_write_tool("developer__write_document"));
+        assert!(has_recognized_side_effects("write_document"));
     }
 
     #[test]

@@ -1,3 +1,4 @@
+pub mod document;
 pub mod edit;
 pub mod image;
 mod process_tree;
@@ -9,6 +10,7 @@ use crate::agents::mcp_client::{Error, McpClientTrait};
 use crate::agents::ToolCallContext;
 use anyhow::Result;
 use async_trait::async_trait;
+use document::{DocumentTool, DocumentWriteParams};
 use edit::{EditTools, FileEditParams, FileWriteParams};
 use image::{ImageReadParams, ImageTool};
 use indoc::indoc;
@@ -31,6 +33,7 @@ pub struct DeveloperClient {
     edit_tools: Arc<EditTools>,
     tree_tool: Arc<TreeTool>,
     image_tool: Arc<ImageTool>,
+    document_tool: Arc<DocumentTool>,
 }
 
 fn developer_instructions() -> &'static str {
@@ -47,6 +50,9 @@ fn developer_instructions() -> &'static str {
             and file sizes. When you need to search, prefer findstr or Select-String (via shell).
             Then use type or Get-Content to gather the context you need, always reading before
             editing. Use write and edit to efficiently make changes. Test and verify as appropriate.
+
+            Deliverables the user asked for as Word, Excel or PowerPoint files go through
+            write_document, which converts markdown into .docx, .xlsx or .pptx.
         "}
     } else {
         indoc! {"
@@ -63,6 +69,9 @@ fn developer_instructions() -> &'static str {
             Use write and edit to efficiently make changes. Test and verify as appropriate.
 
             When running Python scripts or commands, always use `python3` instead of `python`.
+
+            Deliverables the user asked for as Word, Excel or PowerPoint files go through
+            write_document, which converts markdown into .docx, .xlsx or .pptx.
         "}
     }
 }
@@ -79,6 +88,7 @@ impl DeveloperClient {
             edit_tools: Arc::new(EditTools::new()),
             tree_tool: Arc::new(TreeTool::new()),
             image_tool: Arc::new(ImageTool::new()),
+            document_tool: Arc::new(DocumentTool::new()),
         })
     }
 
@@ -169,6 +179,20 @@ impl DeveloperClient {
                 Some(true),
                 Some(false),
             )),
+            Tool::new(
+                "write_document".to_string(),
+                "Create an Office document from markdown. The path extension picks the format: \
+                 .docx, .xlsx (headings become sheets, pipe tables become cells), or .pptx. \
+                 Use write for text formats.".to_string(),
+                Self::schema::<DocumentWriteParams>(),
+            )
+            .annotate(ToolAnnotations::from_raw(
+                Some("Write Document".to_string()),
+                Some(false),
+                Some(true),
+                Some(false),
+                Some(false),
+            )),
         ]
     }
 }
@@ -235,6 +259,15 @@ impl McpClientTrait for DeveloperClient {
                 ))
                 .with_priority(0.0)])),
             },
+            "write_document" => match Self::parse_args::<DocumentWriteParams>(arguments) {
+                Ok(params) => Ok(self
+                    .document_tool
+                    .write_document_with_cwd(params, working_dir)),
+                Err(error) => Ok(CallToolResult::error(vec![Content::text(format!(
+                    "Error: {error}"
+                ))
+                .with_priority(0.0)])),
+            },
             _ => Ok(CallToolResult::error(vec![Content::text(format!(
                 "Error: Unknown tool: {name}"
             ))
@@ -262,7 +295,17 @@ mod tests {
             .map(|t| t.name.to_string())
             .collect();
 
-        assert_eq!(names, vec!["write", "edit", "shell", "tree", "read_image"]);
+        assert_eq!(
+            names,
+            vec![
+                "write",
+                "edit",
+                "shell",
+                "tree",
+                "read_image",
+                "write_document"
+            ]
+        );
     }
 
     fn test_context(data_dir: std::path::PathBuf) -> PlatformExtensionContext {

@@ -188,6 +188,7 @@ The Developer extension provides these tools:
 | `edit` | Find-and-replace edits within a file | Code refactoring, updating configs, targeted fixes | ⚠️ High<br />Can modify any accessible file |
 | `tree` | List a directory tree with line counts | Exploring project structure, locating files | ✅ Low<br />Read-only directory listing |
 | `read_image` | Read an image file as visual content | Inspecting screenshots, diagrams, UI assets | ✅ Low<br />Read-only image access |
+| `write_document` | Create a Word, Excel, or PowerPoint file from markdown | Producing `.docx` reports, `.xlsx` tables, `.pptx` decks as deliverables | ⚠️ High<br />Can create or replace any accessible file |
 
 ### Access Control Features
 
