@@ -2,6 +2,7 @@ import { ModeSection } from '../mode/ModeSection';
 import { SummarizerSection } from './SummarizerSection';
 import { DictationSettings } from '../dictation/DictationSettings';
 import { SecurityToggle } from '../security/SecurityToggle';
+import { TrustedFoldersSection } from '../permission/TrustedFoldersSection';
 import { ResponseStylesSection } from '../response_styles/ResponseStylesSection';
 import { GoslinghintsSection } from './GoslinghintsSection';
 import { SpellcheckToggle } from './SpellcheckToggle';
@@ -49,6 +50,12 @@ export default function ChatSettingsSection() {
         </CardHeader>
         <CardContent className="px-2">
           <ModeSection />
+        </CardContent>
+      </Card>
+
+      <Card className="pb-2 rounded-lg">
+        <CardContent className="px-2">
+          <TrustedFoldersSection />
         </CardContent>
       </Card>
 

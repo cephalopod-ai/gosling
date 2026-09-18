@@ -1,4 +1,4 @@
-use crate::config::GoslingMode;
+use crate::config::{Config, GoslingMode};
 use crate::conversation::message::{Message, ToolRequest};
 use crate::session::SessionManager;
 use crate::tool_inspection::{InspectionAction, InspectionResult, ToolInspector};
@@ -50,6 +50,7 @@ impl ToolInspector for WorkingDirScopeInspector {
         let mut allowed_dirs = Vec::with_capacity(1 + session.additional_working_dirs.len());
         allowed_dirs.push(session.working_dir.clone());
         allowed_dirs.extend(session.additional_working_dirs.iter().cloned());
+        allowed_dirs.extend(configured_trusted_dirs());
         let scratch_dirs = if session.restrict_tools_to_working_dirs {
             Vec::new()
         } else {
@@ -233,6 +234,27 @@ fn canonicalize_potential_path(path: &Path) -> Result<PathBuf> {
 fn canonical_allowed_dirs(dirs: &[PathBuf]) -> Vec<PathBuf> {
     dirs.iter()
         .filter_map(|dir| canonicalize_potential_path(dir).ok())
+        .collect()
+}
+
+/// Folders the operator marked trusted in `GOSLING_TRUSTED_DIRS`. They join
+/// every session's allowed set, so routine work in a place like `~/Downloads`
+/// no longer raises an approval prompt. A workspace's read-only roots are
+/// judged before this and still deny mutations.
+fn configured_trusted_dirs() -> Vec<PathBuf> {
+    Config::global()
+        .get_gosling_trusted_dirs()
+        .map(|dirs| expand_trusted_dirs(&dirs))
+        .unwrap_or_default()
+}
+
+/// Relative entries are dropped: an empty or relative string would resolve
+/// against the process's current directory and silently widen every session.
+fn expand_trusted_dirs(configured: &[String]) -> Vec<PathBuf> {
+    configured
+        .iter()
+        .map(|dir| PathBuf::from(&*shellexpand::tilde(dir)))
+        .filter(|dir| dir.is_absolute())
         .collect()
 }
 
@@ -1050,6 +1072,54 @@ mod tests {
     }
 
     #[test]
+    fn allows_path_inside_a_configured_trusted_dir() {
+        let working_dir = PathBuf::from("/home/user/project");
+        let allowed = vec![
+            working_dir.clone(),
+            PathBuf::from(&*shellexpand::tilde("~/Downloads")),
+        ];
+        let call = tool_call(
+            "developer__text_editor__write",
+            json_args(&[("path", "~/Downloads/report.docx")]),
+        );
+
+        assert_eq!(
+            out_of_scope_path(&call, &working_dir, &allowed).unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn expand_trusted_dirs_resolves_home_and_drops_relative_entries() {
+        let home = dirs::home_dir().unwrap();
+        let expanded = expand_trusted_dirs(&[
+            "~/Downloads".to_string(),
+            "/opt/shared".to_string(),
+            "relative/dir".to_string(),
+            String::new(),
+        ]);
+
+        assert_eq!(
+            expanded,
+            vec![home.join("Downloads"), PathBuf::from("/opt/shared")]
+        );
+    }
+
+    #[test]
+    fn configured_trusted_dirs_reads_the_operator_setting() {
+        let _guard = env_lock::lock_env([(
+            "GOSLING_TRUSTED_DIRS",
+            Some(r#"["~/Downloads", "/opt/shared"]"#),
+        )]);
+        let home = dirs::home_dir().unwrap();
+
+        assert_eq!(
+            configured_trusted_dirs(),
+            vec![home.join("Downloads"), PathBuf::from("/opt/shared")]
+        );
+    }
+
+    #[test]
     fn allows_relative_path() {
         let working_dir = PathBuf::from("/home/user/project");
         let allowed = vec![working_dir.clone()];
@@ -1436,6 +1506,83 @@ mod tests {
         assert!(!reloaded.restrict_tools_to_working_dirs);
         assert!(reloaded.additional_working_dirs.contains(&reference));
         assert!(reloaded.additional_working_dirs.contains(&output));
+    }
+
+    #[tokio::test]
+    async fn trusted_dirs_never_unlock_a_read_only_workspace_root() {
+        let root = tempfile::tempdir().unwrap();
+        let project = root.path().join("project");
+        let reference = root.path().join("reference");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::create_dir_all(&reference).unwrap();
+
+        let session_manager = Arc::new(SessionManager::new(root.path().to_path_buf()));
+        let session = session_manager
+            .create_session(
+                project.clone(),
+                "workspace".into(),
+                crate::session::SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        let context = crate::workspace::WorkspaceSessionContext {
+            workspace_id: "workspace".into(),
+            workspace_name: "Workspace".into(),
+            primary_working_folder: project.to_string_lossy().to_string(),
+            folders: Vec::new(),
+            product_output_folders: Vec::new(),
+            folder_policy: WorkspaceFolderPolicy {
+                roots: vec![
+                    crate::workspace::WorkspaceFolderPolicyRoot {
+                        path: project.to_string_lossy().to_string(),
+                        access: WorkspaceFolderAccess::ReadWrite,
+                    },
+                    crate::workspace::WorkspaceFolderPolicyRoot {
+                        path: reference.to_string_lossy().to_string(),
+                        access: WorkspaceFolderAccess::Read,
+                    },
+                ],
+            },
+        };
+        session_manager
+            .update(&session.id)
+            .workspace_snapshot(
+                "workspace".into(),
+                "Workspace".into(),
+                None,
+                None,
+                None,
+                context,
+            )
+            .apply()
+            .await
+            .unwrap();
+
+        let _guard = env_lock::lock_env([(
+            "GOSLING_TRUSTED_DIRS",
+            Some(
+                serde_json::to_string(&[root.path().to_string_lossy()])
+                    .unwrap()
+                    .as_str(),
+            ),
+        )]);
+        let inspector = WorkingDirScopeInspector::new(session_manager.clone());
+        let results = inspector
+            .inspect(
+                &session.id,
+                &[write_request(
+                    "write-reference",
+                    reference.join("valuable.txt").to_str().unwrap(),
+                )],
+                &[],
+                GoslingMode::Auto,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].action, InspectionAction::Deny);
     }
 
     #[tokio::test]

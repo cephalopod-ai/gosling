@@ -3485,6 +3485,27 @@
   "settings.theme.title": {
     "defaultMessage": "Theme"
   },
+  "settings.trustedFolders.add": {
+    "defaultMessage": "Add folder"
+  },
+  "settings.trustedFolders.description": {
+    "defaultMessage": "Tools may read and write inside these folders without asking, in every session. A workspace folder marked read-only still blocks writes."
+  },
+  "settings.trustedFolders.empty": {
+    "defaultMessage": "No trusted folders. Work outside a session’s own folders asks for approval."
+  },
+  "settings.trustedFolders.loadFailed": {
+    "defaultMessage": "Could not load your trusted folders."
+  },
+  "settings.trustedFolders.remove": {
+    "defaultMessage": "Stop trusting {folder}"
+  },
+  "settings.trustedFolders.saveFailed": {
+    "defaultMessage": "Could not save your trusted folders."
+  },
+  "settings.trustedFolders.title": {
+    "defaultMessage": "Trusted folders"
+  },
   "settings.updates.description": {
     "defaultMessage": "Check for and install updates to keep gosling running at its best"
   },

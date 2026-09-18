@@ -84,6 +84,7 @@ Object.defineProperty(window, 'electron', {
   value: {
     platform: 'darwin',
     sessionDirectoryChooser: vi.fn(() => Promise.resolve({ canceled: true, filePaths: [] })),
+    directoryChooser: vi.fn(() => Promise.resolve({ canceled: true, filePaths: [] })),
     getResearchLibraryPath: vi.fn(() =>
       Promise.resolve('/Users/tester/Documents/Gosling Research Library')
     ),
