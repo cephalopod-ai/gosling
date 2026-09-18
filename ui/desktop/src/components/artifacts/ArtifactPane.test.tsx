@@ -1169,6 +1169,66 @@ describe('ArtifactPane', () => {
     expect(await screen.findByText('untitled.md')).toBeInTheDocument();
   });
 
+  it('imports chosen files into the Research Library and refreshes the listing', async () => {
+    const imported = {
+      name: 'grok-deep-research.md',
+      path: '/library/grok-deep-research.md',
+      relativePath: 'grok-deep-research.md',
+      sizeBytes: 2_048,
+      modifiedAt: '2026-09-18T12:00:00.000Z',
+    };
+    vi.mocked(window.electron.listResearchLibraryFiles).mockResolvedValue({
+      files: [],
+      truncated: false,
+    });
+    vi.mocked(window.electron.importResearchLibraryFiles).mockImplementation(async () => {
+      vi.mocked(window.electron.listResearchLibraryFiles).mockResolvedValue({
+        files: [imported],
+        truncated: false,
+      });
+      return { canceled: false, imported: [imported.path], failed: [] };
+    });
+
+    render(
+      <IntlTestWrapper>
+        <ArtifactWorkbenchProvider>
+          <Harness />
+        </ArtifactWorkbenchProvider>
+      </IntlTestWrapper>
+    );
+
+    fireEvent.click(await screen.findByRole('tab', { name: 'Library 0' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Add files' }));
+
+    expect(window.electron.importResearchLibraryFiles).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText('grok-deep-research.md')).toBeInTheDocument();
+  });
+
+  it('leaves the Research Library untouched when the import picker is canceled', async () => {
+    vi.mocked(window.electron.importResearchLibraryFiles).mockResolvedValue({
+      canceled: true,
+      imported: [],
+      failed: [],
+    });
+
+    render(
+      <IntlTestWrapper>
+        <ArtifactWorkbenchProvider>
+          <Harness />
+        </ArtifactWorkbenchProvider>
+      </IntlTestWrapper>
+    );
+
+    fireEvent.click(await screen.findByRole('tab', { name: 'Library 0' }));
+    vi.mocked(window.electron.listResearchLibraryFiles).mockClear();
+    fireEvent.click(await screen.findByRole('button', { name: 'Add files' }));
+
+    await vi.waitFor(() =>
+      expect(window.electron.importResearchLibraryFiles).toHaveBeenCalledTimes(1)
+    );
+    expect(window.electron.listResearchLibraryFiles).not.toHaveBeenCalled();
+  });
+
   it('surfaces a truncated Research Library listing', async () => {
     vi.mocked(window.electron.listResearchLibraryFiles).mockResolvedValue({
       files: [

@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   defaultResearchLibraryPath,
+  importResearchLibraryFiles,
   listResearchLibraryFiles,
   RESEARCH_LIBRARY_FOLDER_NAME,
 } from './researchLibrary';
@@ -53,5 +54,42 @@ describe('research library', () => {
 
     expect(listing.files).toHaveLength(2);
     expect(listing.truncated).toBe(true);
+  });
+
+  it('copies selected documents into the library without overwriting existing names', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'gosling-research-library-'));
+    const source = await fs.mkdtemp(path.join(os.tmpdir(), 'gosling-research-source-'));
+    temporaryDirectories.push(root, source);
+    await fs.writeFile(path.join(root, 'report.md'), 'existing');
+    await fs.writeFile(path.join(source, 'report.md'), 'imported');
+    await fs.writeFile(path.join(source, 'notes.txt'), 'notes');
+
+    const result = await importResearchLibraryFiles(root, [
+      path.join(source, 'report.md'),
+      path.join(source, 'notes.txt'),
+    ]);
+
+    expect(result.failed).toEqual([]);
+    expect(result.imported).toEqual([
+      path.join(root, 'report (2).md'),
+      path.join(root, 'notes.txt'),
+    ]);
+    expect(await fs.readFile(path.join(root, 'report.md'), 'utf8')).toBe('existing');
+    expect(await fs.readFile(path.join(root, 'report (2).md'), 'utf8')).toBe('imported');
+  });
+
+  it('reports unreadable sources while importing the rest', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'gosling-research-library-'));
+    const source = await fs.mkdtemp(path.join(os.tmpdir(), 'gosling-research-source-'));
+    temporaryDirectories.push(root, source);
+    await fs.writeFile(path.join(source, 'notes.txt'), 'notes');
+
+    const result = await importResearchLibraryFiles(root, [
+      path.join(source, 'missing.md'),
+      path.join(source, 'notes.txt'),
+    ]);
+
+    expect(result.imported).toEqual([path.join(root, 'notes.txt')]);
+    expect(result.failed).toEqual(['missing.md']);
   });
 });

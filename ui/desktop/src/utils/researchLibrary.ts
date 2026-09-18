@@ -1,9 +1,11 @@
+import { constants } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
 export const RESEARCH_LIBRARY_FOLDER_NAME = 'Gosling Research Library';
 export const RESEARCH_LIBRARY_FILE_LIMIT = 500;
 const RESEARCH_LIBRARY_MAX_DEPTH = 6;
+const RESEARCH_LIBRARY_IMPORT_NAME_ATTEMPTS = 100;
 
 export interface ResearchLibraryFile {
   modifiedAt: string;
@@ -18,8 +20,49 @@ export interface ResearchLibraryListing {
   truncated: boolean;
 }
 
+export interface ResearchLibraryImportResult {
+  canceled: boolean;
+  imported: string[];
+  failed: string[];
+}
+
 export function defaultResearchLibraryPath(documentsPath: string): string {
   return path.join(documentsPath, RESEARCH_LIBRARY_FOLDER_NAME);
+}
+
+// COPYFILE_EXCL makes each attempt decide the collision, so a name taken between
+// the check and the copy retries instead of overwriting an existing document.
+async function copyIntoResearchLibrary(root: string, sourcePath: string): Promise<string> {
+  const extension = path.extname(sourcePath);
+  const stem = path.basename(sourcePath, extension);
+  for (let attempt = 1; attempt <= RESEARCH_LIBRARY_IMPORT_NAME_ATTEMPTS; attempt += 1) {
+    const name = attempt === 1 ? `${stem}${extension}` : `${stem} (${attempt})${extension}`;
+    const destination = path.join(root, name);
+    try {
+      await fs.copyFile(sourcePath, destination, constants.COPYFILE_EXCL);
+      return destination;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    }
+  }
+  throw new Error(`The research library already holds too many copies of ${stem}${extension}`);
+}
+
+export async function importResearchLibraryFiles(
+  root: string,
+  sourcePaths: string[]
+): Promise<Omit<ResearchLibraryImportResult, 'canceled'>> {
+  const imported: string[] = [];
+  const failed: string[] = [];
+  for (const sourcePath of sourcePaths) {
+    try {
+      imported.push(await copyIntoResearchLibrary(root, sourcePath));
+    } catch (error) {
+      console.error(`Failed to add ${sourcePath} to the research library:`, error);
+      failed.push(path.basename(sourcePath));
+    }
+  }
+  return { imported, failed };
 }
 
 export async function listResearchLibraryFiles(

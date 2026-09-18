@@ -146,11 +146,26 @@
   "artifactPane.library": {
     "defaultMessage": "Library"
   },
+  "artifactPane.libraryAddFiles": {
+    "defaultMessage": "Add files"
+  },
+  "artifactPane.libraryAddFilesHint": {
+    "defaultMessage": "Add files to the Research Library"
+  },
   "artifactPane.libraryEmptyBody": {
     "defaultMessage": "Reports and tutorials produced by Deep Research will appear here."
   },
   "artifactPane.libraryEmptyTitle": {
     "defaultMessage": "No research documents yet"
+  },
+  "artifactPane.libraryImportFailed": {
+    "defaultMessage": "Unable to add files to the Research Library: {error}"
+  },
+  "artifactPane.libraryImportPartial": {
+    "defaultMessage": "{count,plural,one{# file could not be added.} other{# files could not be added.}}"
+  },
+  "artifactPane.libraryImported": {
+    "defaultMessage": "{count,plural,one{Added # file to the Research Library.} other{Added # files to the Research Library.}}"
   },
   "artifactPane.libraryLoadFailed": {
     "defaultMessage": "Unable to load the Research Library."

@@ -4054,5 +4054,20 @@
   },
   "sessionInputs.selectionBudget": {
     "defaultMessage": "{count} selected · {text} / 512 KiB text · {images} / 10 MiB images"
+  },
+  "artifactPane.libraryAddFiles": {
+    "defaultMessage": "Add files"
+  },
+  "artifactPane.libraryAddFilesHint": {
+    "defaultMessage": "Add files to the Research Library"
+  },
+  "artifactPane.libraryImportFailed": {
+    "defaultMessage": "Unable to add files to the Research Library: {error}"
+  },
+  "artifactPane.libraryImportPartial": {
+    "defaultMessage": "{count,plural,one{# file could not be added.} other{# files could not be added.}}"
+  },
+  "artifactPane.libraryImported": {
+    "defaultMessage": "{count,plural,one{Added # file to the Research Library.} other{Added # files to the Research Library.}}"
   }
 }

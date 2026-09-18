@@ -22,7 +22,7 @@ import type {
   ArtifactSaveRequest,
   ArtifactSaveResponse,
 } from './types/artifactRouter';
-import type { ResearchLibraryListing } from './utils/researchLibrary';
+import type { ResearchLibraryImportResult, ResearchLibraryListing } from './utils/researchLibrary';
 import type { ArtifactTrashResult } from './types/artifactTrash';
 import type { ArtifactRepositoryClassification } from './utils/artifactRepository';
 import type { ArtifactFileTimestampMap } from './types/artifactFileTimestamps';
@@ -114,6 +114,7 @@ type ElectronAPI = {
   getResearchLibraryPath: () => Promise<string>;
   chooseResearchLibraryPath: () => Promise<string | null>;
   listResearchLibraryFiles: () => Promise<ResearchLibraryListing>;
+  importResearchLibraryFiles: () => Promise<ResearchLibraryImportResult>;
   createChatWindow: (options?: CreateChatWindowOptions) => void;
   logInfo: (txt: string) => void;
   showNotification: (data: NotificationData) => void;
@@ -222,6 +223,7 @@ const electronAPI: ElectronAPI = {
   getResearchLibraryPath: () => invokeMain(desktopCommandChannels.getResearchLibraryPath),
   chooseResearchLibraryPath: () => invokeMain(desktopCommandChannels.chooseResearchLibraryPath),
   listResearchLibraryFiles: () => invokeMain(desktopCommandChannels.listResearchLibraryFiles),
+  importResearchLibraryFiles: () => invokeMain(desktopCommandChannels.importResearchLibraryFiles),
   createChatWindow: (options?: CreateChatWindowOptions) =>
     sendToMain(desktopCommandChannels.createChatWindow, options || {}),
   logInfo: (txt: string) => sendToMain(desktopCommandChannels.logInfo, txt),

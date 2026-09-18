@@ -8,6 +8,7 @@ import {
   File,
   FileInput,
   FileOutput,
+  FilePlus,
   FileText,
   FolderOpen,
   Image as ImageIcon,
@@ -149,6 +150,23 @@ const i18n = defineMessages({
   libraryLoadFailed: {
     id: 'artifactPane.libraryLoadFailed',
     defaultMessage: 'Unable to load the Research Library.',
+  },
+  libraryAddFiles: { id: 'artifactPane.libraryAddFiles', defaultMessage: 'Add files' },
+  libraryAddFilesHint: {
+    id: 'artifactPane.libraryAddFilesHint',
+    defaultMessage: 'Add files to the Research Library',
+  },
+  libraryImported: {
+    id: 'artifactPane.libraryImported',
+    defaultMessage: 'Added {count, plural, one {# file} other {# files}} to the Research Library.',
+  },
+  libraryImportPartial: {
+    id: 'artifactPane.libraryImportPartial',
+    defaultMessage: '{count, plural, one {# file} other {# files}} could not be added.',
+  },
+  libraryImportFailed: {
+    id: 'artifactPane.libraryImportFailed',
+    defaultMessage: 'Unable to add files to the Research Library: {error}',
   },
   libraryTruncated: {
     id: 'artifactPane.libraryTruncated',
@@ -441,6 +459,26 @@ export function ArtifactPane() {
     },
     [intl]
   );
+
+  const importResearchLibraryFiles = useCallback(async () => {
+    try {
+      const result = await window.electron.importResearchLibraryFiles();
+      if (result.canceled) return;
+      if (result.imported.length > 0) {
+        toast.success(intl.formatMessage(i18n.libraryImported, { count: result.imported.length }));
+      }
+      if (result.failed.length > 0) {
+        toast.error(intl.formatMessage(i18n.libraryImportPartial, { count: result.failed.length }));
+      }
+      await refreshResearchLibrary(true);
+    } catch (cause) {
+      toast.error(
+        intl.formatMessage(i18n.libraryImportFailed, {
+          error: errorMessage(cause, 'Unknown error'),
+        })
+      );
+    }
+  }, [intl, refreshResearchLibrary]);
 
   useEffect(() => {
     void refreshResearchLibrary();
@@ -868,6 +906,17 @@ export function ArtifactPane() {
               <FolderOpen className="h-4 w-4" />
             </Button>
           )}
+          {inventoryTab === 'library' && (
+            <Button
+              variant="ghost"
+              size="xs"
+              className="no-drag"
+              onClick={() => void importResearchLibraryFiles()}
+              title={intl.formatMessage(i18n.libraryAddFilesHint)}
+            >
+              <FilePlus className="h-4 w-4" />
+            </Button>
+          )}
           {inventoryTab === 'library' && researchLibraryPath && (
             <Button
               variant="ghost"
@@ -997,6 +1046,15 @@ export function ArtifactPane() {
               <p className="mt-1 max-w-xs text-xs text-text-secondary">
                 {intl.formatMessage(i18n.libraryEmptyBody)}
               </p>
+              <Button
+                className="mt-3"
+                variant="outline"
+                size="sm"
+                onClick={() => void importResearchLibraryFiles()}
+              >
+                <FilePlus className="mr-1.5 h-4 w-4" />
+                {intl.formatMessage(i18n.libraryAddFiles)}
+              </Button>
             </div>
           ) : (
             <div>

@@ -8,7 +8,11 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { getGitRepoRoot, isPathGitIgnored } from './gitIpc';
 import type { RendererDirectoryGrantRegistry } from '../utils/rendererDirectoryGrants';
-import { defaultResearchLibraryPath, listResearchLibraryFiles } from '../utils/researchLibrary';
+import {
+  defaultResearchLibraryPath,
+  importResearchLibraryFiles,
+  listResearchLibraryFiles,
+} from '../utils/researchLibrary';
 import type { Settings, SettingKey } from '../utils/settings';
 import { isSettingKey, isSettingValue, setSettingValue } from '../utils/settings';
 import { desktopCommandChannels } from '../ipc/channels';
@@ -58,6 +62,7 @@ export const SETTINGS_IPC_CHANNELS = [
   desktopCommandChannels.getResearchLibraryPath,
   desktopCommandChannels.chooseResearchLibraryPath,
   desktopCommandChannels.listResearchLibraryFiles,
+  desktopCommandChannels.importResearchLibraryFiles,
 ] as const;
 
 export function registerSettingsIpcHandlers(
@@ -162,5 +167,24 @@ export function registerSettingsIpcHandlers(
   targetIpcMain.handle(desktopCommandChannels.listResearchLibraryFiles, async (event) => {
     const libraryPath = await ensureResearchLibrary(event.sender.id);
     return listResearchLibraryFiles(libraryPath, getSettings().outputFileExtensions);
+  });
+  // The picker is filtered to the extensions the listing shows, so an imported
+  // document is never copied in only to stay invisible in the Library tab.
+  targetIpcMain.handle(desktopCommandChannels.importResearchLibraryFiles, async (event) => {
+    const libraryPath = await ensureResearchLibrary(event.sender.id);
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile', 'multiSelections'],
+      title: 'Add to Research Library',
+      filters: [
+        { name: 'Research documents', extensions: [...getSettings().outputFileExtensions] },
+      ],
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+      return { canceled: true, imported: [], failed: [] };
+    }
+    return {
+      canceled: false,
+      ...(await importResearchLibraryFiles(libraryPath, result.filePaths)),
+    };
   });
 }
