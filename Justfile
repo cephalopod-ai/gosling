@@ -93,9 +93,16 @@ run-ui-playwright:
     just release-binary
     echo "Running UI with Playwright debugging..."
     RUN_DIR="$HOME/gosling-runs/$(date +%Y%m%d-%H%M%S)"
-    mkdir -p "$RUN_DIR"
+    mkdir -p "$RUN_DIR/electron"
     echo "Using isolated directory: $RUN_DIR"
-    cd ui/desktop && ENABLE_PLAYWRIGHT=true GOSLING_PATH_ROOT="$RUN_DIR" pnpm run start-gui
+    # GOSLING_PATH_ROOT only isolates the backend's data directory. Electron's own
+    # userData (settings.json, renderer-directory-grants.json, backend-processes.json)
+    # defaults to the real ~/Library/Application Support/Gosling unless
+    # GOSLING_PLAYWRIGHT_USER_DATA_DIR is also set — see ui/desktop/tests/e2e/fixtures.ts
+    # for the same pairing. Without it, this recipe shares state with any real running
+    # Gosling.app: ENABLE_PLAYWRIGHT skips the single-instance lock, so both processes
+    # start, and this one's stale-backend cleanup can kill the real app's live backend.
+    cd "{{justfile_directory()}}/ui/desktop" && ENABLE_PLAYWRIGHT=true GOSLING_PATH_ROOT="$RUN_DIR" GOSLING_PLAYWRIGHT_USER_DATA_DIR="$RUN_DIR/electron" pnpm run start-gui
 
 run-ui-only:
     @echo "Running UI..."
@@ -429,3 +436,7 @@ build-test-tools:
 record-mcp-tests: build-test-tools
   GOSLING_RECORD_MCP=1 cargo test --package gosling --test mcp_integration_test
   git add crates/gosling/tests/mcp_replays/
+
+_cwdtest:
+    #!/usr/bin/env sh
+    echo "recipe cwd: $(pwd)"

@@ -237,6 +237,18 @@ export const cleanupRecordedBackendProcesses = async (
       continue;
     }
 
+    // "Looks like a gosling serve process" is not the same as "orphaned." This
+    // registry file lives under userData, which two Electron instances can share
+    // (a dev build launched without GOSLING_PLAYWRIGHT_USER_DATA_DIR, or two
+    // windows on the same install) — a live instance's own backend then matches
+    // this predicate too. Only reclaim a process whose spawning parent has
+    // actually exited; a record whose parent is still alive belongs to a running
+    // owner and is kept as-is, not touched or dropped from the registry.
+    if (isProcessRunning(record.parentPid)) {
+      stillRunning.push(record);
+      continue;
+    }
+
     logger.info(`Cleaning up stale gosling serve process ${record.pid}`);
     await terminateProcess(record.pid);
     if (isProcessRunning(record.pid)) {
