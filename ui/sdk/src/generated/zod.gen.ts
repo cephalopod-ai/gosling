@@ -2204,6 +2204,32 @@ export const zGetOutputRevisionResponse_unstable = z.object({
     currentHash: z.string().nullish()
 });
 
+/**
+ * Latest revision for each of several output paths in one round trip — for a
+ * file list showing many outputs at once, where fetching one path per
+ * listed row (as `ListOutputRevisionsRequest` with `limit: 1` requires)
+ * turns a single window focus into one request per visible row.
+ */
+export const zGetLatestOutputRevisionsRequest_unstable = z.object({
+    sessionId: z.string(),
+    paths: z.array(z.string())
+});
+
+export const zLatestOutputRevisionEntry = z.object({
+    path: z.string(),
+    revision: zOutputRevisionDto.nullish()
+});
+
+/**
+ * A requested path absent here (rather than present with `revision: null`)
+ * means it failed authorization or resolution — the same "unavailable"
+ * outcome a single-path caller would see as a request error, kept
+ * per-path here so one bad path cannot fail every other row in the batch.
+ */
+export const zGetLatestOutputRevisionsResponse_unstable = z.object({
+    revisions: z.array(zLatestOutputRevisionEntry)
+});
+
 export const zRestoreOutputRevisionRequest_unstable = z.object({
     sessionId: z.string(),
     path: z.string(),
@@ -3396,6 +3422,7 @@ export const zExtRequest = z.object({
             zSearchSessionMessagesRequest_unstable,
             zListOutputRevisionsRequest_unstable,
             zGetOutputRevisionRequest_unstable,
+            zGetLatestOutputRevisionsRequest_unstable,
             zRestoreOutputRevisionRequest_unstable,
             zListCompactionRevisionsRequest_unstable,
             zGetCompactionRevisionRequest_unstable,
@@ -3518,6 +3545,7 @@ export const zExtResponse = z.union([
                 zSearchSessionMessagesResponse_unstable,
                 zListOutputRevisionsResponse_unstable,
                 zGetOutputRevisionResponse_unstable,
+                zGetLatestOutputRevisionsResponse_unstable,
                 zRestoreOutputRevisionResponse_unstable,
                 zListCompactionRevisionsResponse_unstable,
                 zGetCompactionRevisionResponse_unstable,

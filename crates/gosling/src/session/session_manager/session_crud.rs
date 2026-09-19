@@ -85,27 +85,7 @@ impl SessionStorage {
 
     pub(super) async fn get_session(&self, id: &str, include_messages: bool) -> Result<Session> {
         let pool = self.pool().await?;
-        let mut session = sqlx::query_as::<_, Session>(
-            r#"
-        SELECT id, working_dir, additional_working_dirs_json, restrict_tools_to_working_dirs, name, description, user_set_name, session_type, created_at, updated_at, extension_data,
-               total_tokens, input_tokens, output_tokens,
-               cache_read_tokens, cache_write_tokens,
-               context_usage_estimated, last_request_tokens,
-               accumulated_total_tokens, accumulated_input_tokens, accumulated_output_tokens,
-               accumulated_cache_read_tokens, accumulated_cache_write_tokens,
-               accumulated_cost,
-               provider_name, model_config_json, gosling_mode,
-               archived_at, project_id, workspace_id, workspace_name,
-               credential_profile_id, credential_profile_name, credential_binding_id,
-               workspace_context_json
-        FROM sessions
-        WHERE id = ?
-    "#,
-        )
-            .bind(id)
-            .fetch_optional(pool)
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("Session not found"))?;
+        let mut session = Self::fetch_session_row(pool, id).await?;
 
         if include_messages {
             let conv = self.get_conversation(&session.id).await?;
@@ -131,6 +111,43 @@ impl SessionStorage {
         }
 
         Ok(session)
+    }
+
+    /// Same session row as `get_session(id, false)`, but never touches the
+    /// `messages` table: `message_count` stays `0` and `last_message_at` stays
+    /// `None`. For hot-path callers that only read the session's own columns
+    /// (provider, model config, token usage) and never the two derived
+    /// fields — `get_session(id, false)`'s `COUNT(*)`/`MAX(...)` scan over
+    /// every row for that session is pure waste for them, and on a long
+    /// conversation checked once per tool round, that waste is paid on every
+    /// round.
+    pub(super) async fn get_session_without_message_stats(&self, id: &str) -> Result<Session> {
+        let pool = self.pool().await?;
+        Self::fetch_session_row(pool, id).await
+    }
+
+    async fn fetch_session_row(pool: &sqlx::Pool<Sqlite>, id: &str) -> Result<Session> {
+        sqlx::query_as::<_, Session>(
+            r#"
+        SELECT id, working_dir, additional_working_dirs_json, restrict_tools_to_working_dirs, name, description, user_set_name, session_type, created_at, updated_at, extension_data,
+               total_tokens, input_tokens, output_tokens,
+               cache_read_tokens, cache_write_tokens,
+               context_usage_estimated, last_request_tokens,
+               accumulated_total_tokens, accumulated_input_tokens, accumulated_output_tokens,
+               accumulated_cache_read_tokens, accumulated_cache_write_tokens,
+               accumulated_cost,
+               provider_name, model_config_json, gosling_mode,
+               archived_at, project_id, workspace_id, workspace_name,
+               credential_profile_id, credential_profile_name, credential_binding_id,
+               workspace_context_json
+        FROM sessions
+        WHERE id = ?
+    "#,
+        )
+        .bind(id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("Session not found"))
     }
 
     pub(super) async fn get_session_with_messages_in_tx(

@@ -5,6 +5,26 @@ import {
   type ArtifactFileTimestampMap,
 } from '../types/artifactFileTimestamps';
 
+// A path's on-disk timestamps don't depend on which panel is asking, so this
+// cache is shared across every mounted list. It only ever shortens a
+// mount-time refresh with no reason to distrust the last read (switching
+// back to a tab that was showing the same files moments ago) — a focus or
+// explicit ARTIFACT_TIMESTAMPS_REFRESH_EVENT signal always bypasses it, so a
+// real change is never hidden behind a stale cache entry for longer than
+// this window.
+const TIMESTAMP_CACHE_TTL_MS = 3000;
+const timestampCache = new Map<
+  string,
+  { value: ArtifactFileTimestampMap[string]; fetchedAt: number }
+>();
+
+// Exposed so tests can isolate themselves from other tests' cached paths;
+// also a reasonable escape hatch if a caller ever needs to force a hard
+// refresh regardless of how recently a path was read.
+export function clearArtifactFileTimestampCache(): void {
+  timestampCache.clear();
+}
+
 export function useArtifactFileTimestamps(
   files: Array<{ path: string; timestampRevision?: string }>
 ): ArtifactFileTimestampMap {
@@ -20,14 +40,33 @@ export function useArtifactFileTimestamps(
     let cancelled = false;
     let revision = 0;
 
-    const refresh = async () => {
+    const refresh = async (bypassCache: boolean) => {
       const currentRevision = ++revision;
       const timestamps: ArtifactFileTimestampMap = {};
-      for (let offset = 0; offset < paths.length; offset += ARTIFACT_TIMESTAMPS_BATCH_LIMIT) {
-        const batch = paths.slice(offset, offset + ARTIFACT_TIMESTAMPS_BATCH_LIMIT);
+      const now = Date.now();
+      const uncachedPaths = bypassCache
+        ? paths
+        : paths.filter((filePath) => {
+            const cached = timestampCache.get(filePath);
+            if (cached && now - cached.fetchedAt < TIMESTAMP_CACHE_TTL_MS) {
+              timestamps[filePath] = cached.value;
+              return false;
+            }
+            return true;
+          });
+      for (
+        let offset = 0;
+        offset < uncachedPaths.length;
+        offset += ARTIFACT_TIMESTAMPS_BATCH_LIMIT
+      ) {
+        const batch = uncachedPaths.slice(offset, offset + ARTIFACT_TIMESTAMPS_BATCH_LIMIT);
         try {
           const result = await window.electron.getArtifactFileTimestamps(batch);
-          for (const filePath of batch) timestamps[filePath] = result[filePath] ?? null;
+          for (const filePath of batch) {
+            const value = result[filePath] ?? null;
+            timestamps[filePath] = value;
+            timestampCache.set(filePath, { value, fetchedAt: Date.now() });
+          }
         } catch {
           for (const filePath of batch) timestamps[filePath] = null;
         }
@@ -36,14 +75,14 @@ export function useArtifactFileTimestamps(
       if (!cancelled && currentRevision === revision) setSnapshot({ requestKey, timestamps });
     };
 
-    const onFocus = () => void refresh();
-    void refresh();
-    window.addEventListener('focus', onFocus);
-    window.addEventListener(ARTIFACT_TIMESTAMPS_REFRESH_EVENT, onFocus);
+    const onSignal = () => void refresh(true);
+    void refresh(false);
+    window.addEventListener('focus', onSignal);
+    window.addEventListener(ARTIFACT_TIMESTAMPS_REFRESH_EVENT, onSignal);
     return () => {
       cancelled = true;
-      window.removeEventListener('focus', onFocus);
-      window.removeEventListener(ARTIFACT_TIMESTAMPS_REFRESH_EVENT, onFocus);
+      window.removeEventListener('focus', onSignal);
+      window.removeEventListener(ARTIFACT_TIMESTAMPS_REFRESH_EVENT, onSignal);
     };
   }, [requestKey]);
 

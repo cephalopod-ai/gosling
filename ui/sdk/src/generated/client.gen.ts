@@ -83,6 +83,8 @@ import type {
   GetCompactionRevisionResponse_unstable,
   GetConfigExtensionsRequest_unstable,
   GetConfigExtensionsResponse_unstable,
+  GetLatestOutputRevisionsRequest_unstable,
+  GetLatestOutputRevisionsResponse_unstable,
   GetOutputRevisionRequest_unstable,
   GetOutputRevisionResponse_unstable,
   GetPromptRequest_unstable,
@@ -275,6 +277,7 @@ import {
   zGetAvailableExtensionsResponse_unstable,
   zGetCompactionRevisionResponse_unstable,
   zGetConfigExtensionsResponse_unstable,
+  zGetLatestOutputRevisionsResponse_unstable,
   zGetOutputRevisionResponse_unstable,
   zGetPromptResponse_unstable,
   zGetSessionExtensionsResponse_unstable,
@@ -1360,6 +1363,18 @@ export class GoslingExtClient {
     return zGetOutputRevisionResponse_unstable.parse(
       raw,
     ) as GetOutputRevisionResponse_unstable;
+  }
+
+  async sessionOutputsLatestBatch_unstable(
+    params: GetLatestOutputRevisionsRequest_unstable,
+  ): Promise<GetLatestOutputRevisionsResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/session/outputs/latest_batch",
+      params,
+    );
+    return zGetLatestOutputRevisionsResponse_unstable.parse(
+      raw,
+    ) as GetLatestOutputRevisionsResponse_unstable;
   }
 
   async sessionOutputsRestore_unstable(

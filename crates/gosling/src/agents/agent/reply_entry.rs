@@ -446,8 +446,6 @@ impl Agent {
         )
         .await?;
 
-        let conversation_to_compact = conversation.clone();
-
         Ok(Box::pin(async_stream::try_stream! {
             let _turn_lease = turn_lease;
             for event in command_preamble {
@@ -476,7 +474,7 @@ impl Agent {
                         .perform_compact(
                             &compact_model_config,
                             &session_config,
-                            &conversation_to_compact,
+                            &conversation,
                             plan.tokens_to_remove,
                             cancel_token.as_ref(),
                         )

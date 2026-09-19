@@ -46,6 +46,11 @@ const typeOrder: Record<DisplayItemType, number> = {
   Skill: 4,
 };
 
+// A deep recursive directory scan can gather thousands of candidates; a
+// popover showing all of them re-renders that many rows on every keystroke
+// for no UX benefit, since nobody scrolls past the first screenful anyway.
+const MAX_DISPLAY_RESULTS = 50;
+
 export interface DisplayItem {
   name: string;
   extra: string;
@@ -219,161 +224,52 @@ const MentionPopover = forwardRef<
 
           // Sort items to prioritize certain directories
           const sortedItems = items.sort((a, b) => {
-            const aPriority = priorityDirs.includes(a);
-            const bPriority = priorityDirs.includes(b);
+            const aPriority = priorityDirs.includes(a.name);
+            const bPriority = priorityDirs.includes(b.name);
             if (aPriority && !bPriority) return -1;
             if (!aPriority && bPriority) return 1;
-            return a.localeCompare(b);
+            return a.name.localeCompare(b.name);
           });
 
           // Increase item limit per directory for better coverage
           const itemLimit = depth === 0 ? 50 : depth === 1 ? 40 : 30;
 
           for (const item of sortedItems.slice(0, itemLimit)) {
-            const fullPath = `${dirPath}/${item}`;
-            const itemRelativePath = relativePath ? `${relativePath}/${item}` : item;
+            const name = item.name;
+            const fullPath = `${dirPath}/${name}`;
+            const itemRelativePath = relativePath ? `${relativePath}/${name}` : name;
 
             // Skip items in the skip list
-            if (skipDirsAtDepth.includes(item)) {
+            if (skipDirsAtDepth.includes(name)) {
               continue;
             }
 
             // Skip hidden items except for allowed hidden directories
-            if (item.startsWith('.') && !allowedHiddenDirs.includes(item)) {
+            if (name.startsWith('.') && !allowedHiddenDirs.includes(name)) {
               continue;
             }
 
-            // First, check if this looks like a file based on extension
-            const hasExtension = item.includes('.');
-            const ext = item.split('.').pop()?.toLowerCase();
-            const commonExtensions = [
-              // Code items
-              'txt',
-              'md',
-              'js',
-              'ts',
-              'jsx',
-              'tsx',
-              'py',
-              'java',
-              'cpp',
-              'c',
-              'h',
-              'css',
-              'html',
-              'json',
-              'xml',
-              'yaml',
-              'yml',
-              'toml',
-              'ini',
-              'cfg',
-              'sh',
-              'bat',
-              'ps1',
-              'rb',
-              'go',
-              'rs',
-              'php',
-              'sql',
-              'r',
-              'scala',
-              'swift',
-              'kt',
-              'dart',
-              'vue',
-              'svelte',
-              'astro',
-              'scss',
-              'less',
-              // Documentation
-              'readme',
-              'license',
-              'changelog',
-              'contributing',
-              // Config items
-              'gitignore',
-              'dockerignore',
-              'editorconfig',
-              'prettierrc',
-              'eslintrc',
-              // Images and assets
-              'png',
-              'jpg',
-              'jpeg',
-              'gif',
-              'svg',
-              'ico',
-              'webp',
-              'bmp',
-              'tiff',
-              'tif',
-              // Vector and design items
-              'ai',
-              'eps',
-              'sketch',
-              'fig',
-              'xd',
-              'psd',
-              // Other common items
-              'pdf',
-              'doc',
-              'docx',
-              'xls',
-              'xlsx',
-              'ppt',
-              'pptx',
-            ];
-
-            // If it has a known file extension, treat it as a file
-            if (hasExtension && ext && commonExtensions.includes(ext)) {
+            if (!item.isDirectory) {
               results.push({
                 extra: fullPath,
-                name: item,
+                name,
                 itemType: 'File',
                 relativePath: itemRelativePath,
               });
               continue;
             }
 
-            // If it's a known file without extension (README, LICENSE, etc.)
-            const knownFiles = [
-              'readme',
-              'license',
-              'changelog',
-              'contributing',
-              'dockerfile',
-              'makefile',
-            ];
-            if (!hasExtension && knownFiles.includes(item.toLowerCase())) {
-              results.push({
-                extra: fullPath,
-                name: item,
-                itemType: 'File',
-                relativePath: itemRelativePath,
-              });
-              continue;
-            }
+            results.push({
+              name,
+              extra: fullPath,
+              itemType: 'Directory',
+              relativePath: itemRelativePath,
+            });
 
-            // Otherwise, try to determine if it's a directory
-            try {
-              await window.electron.listFiles(fullPath);
-
-              results.push({
-                name: item,
-                extra: fullPath,
-                itemType: 'Directory',
-                relativePath: itemRelativePath,
-              });
-
-              // Recursively scan directories more aggressively
-              if (depth < 4 || priorityDirs.includes(item)) {
-                const subFiles = await scanDirectoryFromRoot(fullPath, itemRelativePath, depth + 1);
-                results.push(...subFiles);
-              }
-            } catch {
-              // If we can't list it and it doesn't have a known extension, skip it
-              // This could be a file with an unknown extension or a permission issue
+            // Recursively scan directories more aggressively
+            if (depth < 4 || priorityDirs.includes(name)) {
+              const subFiles = await scanDirectoryFromRoot(fullPath, itemRelativePath, depth + 1);
+              results.push(...subFiles);
             }
           }
 
@@ -414,7 +310,8 @@ const MentionPopover = forwardRef<
             if (a.depth !== b.depth) return a.depth - b.depth;
             const typeComparison = compareByType(a, b);
             return typeComparison || a.name.localeCompare(b.name);
-          });
+          })
+          .slice(0, MAX_DISPLAY_RESULTS);
       }
 
       return items
@@ -451,7 +348,8 @@ const MentionPopover = forwardRef<
           if (Math.abs(scoreDiff) >= 1) return scoreDiff;
           const typeComparison = compareByType(a, b);
           return typeComparison || a.name.localeCompare(b.name);
-        });
+        })
+        .slice(0, MAX_DISPLAY_RESULTS);
     }, [items, query, currentWorkingDir]);
 
     const getSelectionText = (item: DisplayItem): string => {

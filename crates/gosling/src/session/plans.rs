@@ -385,14 +385,19 @@ impl PlanService {
     }
 
     pub async fn interaction_policy(&self, session_id: &str) -> PlanResult<InteractionPolicy> {
-        let Some(snapshot) = self.snapshot(session_id).await? else {
+        let Some(plan) = self
+            .session_manager
+            .storage()
+            .latest_plan_status(session_id)
+            .await?
+        else {
             return Ok(InteractionPolicy::Normal);
         };
-        if snapshot.plan.status.is_open() {
+        if plan.status.is_open() {
             Ok(InteractionPolicy::Planning {
-                plan_id: snapshot.plan.id,
-                generation: snapshot.plan.generation,
-                capability_policy_version: snapshot.plan.capability_policy_version,
+                plan_id: plan.id,
+                generation: plan.generation,
+                capability_policy_version: plan.capability_policy_version,
             })
         } else {
             Ok(InteractionPolicy::Normal)

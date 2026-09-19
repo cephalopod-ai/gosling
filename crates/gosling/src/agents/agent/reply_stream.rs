@@ -156,6 +156,7 @@ impl Agent {
             let research_state = crate::session::DeepResearchState::from_extension_data(&session.extension_data);
             let mut research_nudge_sent = false;
             let mut pending_handoff_snapshot_id = pending_handoff_snapshot_id;
+            let mut token_accumulator = crate::context_mgmt::ConversationTokenAccumulator::new();
 
             loop {
                 if is_token_cancelled(&cancel_token) {
@@ -206,17 +207,18 @@ impl Agent {
                 // long approval-pending waits.
                 // Reload the session to get current token counts — the stale snapshot
                 // passed into reply_internal won't reflect updates from update_session_metrics.
-                let current_session_for_compact = session_manager.get_session(&session_config.id, false).await?;
+                let current_session_for_compact = session_manager.get_session_without_message_stats(&session_config.id).await?;
                 #[cfg(test)]
                 let auto_compact_threshold_override = self.config.auto_compact_threshold_override;
                 #[cfg(not(test))]
                 let auto_compact_threshold_override = None;
-                if let Some(auto_compaction) = crate::context_mgmt::auto_compaction_check(
+                if let Some(auto_compaction) = crate::context_mgmt::auto_compaction_check_incremental(
                     active_provider.as_ref(),
                     &conversation,
                     &current_session_for_compact,
                     auto_compact_threshold_override,
                     None,
+                    &mut token_accumulator,
                 )
                 .await?
                 {
@@ -245,6 +247,7 @@ impl Agent {
                         ).await {
                             Ok(compacted_conversation) => {
                                 conversation = compacted_conversation;
+                                token_accumulator.reset();
                                 let after_tokens = crate::context_mgmt::estimate_conversation_tokens(&conversation).await?;
                                 yield AgentEvent::HistoryReplaced(conversation.clone());
                                 yield AgentEvent::ContextUsage(context_usage_after_compaction(&auto_compaction.usage, after_tokens));
@@ -1015,6 +1018,7 @@ impl Agent {
                             {
                                 Ok(compacted_conversation) => {
                                     conversation = compacted_conversation;
+                                    token_accumulator.reset();
                                     did_recovery_compact_this_iteration = true;
                                     yield AgentEvent::HistoryReplaced(conversation.clone());
                                     break;

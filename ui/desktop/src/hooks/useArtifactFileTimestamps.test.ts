@@ -6,6 +6,8 @@ import type { ArtifactFileTimestampMap } from '../types/artifactFileTimestamps';
 const original = { createdAt: '2026-09-01T10:00:00Z', modifiedAt: '2026-09-08T11:00:00Z' };
 const updated = { ...original, modifiedAt: '2026-09-08T12:00:00Z' };
 
+// The shared timestamp cache is cleared after every test by the global
+// vitest setup (see src/test/setup.ts), so each test here starts clean.
 beforeEach(() => {
   vi.mocked(window.electron.getArtifactFileTimestamps).mockReset().mockResolvedValue({});
 });
@@ -63,6 +65,34 @@ describe('useArtifactFileTimestamps', () => {
     await waitFor(() => expect(result.current['/outputs/report.md']).toEqual(updated));
     unmount();
     window.dispatchEvent(new Event('focus'));
+    expect(getTimes).toHaveBeenCalledTimes(2);
+  });
+
+  it('serves a fresh remount from cache instead of re-reading the filesystem', async () => {
+    const getTimes = vi.mocked(window.electron.getArtifactFileTimestamps);
+    getTimes.mockResolvedValue({ '/outputs/report.md': original });
+    const first = renderHook(() => useArtifactFileTimestamps([{ path: '/outputs/report.md' }]));
+    await waitFor(() => expect(first.result.current['/outputs/report.md']).toEqual(original));
+    first.unmount();
+
+    // A tab switch that unmounts and remounts the list moments later — e.g.
+    // switching away and back — must not redo the filesystem read.
+    const second = renderHook(() => useArtifactFileTimestamps([{ path: '/outputs/report.md' }]));
+    await waitFor(() => expect(second.result.current['/outputs/report.md']).toEqual(original));
+    expect(getTimes).toHaveBeenCalledTimes(1);
+  });
+
+  it('bypasses the cache on focus even when the entry is fresh', async () => {
+    const getTimes = vi.mocked(window.electron.getArtifactFileTimestamps);
+    getTimes.mockResolvedValue({ '/outputs/report.md': original });
+    const { result } = renderHook(() =>
+      useArtifactFileTimestamps([{ path: '/outputs/report.md' }])
+    );
+    await waitFor(() => expect(result.current['/outputs/report.md']).toEqual(original));
+
+    getTimes.mockResolvedValue({ '/outputs/report.md': updated });
+    act(() => window.dispatchEvent(new Event('focus')));
+    await waitFor(() => expect(result.current['/outputs/report.md']).toEqual(updated));
     expect(getTimes).toHaveBeenCalledTimes(2);
   });
 });

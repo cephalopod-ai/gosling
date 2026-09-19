@@ -73,6 +73,11 @@ interface FileResponse {
   found: boolean;
 }
 
+export interface DirectoryEntry {
+  name: string;
+  isDirectory: boolean;
+}
+
 export interface ArtifactFileResponse {
   content: string;
   encoding: 'base64' | 'utf8';
@@ -146,7 +151,7 @@ type ElectronAPI = {
   deleteFile: (filePath: string) => Promise<boolean>;
   trashArtifactFiles: (paths: string[]) => Promise<ArtifactTrashResult[]>;
   ensureDirectory: (dirPath: string) => Promise<boolean>;
-  listFiles: (dirPath: string, extension?: string) => Promise<string[]>;
+  listFiles: (dirPath: string) => Promise<DirectoryEntry[]>;
   getAllowedExtensions: () => Promise<string[]>;
   getPathForFile: (file: File) => string;
   setMenuBarIcon: (show: boolean) => Promise<boolean>;
@@ -268,8 +273,7 @@ const electronAPI: ElectronAPI = {
   trashArtifactFiles: (paths: string[]) =>
     invokeMain(desktopCommandChannels.trashArtifactFiles, paths),
   ensureDirectory: (dirPath: string) => invokeMain(desktopCommandChannels.ensureDirectory, dirPath),
-  listFiles: (dirPath: string, extension?: string) =>
-    invokeMain(desktopCommandChannels.listFiles, dirPath, extension),
+  listFiles: (dirPath: string) => invokeMain(desktopCommandChannels.listFiles, dirPath),
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
   getAllowedExtensions: () => invokeMain(desktopCommandChannels.getAllowedExtensions),
   setMenuBarIcon: (show: boolean) => invokeMain(desktopCommandChannels.setMenuBarIcon, show),

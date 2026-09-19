@@ -611,10 +611,15 @@ export function registerFileIpcHandlers(
       return false;
     }
   });
-  targetIpcMain.handle(desktopCommandChannels.listFiles, async (event, dirPath, extension) => {
+  targetIpcMain.handle(desktopCommandChannels.listFiles, async (event, dirPath) => {
     try {
-      const files = await fs.readdir(await assertRendererFileAccess(event.sender.id, dirPath));
-      return extension ? files.filter((file) => file.endsWith(extension)) : files;
+      const entries = await fs.readdir(await assertRendererFileAccess(event.sender.id, dirPath), {
+        withFileTypes: true,
+      });
+      // Dirent instances don't survive IPC's structured clone with their
+      // methods intact, so resolve isDirectory() here rather than asking
+      // the caller to make a second round trip per entry just to find out.
+      return entries.map((entry) => ({ name: entry.name, isDirectory: entry.isDirectory() }));
     } catch (error) {
       console.error('Error listing files:', error);
       return [];

@@ -150,6 +150,71 @@ async fn models_append_revisions_and_markdown_history_survives_restart() {
 }
 
 #[tokio::test]
+async fn latest_batch_returns_one_entry_per_authorized_path() {
+    let fixture = Fixture::new().await;
+    fixture
+        .write(&fixture.session, "first", "model-a", "# Report v1")
+        .await;
+    fixture
+        .write(&fixture.session, "second", "model-a", "# Report v2")
+        .await;
+
+    let second_path = fixture.path.with_file_name("summary.md");
+    let call = CallToolRequestParams::new("developer__write").with_arguments(rmcp::object!({
+        "path": second_path.to_string_lossy(),
+        "content": "# Summary",
+    }));
+    let capture = fixture
+        .prepare(&fixture.session, "third", "model-a", &call)
+        .await;
+    fs::write(&second_path, "# Summary").unwrap();
+    fixture
+        .manager
+        .finish_output_capture(capture, &CallToolResult::success(vec![]))
+        .await
+        .unwrap();
+
+    let response = fixture
+        .manager
+        .get_latest_output_revisions(GetLatestOutputRevisionsRequest {
+            session_id: fixture.session.id.clone(),
+            paths: vec![
+                fixture.path.to_string_lossy().into_owned(),
+                second_path.to_string_lossy().into_owned(),
+                "/not/a/registered/output.md".to_string(),
+            ],
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(
+        response.revisions.len(),
+        2,
+        "an unauthorized path must be dropped, not fail the whole batch"
+    );
+    let by_path: std::collections::HashMap<_, _> = response
+        .revisions
+        .into_iter()
+        .map(|entry| (entry.path, entry.revision))
+        .collect();
+    let report = by_path
+        .get(fixture.path.to_string_lossy().as_ref())
+        .unwrap()
+        .as_ref()
+        .expect("report.md has revisions");
+    assert_eq!(
+        report.version, 2,
+        "must be the latest revision, not the first"
+    );
+    let summary = by_path
+        .get(second_path.to_string_lossy().as_ref())
+        .unwrap()
+        .as_ref()
+        .expect("summary.md has a revision");
+    assert_eq!(summary.version, 1);
+}
+
+#[tokio::test]
 async fn preexisting_content_is_saved_with_unknown_authorship() {
     let fixture = Fixture::new().await;
     fs::write(&fixture.path, "Human original").unwrap();

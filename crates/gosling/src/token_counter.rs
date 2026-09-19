@@ -127,18 +127,16 @@ impl TokenCounter {
         func_token_count
     }
 
-    pub fn count_chat_tokens(
-        &self,
-        system_prompt: &str,
-        messages: &[Message],
-        tools: &[Tool],
-    ) -> usize {
+    /// Token contribution of a run of messages, in isolation. Each message's
+    /// contribution depends only on its own content, never on its neighbors, so
+    /// callers may sum this over any contiguous slice — including a suffix of
+    /// messages appended since a previous count — and add the result to that
+    /// previous total instead of re-walking the whole conversation. Extracted
+    /// out of `count_chat_tokens` so both the one-shot and incremental paths
+    /// share one implementation rather than risking drift between two copies.
+    pub fn count_message_tokens(&self, messages: &[Message]) -> usize {
         let tokens_per_message = 4;
         let mut num_tokens = 0;
-
-        if !system_prompt.is_empty() {
-            num_tokens += self.count_tokens(system_prompt) + tokens_per_message;
-        }
 
         for message in messages {
             if !message.metadata.agent_visible {
@@ -161,6 +159,24 @@ impl TokenCounter {
                 }
             }
         }
+
+        num_tokens
+    }
+
+    pub fn count_chat_tokens(
+        &self,
+        system_prompt: &str,
+        messages: &[Message],
+        tools: &[Tool],
+    ) -> usize {
+        let tokens_per_message = 4;
+        let mut num_tokens = 0;
+
+        if !system_prompt.is_empty() {
+            num_tokens += self.count_tokens(system_prompt) + tokens_per_message;
+        }
+
+        num_tokens += self.count_message_tokens(messages);
 
         if !tools.is_empty() {
             num_tokens += self.count_tokens_for_tools(tools);

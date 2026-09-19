@@ -754,6 +754,17 @@ impl GoslingAcpAgent {
             .map_err(output_revision_error)
     }
 
+    #[custom_method(GetLatestOutputRevisionsRequest)]
+    async fn dispatch_get_latest_output_revisions(
+        &self,
+        req: GetLatestOutputRevisionsRequest,
+    ) -> Result<GetLatestOutputRevisionsResponse, agent_client_protocol::Error> {
+        self.session_manager
+            .get_latest_output_revisions(req)
+            .await
+            .map_err(output_revision_error)
+    }
+
     #[custom_method(RestoreOutputRevisionRequest)]
     async fn dispatch_restore_output_revision(
         &self,

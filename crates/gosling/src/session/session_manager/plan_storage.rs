@@ -493,23 +493,32 @@ impl SessionStorage {
 
     pub(crate) async fn plan_snapshot(&self, session_id: &str) -> PlanResult<Option<PlanSnapshot>> {
         let pool = self.pool().await.map_err(PlanError::from)?;
-        let row = sqlx::query(
-            r#"
-            SELECT * FROM session_plans
-            WHERE session_id = ?
-            ORDER BY CASE WHEN status IN ('drafting', 'awaiting_review') THEN 0 ELSE 1 END,
-                     generation DESC
-            LIMIT 1
-            "#,
-        )
-        .bind(session_id)
-        .fetch_optional(pool)
-        .await?;
-        let Some(row) = row else {
+        let Some(plan) = latest_plan_row(pool, session_id).await? else {
             return Ok(None);
         };
-        let plan = plan_from_row(&row)?;
         snapshot_for_plan(pool, plan).await.map(Some)
+    }
+
+    /// The same "current plan for this session" row `plan_snapshot` starts
+    /// from, without the revision/feedback/event hydration or the
+    /// cross-table `validate_plan_references` scan that follow it — plain
+    /// `SessionPlan` fields already carry `status`, `id`, `generation`, and
+    /// `capability_policy_version`, which is everything
+    /// `PlanService::interaction_policy` reads. That method still hits the
+    /// database on every tool dispatch rather than caching, because it needs
+    /// this instant's true status, not one from earlier in the turn; this
+    /// just stops paying for a full plan render on every one of those
+    /// checks. Skips `snapshot_for_plan`'s defensive active-revision
+    /// corruption assertion too — that assertion can't change whether a
+    /// plan counts as open, only whether an already-impossible-by-construction
+    /// data state gets flagged, and it stays enforced on every path that
+    /// actually renders a plan (review, resume, diagnostics).
+    pub(crate) async fn latest_plan_status(
+        &self,
+        session_id: &str,
+    ) -> PlanResult<Option<SessionPlan>> {
+        let pool = self.pool().await.map_err(PlanError::from)?;
+        latest_plan_row(pool, session_id).await
     }
 
     pub(crate) async fn plan_snapshot_generation(
@@ -1992,6 +2001,25 @@ fn optional_positive_u32(value: Option<i64>, label: &str) -> PlanResult<Option<u
         .transpose()
 }
 
+async fn latest_plan_row<'a, E>(executor: E, session_id: &str) -> PlanResult<Option<SessionPlan>>
+where
+    E: sqlx::Executor<'a, Database = Sqlite>,
+{
+    let row = sqlx::query(
+        r#"
+        SELECT * FROM session_plans
+        WHERE session_id = ?
+        ORDER BY CASE WHEN status IN ('drafting', 'awaiting_review') THEN 0 ELSE 1 END,
+                 generation DESC
+        LIMIT 1
+        "#,
+    )
+    .bind(session_id)
+    .fetch_optional(executor)
+    .await?;
+    row.map(|row| plan_from_row(&row)).transpose()
+}
+
 async fn snapshot_for_plan<'a, E>(executor: E, plan: SessionPlan) -> PlanResult<PlanSnapshot>
 where
     E: sqlx::Executor<'a, Database = Sqlite> + Copy,
@@ -2811,6 +2839,58 @@ mod continuity_tests {
             .await
             .unwrap();
         (temp_dir, manager, revision)
+    }
+
+    #[tokio::test]
+    async fn latest_plan_status_matches_snapshot_plan_fields_while_drafting() {
+        let (_temp_dir, manager, revision) = session_with_revision().await;
+        let session_id = revision.plan.session_id.clone();
+
+        let full = manager
+            .storage()
+            .plan_snapshot(&session_id)
+            .await
+            .unwrap()
+            .expect("plan exists");
+        assert_eq!(full.plan.status, PlanStatus::Drafting);
+
+        let lightweight = manager
+            .storage()
+            .latest_plan_status(&session_id)
+            .await
+            .unwrap()
+            .expect("plan exists");
+
+        assert_eq!(lightweight.id, full.plan.id);
+        assert_eq!(lightweight.status, full.plan.status);
+        assert_eq!(lightweight.generation, full.plan.generation);
+        assert_eq!(
+            lightweight.capability_policy_version,
+            full.plan.capability_policy_version
+        );
+        assert_eq!(lightweight.active_revision_id, full.plan.active_revision_id);
+    }
+
+    #[tokio::test]
+    async fn latest_plan_status_is_none_without_a_plan() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = SessionManager::new(temp_dir.path().join("data"));
+        let session = manager
+            .create_session(
+                temp_dir.path().to_path_buf(),
+                "No plan".to_string(),
+                SessionType::User,
+                GoslingMode::Approve,
+            )
+            .await
+            .unwrap();
+
+        assert!(manager
+            .storage()
+            .latest_plan_status(&session.id)
+            .await
+            .unwrap()
+            .is_none());
     }
 
     #[tokio::test]

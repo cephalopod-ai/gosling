@@ -198,7 +198,11 @@ impl<'a> IntoIterator for &'a Conversation {
 /// Fix a conversation that we're about to send to an LLM. So the first and last
 /// messages should always be from the user.
 pub fn fix_conversation(conversation: Conversation) -> (Conversation, Vec<String>) {
-    let all_messages = conversation.messages();
+    // The caller already handed us an owned Conversation, so move its messages out
+    // instead of cloning through a `&Vec<Message>` borrow: this shadow map used to
+    // clone every message twice (once per branch below) only to immediately discard
+    // the original, doubling the cost of every MOIM injection and provider round trip.
+    let Conversation(all_messages) = conversation;
 
     // Create a shadow map: track each message as either Visible or NonVisible with its index
     enum MessageSlot {
@@ -208,14 +212,14 @@ pub fn fix_conversation(conversation: Conversation) -> (Conversation, Vec<String
 
     let mut agent_visible_messages = Vec::new();
     let shadow_map: Vec<MessageSlot> = all_messages
-        .iter()
+        .into_iter()
         .map(|msg| {
             if msg.metadata.agent_visible {
                 let idx = agent_visible_messages.len();
-                agent_visible_messages.push(msg.clone());
+                agent_visible_messages.push(msg);
                 MessageSlot::Visible(idx)
             } else {
-                MessageSlot::NonVisible(msg.clone())
+                MessageSlot::NonVisible(msg)
             }
         })
         .collect();

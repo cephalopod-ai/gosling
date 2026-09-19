@@ -225,18 +225,22 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
 
-      # Temporarily disabled due to GitHub Actions bug on macOS runners
-      # https://github.com/actions/runner-images/issues/13341
-      # https://github.com/actions/runner/issues/4134
-      # - name: Cache pnpm dependencies
-      #   uses: actions/cache@8b402f58fbc84540c8b491a91e594a4576fec3d7  # v5.0.2
-      #   with:
-      #     path: |
-      #       ui/desktop/node_modules
-      #       .hermit/node/cache
-      #     key: ci-pnpm-cache-v1-${{ runner.os }}-${{ hashFiles('ui/pnpm-lock.yaml') }}
-      #     restore-keys: |
-      #       ci-pnpm-cache-v1-${{ runner.os }}-
+      # Re-enabled 2026-09-19: was disabled for a macOS-runner `hashFiles()`
+      # bug (https://github.com/actions/runner-images/issues/13341,
+      # https://github.com/actions/runner/issues/4134). GitHub confirmed a
+      # server-side fix ("all affected runners have been restored... a
+      # recurrence is not expected") and both issues are now closed as
+      # completed. If this job starts failing at the hashFiles() step again,
+      # that's the first thing to check.
+      - name: Cache pnpm dependencies
+        uses: actions/cache@8b402f58fbc84540c8b491a91e594a4576fec3d7  # v5.0.2
+        with:
+          path: |
+            ui/desktop/node_modules
+            .hermit/node/cache
+          key: ci-pnpm-cache-v1-${{ runner.os }}-${{ hashFiles('ui/pnpm-lock.yaml') }}
+          restore-keys: |
+            ci-pnpm-cache-v1-${{ runner.os }}-
 
       - name: Install Dependencies
         run: source ../../bin/activate-hermit && pnpm install --frozen-lockfile

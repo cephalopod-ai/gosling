@@ -5,41 +5,72 @@ import { getLatestOutputRevision } from './outputRevisions';
 
 vi.mock('./acpConnection', () => ({ getAcpClient: vi.fn() }));
 
-const history = vi.fn();
+const latestBatch = vi.fn();
 
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(getAcpClient).mockResolvedValue({
-    gosling: { sessionOutputsHistory_unstable: history },
+    gosling: { sessionOutputsLatestBatch_unstable: latestBatch },
   } as never);
 });
 
-it('limits simultaneous row summary requests and drains canceled rows without sending them', async () => {
-  const pending: Array<() => void> = [];
-  history.mockImplementation(
-    () => new Promise((resolve) => pending.push(() => resolve({ revisions: [] })))
-  );
-  const controllers = Array.from({ length: 6 }, () => new AbortController());
-  const requests = controllers.map((controller, index) =>
-    getLatestOutputRevision('chat', `/Outputs/${index}.md`, controller.signal).catch(
-      () => 'canceled'
-    )
-  );
-  await vi.waitFor(() => expect(history).toHaveBeenCalledTimes(4));
-  controllers[4].abort();
-  pending.shift()!();
-  await vi.waitFor(() => expect(history).toHaveBeenCalledTimes(5));
-  expect(history.mock.calls.some(([request]) => request.path === '/Outputs/4.md')).toBe(false);
-  pending.splice(0).forEach((resolve) => resolve());
-  expect(await Promise.all(requests)).toEqual([null, null, null, null, 'canceled', null]);
+it('coalesces same-tick requests for one session into a single batch call', async () => {
+  latestBatch.mockResolvedValue({
+    revisions: [
+      { path: '/Outputs/a.md', revision: { version: 1 } },
+      { path: '/Outputs/b.md', revision: null },
+    ],
+  });
+  const results = await Promise.all([
+    getLatestOutputRevision('chat', '/Outputs/a.md', new AbortController().signal),
+    getLatestOutputRevision('chat', '/Outputs/b.md', new AbortController().signal),
+  ]);
+  expect(latestBatch).toHaveBeenCalledTimes(1);
+  expect(latestBatch).toHaveBeenCalledWith({
+    sessionId: 'chat',
+    paths: ['/Outputs/a.md', '/Outputs/b.md'],
+  });
+  expect(results).toEqual([{ version: 1 }, null]);
 });
 
-it('releases a summary slot after a backend error', async () => {
-  history.mockRejectedValueOnce(new Error('unavailable')).mockResolvedValue({ revisions: [] });
-  await expect(
-    getLatestOutputRevision('chat', '/Outputs/a.md', new AbortController().signal)
-  ).rejects.toThrow('unavailable');
-  await expect(
-    getLatestOutputRevision('chat', '/Outputs/a.md', new AbortController().signal)
-  ).resolves.toBeNull();
+it('sends one batch per distinct session rather than merging across sessions', async () => {
+  latestBatch.mockResolvedValue({ revisions: [] });
+  await Promise.all([
+    getLatestOutputRevision('chat-1', '/Outputs/a.md', new AbortController().signal).catch(() => null),
+    getLatestOutputRevision('chat-2', '/Outputs/a.md', new AbortController().signal).catch(() => null),
+  ]);
+  expect(latestBatch).toHaveBeenCalledTimes(2);
+  const sessionIds = latestBatch.mock.calls.map(([request]) => request.sessionId).sort();
+  expect(sessionIds).toEqual(['chat-1', 'chat-2']);
+});
+
+it('rejects only the paths a batch response omits, and resolves the rest', async () => {
+  latestBatch.mockResolvedValue({ revisions: [{ path: '/Outputs/a.md', revision: null }] });
+  const dropped = getLatestOutputRevision('chat', '/Outputs/dropped.md', new AbortController().signal);
+  const kept = getLatestOutputRevision('chat', '/Outputs/a.md', new AbortController().signal);
+  await expect(dropped).rejects.toThrow('History unavailable');
+  await expect(kept).resolves.toBeNull();
+});
+
+it('rejects every waiter in a batch when the request itself fails', async () => {
+  latestBatch.mockRejectedValue(new Error('backend unreachable'));
+  const requests = Promise.all([
+    getLatestOutputRevision('chat', '/Outputs/a.md', new AbortController().signal).catch((e) => e.message),
+    getLatestOutputRevision('chat', '/Outputs/b.md', new AbortController().signal).catch((e) => e.message),
+  ]);
+  expect(await requests).toEqual(['backend unreachable', 'backend unreachable']);
+});
+
+it('rejects immediately on an already-aborted signal without joining a batch', async () => {
+  const controller = new AbortController();
+  controller.abort();
+  await expect(getLatestOutputRevision('chat', '/Outputs/a.md', controller.signal)).rejects.toBeTruthy();
+  expect(latestBatch).not.toHaveBeenCalled();
+});
+
+it('a later request for a session starts a fresh batch after the first flushes', async () => {
+  latestBatch.mockResolvedValue({ revisions: [{ path: '/Outputs/a.md', revision: null }] });
+  await getLatestOutputRevision('chat', '/Outputs/a.md', new AbortController().signal);
+  await getLatestOutputRevision('chat', '/Outputs/a.md', new AbortController().signal);
+  expect(latestBatch).toHaveBeenCalledTimes(2);
 });

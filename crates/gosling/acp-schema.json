@@ -6689,6 +6689,65 @@
       "x-side": "agent",
       "x-method": "_gosling/unstable/session/outputs/revision"
     },
+    "GetLatestOutputRevisionsRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "sessionId",
+        "paths"
+      ],
+      "description": "Latest revision for each of several output paths in one round trip — for a\nfile list showing many outputs at once, where fetching one path per\nlisted row (as `ListOutputRevisionsRequest` with `limit: 1` requires)\nturns a single window focus into one request per visible row.",
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/session/outputs/latest_batch"
+    },
+    "GetLatestOutputRevisionsResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "revisions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LatestOutputRevisionEntry"
+          }
+        }
+      },
+      "required": [
+        "revisions"
+      ],
+      "description": "A requested path absent here (rather than present with `revision: null`)\nmeans it failed authorization or resolution — the same \"unavailable\"\noutcome a single-path caller would see as a request error, kept\nper-path here so one bad path cannot fail every other row in the batch.",
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/session/outputs/latest_batch"
+    },
+    "LatestOutputRevisionEntry": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "revision": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OutputRevisionDto"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "path"
+      ]
+    },
     "RestoreOutputRevisionRequest_unstable": {
       "type": "object",
       "properties": {
@@ -11079,6 +11138,15 @@
                 {
                   "allOf": [
                     {
+                      "$ref": "#/$defs/GetLatestOutputRevisionsRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/session/outputs/latest_batch",
+                  "title": "GetLatestOutputRevisionsRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
                       "$ref": "#/$defs/RestoreOutputRevisionRequest_unstable"
                     }
                   ],
@@ -12049,6 +12117,14 @@
                         }
                       ],
                       "title": "GetOutputRevisionResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/GetLatestOutputRevisionsResponse_unstable"
+                        }
+                      ],
+                      "title": "GetLatestOutputRevisionsResponse_unstable"
                     },
                     {
                       "allOf": [

@@ -777,6 +777,30 @@ pub async fn resolve_context_usage(
     conversation: &Conversation,
     session: &crate::session::Session,
 ) -> Result<ContextUsageSnapshot> {
+    let estimated_tokens = estimate_conversation_tokens(conversation).await?;
+    context_usage_from_estimate(provider, session, estimated_tokens).await
+}
+
+/// Same result as [`resolve_context_usage`], but `estimated_tokens` comes from
+/// `accumulator` extending its running total over only the messages appended
+/// since its last update, instead of re-tokenizing the whole conversation.
+/// Shares `context_usage_from_estimate` with the full-recompute path so a
+/// context-limit or stored-usage change can never affect the two differently.
+pub async fn resolve_context_usage_incremental(
+    provider: &dyn Provider,
+    conversation: &Conversation,
+    session: &crate::session::Session,
+    accumulator: &mut ConversationTokenAccumulator,
+) -> Result<ContextUsageSnapshot> {
+    let estimated_tokens = accumulator.update(conversation).await?;
+    context_usage_from_estimate(provider, session, estimated_tokens).await
+}
+
+async fn context_usage_from_estimate(
+    provider: &dyn Provider,
+    session: &crate::session::Session,
+    estimated_tokens: usize,
+) -> Result<ContextUsageSnapshot> {
     let config = Config::global();
     let model_config = session
         .model_config
@@ -792,7 +816,6 @@ pub async fn resolve_context_usage(
         .await
         .unwrap_or_else(|_| model_config.context_limit());
 
-    let estimated_tokens = estimate_conversation_tokens(conversation).await?;
     let stored_current_tokens = session
         .usage
         .total_tokens
@@ -813,6 +836,59 @@ pub async fn resolve_context_usage(
     })
 }
 
+/// Running token total for a conversation's agent-visible messages, valid only
+/// while the conversation is grown by appending. Detects any other change —
+/// compaction replacing history, a retry rewinding it, anything this module
+/// didn't anticipate — by checking that its own last-seen message count and
+/// token contribution still match a fresh slice of the same length, and falls
+/// back to a full recount whenever that check fails. It is never possible for
+/// this to return a value a full recount would disagree with; the only
+/// consequence of being wrong about "append-only" is losing the speedup for
+/// that one call, not returning a wrong count.
+#[derive(Debug, Default, Clone)]
+pub struct ConversationTokenAccumulator {
+    counted_len: usize,
+    /// Token contribution of `messages[..counted_len]`, excluding the trailing
+    /// reply-primer constant `count_chat_tokens` adds once per call.
+    counted_tokens: usize,
+}
+
+impl ConversationTokenAccumulator {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Resets to empty, forcing the next `update` to recount from scratch.
+    /// Callers should invoke this whenever they replace a conversation outright
+    /// (compaction, a fresh session load) rather than appending to it, so a
+    /// shrunk-then-regrown length can never coincidentally look unchanged.
+    pub fn reset(&mut self) {
+        *self = Self::default();
+    }
+
+    async fn update(&mut self, conversation: &Conversation) -> Result<usize> {
+        let counter = crate::token_counter::shared_token_counter()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to create token counter: {}", e))?;
+        let messages = conversation.messages();
+
+        if messages.len() >= self.counted_len {
+            let suffix_tokens = counter.count_message_tokens(&messages[self.counted_len..]);
+            self.counted_tokens += suffix_tokens;
+            self.counted_len = messages.len();
+        } else {
+            // Shorter than last time: something other than a plain append
+            // happened (compaction the caller didn't tell us about, a rewind).
+            // Recount everything rather than trust a total that no longer
+            // corresponds to this conversation.
+            self.counted_tokens = counter.count_message_tokens(messages);
+            self.counted_len = messages.len();
+        }
+
+        Ok(self.counted_tokens + 3) // Reply primer, matching count_chat_tokens.
+    }
+}
+
 /// Resolves one canonical context snapshot and, when the threshold is crossed,
 /// derives the matching reduction plan from that same snapshot. Callers should
 /// use this instead of checking and budgeting in separate tokenization passes.
@@ -823,16 +899,59 @@ pub async fn auto_compaction_check(
     threshold_override: Option<f64>,
     reduction_override: Option<f64>,
 ) -> Result<Option<AutoCompactionCheck>> {
-    if provider.capabilities().context_ownership
-        != crate::providers::base::ContextOwnership::Gosling
-    {
-        return Ok(None);
-    }
-
-    let Some(threshold) = enabled_auto_compact_threshold(threshold_override) else {
+    let Some(threshold) = compaction_threshold_if_applicable(provider, threshold_override) else {
         return Ok(None);
     };
     let usage = resolve_context_usage(provider, conversation, session).await?;
+    compaction_plan_from_usage(usage, threshold, reduction_override)
+}
+
+/// Same decision as [`auto_compaction_check`], but the token estimate underneath
+/// `usage.estimated_tokens` comes from `accumulator` instead of a full
+/// re-tokenization of every agent-visible message. Intended for the reply loop's
+/// per-tool-round check, which used to pay for a complete re-walk of the
+/// conversation on every iteration; every other caller keeps using
+/// `auto_compaction_check`, which this delegates to for the actual plan
+/// arithmetic so the two paths can never disagree on when to compact.
+pub async fn auto_compaction_check_incremental(
+    provider: &dyn Provider,
+    conversation: &Conversation,
+    session: &crate::session::Session,
+    threshold_override: Option<f64>,
+    reduction_override: Option<f64>,
+    accumulator: &mut ConversationTokenAccumulator,
+) -> Result<Option<AutoCompactionCheck>> {
+    let Some(threshold) = compaction_threshold_if_applicable(provider, threshold_override) else {
+        return Ok(None);
+    };
+    let usage =
+        resolve_context_usage_incremental(provider, conversation, session, accumulator).await?;
+    compaction_plan_from_usage(usage, threshold, reduction_override)
+}
+
+/// `None` covers both "this provider manages its own context" and "auto-compact
+/// is disabled" — every caller treats both the same way (skip compaction
+/// entirely), so this collapses them into one signal instead of a nested Option.
+fn compaction_threshold_if_applicable(
+    provider: &dyn Provider,
+    threshold_override: Option<f64>,
+) -> Option<f64> {
+    if provider.capabilities().context_ownership
+        != crate::providers::base::ContextOwnership::Gosling
+    {
+        return None;
+    }
+    enabled_auto_compact_threshold(threshold_override)
+}
+
+/// The plan-decision half of `auto_compaction_check`, factored out so the
+/// incremental and full-recompute paths reach identical conclusions from
+/// identical usage snapshots — only how `usage` was obtained may differ.
+fn compaction_plan_from_usage(
+    usage: ContextUsageSnapshot,
+    threshold: f64,
+    reduction_override: Option<f64>,
+) -> Result<Option<AutoCompactionCheck>> {
     let usage_ratio = usage.current_tokens as f64 / usage.context_limit as f64;
     if usage_ratio <= threshold {
         return Ok(Some(AutoCompactionCheck { usage, plan: None }));
@@ -2694,5 +2813,73 @@ mod tests {
             next_turn.plan.is_none(),
             "scenario 10: a prior large request must not retrigger compaction after the active context was reduced"
         );
+    }
+
+    fn numbered_messages(count: usize) -> Vec<Message> {
+        (0..count)
+            .map(|i| Message::user().with_text(format!("message number {i} has some body text")))
+            .collect()
+    }
+
+    async fn full_recount_plus_primer(messages: &[Message]) -> usize {
+        let counter = crate::token_counter::shared_token_counter().await.unwrap();
+        counter.count_message_tokens(messages) + 3
+    }
+
+    #[tokio::test]
+    async fn test_token_accumulator_incremental_matches_full_recount() {
+        let mut accumulator = ConversationTokenAccumulator::new();
+        let all_messages = numbered_messages(9);
+
+        // Feed the accumulator in three growing chunks, as the reply loop would
+        // across several tool-call round trips appending to the same conversation.
+        for chunk_end in [3, 6, 9] {
+            let conversation = Conversation::new_unvalidated(all_messages[..chunk_end].to_vec());
+            let incremental = accumulator.update(&conversation).await.unwrap();
+            let expected = full_recount_plus_primer(&all_messages[..chunk_end]).await;
+            assert_eq!(
+                incremental, expected,
+                "incremental total must match a full recount after appending up to message {chunk_end}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_token_accumulator_self_heals_on_shrink_without_reset() {
+        let mut accumulator = ConversationTokenAccumulator::new();
+        let long_messages = numbered_messages(10);
+        let long_conversation = Conversation::new_unvalidated(long_messages.clone());
+        accumulator.update(&long_conversation).await.unwrap();
+
+        // Simulate a caller that replaced the conversation with a shorter one
+        // (e.g. compaction) without calling `reset()` first — the length check
+        // inside `update` must still recover the correct total rather than
+        // returning a stale, too-large one.
+        let short_messages = numbered_messages(3);
+        let short_conversation = Conversation::new_unvalidated(short_messages.clone());
+        let healed = accumulator.update(&short_conversation).await.unwrap();
+        let expected = full_recount_plus_primer(&short_messages).await;
+        assert_eq!(
+            healed, expected,
+            "a shrink must trigger a full recount, not an inflated running total"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_token_accumulator_reset_forces_full_recount() {
+        let mut accumulator = ConversationTokenAccumulator::new();
+        let messages = numbered_messages(5);
+        let conversation = Conversation::new_unvalidated(messages.clone());
+        accumulator.update(&conversation).await.unwrap();
+
+        accumulator.reset();
+        assert_eq!(accumulator.counted_len, 0);
+        assert_eq!(accumulator.counted_tokens, 0);
+
+        // Same conversation, same length as before reset: without reset this
+        // would short-circuit as "no new suffix"; after reset it must recount.
+        let after_reset = accumulator.update(&conversation).await.unwrap();
+        let expected = full_recount_plus_primer(&messages).await;
+        assert_eq!(after_reset, expected);
     }
 }

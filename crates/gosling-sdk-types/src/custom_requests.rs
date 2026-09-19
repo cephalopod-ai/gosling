@@ -1441,6 +1441,35 @@ pub struct RestoreOutputRevisionResponse {
     pub revision: OutputRevisionDto,
 }
 
+/// Latest revision for each of several output paths in one round trip — for a
+/// file list showing many outputs at once, where fetching one path per
+/// listed row (as `ListOutputRevisionsRequest` with `limit: 1` requires)
+/// turns a single window focus into one request per visible row.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(method = "_gosling/unstable/session/outputs/latest_batch", response = GetLatestOutputRevisionsResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct GetLatestOutputRevisionsRequest {
+    pub session_id: String,
+    pub paths: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LatestOutputRevisionEntry {
+    pub path: String,
+    pub revision: Option<OutputRevisionDto>,
+}
+
+/// A requested path absent here (rather than present with `revision: null`)
+/// means it failed authorization or resolution — the same "unavailable"
+/// outcome a single-path caller would see as a request error, kept
+/// per-path here so one bad path cannot fail every other row in the batch.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct GetLatestOutputRevisionsResponse {
+    pub revisions: Vec<LatestOutputRevisionEntry>,
+}
+
 /// Search persisted messages within one session.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
 #[request(

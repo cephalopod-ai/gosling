@@ -464,6 +464,72 @@ impl SessionManager {
         })
     }
 
+    /// Same "one row, most recent version" lookup as `list_output_revisions`
+    /// with `limit: 1`, for every path in `request.paths` in a single round
+    /// trip. Authorization stays per-path (each path independently proves it
+    /// is a registered output of this session before its revision is read),
+    /// but the revision lookup itself is one query instead of one per path.
+    /// A path that fails authorization is left out of the response — see
+    /// `GetLatestOutputRevisionsResponse` — rather than failing every other
+    /// path in the same batch.
+    pub async fn get_latest_output_revisions(
+        &self,
+        request: GetLatestOutputRevisionsRequest,
+    ) -> Result<GetLatestOutputRevisionsResponse> {
+        const MAX_BATCH_PATHS: usize = 500;
+        // Two requested paths (e.g. a relative and an absolute spelling of
+        // the same file) can resolve to the same canonical path; keep every
+        // requested path that authorizes, but query each distinct resolved
+        // path only once.
+        let mut authorized: Vec<(String, String)> = Vec::new(); // (requested_path, resolved_path)
+        let mut distinct_resolved: BTreeSet<String> = BTreeSet::new();
+        for path in request.paths.iter().take(MAX_BATCH_PATHS) {
+            if let Ok((_, resolved)) = self
+                .authorized_output(&request.session_id, path, false)
+                .await
+            {
+                let resolved = resolved.to_string_lossy().into_owned();
+                distinct_resolved.insert(resolved.clone());
+                authorized.push((path.clone(), resolved));
+            }
+        }
+
+        let mut latest_by_resolved: BTreeMap<String, OutputRevisionDto> = BTreeMap::new();
+        if !distinct_resolved.is_empty() {
+            let placeholders = distinct_resolved
+                .iter()
+                .map(|_| "?")
+                .collect::<Vec<_>>()
+                .join(", ");
+            let sql = format!(
+                "SELECT path, metadata_json FROM output_revisions WHERE path IN ({placeholders}) ORDER BY path, version DESC"
+            );
+            let mut query = sqlx::query_as::<_, (String, String)>(&sql);
+            for resolved in &distinct_resolved {
+                query = query.bind(resolved);
+            }
+            let rows = query.fetch_all(self.storage.pool().await?).await?;
+            for (resolved_path, metadata_json) in rows {
+                // Rows arrive ordered by version DESC within each path, so the
+                // first row seen per path is already its latest revision.
+                if let std::collections::btree_map::Entry::Vacant(entry) =
+                    latest_by_resolved.entry(resolved_path)
+                {
+                    entry.insert(serde_json::from_str(&metadata_json)?);
+                }
+            }
+        }
+
+        let revisions = authorized
+            .into_iter()
+            .map(|(requested_path, resolved)| LatestOutputRevisionEntry {
+                revision: latest_by_resolved.get(&resolved).cloned(),
+                path: requested_path,
+            })
+            .collect();
+        Ok(GetLatestOutputRevisionsResponse { revisions })
+    }
+
     pub async fn get_output_revision(
         &self,
         request: GetOutputRevisionRequest,

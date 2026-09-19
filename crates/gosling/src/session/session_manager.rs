@@ -675,6 +675,13 @@ impl SessionManager {
         self.storage.get_session(id, include_messages).await
     }
 
+    /// See `SessionStorage::get_session_without_message_stats`: skips the
+    /// `messages` table scan that `get_session(id, false)` always pays for,
+    /// for callers that never read `message_count`/`last_message_at`.
+    pub async fn get_session_without_message_stats(&self, id: &str) -> Result<Session> {
+        self.storage.get_session_without_message_stats(id).await
+    }
+
     pub async fn get_session_for_compacted_resume(
         &self,
         id: &str,
@@ -2537,6 +2544,48 @@ mod tests {
         let with_messages = sm.get_session(&session.id, true).await.unwrap();
         assert_eq!(with_messages.message_count, 2);
         assert_eq!(with_messages.last_message_at, Some(expected));
+    }
+
+    #[tokio::test]
+    async fn test_get_session_without_message_stats_skips_message_derived_fields() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let session = sm
+            .create_session(
+                PathBuf::from("/tmp/test"),
+                "Lightweight session fetch".to_string(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+
+        add_message_at_millis(&sm, &session.id, "older", "2026-01-01T00:00:00Z").await;
+        add_message_at(&sm, &session.id, "newer", "2026-01-02T03:04:05Z").await;
+
+        // The full fetch pays for the messages-table scan and reports it.
+        let full = sm.get_session(&session.id, false).await.unwrap();
+        assert_eq!(full.message_count, 2);
+        assert!(full.last_message_at.is_some());
+
+        // The lightweight fetch never touches the messages table, so both
+        // derived fields stay at their "no messages" defaults regardless of
+        // how many messages actually exist — callers of this method must not
+        // read either field.
+        let lightweight = sm
+            .get_session_without_message_stats(&session.id)
+            .await
+            .unwrap();
+        assert_eq!(lightweight.message_count, 0);
+        assert_eq!(lightweight.last_message_at, None);
+
+        // Every other column must still match the full fetch exactly.
+        assert_eq!(lightweight.id, full.id);
+        assert_eq!(lightweight.name, full.name);
+        assert_eq!(lightweight.usage, full.usage);
+        assert_eq!(lightweight.provider_name, full.provider_name);
+        assert!(lightweight.model_config.is_none() && full.model_config.is_none());
+        assert_eq!(lightweight.last_request_tokens, full.last_request_tokens);
     }
 
     #[tokio::test]

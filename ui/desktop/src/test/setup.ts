@@ -1,5 +1,6 @@
 import '@testing-library/jest-dom';
 import { vi, afterEach } from 'vitest';
+import { clearArtifactFileTimestampCache } from '../hooks/useArtifactFileTimestamps';
 
 /// Files that never touch the DOM declare `@vitest-environment node` and skip
 /// jsdom construction, which costs far more than such a test's assertions. The
@@ -42,6 +43,13 @@ global.console = {
   warn: vi.fn(),
   error: vi.fn(),
 };
+
+// A path's cached timestamp is module-level state shared by every hook
+// instance, so without this, one test's cached path can silently serve a
+// stale value to an unrelated test file reusing the same path.
+afterEach(() => {
+  clearArtifactFileTimestampCache();
+});
 
 // Mock window.navigator.clipboard for copy functionality tests
 if (hasDom) {

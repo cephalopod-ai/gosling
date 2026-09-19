@@ -593,17 +593,31 @@ re-assessment and a new finding are in
       Electron process for at least five samples and reports p50/p95; page-cache
       state remains explicitly uncontrolled. Run with
       `GOSLING_RUN_PERFORMANCE=1 GOSLING_PERFORMANCE_RUNS=10 pnpm test-e2e -- performance.spec.ts`.
-- [~] **PERF-GSL-003** — the avoidable clones are reduced: MOIM now borrows the
-      conversation and only allocates a replacement when it injects context, and
-      tool-pair summarization only clones after finding eligible pairs. Per-turn
-      full-history tokenization and the remaining session reload are still open;
-      no wall-time profile was captured, so this is not claimed as a measured win.
-      The process-wide LRU encode-cache already removes the expensive re-encode;
-      the residual includes blake3 keying on every cache hit and session reloads.
-      The stale clone call-site claims were removed after current source
-      inspection. Not fixed: per Amdahl this sits behind `p ≀ 0.01` and the
-      audit's own §6 says do not touch it until a profile (the PERF-GSL-003
-      break-it harness) shows a non-trivial share.
+- [~] **PERF-GSL-003** — the avoidable clones are reduced further: MOIM already
+      borrowed the conversation and tool-pair summarization already cloned only
+      after finding eligible pairs; as of 2026-09-19, `fix_conversation`'s shadow
+      map moves messages into place instead of cloning them, and the reply
+      loop's compaction check no longer takes an unconditional
+      `conversation_to_compact` clone every turn (only the branch that actually
+      compacts clones). Per-turn full-history tokenization is also addressed:
+      `ConversationTokenAccumulator` sums only the message suffix appended since
+      its last call instead of re-walking the whole conversation, wired into the
+      reply loop's per-round compaction check (`context_mgmt/mod.rs`,
+      `agents/agent/reply_stream.rs`); both the incremental and full-recompute
+      paths share the same decision arithmetic so they cannot disagree on
+      whether to compact. The adjacent session-reload finding (same Low tier)
+      is untouched. No wall-time profile was captured — the PERF-GSL-003
+      break-it harness (synthetic 300-turn session, `t(2T)/t(T)` scaling ratio)
+      still does not exist, so this remains a structural argument (slice-only
+      re-tokenization; halved clone count at the touched sites), not a measured
+      win; no count-based scaling-ratio guardrail test was added either.
+      Verified via the existing conversation/moim/compaction/agent-integration
+      suites plus new accumulator, shadow-map, and lightweight session-fetch
+      tests (`docs/logs/session/2026-09-19-hotpath-perf-fixes.md`). Per Amdahl
+      this still sits behind `p ≲ 0.01` per the audit's own estimate; done at
+      explicit operator request in the linked session, not because a profile
+      justified it — the audit's non-goal ("do not micro-optimize while
+      unprofiled") is knowingly not followed here.
       `audit-performance-profile.md:284`.
 - [x] **PERF-GSL-004** — resolved 2026-08-17: fallback pattern scanning now uses a
       case-insensitive `RegexSet` to select matching patterns before running
