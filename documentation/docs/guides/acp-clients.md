@@ -215,7 +215,13 @@ Set the `GOSLING_SERVER__SECRET_KEY` environment variable to authenticate the AC
 GOSLING_SERVER__SECRET_KEY='a-long-random-secret' gosling serve
 ```
 
-Clients authenticate by sending the token in the `X-Secret-Key` header, or as a `?token=` query parameter for WebSocket connections (the browser WebSocket API can't set custom headers). Requests without a matching token receive `401 Unauthorized`, including WebSocket handshakes.
+Clients authenticate by sending the token in the `X-Secret-Key` header. The browser WebSocket API can't set custom headers, so browser clients offer the token as a WebSocket subprotocol named `gosling.token.<secret>` instead:
+
+```js
+new WebSocket('wss://HOST:PORT/acp', ['gosling.token.a-long-random-secret']);
+```
+
+The server selects the offered subprotocol in its handshake response. A `?token=` query parameter is rejected, because URLs end up in access logs, process listings, and `Referer` headers. Requests without a matching token receive `401 Unauthorized`, including WebSocket handshakes.
 
 ACP WebSocket Origin validation allows loopback web origins by default. For `gosling serve`, ACP CORS follows the same policy. If you pass any `--allowed-origin` values, that explicit list replaces the default loopback origins, so include every origin the client needs:
 
