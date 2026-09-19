@@ -1,3 +1,4 @@
+// @vitest-environment node
 import type { SessionArtifactDto } from '@repo-makeover/gosling-sdk';
 import { describe, expect, it } from 'vitest';
 import { coalesceSessionArtifactAliases } from './sessionArtifactAliases';

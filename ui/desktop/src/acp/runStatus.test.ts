@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { GoslingToolCallResponse_unstable } from '@repo-makeover/gosling-sdk';
 import type { Message } from '../types/message';

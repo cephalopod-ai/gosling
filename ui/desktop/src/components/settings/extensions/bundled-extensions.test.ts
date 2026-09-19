@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect, vi } from 'vitest';
 import { pruneDeprecatedBundledExtensions, syncBundledExtensions } from './bundled-extensions';
 import type { FixedExtensionEntry } from '../../ConfigContext';

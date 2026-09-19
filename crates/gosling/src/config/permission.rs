@@ -40,6 +40,63 @@ pub struct PermissionManager {
     config_path: PathBuf,
 }
 
+/// Shared by `PermissionManager::get_permission` and `PermissionSnapshot` so a
+/// batched read can never disagree with a single authority decision.
+fn lookup_permission(
+    permissions: &HashMap<String, PermissionConfig>,
+    category: &str,
+    principal_name: &str,
+) -> Option<PermissionLevel> {
+    let permission_config = permissions.get(category)?;
+    // A denial outranks the other levels: a principal listed in never_allow stays denied
+    // even when a stale entry also lists it under always_allow or ask_before.
+    if permission_config
+        .never_allow
+        .iter()
+        .any(|entry| entry == principal_name)
+    {
+        Some(PermissionLevel::NeverAllow)
+    } else if permission_config
+        .always_allow
+        .iter()
+        .any(|entry| entry == principal_name)
+    {
+        Some(PermissionLevel::AlwaysAllow)
+    } else if permission_config
+        .ask_before
+        .iter()
+        .any(|entry| entry == principal_name)
+    {
+        Some(PermissionLevel::AskBefore)
+    } else {
+        None
+    }
+}
+
+/// A single consistent read of the stored policy. A failed read denies every
+/// lookup, matching `get_permission`'s fail-closed behavior.
+#[derive(Debug)]
+pub struct PermissionSnapshot {
+    permissions: Option<HashMap<String, PermissionConfig>>,
+}
+
+impl PermissionSnapshot {
+    pub fn user_permission(&self, principal_name: &str) -> Option<PermissionLevel> {
+        self.lookup(USER_PERMISSION, principal_name)
+    }
+
+    pub fn smart_approve_permission(&self, principal_name: &str) -> Option<PermissionLevel> {
+        self.lookup(SMART_APPROVE_PERMISSION, principal_name)
+    }
+
+    fn lookup(&self, category: &str, principal_name: &str) -> Option<PermissionLevel> {
+        let Some(permissions) = &self.permissions else {
+            return Some(PermissionLevel::NeverAllow);
+        };
+        lookup_permission(permissions, category, principal_name)
+    }
+}
+
 const USER_PERMISSION: &str = "user";
 const SMART_APPROVE_PERMISSION: &str = "smart_approve";
 const EGRESS_DOMAIN_PERMISSION: &str = "egress_domain";
@@ -261,27 +318,32 @@ impl PermissionManager {
                 return Some(PermissionLevel::NeverAllow);
             }
         };
-        if let Some(permission_config) = permissions.get(category) {
-            // A denial outranks the other levels: a principal listed in never_allow stays denied
-            // even when a stale entry also lists it under always_allow or ask_before.
-            if permission_config
-                .never_allow
-                .contains(&principal_name.to_string())
-            {
-                return Some(PermissionLevel::NeverAllow);
-            } else if permission_config
-                .always_allow
-                .contains(&principal_name.to_string())
-            {
-                return Some(PermissionLevel::AlwaysAllow);
-            } else if permission_config
-                .ask_before
-                .contains(&principal_name.to_string())
-            {
-                return Some(PermissionLevel::AskBefore);
+        lookup_permission(&permissions, category, principal_name)
+    }
+
+    /// One locked read serving a batch of lookups, for callers that decide many
+    /// principals at once. Each `get_permission` re-reads and re-parses the file so
+    /// a grant revoked by another process applies immediately; rendering the whole
+    /// tool catalog does not need that guarantee per tool, and paying it per tool
+    /// turned one panel render into one locked read and YAML parse per tool.
+    ///
+    /// Do not use this to decide a tool call. Authority decisions stay on
+    /// `get_permission` so they observe a revocation made mid-turn.
+    pub fn snapshot(&self) -> PermissionSnapshot {
+        match self.read_permissions_snapshot() {
+            Ok(permissions) => PermissionSnapshot {
+                permissions: Some(permissions),
+            },
+            Err(error) => {
+                tracing::error!(
+                    security.event_type = "permission_read_failed",
+                    %error,
+                    path = ?self.config_path,
+                    "Permission state is unavailable; refusing to reuse authority"
+                );
+                PermissionSnapshot { permissions: None }
             }
         }
-        None
     }
 
     pub fn update_user_permission(
@@ -697,6 +759,72 @@ mod tests {
         assert_eq!(
             manager.get_smart_approve_permission(&tool_name),
             expect_cache
+        );
+    }
+}
+
+#[cfg(test)]
+mod snapshot_tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn manager() -> (PermissionManager, TempDir) {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = PermissionManager::new(temp_dir.path().to_path_buf());
+        (manager, temp_dir)
+    }
+
+    #[test]
+    fn snapshot_agrees_with_a_single_authority_lookup() {
+        let (manager, _temp) = manager();
+        manager
+            .update_user_permission("allowed_tool", PermissionLevel::AlwaysAllow)
+            .unwrap();
+        manager
+            .update_user_permission("denied_tool", PermissionLevel::NeverAllow)
+            .unwrap();
+
+        let snapshot = manager.snapshot();
+
+        for tool in ["allowed_tool", "denied_tool", "unknown_tool"] {
+            assert_eq!(
+                snapshot.user_permission(tool),
+                manager.get_user_permission(tool),
+                "snapshot disagreed with the authority lookup for {tool}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_denial_still_outranks_a_stale_allow_entry() {
+        let (manager, temp) = manager();
+        std::fs::write(
+            temp.path().join(PERMISSION_FILE),
+            "user:\n  always_allow:\n    - conflicted\n  ask_before: []\n  never_allow:\n    - conflicted\n",
+        )
+        .unwrap();
+
+        assert_eq!(
+            manager.snapshot().user_permission("conflicted"),
+            Some(PermissionLevel::NeverAllow)
+        );
+    }
+
+    #[test]
+    fn an_unreadable_policy_denies_every_lookup() {
+        let (manager, temp) = manager();
+        // A directory where the policy file belongs cannot be read as YAML.
+        std::fs::create_dir(temp.path().join(PERMISSION_FILE)).unwrap();
+
+        let snapshot = manager.snapshot();
+
+        assert_eq!(
+            snapshot.user_permission("anything"),
+            Some(PermissionLevel::NeverAllow)
+        );
+        assert_eq!(
+            snapshot.smart_approve_permission("anything"),
+            Some(PermissionLevel::NeverAllow)
         );
     }
 }

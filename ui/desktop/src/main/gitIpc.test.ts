@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
 import { GIT_IPC_CHANNELS, gitArgs, isValidGitBranch, registerGitIpcHandlers } from './gitIpc';
 

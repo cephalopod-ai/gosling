@@ -190,6 +190,55 @@ describe('ArtifactRouterProvider', () => {
     );
   });
 
+  it('does not republish routing when an equal artifact set arrives again', async () => {
+    renderRouter();
+    await waitFor(() => expect(setArtifactRoutingConfig).toHaveBeenCalled());
+
+    const deliverable = {
+      sessionId: 'session-1',
+      displayPath: 'report.md',
+      resolvedPath: '/active/report.md',
+      baseWorkingDir: '/active',
+      relation: 'created' as const,
+      provenance: 'built_in_tool' as const,
+      firstSeenAt: '2026-08-17T00:00:00Z',
+      lastSeenAt: '2026-08-17T00:00:00Z',
+    };
+
+    act(() => router.setVisibleSessionArtifacts([deliverable]));
+    await waitFor(() =>
+      expect(setArtifactRoutingConfig).toHaveBeenCalledWith(
+        expect.objectContaining({ artifactFiles: ['/active/report.md'] })
+      )
+    );
+    setArtifactRoutingConfig.mockClear();
+
+    // The session snapshot hands over a fresh array on every store notification,
+    // which is once per streamed chunk. An equal set must not re-run the effect,
+    // because each run publishes null and then republishes, and main revalidates
+    // every output folder and artifact file with filesystem calls both times.
+    act(() => router.setVisibleSessionArtifacts([{ ...deliverable }]));
+    act(() => router.setVisibleSessionArtifacts([{ ...deliverable }]));
+    await Promise.resolve();
+
+    expect(setArtifactRoutingConfig).not.toHaveBeenCalled();
+
+    // A real change still republishes, so capabilities are never stale.
+    act(() =>
+      router.setVisibleSessionArtifacts([
+        deliverable,
+        { ...deliverable, displayPath: 'second.md', resolvedPath: '/active/second.md' },
+      ])
+    );
+    await waitFor(() =>
+      expect(setArtifactRoutingConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          artifactFiles: ['/active/report.md', '/active/second.md'],
+        })
+      )
+    );
+  });
+
   it('authorizes only session-generated user-facing deliverables', async () => {
     renderRouter();
     act(() =>

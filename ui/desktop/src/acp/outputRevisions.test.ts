@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { beforeEach, expect, it, vi } from 'vitest';
 import { getAcpClient } from './acpConnection';
 import { getLatestOutputRevision } from './outputRevisions';

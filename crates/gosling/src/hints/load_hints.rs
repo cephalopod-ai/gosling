@@ -90,6 +90,12 @@ impl SubdirectoryHintTracker {
             return Vec::new();
         }
 
+        // The git-root walk and the .gitignore compile depend only on working_dir,
+        // so they are hoisted out of the loop; they used to repeat once per newly
+        // touched subdirectory.
+        let import_boundary = find_git_root(working_dir).unwrap_or(working_dir);
+        let gitignore = build_gitignore(working_dir);
+
         let mut results = Vec::new();
         for dir in pending {
             if !dir.starts_with(working_dir) || dir == working_dir {
@@ -98,9 +104,13 @@ impl SubdirectoryHintTracker {
             if self.loaded_dirs.contains(&dir) {
                 continue;
             }
-            if let Some(content) =
-                load_hints_from_directory(&dir, working_dir, &self.hints_filenames)
-            {
+            if let Some(content) = load_hints_from_directory(
+                &dir,
+                working_dir,
+                &self.hints_filenames,
+                import_boundary,
+                &gitignore,
+            ) {
                 let key = format!("subdir_hints:{}", dir.display());
                 results.push((key, content));
             }
@@ -142,6 +152,8 @@ fn load_hints_from_directory(
     directory: &Path,
     working_dir: &Path,
     hints_filenames: &[String],
+    import_boundary: &Path,
+    gitignore: &Gitignore,
 ) -> Option<String> {
     if !directory.is_dir() || !directory.is_absolute() {
         return None;
@@ -150,10 +162,6 @@ fn load_hints_from_directory(
     if !directory.starts_with(working_dir) || directory == working_dir {
         return None;
     }
-
-    let git_root = find_git_root(working_dir);
-    let import_boundary = git_root.unwrap_or(working_dir);
-    let gitignore = build_gitignore(working_dir);
 
     let mut directories: Vec<PathBuf> = directory
         .ancestors()
@@ -168,13 +176,8 @@ fn load_hints_from_directory(
             let hints_path = dir.join(hints_filename);
             if hints_path.is_file() {
                 let mut visited = HashSet::new();
-                let expanded = read_referenced_files(
-                    &hints_path,
-                    import_boundary,
-                    &mut visited,
-                    0,
-                    &gitignore,
-                );
+                let expanded =
+                    read_referenced_files(&hints_path, import_boundary, &mut visited, 0, gitignore);
                 if !expanded.is_empty() {
                     contents.push(expanded);
                 }

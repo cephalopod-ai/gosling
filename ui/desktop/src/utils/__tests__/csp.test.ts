@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect } from 'vitest';
 import { buildConnectSrc, buildFrameSrc, shouldUpgradeInsecureRequests, buildCSP } from '../csp';
 import type { ExternalGoslingdConfig } from '../settings';

@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { acpExportSession, type SessionListItem } from '../acp/sessions';
 import { saveSessionArtifactExport } from './sessionArtifactExport';

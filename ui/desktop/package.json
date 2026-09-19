@@ -11,7 +11,7 @@
   "scripts": {
     "postinstall": "pnpm run build-gosling-sdk",
     "typecheck": "tsc --noEmit",
-    "build-gosling-sdk": "pnpm --filter @repo-makeover/gosling-sdk run build && pnpm run clean-vite-cache",
+    "build-gosling-sdk": "node scripts/build-gosling-sdk.js",
     "clean-vite-cache": "node scripts/clean-vite-cache.js",
     "shell:test-profile": "node --test --test-concurrency=1 scripts/shell-profile.test.js scripts/shell-consumer.test.js scripts/shell-consumer-vite.test.js scripts/shell-forge-profile.test.js scripts/resolve-shell-profile.test.js scripts/forge-config.test.js scripts/shell-fixture-audit.test.js scripts/shell-scaffold.test.js scripts/package-shell.test.js scripts/shell-package-verifier.test.js scripts/shell-package-lifecycle.test.js scripts/shell-workflow.test.js ../shell-kit/test/external-consumer.test.js",
     "shell:scaffold": "node scripts/shell-scaffold.js create",

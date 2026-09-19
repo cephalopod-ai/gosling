@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import type { Message, MessageContent } from '../types/message';
 import { canSafelyAutoResume } from './crashRecovery';

@@ -120,15 +120,26 @@ export function ArtifactRouterProvider({ children }: { children: React.ReactNode
     return workspaces.find((item) => item.workspace.id === workspaceId) ?? null;
   }, [activeWorkspaceId, visibleSessionWorkspaceId, workspaces]);
 
-  const artifactFiles = useMemo(
-    () => [
-      ...new Set(
-        visibleSessionArtifacts
-          .filter(isUserFacingSessionDeliverable)
-          .map((artifact) => artifact.resolvedPath)
-      ),
-    ],
+  // The session snapshot copies its artifact array on every store notification, so
+  // `visibleSessionArtifacts` changes identity on each streamed chunk even when the
+  // deliverables are identical. Keying on the joined paths keeps this list stable by
+  // value, so the routing effect below republishes only when the set really changes
+  // rather than twice per chunk. NUL cannot appear in a POSIX path, so it is a safe
+  // separator.
+  const artifactFilesKey = useMemo(
+    () =>
+      [
+        ...new Set(
+          visibleSessionArtifacts
+            .filter(isUserFacingSessionDeliverable)
+            .map((artifact) => artifact.resolvedPath)
+        ),
+      ].join('\u0000'),
     [visibleSessionArtifacts]
+  );
+  const artifactFiles = useMemo(
+    () => (artifactFilesKey === '' ? [] : artifactFilesKey.split('\u0000')),
+    [artifactFilesKey]
   );
 
   useEffect(() => {

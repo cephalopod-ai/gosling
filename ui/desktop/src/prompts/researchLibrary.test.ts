@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import { buildResearchLibraryPrompt, RESEARCH_LIBRARY_PROMPT_KEY } from './researchLibrary';
 

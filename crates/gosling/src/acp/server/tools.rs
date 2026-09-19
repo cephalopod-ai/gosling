@@ -35,7 +35,9 @@ impl GoslingAcpAgent {
         let session_id = &req.session_id;
         let agent = self.get_session_agent(&req.session_id).await?;
         let gosling_mode = agent.gosling_mode().await;
-        let permission_manager = self.permission_manager();
+        // One read for the whole catalog: this renders a panel, it does not decide a
+        // tool call, so it does not need a fresh locked read and YAML parse per tool.
+        let permissions = self.permission_manager().snapshot();
 
         let mut tools: Vec<ToolListItem> = agent
             .list_tools(session_id, req.extension_name)
@@ -43,11 +45,11 @@ impl GoslingAcpAgent {
             .map_err(|e| agent_client_protocol::Error::internal_error().data(e.to_string()))?
             .into_iter()
             .map(|tool| {
-                let permission = permission_manager
-                    .get_user_permission(&tool.name)
+                let permission = permissions
+                    .user_permission(&tool.name)
                     .or_else(|| {
                         if gosling_mode == GoslingMode::SmartApprove {
-                            permission_manager.get_smart_approve_permission(&tool.name)
+                            permissions.smart_approve_permission(&tool.name)
                         } else if gosling_mode == GoslingMode::Approve {
                             Some(PermissionLevel::AskBefore)
                         } else {

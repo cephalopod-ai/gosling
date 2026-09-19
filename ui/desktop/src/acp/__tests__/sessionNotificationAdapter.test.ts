@@ -1,3 +1,4 @@
+// @vitest-environment node
 import type { GoslingSessionNotification_unstable } from '@repo-makeover/gosling-sdk';
 import type { RequestPermissionRequest, SessionNotification } from '@agentclientprotocol/sdk';
 import { describe, expect, it } from 'vitest';

@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getAcpClient } from '../acpConnection';
 import { callMcpAppTool, listMcpAppTools, readMcpAppResource } from '../mcp-apps';

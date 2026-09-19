@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
 import { APP_IPC_HANDLE_CHANNELS, APP_IPC_ON_CHANNELS } from '../main/appIpc';
 import { FILE_IPC_CHANNELS } from '../main/fileIpc';

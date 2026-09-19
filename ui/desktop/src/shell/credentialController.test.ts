@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
 import type { ShellCredentialListResponse_unstable } from '@repo-makeover/gosling-sdk';
 import { createShellCredentialController } from './credentialController';

@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
 import { defaultSettings } from '../utils/settings';
 import { installApplicationMenu } from './applicationMenu';

@@ -1,3 +1,4 @@
+// @vitest-environment node
 import type { PlanSnapshotDto, SessionPlanResponse_unstable } from '@repo-makeover/gosling-sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getAcpClient, getAcpConnectionGeneration } from '../acpConnection';

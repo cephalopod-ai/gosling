@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import { canChangeDirectory, isDeclared, selectRoute } from './route';
 import { shellUiReducer } from './reducer';

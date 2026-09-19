@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import { zDiagnosticsReportLevel, zProviderTypeDto, zRole } from '@repo-makeover/gosling-sdk';
 import type { DiagnosticsLevel } from './diagnostics';

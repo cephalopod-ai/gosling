@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import { buildResearchModelTeamPrompt, RESEARCH_MODEL_TEAM_PROMPT_KEY } from './researchModelTeam';
 

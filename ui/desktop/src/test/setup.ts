@@ -1,6 +1,11 @@
 import '@testing-library/jest-dom';
 import { vi, afterEach } from 'vitest';
-import { cleanup } from '@testing-library/react';
+
+/// Files that never touch the DOM declare `@vitest-environment node` and skip
+/// jsdom construction, which costs far more than such a test's assertions. The
+/// DOM mocks below are therefore conditional; everything above them applies to
+/// both environments.
+const hasDom = typeof window !== 'undefined';
 
 // Mock Electron modules before any imports
 vi.mock('electron', () => ({
@@ -22,9 +27,12 @@ vi.mock('electron', () => ({
 
 // This is the standard set up to ensure that React Testing Library's
 // automatic cleanup runs after each test.
-afterEach(() => {
-  cleanup();
-});
+if (hasDom) {
+  const { cleanup } = await import('@testing-library/react');
+  afterEach(() => {
+    cleanup();
+  });
+}
 
 // Mock console methods to avoid noise in tests
 // eslint-disable-next-line no-undef
@@ -36,12 +44,14 @@ global.console = {
 };
 
 // Mock window.navigator.clipboard for copy functionality tests
-Object.assign(navigator, {
-  clipboard: {
-    write: vi.fn(() => Promise.resolve()),
-    writeText: vi.fn(() => Promise.resolve()),
-  },
-});
+if (hasDom) {
+  Object.assign(navigator, {
+    clipboard: {
+      write: vi.fn(() => Promise.resolve()),
+      writeText: vi.fn(() => Promise.resolve()),
+    },
+  });
+}
 
 // Mock settings store for tests
 const mockSettings: Record<string, unknown> = {
@@ -79,41 +89,42 @@ const mockSettings: Record<string, unknown> = {
 };
 
 // Mock window.electron for renderer process
-Object.defineProperty(window, 'electron', {
-  writable: true,
-  value: {
-    platform: 'darwin',
-    sessionDirectoryChooser: vi.fn(() => Promise.resolve({ canceled: true, filePaths: [] })),
-    directoryChooser: vi.fn(() => Promise.resolve({ canceled: true, filePaths: [] })),
-    getResearchLibraryPath: vi.fn(() =>
-      Promise.resolve('/Users/tester/Documents/Gosling Research Library')
-    ),
-    chooseResearchLibraryPath: vi.fn(() => Promise.resolve(null)),
-    listResearchLibraryFiles: vi.fn(() => Promise.resolve({ files: [], truncated: false })),
-    importResearchLibraryFiles: vi.fn(() =>
-      Promise.resolve({ canceled: true, imported: [], failed: [] })
-    ),
-    getArtifactFileTimestamps: vi.fn(() => Promise.resolve({})),
-    openArtifactFile: vi.fn(() => Promise.resolve(true)),
-    grantSessionDirectories: vi.fn(() => Promise.resolve([])),
-    getSetting: vi.fn((key: string) => Promise.resolve(mockSettings[key])),
-    getSettings: vi.fn((keys: string[]) =>
-      Promise.resolve(Object.fromEntries(keys.map((key) => [key, mockSettings[key]])))
-    ),
-    setSetting: vi.fn((key: string, value: unknown) => {
-      mockSettings[key] = value;
-      return Promise.resolve();
-    }),
-    setWakelockActive: vi.fn(() => Promise.resolve(true)),
-    setSessionRecoveryActive: vi.fn(() => Promise.resolve(true)),
-    reloadApp: vi.fn(),
-    showMessageBox: vi.fn(() => Promise.resolve({ response: 0 })),
-    saveArtifact: vi.fn(() => Promise.resolve({ canceled: true })),
-    setArtifactRoutingConfig: vi.fn(() => Promise.resolve(true)),
-    getIsFullScreen: vi.fn(() => Promise.resolve(false)),
-    on: vi.fn(),
-    off: vi.fn(),
-    writeClipboardText: vi.fn(() => Promise.resolve()),
-    writeClipboardHtml: vi.fn(() => Promise.resolve()),
-  },
-});
+if (hasDom)
+  Object.defineProperty(window, 'electron', {
+    writable: true,
+    value: {
+      platform: 'darwin',
+      sessionDirectoryChooser: vi.fn(() => Promise.resolve({ canceled: true, filePaths: [] })),
+      directoryChooser: vi.fn(() => Promise.resolve({ canceled: true, filePaths: [] })),
+      getResearchLibraryPath: vi.fn(() =>
+        Promise.resolve('/Users/tester/Documents/Gosling Research Library')
+      ),
+      chooseResearchLibraryPath: vi.fn(() => Promise.resolve(null)),
+      listResearchLibraryFiles: vi.fn(() => Promise.resolve({ files: [], truncated: false })),
+      importResearchLibraryFiles: vi.fn(() =>
+        Promise.resolve({ canceled: true, imported: [], failed: [] })
+      ),
+      getArtifactFileTimestamps: vi.fn(() => Promise.resolve({})),
+      openArtifactFile: vi.fn(() => Promise.resolve(true)),
+      grantSessionDirectories: vi.fn(() => Promise.resolve([])),
+      getSetting: vi.fn((key: string) => Promise.resolve(mockSettings[key])),
+      getSettings: vi.fn((keys: string[]) =>
+        Promise.resolve(Object.fromEntries(keys.map((key) => [key, mockSettings[key]])))
+      ),
+      setSetting: vi.fn((key: string, value: unknown) => {
+        mockSettings[key] = value;
+        return Promise.resolve();
+      }),
+      setWakelockActive: vi.fn(() => Promise.resolve(true)),
+      setSessionRecoveryActive: vi.fn(() => Promise.resolve(true)),
+      reloadApp: vi.fn(),
+      showMessageBox: vi.fn(() => Promise.resolve({ response: 0 })),
+      saveArtifact: vi.fn(() => Promise.resolve({ canceled: true })),
+      setArtifactRoutingConfig: vi.fn(() => Promise.resolve(true)),
+      getIsFullScreen: vi.fn(() => Promise.resolve(false)),
+      on: vi.fn(),
+      off: vi.fn(),
+      writeClipboardText: vi.fn(() => Promise.resolve()),
+      writeClipboardHtml: vi.fn(() => Promise.resolve()),
+    },
+  });
