@@ -79,6 +79,62 @@ describe('WorkingDirectoriesMenu workspace session grants', () => {
     expect(update(current).workspace_folder_roots).toEqual(current.workspace_folder_roots);
   });
 
+  it('hides recent entries that are already working directories, whatever their spelling', async () => {
+    const user = userEvent.setup();
+    Object.assign(window.electron, {
+      listRecentDirs: vi.fn().mockResolvedValue([
+        '/workspace/project/', // the session's own directory, trailing slash
+        '/workspace/project', // and exactly as stored
+        '/private/workshop', // already an additional directory
+        '/elsewhere/notes', // genuinely new
+      ]),
+    });
+    render(
+      <WorkingDirectoriesMenu
+        session={{ ...workspaceSession, additional_working_dirs: ['/private/workshop'] }}
+        onSessionChange={vi.fn()}
+      />,
+      { wrapper: IntlTestWrapper }
+    );
+
+    await user.click(screen.getByRole('button'));
+
+    const recent = await screen.findByText('/elsewhere/notes');
+    expect(recent).toBeInTheDocument();
+    // The session's own directories are not offered as something to add.
+    expect(screen.queryByText('/workspace/project/')).not.toBeInTheDocument();
+    expect(screen.queryAllByText('/private/workshop')).toHaveLength(1); // the pinned row only
+  });
+
+  it('says so when the backend accepts the add but nothing changed', async () => {
+    const user = userEvent.setup();
+    const onSessionChange = vi.fn();
+    // A symlinked spelling the renderer cannot tell apart: the backend canonicalizes
+    // it onto an existing directory and returns the list unchanged.
+    addSessionWorkingDir.mockResolvedValue({
+      workingDir: '/workspace/project',
+      additionalWorkingDirs: ['/private/workshop'],
+    });
+    Object.assign(window.electron, {
+      listRecentDirs: vi.fn().mockResolvedValue(['/link/to/workshop']),
+      addRecentDir: vi.fn(),
+    });
+    render(
+      <WorkingDirectoriesMenu
+        session={{ ...workspaceSession, additional_working_dirs: ['/private/workshop'] }}
+        onSessionChange={onSessionChange}
+      />,
+      { wrapper: IntlTestWrapper }
+    );
+
+    await user.click(screen.getByRole('button'));
+    await user.click(await screen.findByText('/link/to/workshop'));
+
+    await waitFor(() => expect(addSessionWorkingDir).toHaveBeenCalled());
+    // Not silently recorded as a fresh directory.
+    expect(window.electron.addRecentDir).not.toHaveBeenCalled();
+  });
+
   it('shows pinned read-only folder access', async () => {
     const user = userEvent.setup();
     render(

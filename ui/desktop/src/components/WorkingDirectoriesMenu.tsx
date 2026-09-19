@@ -107,6 +107,14 @@ interface WorkingDirectoriesMenuProps {
   showCount?: boolean;
 }
 
+/// The backend canonicalizes every directory it stores, so comparing raw strings
+/// let an already-added directory keep showing up under "Recent directories",
+/// where clicking it did nothing at all.
+function normalizeDirPath(value: string): string {
+  const normalized = value.replace(/\\/g, '/').replace(/\/+$/, '');
+  return /^[a-z]:\//i.test(normalized) ? normalized.toLowerCase() : normalized;
+}
+
 export default function WorkingDirectoriesMenu({
   session,
   onSessionChange,
@@ -126,6 +134,15 @@ export default function WorkingDirectoriesMenu({
     [session?.additional_working_dirs]
   );
   const isWorkspacePinned = Boolean(session?.workspace_id);
+  const sessionDirPaths = useMemo(
+    () =>
+      new Set(
+        [workingDir, ...additionalWorkingDirs]
+          .filter((dir): dir is string => Boolean(dir))
+          .map(normalizeDirPath)
+      ),
+    [workingDir, additionalWorkingDirs]
+  );
 
   const refreshRecentDirs = useCallback(async () => {
     const version = ++refreshVersionRef.current;
@@ -142,7 +159,7 @@ export default function WorkingDirectoriesMenu({
   const addDirectory = useCallback(
     async (dir: string) => {
       if (!session) return;
-      if (dir === workingDir || additionalWorkingDirs.includes(dir)) {
+      if (sessionDirPaths.has(normalizeDirPath(dir))) {
         toast.info(intl.formatMessage(i18n.alreadyAdded));
         return;
       }
@@ -150,7 +167,14 @@ export default function WorkingDirectoriesMenu({
       setIsAdding(true);
       try {
         const result = await acpAddSessionWorkingDir(session.id, dir);
-        window.electron.addRecentDir(dir);
+        // The backend canonicalizes before comparing, so it can accept the call and
+        // still add nothing — a symlinked or differently-spelled path that is already
+        // a working directory. Saying so beats looking like a dead click.
+        if (result.additionalWorkingDirs.length === additionalWorkingDirs.length) {
+          toast.info(intl.formatMessage(i18n.alreadyAdded));
+        } else {
+          window.electron.addRecentDir(dir);
+        }
         onSessionChange((current) => ({
           ...current,
           additional_working_dirs: result.additionalWorkingDirs,
@@ -163,7 +187,7 @@ export default function WorkingDirectoriesMenu({
         setIsAdding(false);
       }
     },
-    [session, workingDir, additionalWorkingDirs, onSessionChange, intl]
+    [session, additionalWorkingDirs, sessionDirPaths, onSessionChange, intl]
   );
 
   const removeDirectory = useCallback(
@@ -215,10 +239,7 @@ export default function WorkingDirectoriesMenu({
   }
 
   const accessLabel = (path: string) => {
-    const normalize = (value: string) => {
-      const normalized = value.replace(/\\/g, '/').replace(/\/+$/, '');
-      return /^[a-z]:\//i.test(normalized) ? normalized.toLowerCase() : normalized;
-    };
+    const normalize = normalizeDirPath;
     const roots = session.workspace_folder_roots ?? [];
     const normalized = normalize(path);
     const readOnly = roots.some(
@@ -235,7 +256,7 @@ export default function WorkingDirectoriesMenu({
   };
 
   const filteredRecentDirs = recentDirs.filter(
-    (dir) => dir && dir !== workingDir && !additionalWorkingDirs.includes(dir)
+    (dir) => dir && !sessionDirPaths.has(normalizeDirPath(dir))
   );
 
   const triggerLabel =
