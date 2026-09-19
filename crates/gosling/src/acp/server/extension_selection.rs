@@ -188,6 +188,25 @@ pub(crate) fn apply_shell_extension_selection(
     }
 }
 
+/// Narrows a new session's extensions to the workspace's pinned list. Platform
+/// tools are exempt: they are how a chat edits files, runs commands and loads
+/// skills, so a list naming only MCP servers must not switch them off. `None`
+/// leaves the globally enabled set alone.
+pub(crate) fn apply_workspace_extension_selection(
+    extensions: &mut Vec<ExtensionConfig>,
+    selected: Option<&[String]>,
+) {
+    let Some(selected) = selected else {
+        return;
+    };
+    extensions.retain(|extension| {
+        let name = extension.name();
+        crate::agents::extension::PLATFORM_EXTENSIONS
+            .contains_key(crate::config::extensions::name_to_key(&name).as_str())
+            || selected.iter().any(|choice| choice.as_str() == name)
+    });
+}
+
 pub(crate) fn push_or_replace_extension(
     extensions: &mut Vec<ExtensionConfig>,
     extension: ExtensionConfig,
@@ -220,5 +239,63 @@ pub(super) fn builtin_to_extension_config(name: &str) -> ExtensionConfig {
             description: name.into(),
             available_tools: vec![],
         }
+    }
+}
+
+#[cfg(test)]
+mod workspace_selection_tests {
+    use super::*;
+
+    fn stdio(name: &str) -> ExtensionConfig {
+        ExtensionConfig::Stdio {
+            name: name.to_string(),
+            description: String::new(),
+            cmd: "run".to_string(),
+            args: vec![],
+            envs: Envs::default(),
+            env_keys: vec![],
+            timeout: None,
+            cwd: None,
+            bundled: Some(false),
+            available_tools: vec![],
+        }
+    }
+
+    fn names(extensions: &[ExtensionConfig]) -> Vec<String> {
+        extensions.iter().map(|e| e.name().to_string()).collect()
+    }
+
+    #[test]
+    fn keeps_platform_tools_when_a_workspace_pins_only_mcp_servers() {
+        let mut extensions = vec![
+            stdio("developer"),
+            stdio("skills"),
+            stdio("muninn"),
+            stdio("chrome-devtools"),
+        ];
+
+        apply_workspace_extension_selection(&mut extensions, Some(&["muninn".to_string()]));
+
+        // A workspace that names one MCP server must not switch off the tools a chat
+        // needs to edit files or load skills.
+        assert_eq!(names(&extensions), vec!["developer", "skills", "muninn"]);
+    }
+
+    #[test]
+    fn an_unset_list_leaves_the_globally_enabled_set_alone() {
+        let mut extensions = vec![stdio("muninn"), stdio("chrome-devtools")];
+
+        apply_workspace_extension_selection(&mut extensions, None);
+
+        assert_eq!(names(&extensions), vec!["muninn", "chrome-devtools"]);
+    }
+
+    #[test]
+    fn an_empty_list_drops_every_mcp_server_but_keeps_the_platform() {
+        let mut extensions = vec![stdio("developer"), stdio("muninn")];
+
+        apply_workspace_extension_selection(&mut extensions, Some(&[]));
+
+        assert_eq!(names(&extensions), vec!["developer"]);
     }
 }

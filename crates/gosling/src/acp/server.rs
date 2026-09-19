@@ -154,7 +154,8 @@ mod workspace_handlers;
 use active_runs::{register_active_prompt_run, unregister_active_prompt_run};
 use active_runs::{ActivePromptRun, SessionOperationGate};
 pub(crate) use extension_selection::{
-    apply_shell_extension_selection, push_or_replace_extension, selected_builtin_extensions,
+    apply_shell_extension_selection, apply_workspace_extension_selection,
+    push_or_replace_extension, selected_builtin_extensions,
 };
 use extension_selection::{
     builtin_to_extension_config, mcp_server_to_extension_config, rehydrate_configured_envs,

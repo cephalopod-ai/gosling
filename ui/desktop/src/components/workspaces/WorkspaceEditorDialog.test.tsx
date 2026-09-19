@@ -31,6 +31,17 @@ vi.mock('./CredentialProfileManagerDialog', () => ({
   CredentialProfileManagerDialog: () => null,
 }));
 
+vi.mock('../../acp/extensions', () => ({
+  getConfiguredExtensions: vi.fn(async () => ({
+    extensions: [
+      { name: 'developer', enabled: true },
+      { name: 'muninn', enabled: true },
+      { name: 'chrome-devtools', enabled: true },
+    ],
+    warnings: [],
+  })),
+}));
+
 const createWorkspace = vi.fn();
 const updateWorkspace = vi.fn();
 const validateWorkspace = vi.fn();
@@ -225,6 +236,41 @@ describe('WorkspaceEditorDialog', () => {
       }),
       undefined
     );
+  });
+
+  it('pins only the chosen MCP servers, leaving built-in tools out of the choice', async () => {
+    const user = userEvent.setup();
+    render(<WorkspaceEditorDialog open onOpenChange={vi.fn()} />, { wrapper: TestWrapper });
+
+    await user.type(screen.getByLabelText('Name'), 'Muninn only');
+    // Leaving the box ticked inherits whatever is enabled globally.
+    await user.click(await screen.findByLabelText('Use everything enabled'));
+
+    // Built-in tools are never offered here; the backend keeps them on regardless.
+    expect(screen.queryByLabelText('developer')).not.toBeInTheDocument();
+    await user.click(screen.getByLabelText('chrome-devtools'));
+
+    await user.click(screen.getByRole('button', { name: 'Save workspace' }));
+
+    expect(validateWorkspace).toHaveBeenCalledWith(
+      expect.objectContaining({ defaultExtensions: ['muninn'] }),
+      undefined
+    );
+  });
+
+  it('leaves defaultExtensions unset when the workspace inherits everything', async () => {
+    const user = userEvent.setup();
+    render(<WorkspaceEditorDialog open onOpenChange={vi.fn()} />, { wrapper: TestWrapper });
+
+    await user.type(screen.getByLabelText('Name'), 'Everything');
+    await user.click(screen.getByRole('button', { name: 'Save workspace' }));
+
+    // Absent and null both mean "inherit the globally enabled set"; the backend
+    // only narrows when the field carries a list.
+    const saved = vi.mocked(validateWorkspace).mock.calls[0]?.[0] as {
+      defaultExtensions?: string[] | null;
+    };
+    expect(saved.defaultExtensions ?? null).toBeNull();
   });
 
   it('hides unconfigured providers behind a configure-providers escape hatch', async () => {

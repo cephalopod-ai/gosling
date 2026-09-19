@@ -12,6 +12,7 @@ impl GoslingAcpAgent {
         project_root: &Path,
         mcp_servers: Vec<McpServer>,
         gosling_extensions: Option<Vec<GoslingExtension>>,
+        workspace_extensions: Option<&[String]>,
     ) -> Result<Vec<ExtensionConfig>, agent_client_protocol::Error> {
         let mut extensions = selected_builtin_extensions(config, &self.builtins);
 
@@ -41,6 +42,8 @@ impl GoslingAcpAgent {
                 push_or_replace_extension(&mut extensions, extension);
             }
         }
+
+        apply_workspace_extension_selection(&mut extensions, workspace_extensions);
 
         apply_shell_extension_selection(
             &mut extensions,
@@ -246,7 +249,7 @@ impl GoslingAcpAgent {
             || EnabledExtensionsState::from_extension_data(&session.extension_data).is_none()
         {
             let extension_data =
-                self.build_enabled_extensions_data(config, &session, mcp_servers, None)?;
+                self.build_enabled_extensions_data(config, &session, mcp_servers, None, None)?;
             builder = builder.extension_data(extension_data);
             session_needs_update = true;
         } else if let Some(state) =
@@ -293,12 +296,14 @@ impl GoslingAcpAgent {
         session: &Session,
         mcp_servers: Vec<McpServer>,
         gosling_extensions: Option<Vec<GoslingExtension>>,
+        workspace_extensions: Option<&[String]>,
     ) -> Result<ExtensionData, agent_client_protocol::Error> {
         let extensions = self.initial_session_extensions(
             config,
             &session.working_dir,
             mcp_servers,
             gosling_extensions,
+            workspace_extensions,
         )?;
         let mut extension_data = session.extension_data.clone();
         EnabledExtensionsState::new(extensions)

@@ -14,6 +14,8 @@ import type {
   WorkspaceValidationReport,
 } from '@repo-makeover/gosling-sdk';
 import { acpListProviderDetails, acpListProviderModels } from '../../acp/providers';
+import { getConfiguredExtensions } from '../../acp/extensions';
+import { nameToKey } from '../settings/extensions/utils';
 import { acpCreateWorkspaceOutput, workspaceToMutation } from '../../acp/workspaces';
 import { useWorkspace } from '../../contexts/WorkspaceContext';
 import type { ProviderDetails } from '../../types/providers';
@@ -30,6 +32,22 @@ import {
 } from '../ui/dialog';
 import { Input } from '../ui/input';
 import { CredentialProfileManagerDialog } from './CredentialProfileManagerDialog';
+
+/// Mirrors PLATFORM_EXTENSIONS in crates/gosling/src/agents/platform_extensions/mod.rs.
+/// The backend never filters these out of a session, so the editor shows them as
+/// always on instead of offering a checkbox that would do nothing.
+const PLATFORM_EXTENSION_KEYS = new Set([
+  'developer',
+  'skills',
+  'todo',
+  'summon',
+  'planning',
+  'sessionhistory',
+  'summarize',
+  'codeexecution',
+  'orchestrator',
+  'extensionmanager',
+]);
 
 const PRODUCT_TYPES: ProductType[] = [
   'document',
@@ -76,6 +94,27 @@ export function WorkspaceEditorDialog({
   const [modelsLoading, setModelsLoading] = useState(false);
   const [validation, setValidation] = useState<WorkspaceValidationReport | null>(null);
   const [profileManagerOpen, setProfileManagerOpen] = useState(false);
+  // Read directly rather than through ConfigContext: the dialog is rendered in
+  // places that do not provide it, and a workspace draft needs no live config.
+  const [installedExtensions, setInstalledExtensions] = useState<
+    { name: string; enabled: boolean }[]
+  >([]);
+  useEffect(() => {
+    let cancelled = false;
+    void getConfiguredExtensions()
+      .then(({ extensions }) => {
+        if (!cancelled) setInstalledExtensions(extensions);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const selectableExtensions = useMemo(
+    () =>
+      installedExtensions.filter((entry) => !PLATFORM_EXTENSION_KEYS.has(nameToKey(entry.name))),
+    [installedExtensions]
+  );
   const [validating, setValidating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -281,15 +320,15 @@ export function WorkspaceEditorDialog({
 
         toast.warning(
           <div className="space-y-1">
-            <p>Workspace saved with {issuesLabel}. Resolve {detailLabel} before starting a new chat.</p>
+            <p>
+              Workspace saved with {issuesLabel}. Resolve {detailLabel} before starting a new chat.
+            </p>
             {warnings.length > 0 ? (
               <>
                 <p className="font-medium">Warnings:</p>
                 <ul className="list-disc space-y-1 pl-4">
                   {warnings.map((issue, index) => (
-                    <li
-                      key={`${issue.code}-${issue.targetId ?? issue.path ?? 'warning'}-${index}`}
-                    >
+                    <li key={`${issue.code}-${issue.targetId ?? issue.path ?? 'warning'}-${index}`}>
                       {issue.message}
                     </li>
                   ))}
@@ -564,6 +603,69 @@ export function WorkspaceEditorDialog({
                   {modelCatalogError}
                 </p>
               )}
+            </Section>
+
+            <Section title="Extensions">
+              <div className="flex items-start justify-between gap-3">
+                <p className="text-sm text-text-secondary">
+                  Choose which MCP servers and plugins new chats in this workspace start with. Tools
+                  built into Gosling stay on either way.
+                </p>
+                <label className="flex shrink-0 items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={draft.defaultExtensions == null}
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        defaultExtensions: event.target.checked
+                          ? null
+                          : selectableExtensions
+                              .filter((entry) => entry.enabled)
+                              .map((entry) => entry.name),
+                      }))
+                    }
+                  />
+                  Use everything enabled
+                </label>
+              </div>
+              {draft.defaultExtensions != null &&
+                (selectableExtensions.length === 0 ? (
+                  <p className="text-sm text-text-secondary">
+                    No MCP servers or plugins are installed yet.
+                  </p>
+                ) : (
+                  <div className="max-h-48 space-y-1 overflow-y-auto rounded-md border border-border-primary p-2">
+                    {selectableExtensions.map((entry) => {
+                      const checked = draft.defaultExtensions?.includes(entry.name) ?? false;
+                      return (
+                        <label
+                          key={entry.name}
+                          className="flex items-center gap-2 rounded px-1 py-1 text-sm"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(event) =>
+                              setDraft((current) => {
+                                const selected = new Set(current.defaultExtensions ?? []);
+                                if (event.target.checked) selected.add(entry.name);
+                                else selected.delete(entry.name);
+                                return { ...current, defaultExtensions: [...selected] };
+                              })
+                            }
+                          />
+                          <span className="min-w-0 flex-1 truncate">{entry.name}</span>
+                          {!entry.enabled && (
+                            <span className="shrink-0 text-[10px] uppercase tracking-wide text-text-secondary">
+                              Disabled globally
+                            </span>
+                          )}
+                        </label>
+                      );
+                    })}
+                  </div>
+                ))}
             </Section>
 
             <Section title="Credentials">

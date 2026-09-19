@@ -180,6 +180,11 @@ pub struct Workspace {
     pub default_model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_thinking_effort: Option<WorkspaceThinkingEffort>,
+    /// MCP servers and plugin extensions new chats in this workspace start with.
+    /// `None` inherits whatever is enabled globally; platform tools are never
+    /// filtered, so a narrow list cannot produce a chat that fails to function.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_extensions: Option<Vec<String>>,
     pub created_at: String,
     pub updated_at: String,
     pub last_opened_at: String,
@@ -207,6 +212,8 @@ pub struct WorkspaceMutation {
     pub default_model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_thinking_effort: Option<WorkspaceThinkingEffort>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_extensions: Option<Vec<String>>,
 }
 
 impl From<&Workspace> for WorkspaceMutation {
@@ -223,6 +230,7 @@ impl From<&Workspace> for WorkspaceMutation {
             default_provider: workspace.default_provider.clone(),
             default_model: workspace.default_model.clone(),
             default_thinking_effort: workspace.default_thinking_effort,
+            default_extensions: workspace.default_extensions.clone(),
         }
     }
 }

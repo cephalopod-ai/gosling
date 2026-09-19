@@ -9162,6 +9162,16 @@
             }
           ]
         },
+        "defaultExtensions": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "description": "MCP servers and plugin extensions new chats in this workspace start with.\n`None` inherits whatever is enabled globally; platform tools are never\nfiltered, so a narrow list cannot produce a chat that fails to function."
+        },
         "createdAt": {
           "type": "string"
         },
@@ -9474,6 +9484,15 @@
               "type": "null"
             }
           ]
+        },
+        "defaultExtensions": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
         }
       },
       "required": [

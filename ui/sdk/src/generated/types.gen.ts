@@ -3281,6 +3281,12 @@ export type Workspace = {
     defaultProvider?: string | null;
     defaultModel?: string | null;
     defaultThinkingEffort?: WorkspaceThinkingEffort | null;
+    /**
+     * MCP servers and plugin extensions new chats in this workspace start with.
+     * `None` inherits whatever is enabled globally; platform tools are never
+     * filtered, so a narrow list cannot produce a chat that fails to function.
+     */
+    defaultExtensions?: Array<string> | null;
     createdAt: string;
     updatedAt: string;
     lastOpenedAt: string;
@@ -3359,6 +3365,7 @@ export type WorkspaceMutation = {
     defaultProvider?: string | null;
     defaultModel?: string | null;
     defaultThinkingEffort?: WorkspaceThinkingEffort | null;
+    defaultExtensions?: Array<string> | null;
 };
 
 export type WorkspaceResponse_unstable = {

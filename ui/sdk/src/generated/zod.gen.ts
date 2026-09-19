@@ -2987,6 +2987,7 @@ export const zWorkspace = z.object({
     defaultProvider: z.string().nullish(),
     defaultModel: z.string().nullish(),
     defaultThinkingEffort: zWorkspaceThinkingEffort.nullish(),
+    defaultExtensions: z.array(z.string()).nullish(),
     createdAt: z.string(),
     updatedAt: z.string(),
     lastOpenedAt: z.string()
@@ -3047,7 +3048,8 @@ export const zWorkspaceMutation = z.object({
     defaultCredentialBindingId: z.string().nullish(),
     defaultProvider: z.string().nullish(),
     defaultModel: z.string().nullish(),
-    defaultThinkingEffort: zWorkspaceThinkingEffort.nullish()
+    defaultThinkingEffort: zWorkspaceThinkingEffort.nullish(),
+    defaultExtensions: z.array(z.string()).nullish()
 });
 
 export const zWorkspaceCreateRequest_unstable = z.object({

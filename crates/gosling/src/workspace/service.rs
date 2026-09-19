@@ -21,6 +21,7 @@ const MAX_IDENTIFIER_CHARS: usize = 256;
 const MAX_ADDITIONAL_FOLDERS: usize = 64;
 const MAX_OUTPUT_FOLDERS: usize = 32;
 const MAX_CREDENTIAL_BINDINGS: usize = 32;
+const MAX_DEFAULT_EXTENSIONS: usize = 64;
 const MAX_SERIALIZED_WORKSPACE_BYTES: usize = 64 * 1024;
 
 #[derive(Debug, Clone)]
@@ -34,6 +35,7 @@ pub struct PreparedWorkspaceSession {
     pub credential_profile_id: Option<String>,
     pub credential_profile_name: Option<String>,
     pub credential_binding_id: Option<String>,
+    pub default_extensions: Option<Vec<String>>,
     pub context: WorkspaceSessionContext,
 }
 
@@ -388,6 +390,7 @@ impl WorkspaceService {
             credential_profile_id: profile.map(|profile| profile.id.clone()),
             credential_profile_name: profile.map(|profile| profile.name.clone()),
             credential_binding_id: binding.map(|binding| binding.id.clone()),
+            default_extensions: workspace.default_extensions.clone(),
             context: WorkspaceSessionContext {
                 workspace_id: workspace.id.clone(),
                 workspace_name: workspace.name.clone(),
@@ -507,10 +510,22 @@ pub(super) fn workspace_from_mutation(
         default_provider: mutation.default_provider,
         default_model: mutation.default_model,
         default_thinking_effort: mutation.default_thinking_effort,
+        default_extensions: mutation.default_extensions.map(normalized_extension_names),
         created_at,
         updated_at,
         last_opened_at,
     }
+}
+
+/// Trimmed and de-duplicated while preserving the order the operator chose, so a
+/// stored list reads the way the editor presented it.
+fn normalized_extension_names(names: Vec<String>) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    names
+        .into_iter()
+        .map(|name| name.trim().to_string())
+        .filter(|name| !name.is_empty() && seen.insert(name.clone()))
+        .collect()
 }
 
 pub(super) fn validate_workspace_boundary(mutation: &WorkspaceMutation) -> Result<()> {
@@ -527,6 +542,19 @@ pub(super) fn validate_workspace_boundary(mutation: &WorkspaceMutation) -> Resul
         "default model",
         MAX_IDENTIFIER_CHARS,
     )?;
+    if let Some(extensions) = &mutation.default_extensions {
+        if extensions.len() > MAX_DEFAULT_EXTENSIONS {
+            bail!("a workspace can pin at most {MAX_DEFAULT_EXTENSIONS} default extensions");
+        }
+        for extension in extensions {
+            if extension.trim().is_empty() {
+                bail!("default extension names cannot be empty");
+            }
+            if extension.chars().count() > MAX_IDENTIFIER_CHARS {
+                bail!("default extension names must be at most {MAX_IDENTIFIER_CHARS} characters");
+            }
+        }
+    }
     if mutation.folders.len() > MAX_ADDITIONAL_FOLDERS {
         bail!("a workspace can contain at most {MAX_ADDITIONAL_FOLDERS} additional folders");
     }

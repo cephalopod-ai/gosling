@@ -304,6 +304,9 @@ impl GoslingAcpAgent {
             session,
             args.mcp_servers,
             gosling_extensions,
+            workspace
+                .as_ref()
+                .and_then(|workspace| workspace.default_extensions.as_deref()),
         )?;
         if let Some(state) = deep_research_state {
             state
