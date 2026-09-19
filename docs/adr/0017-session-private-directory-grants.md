@@ -59,3 +59,27 @@ ACP operation, whose server-owned session ID is the persistence and enforcement 
 - This is an application capability boundary, not an operating-system ACL. Separate local programs
   and providers that manage their own external tool process remain subject to their OS permissions;
   Gosling does not claim to revoke filesystem access outside its hosted tool boundary.
+
+## Subsequent change (2026-09-19)
+
+This records a later change to the renderer-side grant scope described in Context. The decision
+above is unchanged: session directory additions remain additive, session-scoped, and subject to
+workspace folder policy.
+
+- Directory grants recorded through a file chooser now apply to every window and survive a
+  restart. They were previously consulted only for `webContentsId === 0`, which is never a real
+  window, so the persisted file had no effect on the UI and each launch re-requested the same
+  folders.
+- A grant covering the user's home directory or a filesystem root is never persisted, and one
+  written by an earlier version is dropped when the store loads. Such a root would subsume every
+  other approval and make the boundary meaningless.
+- A session's own working directories are granted to its window for renderer reads, including a
+  directory chosen from the recent list rather than the chooser. These grants are transient: they
+  are re-established when the session loads rather than written to the store. The paths come from
+  the renderer, which is the same trust the per-file artifact capability in ADR-0013 already
+  carries; the main process still refuses the home directory, filesystem roots, symlinks,
+  non-directories, and batches over 64.
+
+Implemented in `e79427faf` (persistence and breadth pruning) and `88470e9c0` (session directory
+grants). Session evidence is retained locally under `docs/logs/session/`, which `.gitignore`
+excludes from the repository.

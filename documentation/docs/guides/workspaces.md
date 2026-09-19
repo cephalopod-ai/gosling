@@ -54,8 +54,9 @@ silently switch the session to another account.
 4. Add source or reference folders as needed and choose **Read only** or **Read/write** for each.
 5. Add one or more product output destinations. Assign product types and select exactly one default
    output.
-6. Optionally add a credential binding.
-7. Select **Validate**, resolve any required errors, and save.
+6. Optionally choose which extensions new chats start with (see below).
+7. Optionally add a credential binding.
+8. Select **Validate**, resolve any required errors, and save.
 
 The primary folder must exist and be a directory before a new chat can start. A missing optional
 reference or output folder produces a warning instead of disabling the entire app. If an output is
@@ -64,6 +65,27 @@ gosling asks for confirmation before creating it.
 
 Removing a folder from a workspace removes only the reference. It never deletes, moves, or rewrites
 the physical folder.
+
+## Choose extensions for a workspace
+
+A workspace can pin which MCP servers and plugins its new chats start with, so a workspace that
+needs two servers does not load every one you have installed.
+
+In the workspace editor, open **Extensions**. Leave **Use everything enabled** ticked to inherit
+whatever is enabled globally; this is the default and leaves existing workspaces unchanged. Untick
+it to choose from your installed MCP servers and plugins.
+
+The list is a starting point, not a restriction. A new chat in the workspace begins with exactly
+those extensions, and you can still enable another one for that single chat afterwards, the same
+way **Default provider** and **Default model** seed a chat without constraining it.
+
+Tools built into gosling — the developer tools, skills, todo, planning, session history, and the
+rest of the platform set — are never filtered and are not listed. A workspace that names only MCP
+servers still gets a chat that can read files, run commands, and load skills. Unticking everything
+therefore yields a chat with the built-in tools and no MCP servers, not an inert one.
+
+An extension that is disabled globally is shown as such. Pinning it records the choice, but the
+chat only loads it once it is enabled in **Settings → Extensions**.
 
 ## Manage secure credential profiles
 
@@ -106,6 +128,14 @@ another account.
 Legacy sessions without a workspace ID remain resumable and appear with the default/unassigned
 session behavior. Session search still works across workspaces when **All workspaces** is selected.
 
+A workspace that pins extensions seeds the new chat with exactly those MCP servers and plugins;
+built-in tools are unaffected. A workspace that pins none inherits the globally enabled set.
+
+Folders listed in **Settings → Chat → Trusted folders** are in scope for every session, so routine
+work in them raises no approval prompt. A workspace folder marked **Read only** still blocks
+writes: the folder policy is judged before the trusted list. See
+[`GOSLING_TRUSTED_DIRS`](/docs/guides/environment-variables) for the equivalent configuration key.
+
 Temporary scratch files can be used without a workspace-scope approval when **Restrict tools to
 working directories** is off. This includes the system temp folder, Unix `/tmp` and `/var/tmp`,
 and their macOS aliases. Writes elsewhere still follow the workspace folder rules. Turning the
@@ -125,7 +155,11 @@ uses the extensions selected in **Settings → App → Output files**. The defau
 The pane reports how many outputs the extension filter hides. Existing customized lists stay unchanged.
 Add extensions such as `.rs`, `.ts`,
 `.py`, `.sh`, or `.toml` to include code/configuration files. Files without an in-app preview can
-still appear for reveal or external opening. Switching chats immediately switches the list. Missing
+still appear for reveal or external opening. Documents that a desktop application renders better
+than gosling can — `.pdf`, `.doc`/`.docx`, `.xls`/`.xlsx`, `.ppt`/`.pptx`, `.odt`/`.ods`/`.odp`,
+and `.rtf` — open in the system viewer when selected, from the Outputs and Library lists, message
+links, and tool results alike. gosling reports a file it cannot hand to any application rather
+than failing silently. Switching chats immediately switches the list. Missing
 files that match the display filters remain named after restart or resume so they cannot be confused
 with another file that shares a basename.
 
@@ -137,6 +171,14 @@ can be previewed directly through an exact-file capability. A file outside the s
 roots or validated workspace outputs remains blocked unless you
 explicitly select it with the file picker; code, configuration (including `.env`), and MCP/tool
 metadata never receive that automatic capability.
+
+The session's own working directories — the primary folder and any additional folder, including
+one chosen from the recent list rather than the picker — are readable in the pane without a
+separate approval. Folders you approve through a picker stay approved for later windows and later
+launches. A grant covering the home directory or a filesystem root is never retained, and one
+recorded by an earlier version is dropped the next time gosling starts, since it would subsume
+every other approval. Approvals granted for a session's folders are not written to disk; they are
+re-established when the session loads.
 
 ### Filter repository files
 

@@ -80,14 +80,23 @@ checkpoints, read-only recovery of omitted persisted session text, capability-ba
 labels, reference-aware and context-window-adaptive retention for shorthand and named task cues,
 and atomic provider/model transitions that retain the prior provider on failure. It adds a
 selectable Desktop crash-recovery policy that defaults to
-**Safe**. It makes `Enter` insert a newline and uses `Cmd+Enter` on macOS or `Ctrl+Enter` on
-Windows/Linux to send. Valid local files embedded in tool output open directly, workspace-output
+**Safe**. It makes `Enter` insert a newline and uses `Cmd+Enter` on macOS, `Ctrl+Enter` on
+Windows/Linux, or three `Enter` presses within one second to send. Valid local files embedded in tool output open directly, workspace-output
 aliases resolve correctly, and **Close all** clears artifact tabs. Internally, gosling now
 standardizes its UI/server integration on ACP: the unused duplicate `gosling-server` REST crate,
 Desktop OpenAPI surface, and obsolete provider paths were
 removed, while CLI session selection was consolidated behind one resolver. Auto-compaction now
 honors its threshold-relative reduction budget for short and tool-heavy sessions, and Desktop
 distinguishes the active-context estimate from last-request usage.
+
+The candidate also adds document and workspace surfaces: `write_document` on the always-available
+developer extension turns Markdown into `.docx`, `.xlsx`, or `.pptx`; Office, OpenDocument, and PDF
+files open in the system viewer instead of a pane tab that cannot render them; the Research Library
+gains an **Add files** action for research produced elsewhere; a workspace can pin which MCP servers
+and plugins its new chats start with, leaving built-in tools untouched; folders approved through a
+file picker stay approved across windows and restarts, while a grant on the home directory or a
+filesystem root is never retained; and **Settings → Chat → Trusted folders**
+(`GOSLING_TRUSTED_DIRS`) lists folders that raise no scope-approval prompt in any session.
 
 The 2026-09-13 audit-repair follow-up makes `doctor` verify the configured provider, preserves an
 honest durable record for cancelled turns, keeps `--no-session` prompts and responses ephemeral,
