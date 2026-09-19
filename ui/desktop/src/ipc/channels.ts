@@ -263,7 +263,7 @@ export interface DesktopCommandPayloads {
   [desktopCommandChannels.deleteFile]: [filePath: string];
   [desktopCommandChannels.trashArtifactFiles]: [paths: string[]];
   [desktopCommandChannels.ensureDirectory]: [dirPath: string];
-  [desktopCommandChannels.listFiles]: [dirPath: string, extension?: string];
+  [desktopCommandChannels.listFiles]: [dirPath: string];
   [desktopCommandChannels.getAllowedExtensions]: [];
   [desktopCommandChannels.setMenuBarIcon]: [show: boolean];
   [desktopCommandChannels.getMenuBarIconState]: [];

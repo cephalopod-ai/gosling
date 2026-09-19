@@ -613,13 +613,30 @@ export function registerFileIpcHandlers(
   });
   targetIpcMain.handle(desktopCommandChannels.listFiles, async (event, dirPath) => {
     try {
-      const entries = await fs.readdir(await assertRendererFileAccess(event.sender.id, dirPath), {
-        withFileTypes: true,
-      });
+      const resolvedDir = await assertRendererFileAccess(event.sender.id, dirPath);
+      const entries = await fs.readdir(resolvedDir, { withFileTypes: true });
       // Dirent instances don't survive IPC's structured clone with their
       // methods intact, so resolve isDirectory() here rather than asking
       // the caller to make a second round trip per entry just to find out.
-      return entries.map((entry) => ({ name: entry.name, isDirectory: entry.isDirectory() }));
+      // A Dirent reports the type of the entry itself, so a symlink to a
+      // directory would otherwise come back as `isDirectory: false`; stat
+      // only the symlink entries (typically few) to resolve what they
+      // actually point to instead of misreporting every symlinked directory
+      // as a file.
+      return await Promise.all(
+        entries.map(async (entry) => {
+          if (!entry.isSymbolicLink()) {
+            return { name: entry.name, isDirectory: entry.isDirectory() };
+          }
+          try {
+            const stats = await fs.stat(path.join(resolvedDir, entry.name));
+            return { name: entry.name, isDirectory: stats.isDirectory() };
+          } catch {
+            // Dangling symlink: nothing to browse either way.
+            return { name: entry.name, isDirectory: false };
+          }
+        })
+      );
     } catch (error) {
       console.error('Error listing files:', error);
       return [];

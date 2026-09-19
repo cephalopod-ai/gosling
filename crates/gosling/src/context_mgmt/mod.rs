@@ -836,15 +836,18 @@ async fn context_usage_from_estimate(
     })
 }
 
-/// Running token total for a conversation's agent-visible messages, valid only
-/// while the conversation is grown by appending. Detects any other change —
-/// compaction replacing history, a retry rewinding it, anything this module
-/// didn't anticipate — by checking that its own last-seen message count and
-/// token contribution still match a fresh slice of the same length, and falls
-/// back to a full recount whenever that check fails. It is never possible for
-/// this to return a value a full recount would disagree with; the only
-/// consequence of being wrong about "append-only" is losing the speedup for
-/// that one call, not returning a wrong count.
+/// Running token total for a conversation's agent-visible messages, correct
+/// only while the conversation is grown by appending. `update` compares the
+/// conversation's current length against the length it last saw: shorter
+/// means something other than a plain append happened (compaction, a
+/// rewind), so it recounts from scratch. Longer or equal-length is *assumed*
+/// to be a pure append and only tokenizes the new suffix — this is a length
+/// check, not a content check, so a caller that replaces the conversation
+/// with a same-length-or-longer one *without* calling `reset` first would
+/// get a silently wrong total. Every current mutation path either appends,
+/// shrinks (detected above), or goes through a call site that resets the
+/// accumulator first (see `reset`); this struct does not enforce that
+/// contract on its own.
 #[derive(Debug, Default, Clone)]
 pub struct ConversationTokenAccumulator {
     counted_len: usize,
