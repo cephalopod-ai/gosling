@@ -19,7 +19,7 @@ function isPersistedDirectoryGrants(value: unknown): value is PersistedDirectory
   );
 }
 
-function canonicalDirectory(selectedPath: string): string {
+export function canonicalDirectory(selectedPath: string): string {
   const absolutePath = path.resolve(selectedPath);
   const selectedStats = fs.lstatSync(absolutePath);
   if (selectedStats.isSymbolicLink())
@@ -35,7 +35,7 @@ function canonicalDirectory(selectedPath: string): string {
 /// A grant on the home directory or a filesystem root would subsume every other
 /// entry, so remembering it turns "folders you approved" into "everything".
 /// Such a root still works for the window that picked it; it is never stored.
-function isOverlyBroadRoot(root: string): boolean {
+export function isOverlyBroadRoot(root: string): boolean {
   return root === path.parse(root).root || root === path.resolve(os.homedir());
 }
 

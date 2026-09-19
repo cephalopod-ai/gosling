@@ -211,6 +211,20 @@ export default function BaseChat({
     crashRecovery,
   });
 
+  // The session's own folders are readable in the side pane without a picker trip.
+  // Re-running on every change covers a directory added from the recent list, which
+  // never passes through a native chooser, and re-grants after a restart.
+  const sessionWorkingDirs = session?.working_dir;
+  const sessionAdditionalDirs = session?.additional_working_dirs;
+  useEffect(() => {
+    if (!isActiveSession) return;
+    const directories = [sessionWorkingDirs, ...(sessionAdditionalDirs ?? [])].filter(
+      (dir): dir is string => Boolean(dir)
+    );
+    if (directories.length === 0) return;
+    void window.electron.grantSessionDirectories(directories).catch(() => {});
+  }, [isActiveSession, sessionWorkingDirs, sessionAdditionalDirs]);
+
   useEffect(() => {
     if (!isActiveSession) return;
     setVisibleSessionWorkspaceId(session?.workspace_id ?? null);

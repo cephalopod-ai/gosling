@@ -60,6 +60,7 @@ export const desktopCommandChannels = {
   chooseResearchLibraryPath: 'choose-research-library-path',
   listResearchLibraryFiles: 'list-research-library-files',
   importResearchLibraryFiles: 'import-research-library-files',
+  grantSessionDirectories: 'grant-session-directories',
   logInfo: 'logInfo',
   showNotification: 'notify',
   showMessageBox: 'show-message-box',
@@ -158,6 +159,7 @@ export const desktopInvokeChannels = [
   desktopCommandChannels.chooseResearchLibraryPath,
   desktopCommandChannels.listResearchLibraryFiles,
   desktopCommandChannels.importResearchLibraryFiles,
+  desktopCommandChannels.grantSessionDirectories,
   desktopCommandChannels.showMessageBox,
   desktopCommandChannels.saveArtifact,
   desktopCommandChannels.setArtifactRoutingConfig,
@@ -235,6 +237,7 @@ export interface DesktopCommandPayloads {
   [desktopCommandChannels.chooseResearchLibraryPath]: [];
   [desktopCommandChannels.listResearchLibraryFiles]: [];
   [desktopCommandChannels.importResearchLibraryFiles]: [];
+  [desktopCommandChannels.grantSessionDirectories]: [directories: string[]];
   [desktopCommandChannels.logInfo]: [text: string];
   [desktopCommandChannels.showNotification]: [data: NotificationData];
   [desktopCommandChannels.showMessageBox]: [options: MessageBoxOptions];

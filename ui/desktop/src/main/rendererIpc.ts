@@ -4,6 +4,7 @@
 
 import type { IpcMain } from 'electron';
 import { BrowserWindow, dialog } from 'electron';
+import fs from 'node:fs';
 import os from 'node:os';
 import { URLSearchParams } from 'node:url';
 import { acpTokenSubprotocol } from '../goslingServe';
@@ -11,8 +12,12 @@ import type { GoslingServeLeaseRegistry } from '../goslingServeLeaseRegistry';
 import { desktopCommandChannels, rendererEventChannels } from '../ipc/channels';
 import type { McpAppProxyCsp } from '../ipc/channels';
 import type { RendererDirectoryGrantRegistry } from '../utils/rendererDirectoryGrants';
+import { canonicalDirectory, isOverlyBroadRoot } from '../utils/rendererDirectoryGrants';
 import { addRecentDir, loadRecentDirs } from '../utils/recentDirs';
 import { GIT_IPC_CHANNELS, registerGitIpcHandlers } from './gitIpc';
+
+/// Bounds one call; a session's pinned folders plus its additions never approach this.
+const MAX_SESSION_DIRECTORY_GRANTS = 64;
 
 interface RendererIpcLogger {
   info: (...args: unknown[]) => void;
@@ -40,6 +45,7 @@ export const RENDERER_IPC_HANDLE_CHANNELS = [
   desktopCommandChannels.sessionDirectoryChooser,
   desktopCommandChannels.addRecentDir,
   desktopCommandChannels.listRecentDirs,
+  desktopCommandChannels.grantSessionDirectories,
   ...GIT_IPC_CHANNELS,
   desktopCommandChannels.getAcpUrl,
   desktopCommandChannels.getMcpAppProxyUrl,
@@ -148,6 +154,37 @@ export function registerRendererIpcHandlers(
     if (dir) addRecentDir(dir);
   });
   targetIpcMain.handle(desktopCommandChannels.listRecentDirs, () => loadRecentDirs());
+  // A session's own working directories are readable in the pane without a second
+  // picker trip. This trusts the renderer for the paths, which is the same trust the
+  // per-file artifact capability already carries; the guards below keep a bad or
+  // compromised caller from turning it into a grant on the home directory, a
+  // filesystem root, a symlink, or anything that is not an existing directory.
+  targetIpcMain.handle(
+    desktopCommandChannels.grantSessionDirectories,
+    (event, directories: string[]) => {
+      if (!Array.isArray(directories) || directories.length > MAX_SESSION_DIRECTORY_GRANTS) {
+        return [];
+      }
+      const granted: string[] = [];
+      for (const directory of directories) {
+        if (typeof directory !== 'string' || !directory || directory.length > 4096) continue;
+        try {
+          // lstat, not stat: a file would otherwise resolve to its parent folder and
+          // a symlink would resolve through to its target.
+          if (!fs.lstatSync(directory).isDirectory()) continue;
+          // Resolve before granting: canonicalDirectory refuses symlinks and
+          // non-directories, and the breadth check has to decide before any grant.
+          const root = canonicalDirectory(directory);
+          if (isOverlyBroadRoot(root)) continue;
+          rendererDirectoryGrants.grantSelectedPath(event.sender.id, root, false);
+          granted.push(root);
+        } catch {
+          // A moved or deleted directory simply stays ungranted.
+        }
+      }
+      return granted;
+    }
+  );
   registerGitIpcHandlers(targetIpcMain, assertRendererFileAccess);
   targetIpcMain.handle(desktopCommandChannels.getAcpUrl, async (event) => {
     const windowId = BrowserWindow.fromWebContents(event.sender)?.id;

@@ -115,6 +115,7 @@ type ElectronAPI = {
   chooseResearchLibraryPath: () => Promise<string | null>;
   listResearchLibraryFiles: () => Promise<ResearchLibraryListing>;
   importResearchLibraryFiles: () => Promise<ResearchLibraryImportResult>;
+  grantSessionDirectories: (directories: string[]) => Promise<string[]>;
   createChatWindow: (options?: CreateChatWindowOptions) => void;
   logInfo: (txt: string) => void;
   showNotification: (data: NotificationData) => void;
@@ -224,6 +225,8 @@ const electronAPI: ElectronAPI = {
   chooseResearchLibraryPath: () => invokeMain(desktopCommandChannels.chooseResearchLibraryPath),
   listResearchLibraryFiles: () => invokeMain(desktopCommandChannels.listResearchLibraryFiles),
   importResearchLibraryFiles: () => invokeMain(desktopCommandChannels.importResearchLibraryFiles),
+  grantSessionDirectories: (directories: string[]) =>
+    invokeMain(desktopCommandChannels.grantSessionDirectories, directories),
   createChatWindow: (options?: CreateChatWindowOptions) =>
     sendToMain(desktopCommandChannels.createChatWindow, options || {}),
   logInfo: (txt: string) => sendToMain(desktopCommandChannels.logInfo, txt),

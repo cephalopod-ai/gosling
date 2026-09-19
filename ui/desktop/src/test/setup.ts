@@ -95,6 +95,7 @@ Object.defineProperty(window, 'electron', {
     ),
     getArtifactFileTimestamps: vi.fn(() => Promise.resolve({})),
     openArtifactFile: vi.fn(() => Promise.resolve(true)),
+    grantSessionDirectories: vi.fn(() => Promise.resolve([])),
     getSetting: vi.fn((key: string) => Promise.resolve(mockSettings[key])),
     getSettings: vi.fn((keys: string[]) =>
       Promise.resolve(Object.fromEntries(keys.map((key) => [key, mockSettings[key]])))
