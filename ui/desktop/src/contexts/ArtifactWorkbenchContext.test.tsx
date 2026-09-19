@@ -1,5 +1,5 @@
 import { act, render, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ArtifactWorkbenchProvider, useArtifactWorkbench } from './ArtifactWorkbenchContext';
 
 type Workbench = ReturnType<typeof useArtifactWorkbench>;
@@ -14,6 +14,7 @@ describe('ArtifactWorkbenchProvider', () => {
 
   beforeEach(() => {
     localStorage.clear();
+    vi.mocked(window.electron.openArtifactFile).mockClear().mockResolvedValue(true);
   });
 
   it('remembers the repository filter across sessions and remounts', () => {
@@ -58,6 +59,44 @@ describe('ArtifactWorkbenchProvider', () => {
 
     act(() => workbench.openFile('deliverables/archive.bin', '/workspace'));
     expect(workbench.tabs).toHaveLength(2);
+  });
+
+  it('launches documents in the system viewer instead of opening an empty tab', () => {
+    render(
+      <ArtifactWorkbenchProvider>
+        <Harness />
+      </ArtifactWorkbenchProvider>
+    );
+
+    // Office formats have no in-app renderer, and openFile used to discard the
+    // click entirely because their kind is 'unknown'.
+    for (const name of ['report.docx', 'costs.xlsx', 'deck.pptx', 'notes.odt', 'sheet.ods']) {
+      act(() => workbench.openFile(`/outputs/${name}`, '/outputs'));
+      expect(window.electron.openArtifactFile).toHaveBeenCalledWith(`/outputs/${name}`, '/outputs');
+    }
+    act(() => workbench.openFile('/outputs/briefing.pdf'));
+    expect(window.electron.openArtifactFile).toHaveBeenCalledWith(
+      '/outputs/briefing.pdf',
+      undefined
+    );
+
+    // Nothing was added to the pane, and it was not forced open.
+    expect(workbench.tabs).toEqual([]);
+    expect(workbench.isOpen).toBe(false);
+  });
+
+  it('still previews formats it can render in the pane', () => {
+    render(
+      <ArtifactWorkbenchProvider>
+        <Harness />
+      </ArtifactWorkbenchProvider>
+    );
+
+    act(() => workbench.openFile('/outputs/report.md'));
+    act(() => workbench.openFile('/outputs/data.csv'));
+
+    expect(window.electron.openArtifactFile).not.toHaveBeenCalled();
+    expect(workbench.tabs.map((tab) => tab.kind)).toEqual(['markdown', 'csv']);
   });
 
   it('keeps the same relative output path distinct across unrelated working directories', () => {

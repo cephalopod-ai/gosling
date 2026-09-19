@@ -640,7 +640,7 @@ describe('ArtifactPane', () => {
     expect(screen.getByTitle('/outputs/report.pdf')).toBeInTheDocument();
   });
 
-  it('keeps configured files without an in-app preview available for external opening', async () => {
+  it('launches a document with no in-app preview in the system viewer', async () => {
     render(
       <IntlTestWrapper>
         <ArtifactWorkbenchProvider>
@@ -652,10 +652,13 @@ describe('ArtifactPane', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Load mixed outputs' }));
     fireEvent.click(screen.getByTitle('/outputs/brief.docx'));
 
+    await waitFor(() =>
+      expect(window.electron.openArtifactFile).toHaveBeenCalledWith('brief.docx', '/outputs')
+    );
+    // No dead tab offering a preview the app cannot render.
     expect(
-      await screen.findByText('This file type does not have an in-app preview yet.')
-    ).toBeInTheDocument();
-    expect(screen.getByTitle('Open externally')).toBeInTheDocument();
+      screen.queryByText('This file type does not have an in-app preview yet.')
+    ).not.toBeInTheDocument();
     expect(readArtifactFile).not.toHaveBeenCalled();
   });
 

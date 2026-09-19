@@ -1,11 +1,13 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { SessionArtifactDto } from '@repo-makeover/gosling-sdk';
+import { toast } from 'react-toastify';
 import {
   artifactKindFromMetadata,
   artifactKindFromMimeType,
   artifactKindFromPath,
   artifactTitleFromPath,
   isArtifactKindPreviewableWithoutExtension,
+  opensInExternalViewer,
 } from '../components/artifacts/artifactUtils';
 import type { ArtifactTab } from '../components/artifacts/types';
 import { coalesceSessionArtifactAliases } from '../utils/sessionArtifactAliases';
@@ -182,8 +184,27 @@ export function ArtifactWorkbenchProvider({ children }: { children: React.ReactN
     [visibleSessionId]
   );
 
+  /// Office, OpenDocument and PDF documents go to the system viewer rather than a
+  /// pane tab: Gosling has no renderer for the Office formats, so a tab would have
+  /// shown "no in-app preview", and `openFile` used to drop those clicks entirely.
+  const launchInExternalViewer = useCallback((path: string, baseDirectory?: string) => {
+    void window.electron
+      .openArtifactFile(path, baseDirectory)
+      .then((opened) => {
+        if (!opened)
+          toast.error(`No application is available to open ${artifactTitleFromPath(path)}`);
+      })
+      .catch(() => {
+        toast.error(`Could not open ${artifactTitleFromPath(path)}`);
+      });
+  }, []);
+
   const openFile = useCallback(
     (path: string, baseDirectory?: string, workspaceId?: string) => {
+      if (opensInExternalViewer(path)) {
+        launchInExternalViewer(path, baseDirectory);
+        return;
+      }
       const kind = artifactKindFromPath(path);
       if (kind === 'unknown') return;
       updateCurrent((state) => {
@@ -206,11 +227,15 @@ export function ArtifactWorkbenchProvider({ children }: { children: React.ReactN
       });
       setIsOpen(true);
     },
-    [updateCurrent]
+    [launchInExternalViewer, updateCurrent]
   );
 
   const openArtifact = useCallback(
     (artifact: SessionArtifactDto) => {
+      if (opensInExternalViewer(artifact.displayPath)) {
+        launchInExternalViewer(artifact.displayPath, artifact.baseWorkingDir);
+        return;
+      }
       const kind = artifactKindFromMetadata(artifact.displayPath, artifact.mimeType);
       updateCurrent((state) => {
         const existing = state.tabs.find(
@@ -236,7 +261,7 @@ export function ArtifactWorkbenchProvider({ children }: { children: React.ReactN
       });
       setIsOpen(true);
     },
-    [updateCurrent]
+    [launchInExternalViewer, updateCurrent]
   );
 
   const openContent = useCallback(

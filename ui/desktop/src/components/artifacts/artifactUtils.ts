@@ -191,6 +191,28 @@ export function viewableFilePathsFromMarkdown(content: string): string[] {
   return [...new Set(references.map(({ path }) => path))];
 }
 
+/// Documents whose native app does a far better job than any preview we could
+/// build: Office and OpenDocument formats have no in-app renderer at all, and a
+/// PDF is more useful in a real reader. Clicking one launches it instead.
+const EXTERNAL_VIEWER_EXTENSIONS = new Set([
+  'doc',
+  'docx',
+  'odp',
+  'ods',
+  'odt',
+  'pdf',
+  'ppt',
+  'pptx',
+  'rtf',
+  'xls',
+  'xlsx',
+]);
+
+export function opensInExternalViewer(path: string): boolean {
+  const extension = path.split(/[?#]/, 1)[0].split('.').pop()?.toLowerCase();
+  return extension ? EXTERNAL_VIEWER_EXTENSIONS.has(extension) : false;
+}
+
 export function artifactKindFromPath(path: string): ArtifactKind {
   const extension = path.split(/[?#]/, 1)[0].split('.').pop()?.toLowerCase();
   return extension ? (KIND_BY_EXTENSION[extension] ?? 'unknown') : 'unknown';
