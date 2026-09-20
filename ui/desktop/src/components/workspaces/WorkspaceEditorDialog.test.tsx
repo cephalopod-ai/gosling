@@ -436,6 +436,69 @@ describe('WorkspaceEditorDialog', () => {
     expect(screen.getByRole('radio', { name: 'Default output' })).toBeChecked();
   });
 
+  it('starts a new credential binding unselected rather than binding whichever profile sorts first', async () => {
+    const user = userEvent.setup();
+    const profile = (id: string, name: string) => ({
+      id,
+      name,
+      providerOrServiceId: name,
+      authKind: 'config_fields' as const,
+      configuredSecretFields: [],
+      nonSecretFields: {},
+      status: 'configured' as const,
+      source: 'workspace_secure_storage' as const,
+      createdAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-01T00:00:00Z',
+    });
+    vi.mocked(useWorkspace).mockReturnValue({
+      ...vi.mocked(useWorkspace)(),
+      credentialProfiles: [profile('p1', 'featherless'), profile('p2', 'anthropic')],
+    });
+
+    render(<WorkspaceEditorDialog open workspace={null} onOpenChange={vi.fn()} />, {
+      wrapper: TestWrapper,
+    });
+
+    await user.click(screen.getByRole('button', { name: /Add credential binding/ }));
+
+    // Pre-selecting profiles[0] made every click add the same profile again.
+    expect(screen.getByRole('combobox', { name: 'Credential profile' })).toHaveValue('');
+    expect(screen.getByRole('textbox', { name: 'Credential binding label' })).toHaveValue('');
+    expect(screen.getByText('Choose a credential profile for this binding.')).toBeInTheDocument();
+  });
+
+  it('fills an empty binding label from the profile the user picks', async () => {
+    const user = userEvent.setup();
+    vi.mocked(useWorkspace).mockReturnValue({
+      ...vi.mocked(useWorkspace)(),
+      credentialProfiles: [
+        {
+          id: 'p2',
+          name: 'anthropic',
+          providerOrServiceId: 'anthropic',
+          authKind: 'config_fields' as const,
+          configuredSecretFields: [],
+          nonSecretFields: {},
+          status: 'configured' as const,
+          source: 'workspace_secure_storage' as const,
+          createdAt: '2026-01-01T00:00:00Z',
+          updatedAt: '2026-01-01T00:00:00Z',
+        },
+      ],
+    });
+
+    render(<WorkspaceEditorDialog open workspace={null} onOpenChange={vi.fn()} />, {
+      wrapper: TestWrapper,
+    });
+
+    await user.click(screen.getByRole('button', { name: /Add credential binding/ }));
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Credential profile' }), 'p2');
+
+    expect(screen.getByRole('textbox', { name: 'Credential binding label' })).toHaveValue(
+      'anthropic'
+    );
+  });
+
   it('shows an actionable relink state for a missing credential profile', () => {
     render(
       <WorkspaceEditorDialog

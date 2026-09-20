@@ -700,9 +700,17 @@ export function WorkspaceEditorDialog({
                         const selected = credentialProfiles.find(
                           (item) => item.id === event.target.value
                         );
+                        const previous = credentialProfiles.find(
+                          (item) => item.id === binding.credentialProfileId
+                        );
+                        // Keep a label the user typed; replace one that is only
+                        // an echo of the previously selected profile's name.
+                        const keepLabel =
+                          binding.label.trim() !== '' && binding.label !== previous?.name;
                         updateBinding(binding.id, {
                           credentialProfileId: event.target.value,
                           targetId: selected?.providerOrServiceId ?? '',
+                          label: keepLabel ? binding.label : (selected?.name ?? ''),
                         });
                       }}
                       className="h-9 rounded-md border border-border-primary bg-background-primary px-3 text-sm"
@@ -743,6 +751,11 @@ export function WorkspaceEditorDialog({
                     >
                       <Trash2 className="size-4" />
                     </Button>
+                    {!binding.credentialProfileId && (
+                      <p className="text-xs text-text-secondary md:col-span-4">
+                        Choose a credential profile for this binding.
+                      </p>
+                    )}
                     {!profile && binding.credentialProfileId && (
                       <p className="text-xs text-amber-600 md:col-span-4">
                         This credential profile is missing and must be relinked.
@@ -756,19 +769,20 @@ export function WorkspaceEditorDialog({
                 size="sm"
                 disabled={credentialProfiles.length === 0}
                 onClick={() => {
-                  const profile = credentialProfiles[0];
-                  if (!profile) return;
                   const id = uuidv7();
                   setDraft((current) => ({
                     ...current,
+                    // Start unselected: silently binding whichever profile happens
+                    // to sort first reads as "it just added that one", and adding
+                    // twice produced two identical bindings.
                     credentialBindings: [
                       ...(current.credentialBindings ?? []),
                       {
                         id,
-                        label: profile.name,
-                        credentialProfileId: profile.id,
+                        label: '',
+                        credentialProfileId: '',
                         targetKind: 'provider',
-                        targetId: profile.providerOrServiceId,
+                        targetId: '',
                         isDefault: (current.credentialBindings ?? []).length === 0,
                       },
                     ],
