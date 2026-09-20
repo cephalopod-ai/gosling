@@ -174,4 +174,35 @@ describe.skipIf(process.platform === 'win32')('cleanupRecordedBackendProcesses',
       processes: [],
     });
   });
+
+  it('terminates a record spawned by this process, which the quit sweep exists to reclaim', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'gosling-process-registry-'));
+    temporaryDirectories.push(directory);
+    const registryPath = path.join(directory, 'backend-processes.json');
+
+    const backend = spawn(process.execPath, GOSLING_SERVE_SHAPE_ARGS);
+    spawnedProcesses.push(backend);
+    await pollUntil(() => isAlive(backend.pid!));
+
+    // goslingServe records every backend with parentPid: process.pid, and
+    // leaves the record in place when the backend outlives its cleanup
+    // deadline. The still-alive-parent guard must not match the caller itself.
+    const record = {
+      pid: backend.pid!,
+      parentPid: process.pid,
+      binaryPath: process.execPath,
+      args: ['serve', '--platform', 'desktop'],
+      workingDir: directory,
+      startedAt: new Date().toISOString(),
+    };
+    await fs.writeFile(registryPath, JSON.stringify({ version: 1, processes: [record] }));
+
+    await cleanupRecordedBackendProcesses(registryPath, silentLogger);
+
+    expect(await pollUntil(() => !isAlive(backend.pid!))).toBe(true);
+    expect(JSON.parse(await fs.readFile(registryPath, 'utf8'))).toEqual({
+      version: 1,
+      processes: [],
+    });
+  });
 });

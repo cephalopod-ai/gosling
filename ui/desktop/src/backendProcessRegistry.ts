@@ -244,7 +244,12 @@ export const cleanupRecordedBackendProcesses = async (
     // this predicate too. Only reclaim a process whose spawning parent has
     // actually exited; a record whose parent is still alive belongs to a running
     // owner and is kept as-is, not touched or dropped from the registry.
-    if (isProcessRunning(record.parentPid)) {
+    //
+    // A record naming this process as its parent is never another instance's:
+    // at quit it is a backend of ours that outlived its own cleanup deadline
+    // and is left here precisely so this sweep reclaims it, and at startup
+    // (before anything is spawned) it can only be a recycled PID.
+    if (record.parentPid !== process.pid && isProcessRunning(record.parentPid)) {
       stillRunning.push(record);
       continue;
     }

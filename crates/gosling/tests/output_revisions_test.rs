@@ -215,6 +215,93 @@ async fn latest_batch_returns_one_entry_per_authorized_path() {
 }
 
 #[tokio::test]
+async fn latest_batch_refuses_more_paths_than_it_will_answer() {
+    let fixture = Fixture::new().await;
+    let paths = (0..=gosling::session::session_manager::MAX_LATEST_REVISION_BATCH_PATHS)
+        .map(|index| format!("/not/a/registered/output-{index}.md"))
+        .collect();
+
+    let error = fixture
+        .manager
+        .get_latest_output_revisions(GetLatestOutputRevisionsRequest {
+            session_id: fixture.session.id.clone(),
+            paths,
+        })
+        .await
+        .expect_err("silently answering a prefix reads as the rest failing authorization");
+
+    assert!(error.to_string().contains("limited to 500 paths"));
+}
+
+#[tokio::test]
+async fn latest_batch_drops_only_the_path_whose_latest_row_is_unreadable() {
+    let fixture = Fixture::new().await;
+    fixture
+        .write(&fixture.session, "first", "model-a", "# Report\n\nFirst")
+        .await;
+    fixture
+        .write(&fixture.session, "second", "model-a", "# Report\n\nSecond")
+        .await;
+
+    let second_path = fixture.path.with_file_name("summary.md");
+    let call = CallToolRequestParams::new("developer__write").with_arguments(rmcp::object!({
+        "path": second_path.to_string_lossy(),
+        "content": "# Summary",
+    }));
+    let capture = fixture
+        .prepare(&fixture.session, "third", "model-a", &call)
+        .await;
+    fs::write(&second_path, "# Summary").unwrap();
+    fixture
+        .manager
+        .finish_output_capture(capture, &CallToolResult::success(vec![]))
+        .await
+        .unwrap();
+
+    let pool = sqlx::SqlitePool::connect(&format!(
+        "sqlite://{}",
+        fixture
+            .temp
+            .path()
+            .join("state/sessions/sessions.db")
+            .display()
+    ))
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE output_revisions SET metadata_json = 'not json' WHERE path = ? AND version = 2",
+    )
+    .bind(fixture.path.to_string_lossy().as_ref())
+    .execute(&pool)
+    .await
+    .unwrap();
+    pool.close().await;
+
+    let response = fixture
+        .manager
+        .get_latest_output_revisions(GetLatestOutputRevisionsRequest {
+            session_id: fixture.session.id.clone(),
+            paths: vec![
+                fixture.path.to_string_lossy().into_owned(),
+                second_path.to_string_lossy().into_owned(),
+            ],
+        })
+        .await
+        .expect("one unreadable row must not fail every other path");
+
+    assert_eq!(
+        response
+            .revisions
+            .iter()
+            .map(|entry| entry.path.as_str())
+            .collect::<Vec<_>>(),
+        vec![second_path.to_string_lossy().as_ref()],
+        "the unreadable path is absent rather than reported at its older readable version"
+    );
+    assert_eq!(response.revisions[0].revision.as_ref().unwrap().version, 1);
+}
+
+#[tokio::test]
 async fn preexisting_content_is_saved_with_unknown_authorship() {
     let fixture = Fixture::new().await;
     fs::write(&fixture.path, "Human original").unwrap();

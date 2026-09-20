@@ -20,6 +20,8 @@ use sqlx::Sqlite;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
+pub const MAX_LATEST_REVISION_BATCH_PATHS: usize = 500;
+
 pub struct OutputCapture {
     started_at: DateTime<Utc>,
     parent_session_id: Option<String>,
@@ -469,21 +471,29 @@ impl SessionManager {
     /// trip. Authorization stays per-path (each path independently proves it
     /// is a registered output of this session before its revision is read),
     /// but the revision lookup itself is one query instead of one per path.
-    /// A path that fails authorization is left out of the response — see
+    /// A path that fails authorization, or whose latest revision row cannot be
+    /// read back, is left out of the response — see
     /// `GetLatestOutputRevisionsResponse` — rather than failing every other
-    /// path in the same batch.
+    /// path in the same batch. An oversized request is refused outright:
+    /// dropping the excess would be indistinguishable from those paths
+    /// failing authorization.
     pub async fn get_latest_output_revisions(
         &self,
         request: GetLatestOutputRevisionsRequest,
     ) -> Result<GetLatestOutputRevisionsResponse> {
-        const MAX_BATCH_PATHS: usize = 500;
+        ensure!(
+            request.paths.len() <= MAX_LATEST_REVISION_BATCH_PATHS,
+            OutputRevisionError::Limit(format!(
+                "A latest-revision batch is limited to {MAX_LATEST_REVISION_BATCH_PATHS} paths"
+            ))
+        );
         // Two requested paths (e.g. a relative and an absolute spelling of
         // the same file) can resolve to the same canonical path; keep every
         // requested path that authorizes, but query each distinct resolved
         // path only once.
         let mut authorized: Vec<(String, String)> = Vec::new(); // (requested_path, resolved_path)
         let mut distinct_resolved: BTreeSet<String> = BTreeSet::new();
-        for path in request.paths.iter().take(MAX_BATCH_PATHS) {
+        for path in &request.paths {
             if let Ok((_, resolved)) = self
                 .authorized_output(&request.session_id, path, false)
                 .await
@@ -494,7 +504,9 @@ impl SessionManager {
             }
         }
 
-        let mut latest_by_resolved: BTreeMap<String, OutputRevisionDto> = BTreeMap::new();
+        // `None` marks a path whose latest row is unreadable; an older readable
+        // row must not be reported as the latest in its place.
+        let mut latest_by_resolved: BTreeMap<String, Option<OutputRevisionDto>> = BTreeMap::new();
         if !distinct_resolved.is_empty() {
             let placeholders = distinct_resolved
                 .iter()
@@ -515,17 +527,22 @@ impl SessionManager {
                 if let std::collections::btree_map::Entry::Vacant(entry) =
                     latest_by_resolved.entry(resolved_path)
                 {
-                    entry.insert(serde_json::from_str(&metadata_json)?);
+                    entry.insert(serde_json::from_str(&metadata_json).ok());
                 }
             }
         }
 
         let revisions = authorized
             .into_iter()
-            .map(|(requested_path, resolved)| LatestOutputRevisionEntry {
-                revision: latest_by_resolved.get(&resolved).cloned(),
-                path: requested_path,
-            })
+            .filter_map(
+                |(requested_path, resolved)| match latest_by_resolved.get(&resolved) {
+                    Some(None) => None,
+                    found => Some(LatestOutputRevisionEntry {
+                        revision: found.cloned().flatten(),
+                        path: requested_path,
+                    }),
+                },
+            )
             .collect();
         Ok(GetLatestOutputRevisionsResponse { revisions })
     }

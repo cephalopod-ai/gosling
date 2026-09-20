@@ -74,3 +74,16 @@ it('a later request for a session starts a fresh batch after the first flushes',
   await getLatestOutputRevision('chat', '/Outputs/a.md', new AbortController().signal);
   expect(latestBatch).toHaveBeenCalledTimes(2);
 });
+
+it('splits a tick larger than the backend batch cap instead of losing the overflow', async () => {
+  latestBatch.mockImplementation(async ({ paths }: { paths: string[] }) => ({
+    revisions: paths.map((path) => ({ path, revision: null })),
+  }));
+  const paths = Array.from({ length: 501 }, (_, index) => `/Outputs/${index}.md`);
+  const results = await Promise.all(
+    paths.map((path) => getLatestOutputRevision('chat', path, new AbortController().signal))
+  );
+  expect(latestBatch.mock.calls.map(([request]) => request.paths.length)).toEqual([500, 1]);
+  expect(results).toHaveLength(501);
+  expect(results.every((revision) => revision === null)).toBe(true);
+});

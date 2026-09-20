@@ -32,11 +32,42 @@ export function canonicalDirectory(selectedPath: string): string {
   return fs.realpathSync.native(directoryPath);
 }
 
-/// A grant on the home directory or a filesystem root would subsume every other
-/// entry, so remembering it turns "folders you approved" into "everything".
-/// Such a root still works for the window that picked it; it is never stored.
+// macOS exposes the data volume a second time under this prefix through
+// firmlinks, which realpath does not collapse, so `/System/Volumes/Data/Users`
+// is a distinct canonical path that still contains every home directory.
+const MACOS_DATA_VOLUME = '/System/Volumes/Data';
+
+function withoutDataVolumeAlias(directory: string): string {
+  if (process.platform !== 'darwin') return directory;
+  if (directory === MACOS_DATA_VOLUME) return '/';
+  return directory.startsWith(`${MACOS_DATA_VOLUME}/`)
+    ? directory.slice(MACOS_DATA_VOLUME.length)
+    : directory;
+}
+
+function containsOrEquals(root: string, candidate: string): boolean {
+  const relative = path.relative(root, candidate);
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+/// A grant on the home directory, anything that contains it, or a filesystem
+/// root would subsume every other entry, so remembering it turns "folders you
+/// approved" into "everything". Such a root still works for the window that
+/// picked it in a native dialog; it is never stored, and never granted on a
+/// renderer's say-so.
 export function isOverlyBroadRoot(root: string): boolean {
-  return root === path.parse(root).root || root === path.resolve(os.homedir());
+  const candidate = withoutDataVolumeAlias(root);
+  if (candidate === path.parse(candidate).root) return true;
+  const home = path.resolve(os.homedir());
+  let canonicalHome = home;
+  try {
+    canonicalHome = fs.realpathSync.native(home);
+  } catch {
+    // An unresolvable home is still compared by its literal path.
+  }
+  return [home, canonicalHome].some((homePath) =>
+    containsOrEquals(candidate, withoutDataVolumeAlias(homePath))
+  );
 }
 
 export class RendererDirectoryGrantRegistry {
@@ -89,10 +120,7 @@ export class RendererDirectoryGrantRegistry {
     } catch {
       return false;
     }
-    return this.rootsFor(webContentsId).some((root) => {
-      const relative = path.relative(root, candidate);
-      return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
-    });
+    return this.rootsFor(webContentsId).some((root) => containsOrEquals(root, candidate));
   }
 
   clearTransient(webContentsId: number): void {
