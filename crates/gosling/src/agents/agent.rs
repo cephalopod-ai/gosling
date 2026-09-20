@@ -161,7 +161,9 @@ fn categorize_tool(tool_name: &str) -> ToolCategory {
     match local {
         "shell" | "bash" | "exec" | "run" => ToolCategory::Shell,
         "read" | "view" | "cat" | "read_file" => ToolCategory::Read,
-        "write" | "edit" | "patch" | "write_file" | "edit_file" => ToolCategory::Write,
+        "write" | "edit" | "patch" | "write_file" | "edit_file" | "write_document" => {
+            ToolCategory::Write
+        }
         _ => ToolCategory::Other,
     }
 }

@@ -33,6 +33,7 @@ for the relationship to cephalopod-ai/gosling.
 - [polish/documentation-stewardship-report.md](polish/documentation-stewardship-report.md) — latest stewardship gate results and remaining risks
 - [polish/test-ledger.md](polish/test-ledger.md) — current validation commands, results, and evidence limits
 - [logs/](logs/) — retained session evidence and logging conventions
+- [logs/session/2026-09-20-post-audit-defect-repair.md](logs/session/2026-09-20-post-audit-defect-repair.md) — five-reviewer pass over the post-2026-09-16 commits, `gosling-mcp`, and `ui/text`; ten repairs (quit-time backend sweep, home-containing directory grants, timestamp cache, latest-revision batch cap and isolation, `write_document` hook category, platform-extension keys, two Ink input defects, xlsx column overflow) and the open design-level list
 - [logs/session/2026-09-19-hotpath-perf-fixes.md](logs/session/2026-09-19-hotpath-perf-fixes.md) — conversation-clone, token-accumulator, session-fetch, plan-snapshot, output-revision-batch, mention-popover, and artifact-timestamp-cache fixes, plus the PERF-GSL-003 record reconciliation and CI pnpm-cache re-enablement
 - [logs/session/2026-09-16-input-compilation.md](logs/session/2026-09-16-input-compilation.md) — complete input compilation, large-selection delivery, and attachment-error recovery
 - [logs/session/2026-09-16-evidence-instruction-authority.md](logs/session/2026-09-16-evidence-instruction-authority.md) — ADR-0023 implementation, baseline, validation, and the operator-config side effect of `tests/agent.rs`

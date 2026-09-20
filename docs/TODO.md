@@ -1,5 +1,47 @@
 # TODO
 
+## 2026-09-20 post-audit defect review and repair
+
+Review of the thirteen commits after the 2026-09-16 audits plus a full read of
+`gosling-mcp` and `ui/text`. Ten defects repaired on branch
+`fix/post-audit-defect-repair-2026-09-20`; see the
+[repair record](logs/session/2026-09-20-post-audit-defect-repair.md) for
+evidence, validation limits, and the full open list.
+
+- [~] **SEC-GRANT-001** — `grant-session-directories` let a renderer grant itself
+      any directory containing the home directory (`/Users`, the macOS
+      `/System/Volumes/Data` alias). Repaired: `isOverlyBroadRoot` now rejects
+      roots equal to or containing home. **Still open:** the main process trusts
+      renderer-supplied paths, so `~/.ssh`, `~/Library`, or `/etc` can still be
+      granted, and grants gate write/delete/Git/`openPath`. Needs a design
+      decision (backend-sourced paths, or a read-only root set).
+- [ ] **DOC-ADR17-001** — ADR-0017's 2026-09-19 amendment equates a directory
+      grant with ADR-0013's read-only, document-only per-file capability, and
+      says the Decision is unchanged while `e79427faf` reversed its "does not add
+      the selected root to the renderer's general file-access registry" sentence.
+      Conflict preserved, not resolved.
+- [ ] **SEC-GRANT-002** — picking a single file persists its parent folder for
+      every window; no grant is ever revoked (session switch, directory removal).
+- [ ] **WS-EXT-001** — workspace `defaultExtensions` silently overrides explicit
+      per-chat picks and research's forced `math_mcp`; the editor also offers
+      globally-disabled extensions the backend will never load. Product decision.
+- [ ] **DOCW-001** — `write_document`: non-atomic overwrite; `~` approved by the
+      scope inspector but written to `<cwd>/~/…` (shared `resolve_path`); xlsx
+      `f64` coercion corrupts `NaN`/leading-zero/long-ID cells; XML-illegal
+      control characters produce unopenable files reported as success.
+- [ ] **MCP-CC-001** — `computercontroller`: docx `add_image` panics on a bad
+      `.png`; script timeout has no process group; Linux/Windows
+      `computer_control` report success while discarding output or exit status;
+      blocking Peekaboo calls have no timeout; fixed temp path; `read_resource`
+      returns empty text; docx font size applied as half-points.
+- [ ] **TUI-001** — Ink layout budgets (header, input bar, model/provider/
+      extension lists) under-count chrome; extension toggle drops `env`/headers;
+      `^M` cannot fire; manual model entry unreachable/hijacks search; permission
+      prompt mislabels the domain-scoped grant; masked key input truncates.
+      Needs visual verification in a terminal.
+- [ ] **DESK-LOW-001** — access-denied PDFs/Office files lost the "Grant access"
+      path; triple-Enter mid-text sends blank lines; unused `_cwdtest` recipe.
+
 ## 2026-09-16 compacted tool-history ordering
 
 - [ ] **CMP-ORDER-001** — full conversation reload sorts a new compaction summary

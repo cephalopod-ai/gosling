@@ -225,6 +225,9 @@ const InputBar = React.memo(function InputBar({
                 useInput(
                   (ch, key) => {
                     if (key.shift && (key.upArrow || key.downArrow)) return;
+                    // Ink reports Ctrl+P as ch="p", which the input would insert
+                    // as text while the app-level handler opens its overlay.
+                    if (key.ctrl && !key.return) return;
                     if (pasteModeRef.current) {
                       handlePasteModeInput(ch, key);
                       return;
@@ -792,6 +795,10 @@ function App({
           sentInitialPrompt.current = true;
           await sendPrompt(initialPrompt);
           setTimeout(() => exit(), 100);
+        } else if (queueRef.current.length > 0) {
+          // The input bar is live while the session is still being created,
+          // and only a finished prompt drains the queue otherwise.
+          processQueue();
         }
       } catch (e: unknown) {
         const errorMsg = formatError(e);
@@ -799,7 +806,7 @@ function App({
         setLoading(false);
       }
     },
-    [initialPrompt, sendPrompt, exit],
+    [initialPrompt, sendPrompt, processQueue, exit],
   );
 
   const handleOnboardingComplete = useCallback(() => {

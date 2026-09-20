@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { RendererDirectoryGrantRegistry } from './rendererDirectoryGrants';
+import { RendererDirectoryGrantRegistry, isOverlyBroadRoot } from './rendererDirectoryGrants';
 
 const temporaryDirectories: string[] = [];
 
@@ -104,4 +104,25 @@ describe('RendererDirectoryGrantRegistry', () => {
 
     expect(() => registry.grantSelectedPath(10, symlink)).toThrow(/Symbolic-link/);
   });
+
+  it('treats anything that contains the home directory as overly broad', () => {
+    const home = fs.realpathSync.native(os.homedir());
+    expect(isOverlyBroadRoot(home)).toBe(true);
+    expect(isOverlyBroadRoot(path.dirname(home))).toBe(true);
+    expect(isOverlyBroadRoot(path.parse(home).root)).toBe(true);
+    expect(isOverlyBroadRoot(path.join(home, 'Work'))).toBe(false);
+    // A sibling that merely shares the home directory's name as a prefix.
+    expect(isOverlyBroadRoot(`${home}-backup`)).toBe(false);
+  });
+
+  it.skipIf(process.platform !== 'darwin')(
+    'sees through the macOS data-volume alias of the home directory',
+    () => {
+      const home = fs.realpathSync.native(os.homedir());
+      expect(isOverlyBroadRoot('/System/Volumes/Data')).toBe(true);
+      expect(isOverlyBroadRoot(`/System/Volumes/Data${path.dirname(home)}`)).toBe(true);
+      expect(isOverlyBroadRoot(`/System/Volumes/Data${home}`)).toBe(true);
+      expect(isOverlyBroadRoot(`/System/Volumes/Data${path.join(home, 'Work')}`)).toBe(false);
+    }
+  );
 });

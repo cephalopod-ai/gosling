@@ -2181,6 +2181,10 @@ fn categorize_tool_recognizes_conventional_names() {
     assert_eq!(categorize_tool("developer__shell"), ToolCategory::Shell);
     assert_eq!(categorize_tool("filesystem__write"), ToolCategory::Write);
     assert_eq!(categorize_tool("filesystem__edit"), ToolCategory::Write);
+    assert_eq!(
+        categorize_tool("developer__write_document"),
+        ToolCategory::Write
+    );
     assert_eq!(categorize_tool("filesystem__read"), ToolCategory::Read);
     assert_eq!(categorize_tool("filesystem__view"), ToolCategory::Read);
     assert_eq!(categorize_tool("filesystem__cat"), ToolCategory::Read);

@@ -28,6 +28,11 @@ type PendingBatch = {
   waitersByPath: Map<string, LatestRevisionWaiter[]>;
 };
 
+// Mirrors MAX_LATEST_REVISION_BATCH_PATHS in the backend, which refuses a
+// larger request outright. An unvirtualized file list can mount more rows
+// than that in one tick.
+const MAX_BATCH_PATHS = 500;
+
 const pendingBatchesBySession = new Map<string, PendingBatch>();
 let activeBatches = 0;
 const waitingBatches: Array<() => void> = [];
@@ -37,11 +42,15 @@ async function flushBatch(batch: PendingBatch): Promise<void> {
   activeBatches += 1;
   try {
     const client = await getAcpClient();
-    const response = await client.gosling.sessionOutputsLatestBatch_unstable({
-      sessionId: batch.sessionId,
-      paths: [...batch.waitersByPath.keys()],
-    });
-    const revisionByPath = new Map(response.revisions.map((entry) => [entry.path, entry.revision]));
+    const paths = [...batch.waitersByPath.keys()];
+    const revisionByPath = new Map<string, OutputRevisionDto | null | undefined>();
+    for (let offset = 0; offset < paths.length; offset += MAX_BATCH_PATHS) {
+      const response = await client.gosling.sessionOutputsLatestBatch_unstable({
+        sessionId: batch.sessionId,
+        paths: paths.slice(offset, offset + MAX_BATCH_PATHS),
+      });
+      for (const entry of response.revisions) revisionByPath.set(entry.path, entry.revision);
+    }
     for (const [path, waiters] of batch.waitersByPath) {
       if (revisionByPath.has(path)) {
         const revision = revisionByPath.get(path) ?? null;

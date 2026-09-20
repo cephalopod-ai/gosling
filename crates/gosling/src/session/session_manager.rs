@@ -73,7 +73,7 @@ pub use compaction_history_storage::{
     CompactionHistoryError, CompactionHistoryPolicyV1, CompactionRevision, CompactionRevisionDraft,
 };
 
-pub use output_revisions_storage::OutputCapture;
+pub use output_revisions_storage::{OutputCapture, MAX_LATEST_REVISION_BATCH_PATHS};
 pub const SESSIONS_FOLDER: &str = "sessions";
 pub const DB_NAME: &str = "sessions.db";
 const MILLISECOND_TIMESTAMP_THRESHOLD: i64 = 10_000_000_000;

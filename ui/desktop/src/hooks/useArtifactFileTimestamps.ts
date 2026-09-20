@@ -11,11 +11,13 @@ import {
 // back to a tab that was showing the same files moments ago) — a focus or
 // explicit ARTIFACT_TIMESTAMPS_REFRESH_EVENT signal always bypasses it, so a
 // real change is never hidden behind a stale cache entry for longer than
-// this window.
+// this window. An entry is also only reused under the timestampRevision it
+// was read for: a changed revision is the caller saying the file changed, and
+// nothing else would schedule another read once the cached value was served.
 const TIMESTAMP_CACHE_TTL_MS = 3000;
 const timestampCache = new Map<
   string,
-  { value: ArtifactFileTimestampMap[string]; fetchedAt: number }
+  { value: ArtifactFileTimestampMap[string]; fetchedAt: number; revision: string | null }
 >();
 
 // Exposed so tests can isolate themselves from other tests' cached paths;
@@ -36,7 +38,8 @@ export function useArtifactFileTimestamps(
 
   useEffect(() => {
     const requests: Array<[string, string | null]> = JSON.parse(requestKey);
-    const paths = [...new Set(requests.map(([filePath]) => filePath))];
+    const revisionByPath = new Map(requests);
+    const paths = [...revisionByPath.keys()];
     let cancelled = false;
     let revision = 0;
 
@@ -48,7 +51,11 @@ export function useArtifactFileTimestamps(
         ? paths
         : paths.filter((filePath) => {
             const cached = timestampCache.get(filePath);
-            if (cached && now - cached.fetchedAt < TIMESTAMP_CACHE_TTL_MS) {
+            if (
+              cached &&
+              cached.revision === (revisionByPath.get(filePath) ?? null) &&
+              now - cached.fetchedAt < TIMESTAMP_CACHE_TTL_MS
+            ) {
               timestamps[filePath] = cached.value;
               return false;
             }
@@ -65,7 +72,11 @@ export function useArtifactFileTimestamps(
           for (const filePath of batch) {
             const value = result[filePath] ?? null;
             timestamps[filePath] = value;
-            timestampCache.set(filePath, { value, fetchedAt: Date.now() });
+            timestampCache.set(filePath, {
+              value,
+              fetchedAt: Date.now(),
+              revision: revisionByPath.get(filePath) ?? null,
+            });
           }
         } catch {
           for (const filePath of batch) timestamps[filePath] = null;

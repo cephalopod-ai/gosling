@@ -110,6 +110,7 @@ describe('renderer IPC', () => {
     const granted = grant({ sender: { id: 7 } }, [
       project,
       os.homedir(), // would subsume every other grant
+      path.dirname(os.homedir()), // contains the home directory, so subsumes it too
       path.parse(root).root, // the whole filesystem
       link, // symlinked directory
       file, // not a directory

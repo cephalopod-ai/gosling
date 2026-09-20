@@ -82,6 +82,25 @@ describe('useArtifactFileTimestamps', () => {
     expect(getTimes).toHaveBeenCalledTimes(1);
   });
 
+  it('re-reads a fresh cache entry when the file revision changes', async () => {
+    const getTimes = vi.mocked(window.electron.getArtifactFileTimestamps);
+    getTimes.mockResolvedValue({ '/outputs/report.md': original });
+    const { result, rerender } = renderHook(
+      ({ version }) =>
+        useArtifactFileTimestamps([{ path: '/outputs/report.md', timestampRevision: version }]),
+      { initialProps: { version: 'first' } }
+    );
+    await waitFor(() => expect(result.current['/outputs/report.md']).toEqual(original));
+
+    // The agent rewrites the file inside the cache window: the new revision
+    // is the only signal, so serving the cached value would show the old
+    // modified time until the next window focus.
+    getTimes.mockResolvedValue({ '/outputs/report.md': updated });
+    rerender({ version: 'second' });
+    await waitFor(() => expect(result.current['/outputs/report.md']).toEqual(updated));
+    expect(getTimes).toHaveBeenCalledTimes(2);
+  });
+
   it('bypasses the cache on focus even when the entry is fresh', async () => {
     const getTimes = vi.mocked(window.electron.getArtifactFileTimestamps);
     getTimes.mockResolvedValue({ '/outputs/report.md': original });

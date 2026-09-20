@@ -252,6 +252,9 @@ fn parse_cell_reference(reference: &str) -> Result<(u32, u32)> {
     Ok((row, col))
 }
 
+// XFD, the last column a worksheet can have.
+const MAX_XLSX_COLUMN: u32 = 16_384;
+
 fn column_letter_to_number(column: &str) -> Result<u32> {
     let mut result = 0u32;
     for c in column.chars() {
@@ -259,6 +262,11 @@ fn column_letter_to_number(column: &str) -> Result<u32> {
             anyhow::bail!("Invalid column letter");
         }
         result = result * 26 + (c.to_ascii_uppercase() as u32 - 'A' as u32 + 1);
+        // Checked per letter: seven letters would otherwise overflow u32 and
+        // wrap to an unrelated, valid-looking column.
+        if result > MAX_XLSX_COLUMN {
+            anyhow::bail!("Column {column} is beyond the last worksheet column (XFD)");
+        }
     }
     Ok(result)
 }
@@ -275,6 +283,14 @@ mod tests {
             .join("tests")
             .join("data")
             .join("FinancialSample.xlsx")
+    }
+
+    #[test]
+    fn column_letters_are_bounded_by_the_last_worksheet_column() {
+        assert_eq!(column_letter_to_number("A").unwrap(), 1);
+        assert_eq!(column_letter_to_number("xfd").unwrap(), MAX_XLSX_COLUMN);
+        assert!(column_letter_to_number("XFE").is_err());
+        assert!(column_letter_to_number("ZZZZZZZ").is_err());
     }
 
     #[test]
