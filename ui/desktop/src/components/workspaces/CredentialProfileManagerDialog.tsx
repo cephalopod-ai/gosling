@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { KeyRound, Pencil, Plus, Trash2 } from 'lucide-react';
 import type {
   CredentialAuthKind,
@@ -24,6 +24,9 @@ import { Input } from '../ui/input';
 interface CredentialProfileManagerDialogProps {
   open: boolean;
   onOpenChange(open: boolean): void;
+  /// Open straight into this profile's editor, for a caller that already knows
+  /// which one needs its secret supplied.
+  initialEditProfileId?: string | null;
 }
 
 interface ProfileDraft {
@@ -46,6 +49,7 @@ const emptyDraft = (): ProfileDraft => ({
 export function CredentialProfileManagerDialog({
   open,
   onOpenChange,
+  initialEditProfileId,
 }: CredentialProfileManagerDialogProps) {
   const {
     credentialProfiles,
@@ -90,6 +94,20 @@ export function CredentialProfileManagerDialog({
     setError(null);
     setProfileStatus(null);
   }, []);
+
+  // Runs once per open: a later edit or close must not be undone by this.
+  const openedForProfile = useRef<string | null>(null);
+  useEffect(() => {
+    if (!open) {
+      openedForProfile.current = null;
+      return;
+    }
+    if (!initialEditProfileId || openedForProfile.current === initialEditProfileId) return;
+    const target = credentialProfiles.find((item) => item.id === initialEditProfileId);
+    if (!target) return;
+    openedForProfile.current = initialEditProfileId;
+    beginEdit(target);
+  }, [open, initialEditProfileId, credentialProfiles, beginEdit]);
 
   const closeForm = useCallback(() => {
     setDraft(null);

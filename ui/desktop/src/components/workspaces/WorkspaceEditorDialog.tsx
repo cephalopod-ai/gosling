@@ -96,6 +96,7 @@ export function WorkspaceEditorDialog({
   const [modelsLoading, setModelsLoading] = useState(false);
   const [validation, setValidation] = useState<WorkspaceValidationReport | null>(null);
   const [profileManagerOpen, setProfileManagerOpen] = useState(false);
+  const [profileManagerProfileId, setProfileManagerProfileId] = useState<string | null>(null);
   // Read directly rather than through ConfigContext: the dialog is rendered in
   // places that do not provide it, and a workspace draft needs no live config.
   const [installedExtensions, setInstalledExtensions] = useState<
@@ -676,7 +677,14 @@ export function WorkspaceEditorDialog({
                   Bind secure profiles by reference. Secret values are never stored in this
                   workspace.
                 </p>
-                <Button variant="outline" size="sm" onClick={() => setProfileManagerOpen(true)}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setProfileManagerProfileId(null);
+                    setProfileManagerOpen(true);
+                  }}
+                >
                   <KeyRound className="mr-1 size-4" /> Manage profiles
                 </Button>
               </div>
@@ -760,6 +768,34 @@ export function WorkspaceEditorDialog({
                       <p className="text-xs text-amber-600 md:col-span-4">
                         This credential profile is missing and must be relinked.
                       </p>
+                    )}
+                    {profile && profile.status !== 'configured' && (
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-amber-600 md:col-span-4">
+                        <span>
+                          {profile.source === 'global_configuration_alias'
+                            ? `${profile.providerOrServiceId} has no saved credentials to reference.`
+                            : 'This profile has no stored secret yet.'}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="xs"
+                          onClick={() => {
+                            // An alias profile's secret lives in provider
+                            // settings; the workspace editor cannot supply it.
+                            if (profile.source === 'global_configuration_alias') {
+                              onOpenChange(false);
+                              navigate('/configure-providers');
+                              return;
+                            }
+                            setProfileManagerProfileId(profile.id);
+                            setProfileManagerOpen(true);
+                          }}
+                        >
+                          {profile.source === 'global_configuration_alias'
+                            ? 'Open provider settings'
+                            : 'Set up'}
+                        </Button>
+                      </div>
                     )}
                   </div>
                 );
@@ -1068,6 +1104,7 @@ export function WorkspaceEditorDialog({
       <CredentialProfileManagerDialog
         open={profileManagerOpen}
         onOpenChange={setProfileManagerOpen}
+        initialEditProfileId={profileManagerProfileId}
       />
     </>
   );

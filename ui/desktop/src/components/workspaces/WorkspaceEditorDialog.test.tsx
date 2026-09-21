@@ -7,6 +7,14 @@ import { acpListProviderDetails, acpListProviderModels } from '../../acp/provide
 import { IntlTestWrapper } from '../../i18n/test-utils';
 import { WorkspaceEditorDialog } from './WorkspaceEditorDialog';
 
+// Spying on navigation needs the real MemoryRouter kept for Router context,
+// with only useNavigate replaced.
+const { mockNavigate } = vi.hoisted(() => ({ mockNavigate: vi.fn() }));
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
+  return { ...actual, useNavigate: () => mockNavigate };
+});
+
 // The dialog's "Configure other providers" option navigates via useNavigate(),
 // which requires Router context (see GroupedExtensionLoadingToast.test.tsx for
 // the same pattern).
@@ -497,6 +505,73 @@ describe('WorkspaceEditorDialog', () => {
     expect(screen.getByRole('textbox', { name: 'Credential binding label' })).toHaveValue(
       'anthropic'
     );
+  });
+
+  it('offers setup for an unconfigured profile, routed by where its secret lives', async () => {
+    const user = userEvent.setup();
+    const binding = (id: string, profileId: string) => ({
+      id,
+      label: profileId,
+      credentialProfileId: profileId,
+      targetKind: 'provider' as const,
+      targetId: 'featherless',
+      isDefault: id === 'binding-1',
+    });
+    vi.mocked(useWorkspace).mockReturnValue({
+      ...vi.mocked(useWorkspace)(),
+      credentialProfiles: [
+        {
+          id: 'workspace-owned',
+          name: 'featherless',
+          providerOrServiceId: 'featherless',
+          authKind: 'config_fields' as const,
+          configuredSecretFields: [],
+          nonSecretFields: {},
+          status: 'missing' as const,
+          source: 'workspace_secure_storage' as const,
+          createdAt: '2026-01-01T00:00:00Z',
+          updatedAt: '2026-01-01T00:00:00Z',
+        },
+        {
+          id: 'global-provider::featherless',
+          name: 'Current featherless configuration',
+          providerOrServiceId: 'featherless',
+          authKind: 'config_fields' as const,
+          configuredSecretFields: [],
+          nonSecretFields: {},
+          status: 'missing' as const,
+          source: 'global_configuration_alias' as const,
+          createdAt: '2026-01-01T00:00:00Z',
+          updatedAt: '2026-01-01T00:00:00Z',
+        },
+      ],
+    });
+
+    render(
+      <WorkspaceEditorDialog
+        open
+        workspace={{
+          ...activeWorkspace,
+          credentialBindings: [
+            binding('binding-1', 'workspace-owned'),
+            binding('binding-2', 'global-provider::featherless'),
+          ],
+          defaultCredentialBindingId: 'binding-1',
+        }}
+        onOpenChange={vi.fn()}
+      />,
+      { wrapper: TestWrapper }
+    );
+
+    // A workspace-owned profile is fixable here; an alias only points at the
+    // provider's own saved credentials, so it must send the user there instead.
+    expect(screen.getByText('This profile has no stored secret yet.')).toBeInTheDocument();
+    expect(
+      screen.getByText('featherless has no saved credentials to reference.')
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Open provider settings' }));
+    expect(mockNavigate).toHaveBeenCalledWith('/configure-providers');
   });
 
   it('shows an actionable relink state for a missing credential profile', () => {

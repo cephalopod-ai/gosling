@@ -174,6 +174,11 @@ impl GoslingAcpAgent {
         &self,
         _request: CredentialProfileListRequest,
     ) -> Result<CredentialProfileListResponse, agent_client_protocol::Error> {
+        // Pick up providers configured since the last call. A failure here only
+        // costs the alias profiles, so the stored ones are still listed.
+        if let Err(error) = self.workspace_service.sync_global_alias_profiles().await {
+            tracing::warn!(%error, "Failed to refresh provider credential profiles");
+        }
         let profiles = self
             .workspace_service
             .credential_profiles()
