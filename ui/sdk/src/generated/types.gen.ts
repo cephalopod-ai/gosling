@@ -3297,7 +3297,13 @@ export type Workspace = {
     id: string;
     schemaVersion: number;
     name: string;
-    description?: string | null;
+    /**
+     * Standing instructions for this workspace: a short starting prompt (at most
+     * 100 words) that sets the general direction of every chat opened here. It is
+     * appended to each session's system prompt. `description` is accepted on read
+     * so documents saved before the rename keep their text.
+     */
+    instructions?: string | null;
     icon?: string | null;
     workingFolder: string;
     folders?: Array<WorkspaceFolder>;
@@ -3381,7 +3387,7 @@ export type WorkspaceCreateRequest_unstable = {
 
 export type WorkspaceMutation = {
     name: string;
-    description?: string | null;
+    instructions?: string | null;
     icon?: string | null;
     workingFolder: string;
     folders?: Array<WorkspaceFolder>;

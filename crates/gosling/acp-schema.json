@@ -9158,11 +9158,12 @@
         "name": {
           "type": "string"
         },
-        "description": {
+        "instructions": {
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "description": "Standing instructions for this workspace: a short starting prompt (at most\n100 words) that sets the general direction of every chat opened here. It is\nappended to each session's system prompt. `description` is accepted on read\nso documents saved before the rename keep their text."
         },
         "icon": {
           "type": [
@@ -9481,7 +9482,7 @@
         "name": {
           "type": "string"
         },
-        "description": {
+        "instructions": {
           "type": [
             "string",
             "null"

@@ -388,6 +388,7 @@ async fn workspace(
     let context = WorkspaceSessionContext {
         workspace_id: "audit".into(),
         workspace_name: "Audit".into(),
+        instructions: None,
         primary_working_folder: project.to_string_lossy().into(),
         folders: Vec::new(),
         product_output_folders: Vec::new(),

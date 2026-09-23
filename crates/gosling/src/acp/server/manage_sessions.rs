@@ -883,6 +883,7 @@ mod tests {
         let context = crate::workspace::WorkspaceSessionContext {
             workspace_id: "workspace".into(),
             workspace_name: "Workspace".into(),
+            instructions: None,
             primary_working_folder: project.to_string_lossy().to_string(),
             folders: Vec::new(),
             product_output_folders: Vec::new(),
@@ -947,6 +948,7 @@ mod tests {
             workspace_context: Some(crate::workspace::WorkspaceSessionContext {
                 workspace_id: "workspace".into(),
                 workspace_name: "Workspace".into(),
+                instructions: None,
                 primary_working_folder: project.to_string_lossy().to_string(),
                 folders: Vec::new(),
                 product_output_folders: Vec::new(),

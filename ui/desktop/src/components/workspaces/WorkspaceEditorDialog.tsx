@@ -63,6 +63,8 @@ const PRODUCT_TYPES: ProductType[] = [
   'other',
 ];
 
+const INSTRUCTIONS_WORD_LIMIT = 100;
+
 const DEFAULT_WORKSPACE_PROVIDER = 'chatgpt_codex';
 const DEFAULT_WORKSPACE_MODEL = 'gpt-5.6-terra';
 const DEFAULT_WORKSPACE_EFFORT: WorkspaceThinkingEffort = 'medium';
@@ -481,14 +483,21 @@ export function WorkspaceEditorDialog({
                   />
                 </Field>
               </div>
-              <Field label="Description (optional)">
+              <Field label="Instructions (optional)">
                 <textarea
-                  value={draft.description ?? ''}
+                  value={draft.instructions ?? ''}
                   onChange={(event) =>
-                    setDraft({ ...draft, description: event.target.value || null })
+                    setDraft({
+                      ...draft,
+                      instructions: clampWords(event.target.value, INSTRUCTIONS_WORD_LIMIT) || null,
+                    })
                   }
+                  placeholder="A starting prompt for every chat in this workspace — what it's for and the general direction to take."
                   className="min-h-20 w-full rounded-md border border-border-primary bg-background-primary p-3 text-sm outline-none focus:border-border-secondary"
                 />
+                <span className="block text-right text-xs font-normal text-text-secondary">
+                  {countWords(draft.instructions ?? '')}/{INSTRUCTIONS_WORD_LIMIT} words
+                </span>
               </Field>
               <div className="grid gap-3 md:grid-cols-2">
                 <Field label="Default provider (optional)">
@@ -1167,7 +1176,7 @@ function createDraft(workspace?: Workspace | null): WorkspaceMutation {
   const workingFolder = getDefaultWorkspaceWorkingDir();
   return {
     name: '',
-    description: null,
+    instructions: null,
     icon: null,
     workingFolder,
     folders: [],
@@ -1192,6 +1201,20 @@ function createDraft(workspace?: Workspace | null): WorkspaceMutation {
 function formatEffort(effort: WorkspaceThinkingEffort): string {
   if (effort === 'off') return 'Off';
   return effort.charAt(0).toUpperCase() + effort.slice(1);
+}
+
+function countWords(text: string): number {
+  return text.split(/\s+/).filter(Boolean).length;
+}
+
+function clampWords(text: string, limit: number): string {
+  let count = 0;
+  const words = /\S+/g;
+  for (let match = words.exec(text); match; match = words.exec(text)) {
+    count += 1;
+    if (count === limit) return text.slice(0, match.index + match[0].length);
+  }
+  return text;
 }
 
 function joinPath(root: string, child: string): string {

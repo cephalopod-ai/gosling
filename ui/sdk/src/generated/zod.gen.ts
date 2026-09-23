@@ -3003,7 +3003,7 @@ export const zWorkspace = z.object({
     id: z.string(),
     schemaVersion: z.number().int().gte(0),
     name: z.string(),
-    description: z.string().nullish(),
+    instructions: z.string().nullish(),
     icon: z.string().nullish(),
     workingFolder: z.string(),
     folders: z.array(zWorkspaceFolder).optional().default([]),
@@ -3065,7 +3065,7 @@ export const zWorkspaceListResponse_unstable = z.object({
 
 export const zWorkspaceMutation = z.object({
     name: z.string(),
-    description: z.string().nullish(),
+    instructions: z.string().nullish(),
     icon: z.string().nullish(),
     workingFolder: z.string(),
     folders: z.array(zWorkspaceFolder).optional().default([]),

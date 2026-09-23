@@ -307,12 +307,7 @@ function WorkspaceRow({
             <MessageCircle className="size-3 shrink-0 text-blue-500" aria-hidden="true" />
           </span>
         )}
-        <span className="min-w-0 flex-1 text-left">
-          <span className="block truncate">{workspace.name}</span>
-          <span className="block truncate text-[10px] text-text-secondary">
-            {workspace.folders?.length ?? 0} refs · {workspace.productOutputFolders.length} outputs
-          </span>
-        </span>
+        <span className="min-w-0 flex-1 truncate text-left">{workspace.name}</span>
         {hasWarnings && (
           <span
             role="img"

@@ -162,8 +162,16 @@ pub struct Workspace {
     pub id: String,
     pub schema_version: u32,
     pub name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
+    /// Standing instructions for this workspace: a short starting prompt (at most
+    /// 100 words) that sets the general direction of every chat opened here. It is
+    /// appended to each session's system prompt. `description` is accepted on read
+    /// so documents saved before the rename keep their text.
+    #[serde(
+        default,
+        alias = "description",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub instructions: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
     pub working_folder: String,
@@ -194,8 +202,12 @@ pub struct Workspace {
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceMutation {
     pub name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
+    #[serde(
+        default,
+        alias = "description",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub instructions: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
     pub working_folder: String,
@@ -220,7 +232,7 @@ impl From<&Workspace> for WorkspaceMutation {
     fn from(workspace: &Workspace) -> Self {
         Self {
             name: workspace.name.clone(),
-            description: workspace.description.clone(),
+            instructions: workspace.instructions.clone(),
             icon: workspace.icon.clone(),
             working_folder: workspace.working_folder.clone(),
             folders: workspace.folders.clone(),
@@ -279,6 +291,10 @@ pub struct WorkspaceValidationReport {
 pub struct WorkspaceSessionContext {
     pub workspace_id: String,
     pub workspace_name: String,
+    /// The workspace's standing instructions, captured at session launch so a
+    /// resumed session keeps the prompt it started with.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instructions: Option<String>,
     pub primary_working_folder: String,
     #[serde(default)]
     pub folders: Vec<WorkspaceFolder>,
