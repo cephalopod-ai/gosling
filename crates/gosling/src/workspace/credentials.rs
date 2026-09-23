@@ -378,6 +378,33 @@ impl WorkspaceService {
         })
     }
 
+    /// Record an alias profile for every provider whose credentials are already
+    /// complete in global configuration, so a workspace can bind a key the user
+    /// saved on the Providers screen instead of re-entering it here. The secret
+    /// itself stays in global storage; only the reference is recorded.
+    ///
+    /// A provider whose credentials are later removed keeps its profile, which
+    /// recomputes to `Missing` rather than vanishing, so an existing binding
+    /// reports that it needs relinking instead of silently resolving to nothing.
+    pub async fn sync_global_alias_profiles(&self) -> Result<()> {
+        let discovered = crate::providers::providers()
+            .await
+            .into_iter()
+            .filter_map(|(metadata, _)| {
+                alias_profile_from_declared(&metadata.name, &metadata.config_keys)
+            })
+            .collect::<Vec<_>>();
+        if discovered.is_empty() {
+            return Ok(());
+        }
+        let _guard = self.operation_lock.lock().await;
+        let _transaction = self.store.lock_credential_transaction()?;
+        self.store.mutate(|document| {
+            merge_alias_profiles(document, &discovered);
+            Ok(())
+        })
+    }
+
     pub(super) async fn cleanup_pending_secret_deletions(&self) -> Result<()> {
         let _guard = self.operation_lock.lock().await;
         let _transaction = self.store.lock_credential_transaction()?;
@@ -401,7 +428,48 @@ async fn global_alias_profile(provider: &str) -> Result<Option<(CredentialProfil
         Ok(entry) => entry,
         Err(_) => return Ok(None),
     };
-    let declared = &entry.metadata().config_keys;
+    Ok(alias_profile_from_declared(
+        provider,
+        &entry.metadata().config_keys,
+    ))
+}
+
+/// Adds alias profiles the document does not already carry. Re-running with the
+/// same input is a no-op, so this is safe on every profile listing.
+fn merge_alias_profiles(
+    document: &mut WorkspaceStoreDocument,
+    discovered: &[(CredentialProfile, Vec<String>)],
+) {
+    for (profile, required_secret_fields) in discovered {
+        let known = document
+            .credential_profiles
+            .iter()
+            .any(|item| item.id == profile.id);
+        // Profile names are unique case-insensitively; yield to a name the user
+        // already chose rather than failing the whole sync.
+        let name_taken = document
+            .credential_profiles
+            .iter()
+            .any(|item| item.id != profile.id && item.name.eq_ignore_ascii_case(&profile.name));
+        if known || name_taken {
+            continue;
+        }
+        document
+            .workspace_profile_required_secret_fields
+            .insert(profile.id.clone(), required_secret_fields.clone());
+        document.credential_profiles.push(profile.clone());
+    }
+    document.credential_profiles.sort_by(profile_order);
+}
+
+/// An alias profile points at the provider's own global config keys instead of
+/// copying the secret into workspace storage, so it only exists while those
+/// keys are complete. Returns `None` otherwise, which is what keeps a
+/// half-configured provider out of the selectable list.
+fn alias_profile_from_declared(
+    provider: &str,
+    declared: &[crate::providers::base::ConfigKey],
+) -> Option<(CredentialProfile, Vec<String>)> {
     let configured = declared
         .iter()
         .filter(|key| key.secret && Config::global().get_secret::<Value>(&key.name).is_ok())
@@ -431,12 +499,12 @@ async fn global_alias_profile(provider: &str) -> Result<Option<(CredentialProfil
     };
     profile.status = profile_status(&profile, declared);
     if profile.status != CredentialProfileStatus::Configured {
-        return Ok(None);
+        return None;
     }
     let now = Utc::now().to_rfc3339();
     profile.created_at = now.clone();
     profile.updated_at = now;
-    Ok(Some((profile, required_secret_fields(declared))))
+    Some((profile, required_secret_fields(declared)))
 }
 
 pub(super) fn effective_profiles(document: &WorkspaceStoreDocument) -> Vec<CredentialProfile> {
@@ -650,5 +718,81 @@ mod tests {
         assert!(missing.configured_secret_fields.is_empty());
         assert_eq!(configured.status, CredentialProfileStatus::Configured);
         assert_eq!(configured.configured_secret_fields, vec!["API_KEY"]);
+    }
+
+    fn alias(id: &str, name: &str) -> (CredentialProfile, Vec<String>) {
+        (
+            CredentialProfile {
+                id: id.into(),
+                name: name.into(),
+                provider_or_service_id: name.into(),
+                configured_secret_fields: vec!["API_KEY".into()],
+                status: CredentialProfileStatus::Configured,
+                source: CredentialProfileSource::GlobalConfigurationAlias,
+                ..CredentialProfile::default()
+            },
+            vec!["API_KEY".to_string()],
+        )
+    }
+
+    #[test]
+    fn alias_profiles_merge_once_and_never_displace_a_user_profile() {
+        let mut document = WorkspaceStoreDocument::create_default_for_test();
+        let discovered = vec![
+            alias("global-provider::featherless", "featherless"),
+            alias("global-provider::anthropic", "anthropic"),
+        ];
+
+        merge_alias_profiles(&mut document, &discovered);
+        assert_eq!(document.credential_profiles.len(), 2);
+        assert_eq!(
+            document
+                .workspace_profile_required_secret_fields
+                .get("global-provider::featherless"),
+            Some(&vec!["API_KEY".to_string()])
+        );
+
+        // Listing profiles runs this on every call, so a repeat must not
+        // duplicate what is already recorded.
+        merge_alias_profiles(&mut document, &discovered);
+        assert_eq!(document.credential_profiles.len(), 2);
+    }
+
+    #[test]
+    fn a_name_the_user_already_took_blocks_the_alias_rather_than_failing() {
+        let mut document = WorkspaceStoreDocument::create_default_for_test();
+        document.credential_profiles.push(CredentialProfile {
+            id: "user-owned".into(),
+            name: "Featherless".into(),
+            source: CredentialProfileSource::WorkspaceSecureStorage,
+            ..CredentialProfile::default()
+        });
+
+        // Profile names are unique case-insensitively; the user's own record wins.
+        merge_alias_profiles(
+            &mut document,
+            &[
+                alias("global-provider::featherless", "featherless"),
+                alias("global-provider::anthropic", "anthropic"),
+            ],
+        );
+
+        let names: Vec<_> = document
+            .credential_profiles
+            .iter()
+            .map(|item| item.name.as_str())
+            .collect();
+        assert!(names.contains(&"Featherless"));
+        assert!(names.contains(&"anthropic"));
+        assert_eq!(
+            names
+                .iter()
+                .filter(|name| name.eq_ignore_ascii_case("featherless"))
+                .count(),
+            1
+        );
+        assert!(!document
+            .workspace_profile_required_secret_fields
+            .contains_key("global-provider::featherless"));
     }
 }

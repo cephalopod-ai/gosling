@@ -3790,6 +3790,7 @@ mod tests {
                 WorkspaceSessionContext {
                     workspace_id: "untrusted-workspace".into(),
                     workspace_name: "Untrusted workspace".into(),
+                    instructions: None,
                     primary_working_folder: "/tmp/test".into(),
                     folders: Vec::new(),
                     product_output_folders: Vec::new(),
@@ -4653,6 +4654,7 @@ mod tests {
         let context = WorkspaceSessionContext {
             workspace_id: "workspace-id".into(),
             workspace_name: "Project".into(),
+            instructions: None,
             primary_working_folder: temp_dir.path().to_string_lossy().to_string(),
             folders: Vec::new(),
             product_output_folders: Vec::new(),
@@ -4717,6 +4719,7 @@ mod tests {
         let context = WorkspaceSessionContext {
             workspace_id: "workspace-id".into(),
             workspace_name: "Project".into(),
+            instructions: None,
             primary_working_folder: primary_working_folder.clone(),
             folders: Vec::new(),
             product_output_folders: vec![crate::workspace::ProductOutputFolder {
@@ -4777,6 +4780,7 @@ mod tests {
         let context = WorkspaceSessionContext {
             workspace_id: "workspace-id".into(),
             workspace_name: "Project".into(),
+            instructions: None,
             primary_working_folder: temp_dir.path().to_string_lossy().to_string(),
             folders: Vec::new(),
             product_output_folders: Vec::new(),
@@ -4830,6 +4834,7 @@ mod tests {
         let context = WorkspaceSessionContext {
             workspace_id: "workspace-id".into(),
             workspace_name: "Project".into(),
+            instructions: None,
             primary_working_folder: temp_dir.path().to_string_lossy().to_string(),
             folders: Vec::new(),
             product_output_folders: Vec::new(),
@@ -5697,6 +5702,7 @@ mod tests {
         let context = WorkspaceSessionContext {
             workspace_id: "workspace-id".into(),
             workspace_name: "Project".into(),
+            instructions: None,
             primary_working_folder: working_dir.to_string_lossy().into_owned(),
             folders: Vec::new(),
             product_output_folders: vec![crate::workspace::ProductOutputFolder {

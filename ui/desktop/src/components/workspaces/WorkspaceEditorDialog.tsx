@@ -63,6 +63,8 @@ const PRODUCT_TYPES: ProductType[] = [
   'other',
 ];
 
+const INSTRUCTIONS_WORD_LIMIT = 100;
+
 const DEFAULT_WORKSPACE_PROVIDER = 'chatgpt_codex';
 const DEFAULT_WORKSPACE_MODEL = 'gpt-5.6-terra';
 const DEFAULT_WORKSPACE_EFFORT: WorkspaceThinkingEffort = 'medium';
@@ -96,6 +98,7 @@ export function WorkspaceEditorDialog({
   const [modelsLoading, setModelsLoading] = useState(false);
   const [validation, setValidation] = useState<WorkspaceValidationReport | null>(null);
   const [profileManagerOpen, setProfileManagerOpen] = useState(false);
+  const [profileManagerProfileId, setProfileManagerProfileId] = useState<string | null>(null);
   // Read directly rather than through ConfigContext: the dialog is rendered in
   // places that do not provide it, and a workspace draft needs no live config.
   const [installedExtensions, setInstalledExtensions] = useState<
@@ -480,14 +483,21 @@ export function WorkspaceEditorDialog({
                   />
                 </Field>
               </div>
-              <Field label="Description (optional)">
+              <Field label="Instructions (optional)">
                 <textarea
-                  value={draft.description ?? ''}
+                  value={draft.instructions ?? ''}
                   onChange={(event) =>
-                    setDraft({ ...draft, description: event.target.value || null })
+                    setDraft({
+                      ...draft,
+                      instructions: clampWords(event.target.value, INSTRUCTIONS_WORD_LIMIT) || null,
+                    })
                   }
+                  placeholder="A starting prompt for every chat in this workspace — what it's for and the general direction to take."
                   className="min-h-20 w-full rounded-md border border-border-primary bg-background-primary p-3 text-sm outline-none focus:border-border-secondary"
                 />
+                <span className="block text-right text-xs font-normal text-text-secondary">
+                  {countWords(draft.instructions ?? '')}/{INSTRUCTIONS_WORD_LIMIT} words
+                </span>
               </Field>
               <div className="grid gap-3 md:grid-cols-2">
                 <Field label="Default provider (optional)">
@@ -676,7 +686,14 @@ export function WorkspaceEditorDialog({
                   Bind secure profiles by reference. Secret values are never stored in this
                   workspace.
                 </p>
-                <Button variant="outline" size="sm" onClick={() => setProfileManagerOpen(true)}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setProfileManagerProfileId(null);
+                    setProfileManagerOpen(true);
+                  }}
+                >
                   <KeyRound className="mr-1 size-4" /> Manage profiles
                 </Button>
               </div>
@@ -700,9 +717,17 @@ export function WorkspaceEditorDialog({
                         const selected = credentialProfiles.find(
                           (item) => item.id === event.target.value
                         );
+                        const previous = credentialProfiles.find(
+                          (item) => item.id === binding.credentialProfileId
+                        );
+                        // Keep a label the user typed; replace one that is only
+                        // an echo of the previously selected profile's name.
+                        const keepLabel =
+                          binding.label.trim() !== '' && binding.label !== previous?.name;
                         updateBinding(binding.id, {
                           credentialProfileId: event.target.value,
                           targetId: selected?.providerOrServiceId ?? '',
+                          label: keepLabel ? binding.label : (selected?.name ?? ''),
                         });
                       }}
                       className="h-9 rounded-md border border-border-primary bg-background-primary px-3 text-sm"
@@ -743,10 +768,43 @@ export function WorkspaceEditorDialog({
                     >
                       <Trash2 className="size-4" />
                     </Button>
+                    {!binding.credentialProfileId && (
+                      <p className="text-xs text-text-secondary md:col-span-4">
+                        Choose a credential profile for this binding.
+                      </p>
+                    )}
                     {!profile && binding.credentialProfileId && (
                       <p className="text-xs text-amber-600 md:col-span-4">
                         This credential profile is missing and must be relinked.
                       </p>
+                    )}
+                    {profile && profile.status !== 'configured' && (
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-amber-600 md:col-span-4">
+                        <span>
+                          {profile.source === 'global_configuration_alias'
+                            ? `${profile.providerOrServiceId} has no saved credentials to reference.`
+                            : 'This profile has no stored secret yet.'}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="xs"
+                          onClick={() => {
+                            // An alias profile's secret lives in provider
+                            // settings; the workspace editor cannot supply it.
+                            if (profile.source === 'global_configuration_alias') {
+                              onOpenChange(false);
+                              navigate('/configure-providers');
+                              return;
+                            }
+                            setProfileManagerProfileId(profile.id);
+                            setProfileManagerOpen(true);
+                          }}
+                        >
+                          {profile.source === 'global_configuration_alias'
+                            ? 'Open provider settings'
+                            : 'Set up'}
+                        </Button>
+                      </div>
                     )}
                   </div>
                 );
@@ -756,19 +814,20 @@ export function WorkspaceEditorDialog({
                 size="sm"
                 disabled={credentialProfiles.length === 0}
                 onClick={() => {
-                  const profile = credentialProfiles[0];
-                  if (!profile) return;
                   const id = uuidv7();
                   setDraft((current) => ({
                     ...current,
+                    // Start unselected: silently binding whichever profile happens
+                    // to sort first reads as "it just added that one", and adding
+                    // twice produced two identical bindings.
                     credentialBindings: [
                       ...(current.credentialBindings ?? []),
                       {
                         id,
-                        label: profile.name,
-                        credentialProfileId: profile.id,
+                        label: '',
+                        credentialProfileId: '',
                         targetKind: 'provider',
-                        targetId: profile.providerOrServiceId,
+                        targetId: '',
                         isDefault: (current.credentialBindings ?? []).length === 0,
                       },
                     ],
@@ -1054,6 +1113,7 @@ export function WorkspaceEditorDialog({
       <CredentialProfileManagerDialog
         open={profileManagerOpen}
         onOpenChange={setProfileManagerOpen}
+        initialEditProfileId={profileManagerProfileId}
       />
     </>
   );
@@ -1116,7 +1176,7 @@ function createDraft(workspace?: Workspace | null): WorkspaceMutation {
   const workingFolder = getDefaultWorkspaceWorkingDir();
   return {
     name: '',
-    description: null,
+    instructions: null,
     icon: null,
     workingFolder,
     folders: [],
@@ -1141,6 +1201,20 @@ function createDraft(workspace?: Workspace | null): WorkspaceMutation {
 function formatEffort(effort: WorkspaceThinkingEffort): string {
   if (effort === 'off') return 'Off';
   return effort.charAt(0).toUpperCase() + effort.slice(1);
+}
+
+function countWords(text: string): number {
+  return text.split(/\s+/).filter(Boolean).length;
+}
+
+function clampWords(text: string, limit: number): string {
+  let count = 0;
+  const words = /\S+/g;
+  for (let match = words.exec(text); match; match = words.exec(text)) {
+    count += 1;
+    if (count === limit) return text.slice(0, match.index + match[0].length);
+  }
+  return text;
 }
 
 function joinPath(root: string, child: string): string {

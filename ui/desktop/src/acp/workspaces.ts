@@ -116,7 +116,7 @@ export async function acpTestCredentialProfile(profileId: string) {
 export function workspaceToMutation(workspace: Workspace): WorkspaceMutation {
   return {
     name: workspace.name,
-    description: workspace.description,
+    instructions: workspace.instructions,
     icon: workspace.icon,
     workingFolder: workspace.workingFolder,
     folders: workspace.folders ?? [],

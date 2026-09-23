@@ -8,6 +8,21 @@ Review of the thirteen commits after the 2026-09-16 audits plus a full read of
 [repair record](logs/session/2026-09-20-post-audit-defect-repair.md) for
 evidence, validation limits, and the full open list.
 
+- [x] **WS-CRED-001** — workspace credential profiles were a silo from provider
+      auth: `Add credential binding` blind-bound the first profile, and there was
+      no way to reference a key already saved in auth. Resolved both ways at the
+      operator's request: new bindings start unselected, and
+      `sync_global_alias_profiles` now records a `GlobalConfigurationAlias`
+      profile for every provider whose global credentials are complete (the
+      secret stays in global storage; only the reference is recorded). An
+      unconfigured bound profile now offers **Set up** or **Open provider
+      settings** depending on where its secret lives.
+- [x] **UI-HISTORY-001** — Chat history could not scroll to older sessions, and
+      its infinite loader never fired, because the height chain from
+      `SessionListView` down to `SessionListPane`'s `ScrollArea` was broken so
+      `h-full` never resolved. Chain restored; `TabsList` pinned with `shrink-0`.
+      Layout-only, so validated by typecheck/lint and pending visual
+      confirmation in the running app.
 - [~] **SEC-GRANT-001** — `grant-session-directories` let a renderer grant itself
       any directory containing the home directory (`/Users`, the macOS
       `/System/Volumes/Data` alias). Repaired: `isOverlyBroadRoot` now rejects

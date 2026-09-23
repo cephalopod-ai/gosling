@@ -208,8 +208,8 @@ const SessionListView: React.FC<SessionListViewProps> = ({
     <>
       <MainPanelLayout>
         <div className="flex min-h-0 flex-1 flex-col">
-          <div className="bg-background-primary px-8 pb-8 pt-16">
-            <div className="flex flex-col page-transition">
+          <div className="flex min-h-0 flex-1 flex-col bg-background-primary px-8 pb-8 pt-16">
+            <div className="flex min-h-0 flex-1 flex-col page-transition">
               <div className="mb-1 flex items-center justify-between">
                 <h1 className="text-4xl font-light">{intl.formatMessage(i18n.chatHistory)}</h1>
                 {activeTab === 'active' && (
@@ -240,16 +240,16 @@ const SessionListView: React.FC<SessionListViewProps> = ({
               <p className="mb-4 text-sm text-text-secondary">
                 {intl.formatMessage(i18n.chatHistoryDesc, { shortcut: getSearchShortcutText() })}
               </p>
-              <Tabs value={activeTab} onValueChange={handleTabChange}>
-                <TabsList>
+              <Tabs value={activeTab} onValueChange={handleTabChange} className="min-h-0 flex-1">
+                <TabsList className="shrink-0">
                   <TabsTrigger value="active">{intl.formatMessage(i18n.activeTab)}</TabsTrigger>
                   <TabsTrigger value="archived">{intl.formatMessage(i18n.archivedTab)}</TabsTrigger>
                 </TabsList>
-                <div className="mt-6 flex-1 min-h-0">
+                <div className="mt-6 flex min-h-0 flex-1 flex-col">
                   <TabsContent
                     value="active"
                     forceMount
-                    className={activeTab === 'active' ? '' : 'hidden'}
+                    className={activeTab === 'active' ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}
                   >
                     <SessionListPane
                       mode="active"
@@ -260,7 +260,7 @@ const SessionListView: React.FC<SessionListViewProps> = ({
                   <TabsContent
                     value="archived"
                     forceMount
-                    className={activeTab === 'archived' ? '' : 'hidden'}
+                    className={activeTab === 'archived' ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}
                   >
                     <SessionListPane mode="archived" isActive={activeTab === 'archived'} />
                   </TabsContent>
