@@ -1531,6 +1531,35 @@ impl Session {
         self.conversation = None;
         self
     }
+
+    /// This session's workspace context with `path` added as a read-write
+    /// root. Workspace sessions rebuild their additional folders from this
+    /// policy on load, so a folder added only to `additional_working_dirs`
+    /// would not survive.
+    pub(crate) fn workspace_context_with_added_root(
+        &self,
+        path: &std::path::Path,
+    ) -> Option<WorkspaceSessionContext> {
+        let mut context = self.workspace_context.clone()?;
+        let mut policy = context.effective_folder_policy();
+        if !policy
+            .roots
+            .iter()
+            .any(|root| std::path::Path::new(&root.path) == path)
+        {
+            policy
+                .roots
+                .push(crate::workspace::WorkspaceFolderPolicyRoot {
+                    path: path.to_string_lossy().to_string(),
+                    access: crate::workspace::WorkspaceFolderAccess::ReadWrite,
+                });
+            policy
+                .roots
+                .sort_by(|left, right| left.path.cmp(&right.path));
+        }
+        context.folder_policy = policy;
+        Some(context)
+    }
 }
 
 impl sqlx::FromRow<'_, sqlx::sqlite::SqliteRow> for Session {

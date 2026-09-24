@@ -209,6 +209,10 @@ pub enum ActionRequiredData {
         /// option without being able to widen it to the whole tool.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         domain: Option<String>,
+        /// The single folder a working-directory scope prompt is about, so the
+        /// client can offer to allow that folder rather than the whole tool.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        folder: Option<String>,
     },
     Elicitation {
         id: String,
@@ -464,6 +468,7 @@ impl MessageContent {
         arguments: JsonObject,
         prompt: Option<String>,
         domain: Option<String>,
+        folder: Option<String>,
     ) -> Self {
         MessageContent::ActionRequired(ActionRequired {
             data: ActionRequiredData::ToolConfirmation {
@@ -472,6 +477,7 @@ impl MessageContent {
                 arguments,
                 prompt,
                 domain,
+                folder,
             },
         })
     }
@@ -936,9 +942,10 @@ impl Message {
         arguments: JsonObject,
         prompt: Option<String>,
         domain: Option<String>,
+        folder: Option<String>,
     ) -> Self {
         self.with_content(MessageContent::action_required(
-            id, tool_name, arguments, prompt, domain,
+            id, tool_name, arguments, prompt, domain, folder,
         ))
     }
 

@@ -128,16 +128,24 @@ function permissionResponseForAction(
   };
 }
 
+type ScopedPermission = 'always_allow_domain' | 'allow_folder_for_session' | 'always_allow_folder';
+
+const SCOPED_OPTION_IDS: Record<ScopedPermission, string> = {
+  always_allow_domain: 'allow_always_domain',
+  allow_folder_for_session: 'allow_folder_for_session',
+  always_allow_folder: 'allow_always_folder',
+};
+
 function permissionOptionIdForAction(
   request: RequestPermissionRequest,
   action: Permission
 ): string | undefined {
-  // The domain-scoped option shares `allow_always`'s kind with the tool-wide
-  // one (ACP has no domain-scoped kind), so it can only be told apart by its
-  // distinct option id rather than by kind.
-  if (action === 'always_allow_domain') {
-    return request.options.find((candidate) => candidate.optionId === 'allow_always_domain')
-      ?.optionId;
+  // Scoped options share `allow_always`'s kind with the tool-wide one (ACP
+  // has no scoped kind), so they can only be told apart by their distinct
+  // option ids rather than by kind.
+  const scopedOptionId = SCOPED_OPTION_IDS[action as ScopedPermission];
+  if (scopedOptionId) {
+    return request.options.find((candidate) => candidate.optionId === scopedOptionId)?.optionId;
   }
 
   const kind = permissionOptionKindForAction(action);
@@ -146,7 +154,8 @@ function permissionOptionIdForAction(
   }
 
   return request.options.find(
-    (candidate) => candidate.kind === kind && candidate.optionId !== 'allow_always_domain'
+    (candidate) =>
+      candidate.kind === kind && !Object.values(SCOPED_OPTION_IDS).includes(candidate.optionId)
   )?.optionId;
 }
 
@@ -161,6 +170,8 @@ function permissionOptionKindForAction(action: Permission) {
     case 'always_deny':
       return 'reject_always';
     case 'always_allow_domain':
+    case 'allow_folder_for_session':
+    case 'always_allow_folder':
     case 'cancel':
       return undefined;
   }

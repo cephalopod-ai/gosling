@@ -229,7 +229,7 @@ fn reusable_permission_tool_name(request: &RequestPermissionRequest) -> Option<S
     }
     let offers_tool_wide_grant = request.options.iter().any(|option| {
         option.kind == PermissionOptionKind::AllowAlways
-            && option.option_id.0.as_ref() != "allow_always_domain"
+            && !crate::acp::common::is_scoped_permission_option(option)
     });
     if !offers_tool_wide_grant {
         return None;
@@ -1765,6 +1765,7 @@ fn build_action_required_message(request: &RequestPermissionRequest) -> Option<M
                 tool_title,
                 arguments,
                 prompt,
+                None,
                 None,
             )
             .user_only(),

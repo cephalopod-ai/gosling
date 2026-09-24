@@ -2220,6 +2220,7 @@ fn auto_permission_filter_removes_tool_confirmation_and_keeps_other_content() {
             serde_json::Map::new(),
             None,
             None,
+            None,
         );
 
     let request_ids = take_tool_confirmation_requests(&mut message);

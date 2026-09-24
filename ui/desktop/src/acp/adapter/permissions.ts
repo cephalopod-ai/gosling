@@ -41,6 +41,13 @@ export function applyPermissionRequest(
     offersDomainApproval && typeof permissionMetadata?.domain === 'string'
       ? permissionMetadata.domain
       : undefined;
+  const offersFolderApproval = request.options.some(
+    (option) => option.optionId === 'allow_folder_for_session'
+  );
+  const folder =
+    offersFolderApproval && typeof permissionMetadata?.folder === 'string'
+      ? permissionMetadata.folder
+      : undefined;
 
   const permissionMessage: Message = {
     id: `acp_permission_${toolCallId}`,
@@ -56,6 +63,7 @@ export function applyPermissionRequest(
           arguments: rawInputToArguments(request.toolCall.rawInput),
           ...(prompt ? { prompt } : {}),
           ...(domain ? { domain } : {}),
+          ...(folder ? { folder } : {}),
         },
       },
     ],

@@ -143,7 +143,7 @@ impl GoslingAcpAgent {
         if path != session.working_dir && !additional_working_dirs.contains(&path) {
             additional_working_dirs.push(path.clone());
         }
-        let workspace_context = workspace_context_with_added_root(&session, &path);
+        let workspace_context = session.workspace_context_with_added_root(&path);
 
         let agent = self.get_session_agent(session_id).await?;
 
@@ -765,31 +765,6 @@ fn session_working_dirs_response(
     }
 }
 
-fn workspace_context_with_added_root(
-    session: &Session,
-    path: &std::path::Path,
-) -> Option<crate::workspace::WorkspaceSessionContext> {
-    let mut context = session.workspace_context.clone()?;
-    let mut policy = context.effective_folder_policy();
-    if !policy
-        .roots
-        .iter()
-        .any(|root| std::path::Path::new(&root.path) == path)
-    {
-        policy
-            .roots
-            .push(crate::workspace::WorkspaceFolderPolicyRoot {
-                path: path.to_string_lossy().to_string(),
-                access: crate::workspace::WorkspaceFolderAccess::ReadWrite,
-            });
-        policy
-            .roots
-            .sort_by(|left, right| left.path.cmp(&right.path));
-    }
-    context.folder_policy = policy;
-    Some(context)
-}
-
 fn reject_workspace_folder_policy_mutation(
     session: &Session,
 ) -> Result<(), agent_client_protocol::Error> {
@@ -903,7 +878,7 @@ mod tests {
             ..Session::default()
         };
 
-        selected.workspace_context = workspace_context_with_added_root(&selected, &private);
+        selected.workspace_context = selected.workspace_context_with_added_root(&private);
 
         let response = session_working_dirs_response(
             &project,
@@ -968,7 +943,9 @@ mod tests {
             ..Session::default()
         };
 
-        let updated = workspace_context_with_added_root(&session, &reference).unwrap();
+        let updated = session
+            .workspace_context_with_added_root(&reference)
+            .unwrap();
 
         let response = session_working_dirs_response(&project, &[], Some(&updated));
         assert_eq!(

@@ -195,6 +195,42 @@ describe('ACP permission requests', () => {
     });
   });
 
+  it.each([
+    ['allow_folder_for_session', 'allow_folder_for_session'],
+    ['always_allow_folder', 'allow_always_folder'],
+  ] as const)('resolves %s to its folder-scoped option', async (action, optionId) => {
+    const response = requestAcpPermission({
+      sessionId: 'session-1',
+      options: [
+        {
+          optionId: 'allow_folder_for_session',
+          name: 'Allow /private/tmp for this session',
+          kind: 'allow_always',
+        },
+        { optionId: 'allow_always_folder', name: 'Always allow /private/tmp', kind: 'allow_always' },
+        { optionId: 'allow_once', name: 'allow_once', kind: 'allow_once' },
+      ],
+      toolCall: { toolCallId: 'tool-1', title: 'Run shell command' },
+    });
+
+    expect(resolveAcpPermissionRequest('session-1', 'tool-1', action)).toBe(true);
+    await expect(response).resolves.toEqual({ outcome: { outcome: 'selected', optionId } });
+  });
+
+  it('never resolves a tool-wide grant to a folder-scoped option', async () => {
+    const response = requestAcpPermission({
+      sessionId: 'session-1',
+      options: [
+        { optionId: 'allow_folder_for_session', name: 'Allow for session', kind: 'allow_always' },
+        { optionId: 'allow_once', name: 'allow_once', kind: 'allow_once' },
+      ],
+      toolCall: { toolCallId: 'tool-1', title: 'Run shell command' },
+    });
+
+    expect(resolveAcpPermissionRequest('session-1', 'tool-1', 'always_allow')).toBe(false);
+    await expectStillPending(response);
+  });
+
   it('keeps the request pending when an unavailable option is selected', async () => {
     const response = requestAcpPermission(permissionRequest('session-1', 'tool-1'));
 

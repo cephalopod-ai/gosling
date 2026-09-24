@@ -16,6 +16,10 @@ pub enum PermissionDecision {
     /// domain-scoped variant), but its `option_id` string is unique, so this
     /// decision can be told apart from a tool-wide always-allow.
     AllowAlwaysDomain,
+    /// Like `AllowAlwaysDomain`, these are scoped to the folder a
+    /// working-directory prompt flagged and are told apart by `option_id`.
+    AllowFolderForSession,
+    AllowAlwaysFolder,
     AllowOnce,
     RejectAlways,
     RejectOnce,
@@ -38,6 +42,8 @@ impl From<Permission> for PermissionDecision {
         match p {
             Permission::AlwaysAllow => Self::AllowAlways,
             Permission::AlwaysAllowDomain => Self::AllowAlwaysDomain,
+            Permission::AllowFolderForSession => Self::AllowFolderForSession,
+            Permission::AlwaysAllowFolder => Self::AllowAlwaysFolder,
             Permission::AllowOnce => Self::AllowOnce,
             Permission::DenyOnce => Self::RejectOnce,
             Permission::AlwaysDeny => Self::RejectAlways,
@@ -51,6 +57,8 @@ impl From<PermissionDecision> for Permission {
         match d {
             PermissionDecision::AllowAlways => Self::AlwaysAllow,
             PermissionDecision::AllowAlwaysDomain => Self::AlwaysAllowDomain,
+            PermissionDecision::AllowFolderForSession => Self::AllowFolderForSession,
+            PermissionDecision::AllowAlwaysFolder => Self::AlwaysAllowFolder,
             PermissionDecision::AllowOnce => Self::AllowOnce,
             PermissionDecision::RejectOnce => Self::DenyOnce,
             PermissionDecision::RejectAlways => Self::AlwaysDeny,
@@ -83,11 +91,10 @@ pub fn map_permission_response(
             find_option(&request.options, PermissionOptionKind::AllowAlways)
                 .or_else(|| find_option(&request.options, PermissionOptionKind::AllowOnce))
         }
-        PermissionDecision::AllowAlwaysDomain => {
-            find_option_by_id(&request.options, PermissionDecision::AllowAlwaysDomain)
-                .or_else(|| find_option(&request.options, PermissionOptionKind::AllowAlways))
-                .or_else(|| find_option(&request.options, PermissionOptionKind::AllowOnce))
-        }
+        PermissionDecision::AllowAlwaysDomain
+        | PermissionDecision::AllowFolderForSession
+        | PermissionDecision::AllowAlwaysFolder => find_option_by_id(&request.options, decision)
+            .or_else(|| find_option(&request.options, PermissionOptionKind::AllowOnce)),
         PermissionDecision::AllowOnce => {
             find_option(&request.options, PermissionOptionKind::AllowOnce)
                 .or_else(|| find_option(&request.options, PermissionOptionKind::AllowAlways))
@@ -112,15 +119,28 @@ pub fn map_permission_response(
     }
 }
 
+/// Whether an option grants only the domain or folder its prompt flagged. These
+/// share an ACP kind with broader options, so they are recognized by id.
+pub fn is_scoped_permission_option(option: &PermissionOption) -> bool {
+    PermissionDecision::from_str(&option.option_id.0).is_ok_and(|decision| {
+        matches!(
+            decision,
+            PermissionDecision::AllowAlwaysDomain
+                | PermissionDecision::AllowFolderForSession
+                | PermissionDecision::AllowAlwaysFolder
+        )
+    })
+}
+
 fn find_option(options: &[PermissionOption], kind: PermissionOptionKind) -> Option<String> {
     options
         .iter()
-        .find(|opt| opt.kind == kind)
+        .find(|opt| opt.kind == kind && !is_scoped_permission_option(opt))
         .map(|opt| opt.option_id.0.to_string())
 }
 
-/// The domain-scoped always-allow option shares `PermissionOptionKind::AllowAlways`
-/// with the tool-wide one, so it can only be found by its distinct option id.
+/// Scoped options share `PermissionOptionKind::AllowAlways` with the tool-wide
+/// one, so they can only be found by their distinct option ids.
 fn find_option_by_id(options: &[PermissionOption], decision: PermissionDecision) -> Option<String> {
     let id = decision.to_string();
     options
@@ -245,6 +265,37 @@ mod tests {
         assert_eq!(
             PermissionDecision::from(&RequestPermissionOutcome::Cancelled),
             PermissionDecision::Cancel
+        );
+    }
+
+    #[test]
+    fn scoped_options_are_chosen_only_by_their_own_decision() {
+        let request = make_request(vec![
+            option(
+                "allow_folder_for_session",
+                PermissionOptionKind::AllowAlways,
+            ),
+            option("allow_always_folder", PermissionOptionKind::AllowAlways),
+            option("allow_once", PermissionOptionKind::AllowOnce),
+            option("reject_once", PermissionOptionKind::RejectOnce),
+        ]);
+        let selected = |decision| match map_permission_response(&request, decision).outcome {
+            RequestPermissionOutcome::Selected(selected) => selected.option_id.0.to_string(),
+            other => panic!("expected a selection, got {other:?}"),
+        };
+
+        assert_eq!(
+            selected(PermissionDecision::AllowFolderForSession),
+            "allow_folder_for_session"
+        );
+        assert_eq!(
+            selected(PermissionDecision::AllowAlwaysFolder),
+            "allow_always_folder"
+        );
+        assert_eq!(selected(PermissionDecision::AllowAlways), "allow_once");
+        assert_eq!(
+            selected(PermissionDecision::AllowAlwaysDomain),
+            "allow_once"
         );
     }
 }

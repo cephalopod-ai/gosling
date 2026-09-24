@@ -6,9 +6,10 @@ use std::collections::HashMap;
 use std::future::Future;
 use tokio_util::sync::CancellationToken;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::config::permission::PermissionLevel;
+use crate::config::{Config, ConfigError};
 use crate::conversation::message::Message;
 use crate::mcp_utils::ToolResult;
 use crate::permission::permission_confirmation::PrincipalType;
@@ -92,7 +93,7 @@ use crate::agents::Agent;
 use crate::conversation::message::ToolRequest;
 use crate::session::Session;
 use crate::tool_inspection::{
-    get_security_finding_id_from_results, security_prompt_for_request,
+    flagged_folder_for_request, get_security_finding_id_from_results, security_prompt_for_request,
     single_flagged_domain_for_request,
 };
 
@@ -135,6 +136,7 @@ impl Agent {
                         .map(str::to_string);
                 let single_flagged_domain =
                     single_flagged_domain_for_request(&request.id, inspection_results);
+                let flagged_folder = flagged_folder_for_request(&request.id, inspection_results);
 
                 let (confirmation, user_confirmed) = loop {
                     let mut mode_changes = self.gosling_mode_changes.subscribe();
@@ -149,6 +151,7 @@ impl Agent {
                             tool_call.arguments.clone().unwrap_or_default(),
                             security_message.clone(),
                             single_flagged_domain.clone(),
+                            flagged_folder.clone(),
                         )
                         .user_only();
                     if !auto_approve {
@@ -196,6 +199,14 @@ impl Agent {
                                 .update_egress_domain_permission(domain, PermissionLevel::AlwaysAllow).await,
                             None => Err(anyhow::anyhow!("This request has no single domain to approve")),
                         },
+                        Permission::AllowFolderForSession | Permission::AlwaysAllowFolder => match &flagged_folder {
+                            Some(folder) => self.allow_folder(
+                                &session.id,
+                                Path::new(folder),
+                                confirmation.permission == Permission::AlwaysAllowFolder,
+                            ).await,
+                            None => Err(anyhow::anyhow!("This request has no folder to allow")),
+                        },
                         Permission::AlwaysDeny => self.tool_inspection_manager
                             .update_permission_manager(&tool_call.name, PermissionLevel::NeverAllow).await,
                         _ => Ok(()),
@@ -212,7 +223,11 @@ impl Agent {
 
                 if let Some(finding_id) = get_security_finding_id_from_results(&request.id, inspection_results) {
                     let action = match confirmation.permission {
-                        Permission::AllowOnce | Permission::AlwaysAllow | Permission::AlwaysAllowDomain => "ALLOW",
+                        Permission::AllowOnce
+                        | Permission::AlwaysAllow
+                        | Permission::AlwaysAllowDomain
+                        | Permission::AllowFolderForSession
+                        | Permission::AlwaysAllowFolder => "ALLOW",
                         _ => "BLOCK",
                     };
                     tracing::info!(
@@ -226,10 +241,14 @@ impl Agent {
                     );
                 }
 
-                if confirmation.permission == Permission::AllowOnce
-                    || confirmation.permission == Permission::AlwaysAllow
-                    || confirmation.permission == Permission::AlwaysAllowDomain
-                {
+                if matches!(
+                    confirmation.permission,
+                    Permission::AllowOnce
+                        | Permission::AlwaysAllow
+                        | Permission::AlwaysAllowDomain
+                        | Permission::AllowFolderForSession
+                        | Permission::AlwaysAllowFolder
+                ) {
                     let (req_id, tool_result) = if user_confirmed {
                         self.dispatch_user_confirmed_conversation_tool_call(tool_call.clone(), request.id.clone(), cancellation_token.clone(), session, interaction_policy).await
                     } else {
@@ -258,6 +277,50 @@ impl Agent {
             }
         }
     }.boxed()
+    }
+
+    /// Allows a folder a scope prompt flagged, either for this session (as an
+    /// added working folder, so extensions see it too) or for every session
+    /// (as an operator trusted folder).
+    async fn allow_folder(
+        &self,
+        session_id: &str,
+        folder: &Path,
+        always: bool,
+    ) -> anyhow::Result<()> {
+        if always {
+            let config = Config::global();
+            let mut trusted = match config.get_gosling_trusted_dirs() {
+                Ok(dirs) => dirs,
+                Err(ConfigError::NotFound(_)) => Vec::new(),
+                Err(error) => return Err(error.into()),
+            };
+            let folder = folder.to_string_lossy().to_string();
+            if !trusted.contains(&folder) {
+                trusted.push(folder);
+                config.set_gosling_trusted_dirs(trusted)?;
+            }
+            return Ok(());
+        }
+
+        let session_manager = &self.config.session_manager;
+        let session = session_manager.get_session(session_id, false).await?;
+        let mut additional_working_dirs = session.additional_working_dirs.clone();
+        if folder != session.working_dir && !additional_working_dirs.iter().any(|dir| dir == folder)
+        {
+            additional_working_dirs.push(folder.to_path_buf());
+        }
+        let mut update = session_manager
+            .update(session_id)
+            .additional_working_dirs(additional_working_dirs.clone());
+        if let Some(context) = session.workspace_context_with_added_root(folder) {
+            update = update.workspace_context(Some(context));
+        }
+        update.apply().await?;
+        self.extension_manager
+            .update_working_dirs(&session.working_dir, &additional_working_dirs)
+            .await?;
+        Ok(())
     }
 
     pub(crate) fn handle_frontend_tool_request<'a>(
@@ -527,5 +590,87 @@ mod permission_regression_tests {
                 );
             }
         }
+    }
+
+    #[tokio::test]
+    async fn session_folder_grant_adds_only_that_folder_to_the_session() {
+        let root = tempfile::tempdir().unwrap();
+        let project = root.path().join("project");
+        let outside = root.path().join("outside");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        let permissions = Arc::new(PermissionManager::new(root.path().join("config")));
+        let sessions = Arc::new(SessionManager::new(root.path().join("sessions")));
+        let session = sessions
+            .create_session(
+                project.clone(),
+                "folder grant".into(),
+                SessionType::Hidden,
+                GoslingMode::Approve,
+            )
+            .await
+            .unwrap();
+        let agent = Agent::with_config(AgentConfig::new(
+            sessions.clone(),
+            permissions.clone(),
+            GoslingMode::Approve,
+            true,
+            GoslingPlatform::GoslingCli,
+        ));
+        let requests = vec![ToolRequest {
+            id: "scoped".into(),
+            tool_call: Ok(CallToolRequestParams::new("fixture__unavailable")),
+            metadata: None,
+            tool_meta: None,
+        }];
+        let inspections = vec![crate::tool_inspection::InspectionResult {
+            tool_request_id: "scoped".into(),
+            action: crate::tool_inspection::InspectionAction::RequireApproval(Some(
+                "outside the session's folders".into(),
+            )),
+            reason: "path outside configured working directories".into(),
+            confidence: 1.0,
+            inspector_name: "working_dir_scope".into(),
+            finding_id: None,
+            metadata: Some(serde_json::json!({ "folder": outside })),
+        }];
+        let mut futures = Vec::new();
+        let mut responses = HashMap::from([("scoped".into(), Message::user())]);
+        let mut approval = agent.handle_approval_tool_requests(
+            &requests,
+            &mut futures,
+            &mut responses,
+            None,
+            &session,
+            &crate::session::InteractionPolicy::Normal,
+            &inspections,
+        );
+        let prompt = approval.next().await.unwrap().unwrap();
+        assert!(prompt.content.iter().any(|content| matches!(
+            content.as_action_required().map(|action| &action.data),
+            Some(crate::conversation::message::ActionRequiredData::ToolConfirmation {
+                folder: Some(folder),
+                ..
+            }) if Path::new(folder) == outside
+        )));
+        agent
+            .handle_confirmation(
+                "scoped".into(),
+                PermissionConfirmation {
+                    principal_type: PrincipalType::Tool,
+                    permission: Permission::AllowFolderForSession,
+                },
+            )
+            .await;
+        assert!(approval.next().await.is_none());
+        drop(approval);
+
+        assert_eq!(futures.len(), 1);
+        let reloaded = sessions.get_session(&session.id, false).await.unwrap();
+        assert_eq!(reloaded.additional_working_dirs, vec![outside]);
+        assert_eq!(
+            permissions.get_user_permission("fixture__unavailable"),
+            None
+        );
     }
 }

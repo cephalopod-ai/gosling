@@ -312,6 +312,7 @@ export default function ToolCallWithResponse({
                   toolName: confirmationContent.toolName,
                   prompt: confirmationContent.prompt ?? undefined,
                   domain: confirmationContent.domain ?? undefined,
+                  folder: confirmationContent.folder ?? undefined,
                   sessionId,
                   isClicked: isApprovalClicked,
                 }}

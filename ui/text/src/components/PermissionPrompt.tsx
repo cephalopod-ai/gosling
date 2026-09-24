@@ -19,9 +19,15 @@ const KIND_LABELS: Record<string, string> = {
   reject_always: "Reject always for this tool",
 };
 
-function optionLabel(kind: string | undefined, optionId: string): string {
-  if (kind && KIND_LABELS[kind]) return KIND_LABELS[kind]!;
-  return optionId;
+// Scoped grants (a domain or folder) reuse a standard kind under a distinct
+// id, so only an option whose id is its kind gets the tool-wide kind label.
+function optionLabel(
+  kind: string | undefined,
+  optionId: string,
+  name: string,
+): string {
+  if (kind && optionId === kind && KIND_LABELS[kind]) return KIND_LABELS[kind]!;
+  return name || optionId;
 }
 
 function serializeRawInput(rawInput: unknown): string | undefined {
@@ -156,7 +162,7 @@ export function PermissionPrompt({
           >
             {index === selected ? "> " : "  "}
             {truncateTerminalText(
-              optionLabel(option.kind, option.optionId),
+              optionLabel(option.kind, option.optionId, option.name),
               contentWidth - 2,
             )}
           </Text>

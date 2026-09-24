@@ -677,6 +677,7 @@ mod tests {
                 tool_call.arguments.unwrap_or_default().clone(),
                 Some("gosling would like to call the above tool. Allow? (y/n):".to_string()),
                 None,
+                None,
             )],
         )
     }

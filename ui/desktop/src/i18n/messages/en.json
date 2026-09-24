@@ -3818,6 +3818,9 @@
   "threadNavigator.turn": {
     "defaultMessage": "Turn {current} of {total}: {preview}"
   },
+  "toolApprovalButtons.allowFolderForSession": {
+    "defaultMessage": "Allow {folder} for this session"
+  },
   "toolApprovalButtons.allowOnce": {
     "defaultMessage": "Allow Once"
   },
@@ -3835,6 +3838,9 @@
   },
   "toolApprovalButtons.alwaysAllowExtension": {
     "defaultMessage": "Always Allow all {extensionName} tools"
+  },
+  "toolApprovalButtons.alwaysAllowFolder": {
+    "defaultMessage": "Always allow {folder}"
   },
   "toolApprovalButtons.alwaysAllowRequested": {
     "defaultMessage": "Always Allow requested"
@@ -3859,6 +3865,12 @@
   },
   "toolApprovalButtons.failedToSubmitDecision": {
     "defaultMessage": "Could not send your decision. The tool is still waiting for approval."
+  },
+  "toolApprovalButtons.folderAllowedForSession": {
+    "defaultMessage": "{folder} allowed for this session"
+  },
+  "toolApprovalButtons.folderAlwaysAllowed": {
+    "defaultMessage": "{folder} always allowed"
   },
   "toolApprovalButtons.staleApprovalRequest": {
     "defaultMessage": "This approval request is no longer active."

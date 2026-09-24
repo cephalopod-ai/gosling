@@ -27,6 +27,14 @@ const i18n = defineMessages({
     id: 'toolApprovalButtons.alwaysAllowDomain',
     defaultMessage: 'Always allow {domain}',
   },
+  allowFolderForSession: {
+    id: 'toolApprovalButtons.allowFolderForSession',
+    defaultMessage: 'Allow {folder} for this session',
+  },
+  alwaysAllowFolder: {
+    id: 'toolApprovalButtons.alwaysAllowFolder',
+    defaultMessage: 'Always allow {folder}',
+  },
   deny: {
     id: 'toolApprovalButtons.deny',
     defaultMessage: 'Deny',
@@ -46,6 +54,14 @@ const i18n = defineMessages({
   alwaysAllowDomainRequested: {
     id: 'toolApprovalButtons.alwaysAllowDomainRequested',
     defaultMessage: 'Always allow {domain} requested',
+  },
+  folderAllowedForSession: {
+    id: 'toolApprovalButtons.folderAllowedForSession',
+    defaultMessage: '{folder} allowed for this session',
+  },
+  folderAlwaysAllowed: {
+    id: 'toolApprovalButtons.folderAlwaysAllowed',
+    defaultMessage: '{folder} always allowed',
   },
   denied: {
     id: 'toolApprovalButtons.denied',
@@ -112,6 +128,7 @@ export interface ToolApprovalData {
   toolName: string;
   prompt?: string;
   domain?: string;
+  folder?: string;
   sessionId: string;
   isClicked?: boolean;
 }
@@ -134,7 +151,7 @@ function ApprovalRequestButtons({
   requestIdentity: string;
 }) {
   const intl = useIntl();
-  const { id, toolName, prompt, domain, sessionId, isClicked: initialIsClicked } = data;
+  const { id, toolName, prompt, domain, folder, sessionId, isClicked: initialIsClicked } = data;
 
   const storedState = resolvedApprovalStates.get(requestIdentity);
   const [decision, setDecision] = useState<Permission | null>(storedState?.decision ?? null);
@@ -225,6 +242,12 @@ function ApprovalRequestButtons({
       always_allow_domain: intl.formatMessage(i18n.alwaysAllowDomainRequested, {
         domain: domain ?? '',
       }),
+      allow_folder_for_session: intl.formatMessage(i18n.folderAllowedForSession, {
+        folder: folder ?? '',
+      }),
+      always_allow_folder: intl.formatMessage(i18n.folderAlwaysAllowed, {
+        folder: folder ?? '',
+      }),
       always_deny: intl.formatMessage(i18n.denied),
       deny_once: intl.formatMessage(i18n.deniedOnce),
       cancel: intl.formatMessage(i18n.cancelled),
@@ -274,6 +297,24 @@ function ApprovalRequestButtons({
           >
             {intl.formatMessage(i18n.alwaysAllowDomain, { domain })}
           </Button>
+        )}
+        {prompt && folder && (
+          <>
+            <Button
+              className="rounded-full"
+              variant="ghost"
+              onClick={() => handleAction('allow_folder_for_session')}
+            >
+              {intl.formatMessage(i18n.allowFolderForSession, { folder })}
+            </Button>
+            <Button
+              className="rounded-full"
+              variant="ghost"
+              onClick={() => handleAction('always_allow_folder')}
+            >
+              {intl.formatMessage(i18n.alwaysAllowFolder, { folder })}
+            </Button>
+          </>
         )}
         {!prompt && extensionName && (
           <Button

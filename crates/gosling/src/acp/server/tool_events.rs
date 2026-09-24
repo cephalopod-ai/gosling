@@ -76,6 +76,7 @@ impl GoslingAcpAgent {
                     arguments,
                     prompt,
                     domain,
+                    folder,
                 } => {
                     self.handle_tool_permission_request(
                         cx,
@@ -86,6 +87,7 @@ impl GoslingAcpAgent {
                         arguments.clone(),
                         prompt.clone(),
                         domain.clone(),
+                        folder.clone(),
                     )?;
                 }
                 ActionRequiredData::Elicitation {
@@ -386,6 +388,7 @@ impl GoslingAcpAgent {
         arguments: serde_json::Map<String, serde_json::Value>,
         prompt: Option<String>,
         domain: Option<String>,
+        folder: Option<String>,
     ) -> Result<(), agent_client_protocol::Error> {
         let cx = cx.clone();
         let agent = agent.clone();
@@ -423,7 +426,7 @@ impl GoslingAcpAgent {
             serde_json::json!({
                 "gosling": {
                     "toolCall": { "toolName": presentation::project_identifier(&tool_name) },
-                    "permission": { "domain": domain },
+                    "permission": { "domain": domain, "folder": folder },
                 }
             })
             .as_object()
@@ -453,6 +456,20 @@ impl GoslingAcpAgent {
             options.push(PermissionOption::new(
                 PermissionDecision::AllowAlwaysDomain.to_string(),
                 format!("Always allow {domain}"),
+                PermissionOptionKind::AllowAlways,
+            ));
+        }
+        if let Some(folder) = &folder {
+            // Like the domain grant, these cover only the flagged folder and
+            // carry distinct option ids under the nearest ACP kind.
+            options.push(PermissionOption::new(
+                PermissionDecision::AllowFolderForSession.to_string(),
+                format!("Allow {folder} for this session"),
+                PermissionOptionKind::AllowAlways,
+            ));
+            options.push(PermissionOption::new(
+                PermissionDecision::AllowAlwaysFolder.to_string(),
+                format!("Always allow {folder}"),
                 PermissionOptionKind::AllowAlways,
             ));
         }

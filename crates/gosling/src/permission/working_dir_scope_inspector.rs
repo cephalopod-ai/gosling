@@ -121,13 +121,24 @@ impl ToolInspector for WorkingDirScopeInspector {
                 });
                 continue;
             }
-            let candidate_paths = if session.restrict_tools_to_working_dirs {
-                referenced_paths(tool_call, &session.working_dir)
+            let candidates = if session.restrict_tools_to_working_dirs {
+                ScopedPaths {
+                    targets: referenced_paths(tool_call, &session.working_dir),
+                    navigation: Vec::new(),
+                }
             } else {
-                mutation_paths(tool_call, &session.working_dir)
+                scoped_mutation_paths(tool_call, &session.working_dir)
             };
-            let Some(path) = out_of_scope_path(&candidate_paths, &allowed_dirs, &scratch_dirs)?
-            else {
+            let out_of_scope =
+                match out_of_scope_path(&candidates.targets, &allowed_dirs, &scratch_dirs)? {
+                    Some(path) => Some(path),
+                    None => out_of_scope_navigation(
+                        &candidates.navigation,
+                        &allowed_dirs,
+                        &scratch_dirs,
+                    )?,
+                };
+            let Some(path) = out_of_scope else {
                 continue;
             };
 
@@ -160,7 +171,8 @@ impl ToolInspector for WorkingDirScopeInspector {
                 confidence: 1.0,
                 inspector_name: self.name().to_string(),
                 finding_id: None,
-                metadata: None,
+                metadata: grantable_folder(&path)
+                    .map(|folder| serde_json::json!({ "folder": folder })),
             });
         }
         Ok(results)
@@ -173,6 +185,16 @@ impl ToolInspector for WorkingDirScopeInspector {
     fn auto_downgrades_require_approval(&self) -> bool {
         false
     }
+}
+
+/// The folder a one-click grant would allow for an out-of-scope path: the
+/// path itself when it is a directory, otherwise its parent. The home folder
+/// and its ancestors are never offered, since allowing them allows nearly
+/// everything.
+fn grantable_folder(path: &Path) -> Option<PathBuf> {
+    let folder = if path.is_dir() { path } else { path.parent()? };
+    let home = dirs::home_dir().and_then(|home| canonicalize_potential_path(&home).ok())?;
+    (folder.is_dir() && !home.starts_with(folder)).then(|| folder.to_path_buf())
 }
 
 fn normalize_resolved_path(path: PathBuf) -> PathBuf {
@@ -784,12 +806,31 @@ pub(crate) fn mutation_paths(
     tool_call: &CallToolRequestParams,
     working_dir: &Path,
 ) -> Vec<PathBuf> {
+    let ScopedPaths {
+        mut targets,
+        navigation,
+    } = scoped_mutation_paths(tool_call, working_dir);
+    targets.extend(navigation);
+    targets
+}
+
+/// Paths a call may change, split from the directories a mixed shell script
+/// `cd`s into before its writes.
+struct ScopedPaths {
+    targets: Vec<PathBuf>,
+    navigation: Vec<PathBuf>,
+}
+
+fn scoped_mutation_paths(tool_call: &CallToolRequestParams, working_dir: &Path) -> ScopedPaths {
+    let mut paths = ScopedPaths {
+        targets: Vec::new(),
+        navigation: Vec::new(),
+    };
     if !is_shell_tool(tool_call) {
-        return if is_mutating_tool_call(tool_call) {
-            referenced_paths(tool_call, working_dir)
-        } else {
-            Vec::new()
-        };
+        if is_mutating_tool_call(tool_call) {
+            paths.targets = referenced_paths(tool_call, working_dir);
+        }
+        return paths;
     }
     let Some(command) = tool_call
         .arguments
@@ -797,18 +838,19 @@ pub(crate) fn mutation_paths(
         .and_then(|args| args.get("command"))
         .and_then(|value| value.as_str())
     else {
-        return Vec::new();
+        return paths;
     };
-    let mut paths = Vec::new();
     let mut current_dir = working_dir.to_path_buf();
     let analysis = analyze_shell(command);
     let has_mutations = analysis.segments.iter().any(|segment| !segment.read_only);
     for segment in analysis.segments {
         let directory_target = cd_target(&segment.words);
-        // Keep the navigation guard for mixed scripts: bare relative write targets
-        // are not collected as explicit paths, so dropping it could hide an escape.
-        if !segment.read_only || (has_mutations && directory_target.is_some()) {
-            collect_shell_segment_paths(&segment.words, &current_dir, &mut paths);
+        if !segment.read_only {
+            collect_shell_segment_paths(&segment.words, &current_dir, &mut paths.targets);
+        } else if has_mutations && directory_target.is_some() {
+            // Keep the navigation guard for mixed scripts: bare relative write targets
+            // are not collected as explicit paths, so dropping it could hide an escape.
+            collect_shell_segment_paths(&segment.words, &current_dir, &mut paths.navigation);
         }
         if let Some(target) = directory_target {
             current_dir = normalize_resolved_path(resolve(target, &current_dir));
@@ -975,6 +1017,30 @@ fn out_of_scope_path(
             && scratch_dirs
                 .iter()
                 .any(|dir| canonical_path.starts_with(dir))
+        {
+            continue;
+        }
+        if !canonical_path_is_within_any(&canonical_path, allowed_dirs)? {
+            return Ok(Some(canonical_path));
+        }
+    }
+
+    Ok(None)
+}
+
+/// Like `out_of_scope_path`, but a `cd` into a temporary directory itself is
+/// fine: it only moves where later relative writes land, and everything
+/// beneath that directory is already scratch.
+fn out_of_scope_navigation(
+    paths: &[PathBuf],
+    allowed_dirs: &[PathBuf],
+    scratch_dirs: &[PathBuf],
+) -> Result<Option<PathBuf>> {
+    for resolved in paths {
+        let canonical_path = canonicalize_potential_path(resolved)?;
+        if scratch_dirs
+            .iter()
+            .any(|dir| canonical_path.starts_with(dir))
         {
             continue;
         }
@@ -2293,6 +2359,102 @@ mod tests {
             .map(|result| result.tool_request_id.as_str())
             .collect();
         assert_eq!(flagged, vec!["write-outside", "awk-write-outside"]);
+    }
+
+    #[tokio::test]
+    async fn changing_into_the_temp_root_is_not_a_write_but_removing_it_is() {
+        let root = tempfile::tempdir().unwrap();
+        let project = root.path().join("project");
+        std::fs::create_dir(&project).unwrap();
+        let session_manager = Arc::new(SessionManager::new(root.path().to_path_buf()));
+        let session = workspace_session(&session_manager, &project).await;
+        let inspector = WorkingDirScopeInspector::new(session_manager);
+        let results = inspector
+            .inspect(
+                &session.id,
+                &[
+                    shell_request("script", "cd /tmp && python3 - <<'PY'\nprint(1)\nPY"),
+                    shell_request("remove-root", "cd /tmp && rm -rf /tmp"),
+                ],
+                &[],
+                GoslingMode::Auto,
+            )
+            .await
+            .unwrap();
+
+        let flagged: Vec<&str> = results
+            .iter()
+            .map(|result| result.tool_request_id.as_str())
+            .collect();
+        assert_eq!(flagged, vec!["remove-root"]);
+    }
+
+    #[tokio::test]
+    async fn scope_prompt_offers_the_flagged_folder() {
+        let root = tempfile::tempdir().unwrap();
+        let project = root.path().join("project");
+        let outside = root.path().join("outside");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        let session_manager = Arc::new(SessionManager::new(root.path().to_path_buf()));
+        let session = session_manager
+            .create_session(
+                project.clone(),
+                "test".into(),
+                crate::session::SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        session_manager
+            .update(&session.id)
+            .restrict_tools_to_working_dirs(true)
+            .apply()
+            .await
+            .unwrap();
+
+        let inspector = WorkingDirScopeInspector::new(session_manager);
+        let results = inspector
+            .inspect(
+                &session.id,
+                &[write_request(
+                    "write-outside",
+                    outside.join("draft.md").to_str().unwrap(),
+                )],
+                &[],
+                GoslingMode::Auto,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(results.len(), 1);
+        let folder = results[0].metadata.as_ref().unwrap()["folder"]
+            .as_str()
+            .unwrap();
+        assert_eq!(
+            Path::new(folder),
+            canonicalize_potential_path(&outside).unwrap()
+        );
+    }
+
+    #[test]
+    fn grantable_folder_never_offers_home_or_its_ancestors() {
+        let home = canonicalize_potential_path(&dirs::home_dir().unwrap()).unwrap();
+        assert_eq!(grantable_folder(&home.join("notes.txt")), None);
+        assert_eq!(grantable_folder(&home), None);
+        assert_eq!(grantable_folder(Path::new("/")), None);
+        assert_eq!(
+            grantable_folder(&non_temporary_target("missing").join("file.txt")),
+            None
+        );
+
+        let outside = tempfile::tempdir().unwrap();
+        let outside = canonicalize_potential_path(outside.path()).unwrap();
+        assert_eq!(
+            grantable_folder(&outside.join("file.txt")),
+            Some(outside.clone())
+        );
+        assert_eq!(grantable_folder(&outside), Some(outside));
     }
 
     /// A multi-line script that `cd`s two levels deep and then reaches a

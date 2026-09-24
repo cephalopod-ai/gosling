@@ -394,6 +394,25 @@ pub fn single_flagged_domain_for_request(
         })
 }
 
+/// The folder a working-directory scope inspector offered to allow for a
+/// request, so the prompt can grant that folder instead of the whole tool.
+pub fn flagged_folder_for_request(
+    tool_request_id: &str,
+    inspection_results: &[InspectionResult],
+) -> Option<String> {
+    inspection_results
+        .iter()
+        .filter(|result| result.tool_request_id == tool_request_id)
+        .find_map(|result| {
+            result
+                .metadata
+                .as_ref()?
+                .get("folder")?
+                .as_str()
+                .map(str::to_string)
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

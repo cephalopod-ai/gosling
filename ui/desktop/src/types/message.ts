@@ -114,6 +114,8 @@ export type ActionRequiredData =
       toolName: string;
       /** The single flagged egress domain, if any (see EgressInspector). */
       domain?: string | null;
+      /** The folder a working-directory scope prompt offers to allow, if any. */
+      folder?: string | null;
     }
   | {
       actionType: 'elicitation';
@@ -380,6 +382,7 @@ export interface ToolConfirmationData {
   arguments: Record<string, unknown>;
   prompt?: string | null;
   domain?: string | null;
+  folder?: string | null;
 }
 
 export function getAnyToolConfirmationData(message: Message): ToolConfirmationData | undefined {
@@ -401,6 +404,7 @@ export function getAnyToolConfirmationData(message: Message): ToolConfirmationDa
       arguments: actionRequired.data.arguments,
       prompt: actionRequired.data.prompt,
       domain: actionRequired.data.domain,
+      folder: actionRequired.data.folder,
     };
   }
 

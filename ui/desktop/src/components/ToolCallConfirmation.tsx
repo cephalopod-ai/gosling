@@ -64,7 +64,7 @@ export default function ToolConfirmation({
 }: ToolConfirmationProps) {
   const intl = useIntl();
   const data = actionRequiredContent.data as ToolConfirmationData;
-  const { id, toolName, prompt, domain, arguments: toolArguments } = data;
+  const { id, toolName, prompt, domain, folder, arguments: toolArguments } = data;
   const displayName = formatToolName(toolName);
   const detail = summarizeArguments(toolArguments);
 
@@ -88,6 +88,7 @@ export default function ToolConfirmation({
           toolName,
           prompt: prompt ?? undefined,
           domain: domain ?? undefined,
+          folder: folder ?? undefined,
           sessionId,
           isClicked,
         }}

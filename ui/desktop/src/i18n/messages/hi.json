@@ -4090,5 +4090,17 @@
   },
   "settings.trustedFolders.title": {
     "defaultMessage": "Trusted folders"
+  },
+  "toolApprovalButtons.allowFolderForSession": {
+    "defaultMessage": "Allow {folder} for this session"
+  },
+  "toolApprovalButtons.alwaysAllowFolder": {
+    "defaultMessage": "Always allow {folder}"
+  },
+  "toolApprovalButtons.folderAllowedForSession": {
+    "defaultMessage": "{folder} allowed for this session"
+  },
+  "toolApprovalButtons.folderAlwaysAllowed": {
+    "defaultMessage": "{folder} always allowed"
   }
 }
