@@ -1,5 +1,6 @@
 use crate::config::paths::Paths;
 use crate::conversation::message::{Message, MessageContent};
+use crate::mcp_utils::extract_text_from_resource;
 use crate::providers::api_client::{
     default_inference_client_builder, AuthProvider, RequestBuilderDecorator,
 };
@@ -23,7 +24,7 @@ use gosling_providers::formats::openai_responses::responses_api_to_streaming_mes
 use gosling_providers::model::ModelConfig;
 use jsonwebtoken::jwk::JwkSet;
 use jsonwebtoken::{decode, decode_header, DecodingKey, Validation};
-use rmcp::model::{RawContent, Role, Tool};
+use rmcp::model::{Content, RawContent, Role, Tool};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::io;
@@ -233,24 +234,11 @@ fn build_input_items(messages: &[Message]) -> Result<Vec<Value>> {
                     flush_text(&mut items, role, &mut content_items);
                     match &response.tool_result {
                         Ok(contents) => {
-                            let text_content: Vec<String> = contents
-                                .content
-                                .iter()
-                                .filter_map(|c| {
-                                    if let RawContent::Text(t) = c.deref() {
-                                        Some(t.text.clone())
-                                    } else {
-                                        None
-                                    }
-                                })
-                                .collect();
-                            if !text_content.is_empty() {
-                                items.push(json!({
-                                    "type": "function_call_output",
-                                    "call_id": response.id,
-                                    "output": text_content.join("\n")
-                                }));
-                            }
+                            items.push(json!({
+                                "type": "function_call_output",
+                                "call_id": response.id,
+                                "output": tool_result_output(&contents.content)
+                            }));
                         }
                         Err(error_data) => {
                             items.push(json!({
@@ -269,6 +257,43 @@ fn build_input_items(messages: &[Message]) -> Result<Vec<Value>> {
     }
 
     Ok(items)
+}
+
+// Every function_call needs a matching function_call_output or the route rejects
+// the whole request, so non-text results must still produce an output.
+fn tool_result_output(content: &[Content]) -> Value {
+    let has_images = content
+        .iter()
+        .any(|c| matches!(c.deref(), RawContent::Image(_)));
+
+    if has_images {
+        return json!(content
+            .iter()
+            .map(|c| match c.deref() {
+                RawContent::Image(image) => json!({
+                    "type": "input_image",
+                    "image_url": format!("data:{};base64,{}", image.mime_type, image.data),
+                }),
+                other => json!({ "type": "input_text", "text": content_as_text(other) }),
+            })
+            .collect::<Vec<Value>>());
+    }
+
+    json!(content
+        .iter()
+        .map(|c| content_as_text(c.deref()))
+        .collect::<Vec<String>>()
+        .join("\n"))
+}
+
+fn content_as_text(content: &RawContent) -> String {
+    match content {
+        RawContent::Text(t) => t.text.clone(),
+        RawContent::Resource(r) => extract_text_from_resource(&r.resource),
+        RawContent::Image(_) => "[Image content]".into(),
+        RawContent::Audio(_) => "[Audio content]".into(),
+        RawContent::ResourceLink(_) => "[Resource link]".into(),
+    }
 }
 
 fn get_reasoning_effort(model_name: &str) -> String {
@@ -1463,6 +1488,33 @@ mod tests {
             "image_url should start with data:image/png;base64, but was: {}",
             url
         );
+    }
+
+    #[test]
+    fn image_only_tool_result_still_answers_the_function_call() {
+        let messages = vec![
+            Message::assistant().with_tool_request(
+                "call-1",
+                Ok(CallToolRequestParams::new("get_viewport_screenshot")),
+            ),
+            Message::user().with_tool_response(
+                "call-1",
+                Ok(CallToolResult::success(vec![Content::image(
+                    TEST_IMAGE_B64,
+                    "image/png",
+                )])),
+            ),
+        ];
+        let items = build_input_items(&messages).unwrap();
+
+        assert_eq!(items[1]["type"], "function_call_output");
+        assert_eq!(items[1]["call_id"], "call-1");
+        let output = items[1]["output"].as_array().unwrap();
+        assert_eq!(output[0]["type"], "input_image");
+        assert!(output[0]["image_url"]
+            .as_str()
+            .unwrap()
+            .starts_with("data:image/png;base64,"));
     }
 
     #[test]
