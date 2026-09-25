@@ -17,6 +17,12 @@ const ANTHROPIC_CONTRACTS: &[AnthropicContract] = &[
         thinking_mode: Some(ThinkingMode::AlwaysOnAdaptive),
     },
     AnthropicContract {
+        model: "claude-fable-5.1",
+        context: 1_000_000,
+        output: 128_000,
+        thinking_mode: Some(ThinkingMode::AlwaysOnAdaptive),
+    },
+    AnthropicContract {
         model: "claude-haiku-4.5",
         context: 200_000,
         output: 64_000,
@@ -54,6 +60,12 @@ const ANTHROPIC_CONTRACTS: &[AnthropicContract] = &[
     },
     AnthropicContract {
         model: "claude-opus-5",
+        context: 1_000_000,
+        output: 128_000,
+        thinking_mode: Some(ThinkingMode::Adaptive),
+    },
+    AnthropicContract {
+        model: "claude-opus-5.5",
         context: 1_000_000,
         output: 128_000,
         thinking_mode: Some(ThinkingMode::Adaptive),

@@ -28,6 +28,8 @@ pub const ANTHROPIC_DEFAULT_MODEL: &str = "claude-sonnet-4-5";
 pub const ANTHROPIC_DEFAULT_FAST_MODEL: &str = "claude-haiku-4-5";
 const ANTHROPIC_KNOWN_MODELS: &[&str] = &[
     // Claude 5 models
+    "claude-opus-5-5",
+    "claude-fable-5-1",
     "claude-opus-5",
     "claude-fable-5",
     "claude-sonnet-5",

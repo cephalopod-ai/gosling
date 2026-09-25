@@ -12,9 +12,7 @@ pub const XAI_API_HOST: &str = "https://api.x.ai/v1";
 // only host that will actually run the subscription's models. See xai_oauth.rs.
 pub const SUPERGROK_API_HOST: &str = "https://cli-chat-proxy.grok.com/v1";
 
-// Gosling exposes only this model for SuperGrok subscriptions.
-// grok-4.6 supports reasoning-effort (high/medium/low).
-pub const SUPERGROK_DEFAULT_MODEL: &str = "grok-4.6";
+pub const SUPERGROK_DEFAULT_MODEL: &str = "grok-4.7";
 
 /// A SuperGrok model as advertised by the chat proxy. `reasoning` drives whether
 /// the desktop switcher shows the high/medium/low effort selector; there is no
@@ -25,32 +23,37 @@ pub struct SuperGrokModel {
     pub reasoning: bool,
 }
 
-pub const SUPERGROK_MODELS: &[SuperGrokModel] = &[SuperGrokModel {
-    name: "grok-4.6",
-    context_limit: 500_000,
-    reasoning: true,
-}];
+/// The models the chat proxy serves that accept xhigh/high/medium/low
+/// reasoning effort. grok-4.5 is still served but lacks xhigh, so it is left
+/// out rather than special-cased.
+pub const SUPERGROK_MODELS: &[SuperGrokModel] = &[
+    SuperGrokModel {
+        name: "grok-4.7",
+        context_limit: 500_000,
+        reasoning: true,
+    },
+    SuperGrokModel {
+        name: "grok-4.7-build-fast",
+        context_limit: 500_000,
+        reasoning: true,
+    },
+    SuperGrokModel {
+        name: "grok-4.6",
+        context_limit: 500_000,
+        reasoning: true,
+    },
+];
 
-pub const XAI_DEFAULT_MODEL: &str = "grok-code-fast-1";
+pub const XAI_DEFAULT_MODEL: &str = "grok-4.7";
 pub const XAI_KNOWN_MODELS: &[&str] = &[
-    "grok-code-fast-1",
-    "grok-4-0709",
-    "grok-3",
-    "grok-3-fast",
-    "grok-3-mini",
-    "grok-3-mini-fast",
-    "grok-2-vision-1212",
-    "grok-2-image-1212",
-    "grok-3-latest",
-    "grok-3-fast-latest",
-    "grok-3-mini-latest",
-    "grok-3-mini-fast-latest",
-    "grok-2-vision",
-    "grok-2-vision-latest",
-    "grok-2-image",
-    "grok-2-image-latest",
-    "grok-2",
-    "grok-2-latest",
+    "grok-4.7",
+    "grok-4.6",
+    "grok-4.5",
+    "grok-4.3",
+    "grok-4.20-0309-reasoning",
+    "grok-4.20-0309-non-reasoning",
+    "grok-4.20-multi-agent-0309",
+    "grok-build-0.1",
 ];
 
 pub const XAI_DOC_URL: &str = "https://docs.x.ai/docs/overview";

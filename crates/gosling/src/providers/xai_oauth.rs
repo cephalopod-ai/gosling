@@ -122,11 +122,11 @@ fn grok_client_version() -> String {
         .unwrap_or_else(|| GROK_CLIENT_VERSION_FALLBACK.to_string())
 }
 
-// SuperGrok's grok-4.6 accepts a reasoning-effort suffix (e.g. `grok-4.6-high`),
+// SuperGrok models accept a reasoning-effort suffix (e.g. `grok-4.7-high`),
 // mirroring the Grok CLI's `/model <model> [effort]`. Returns the bare model id
 // plus the effort to send in `reasoning_effort`, if any.
 fn split_effort_suffix(model_name: &str) -> (String, Option<String>) {
-    for effort in ["high", "medium", "low"] {
+    for effort in ["xhigh", "high", "medium", "low"] {
         if let Some(base) = model_name.strip_suffix(&format!("-{effort}")) {
             return (base.to_string(), Some(effort.to_string()));
         }
@@ -135,14 +135,15 @@ fn split_effort_suffix(model_name: &str) -> (String, Option<String>) {
 }
 
 // Maps a standard thinking-effort setting to the proxy's `reasoning_effort`.
-// The proxy only accepts low/medium/high, so Off carries no effort and Max
-// clamps to high.
+// The proxy accepts low/medium/high/xhigh, so Off carries no effort and Max
+// and Ultra clamp to xhigh.
 fn proxy_reasoning_effort(effort: ThinkingEffort) -> Option<&'static str> {
     match effort {
         ThinkingEffort::Off => None,
         ThinkingEffort::Low => Some("low"),
         ThinkingEffort::Medium => Some("medium"),
-        ThinkingEffort::High | ThinkingEffort::Max | ThinkingEffort::Ultra => Some("high"),
+        ThinkingEffort::High => Some("high"),
+        ThinkingEffort::Max | ThinkingEffort::Ultra => Some("xhigh"),
     }
 }
 
@@ -173,9 +174,17 @@ fn prepare_supergrok_model_config(
     model_config: &ModelConfig,
 ) -> Result<ModelConfig, ProviderError> {
     let config = apply_reasoning_effort(model_config);
-    if config.model_name != SUPERGROK_DEFAULT_MODEL {
+    if !SUPERGROK_MODELS
+        .iter()
+        .any(|model| model.name == config.model_name)
+    {
+        let supported = SUPERGROK_MODELS
+            .iter()
+            .map(|model| model.name)
+            .collect::<Vec<_>>()
+            .join(", ");
         return Err(ProviderError::RequestFailed(format!(
-            "SuperGrok supports only {SUPERGROK_DEFAULT_MODEL} in Gosling"
+            "SuperGrok supports only {supported} in Gosling"
         )));
     }
     Ok(config)
@@ -814,7 +823,10 @@ impl Provider for XaiOAuthProvider {
     }
 
     async fn fetch_supported_models(&self) -> Result<Vec<String>, ProviderError> {
-        Ok(vec![SUPERGROK_DEFAULT_MODEL.to_string()])
+        Ok(SUPERGROK_MODELS
+            .iter()
+            .map(|model| model.name.to_string())
+            .collect())
     }
 
     async fn configure_oauth(&self) -> Result<(), ProviderError> {
@@ -856,7 +868,7 @@ impl Provider for XaiOAuthProvider {
 impl gosling_providers::base::ProviderDescriptor for XaiOAuthProvider {
     fn metadata() -> ProviderMetadata {
         // with_models (not new): these models have no canonical registry entry,
-        // so ModelInfo::reasoning must be set explicitly or grok-4.6's effort
+        // so ModelInfo::reasoning must be set explicitly or their effort
         // selector is hidden in the desktop switcher.
         let models = SUPERGROK_MODELS
             .iter()
@@ -1007,6 +1019,10 @@ mod tests {
             split_effort_suffix("grok-4.6-low"),
             ("grok-4.6".to_string(), Some("low".to_string()))
         );
+        assert_eq!(
+            split_effort_suffix("grok-4.7-xhigh"),
+            ("grok-4.7".to_string(), Some("xhigh".to_string()))
+        );
         // No suffix and unrelated suffixes are left intact.
         assert_eq!(
             split_effort_suffix("grok-4.6"),
@@ -1045,7 +1061,7 @@ mod tests {
     #[test]
     fn apply_reasoning_effort_maps_standard_thinking_effort() {
         // A standard thinking_effort setting (from UI/ACP) is translated even
-        // without a name suffix; Max clamps to the proxy's highest, "high".
+        // without a name suffix; Max clamps to the proxy's highest, "xhigh".
         let config = apply_reasoning_effort(
             &ModelConfig::new("grok-4.6").with_thinking_effort(ThinkingEffort::Max),
         );
@@ -1055,7 +1071,7 @@ mod tests {
                 .request_params
                 .as_ref()
                 .and_then(|p| p.get("reasoning_effort")),
-            Some(&serde_json::json!("high"))
+            Some(&serde_json::json!("xhigh"))
         );
     }
 
@@ -1080,12 +1096,21 @@ mod tests {
             .expect_err("grok-4.5 must not remain usable");
         assert_eq!(
             error,
-            ProviderError::RequestFailed("SuperGrok supports only grok-4.6 in Gosling".to_string())
+            ProviderError::RequestFailed(
+                "SuperGrok supports only grok-4.7, grok-4.7-build-fast, grok-4.6 in Gosling"
+                    .to_string()
+            )
         );
 
-        let config = prepare_supergrok_model_config(&ModelConfig::new("grok-4.6-high"))
-            .expect("grok-4.6 must remain usable");
-        assert_eq!(config.model_name, "grok-4.6");
+        for (requested, expected) in [
+            ("grok-4.7-xhigh", "grok-4.7"),
+            ("grok-4.7-build-fast", "grok-4.7-build-fast"),
+            ("grok-4.6-high", "grok-4.6"),
+        ] {
+            let config = prepare_supergrok_model_config(&ModelConfig::new(requested))
+                .expect("current SuperGrok models must remain usable");
+            assert_eq!(config.model_name, expected);
+        }
     }
 
     #[test]
@@ -1097,18 +1122,19 @@ mod tests {
             Some("medium")
         );
         assert_eq!(proxy_reasoning_effort(ThinkingEffort::High), Some("high"));
-        assert_eq!(proxy_reasoning_effort(ThinkingEffort::Max), Some("high"));
+        assert_eq!(proxy_reasoning_effort(ThinkingEffort::Max), Some("xhigh"));
     }
 
     #[test]
-    fn metadata_exposes_only_grok_4_6_as_reasoning_capable() {
+    fn metadata_exposes_current_supergrok_models_as_reasoning_capable() {
         let meta = <XaiOAuthProvider as gosling_providers::base::ProviderDescriptor>::metadata();
-        assert_eq!(meta.default_model, "grok-4.6");
-        assert_eq!(meta.known_models.len(), 1);
-        let grok = &meta.known_models[0];
-        assert_eq!(grok.name, "grok-4.6");
-        assert!(grok.reasoning, "grok-4.6 must be reasoning-capable");
-        assert_eq!(grok.context_limit, 500_000);
+        assert_eq!(meta.default_model, "grok-4.7");
+        let names: Vec<&str> = meta.known_models.iter().map(|m| m.name.as_str()).collect();
+        assert_eq!(names, vec!["grok-4.7", "grok-4.7-build-fast", "grok-4.6"]);
+        for grok in &meta.known_models {
+            assert!(grok.reasoning, "{} must be reasoning-capable", grok.name);
+            assert_eq!(grok.context_limit, 500_000);
+        }
     }
 
     #[test]

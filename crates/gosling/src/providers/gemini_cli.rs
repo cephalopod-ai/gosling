@@ -30,6 +30,9 @@ use rmcp::model::Tool;
 const GEMINI_CLI_PROVIDER_NAME: &str = "gemini-cli";
 pub const GEMINI_CLI_DEFAULT_MODEL: &str = "gemini-2.5-pro";
 pub const GEMINI_CLI_KNOWN_MODELS: &[&str] = &[
+    "gemini-3.1-pro-preview",
+    "gemini-3.8-flash",
+    "gemini-3.5-flash-lite",
     "gemini-2.5-pro",
     "gemini-2.5-flash",
     "gemini-2.5-flash-lite",

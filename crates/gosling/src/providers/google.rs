@@ -35,30 +35,28 @@ pub const GOOGLE_KNOWN_MODELS: &[&str] = &[
     "gemini-flash-lite-latest",
     "gemini-pro-latest",
     // Gemini 3 models
-    "gemini-3-pro-preview",
+    "gemini-3.8-flash",
+    "gemini-3.7-flash",
+    "gemini-3.6-flash",
+    "gemini-3.5-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-3.1-pro-preview",
+    "gemini-3.1-pro-preview-customtools",
+    "gemini-3.1-flash-lite",
+    "gemini-3-flash-preview",
+    "gemini-3.1-flash-image",
+    "gemini-3-pro-image",
     "gemini-3-pro-image-preview",
     // Gemini 2.5 Pro models
     "gemini-2.5-pro",
     "gemini-2.5-pro-preview-tts",
     // Gemini 2.5 Flash models
     "gemini-2.5-flash",
-    "gemini-2.5-flash-preview-09-2025",
     "gemini-2.5-flash-image",
-    "gemini-2.5-flash-image-preview",
     "gemini-2.5-flash-native-audio-preview-09-2025",
     "gemini-2.5-flash-preview-tts",
     // Gemini 2.5 Flash-Lite models
     "gemini-2.5-flash-lite",
-    "gemini-2.5-flash-lite-preview-09-2025",
-    // Gemini 2.0 Flash models
-    "gemini-2.0-flash",
-    "gemini-2.0-flash-001",
-    "gemini-2.0-flash-exp",
-    "gemini-2.0-flash-preview-image-generation",
-    "gemini-2.0-flash-live-001",
-    // Gemini 2.0 Flash-Lite models
-    "gemini-2.0-flash-lite",
-    "gemini-2.0-flash-lite-001",
 ];
 
 pub const GOOGLE_DOC_URL: &str = "https://ai.google.dev/gemini-api/docs/models";

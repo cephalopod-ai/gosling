@@ -70,6 +70,14 @@ pub const CHATGPT_CODEX_KNOWN_MODELS: &[ChatGptCodexModelAttrs] = &[
         reasoning_levels: &["low", "medium", "high", "xhigh", "max"],
     },
     ChatGptCodexModelAttrs {
+        name: "gpt-6-sol",
+        reasoning_levels: &["low", "medium", "high", "xhigh", "max"],
+    },
+    ChatGptCodexModelAttrs {
+        name: "gpt-6-luna",
+        reasoning_levels: &["low", "medium", "high", "xhigh", "max"],
+    },
+    ChatGptCodexModelAttrs {
         name: "gpt-5.6-sol",
         reasoning_levels: &["low", "medium", "high", "xhigh", "max"],
     },
@@ -131,7 +139,7 @@ fn resolved_route_context_limit(model: &ChatGptCodexRouteModel) -> Option<usize>
 
 pub(crate) fn context_limit_for_model(model_name: &str) -> Option<usize> {
     match model_name {
-        "gpt-6-astra" => Some(997_500),
+        "gpt-6-astra" | "gpt-6-sol" | "gpt-6-luna" => Some(997_500),
         "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna" | "gpt-5.5" | "gpt-5.4"
         | "gpt-5.4-mini" => Some(258_400),
         "gpt-5.3-codex-spark" => Some(121_600),

@@ -41,6 +41,7 @@ const CLAUDE_CODE_PROVIDER_NAME: &str = "claude-code";
 pub const CLAUDE_CODE_DEFAULT_MODEL: &str = "default";
 pub const CLAUDE_CODE_DOC_URL: &str = "https://code.claude.com/docs/en/setup";
 const CLAUDE_CODE_KNOWN_MODELS: &[&str] = &[
+    "claude-opus-5-5",
     "claude-opus-5",
     "claude-sonnet-5",
     "claude-fable-5-1",
@@ -245,6 +246,7 @@ fn ask_user_question_response(
 fn current_claude_model(model: &str) -> Option<&'static str> {
     match model.strip_suffix("[1m]").unwrap_or(model) {
         "best" | "opus" | "claude-opus-5" => Some("claude-opus-5"),
+        "claude-opus-5-5" => Some("claude-opus-5-5"),
         "sonnet" | "claude-sonnet-5" => Some("claude-sonnet-5"),
         "fable" | "claude-fable-5" => Some("claude-fable-5"),
         "claude-fable-5-1" => Some("claude-fable-5-1"),
