@@ -839,12 +839,20 @@ async fn exchange_control(
     }
 }
 
+/// Prefers each entry's `resolvedModel` over its alias: an alias like `opus`
+/// moves to a new generation when the CLI updates (2.1.259 resolved it to Opus
+/// 5, 2.1.282 to Opus 5.5), so only the resolved name says which model it is.
 fn extract_model_aliases(response: Option<&Value>) -> Vec<String> {
     response
         .and_then(|v| v.get("models")?.as_array())
         .map(|arr| {
             arr.iter()
-                .filter_map(|m| m.get("value")?.as_str().map(String::from))
+                .filter_map(|m| {
+                    m.get("resolvedModel")
+                        .or_else(|| m.get("value"))?
+                        .as_str()
+                        .map(String::from)
+                })
                 .collect()
         })
         .unwrap_or_default()
@@ -1784,6 +1792,40 @@ mod tests {
                 "claude-fable-5",
                 "claude-haiku-4-5",
             ]
+        );
+    }
+
+    #[test_case(
+        json!({"models": [
+            {"value": "default", "resolvedModel": "claude-opus-5-5[1m]"},
+            {"value": "opus[1m]", "resolvedModel": "claude-opus-5-5[1m]"},
+            {"value": "claude-fable-5-1[1m]", "resolvedModel": "claude-fable-5-1"},
+            {"value": "sonnet", "resolvedModel": "claude-sonnet-5"},
+            {"value": "haiku", "resolvedModel": "claude-haiku-4-5-20251001"}
+        ]}),
+        vec!["claude-opus-5-5", "claude-sonnet-5", "claude-fable-5-1", "claude-haiku-4-5"]
+        ; "cli_2_1_282_resolves_opus_to_5_5"
+    )]
+    #[test_case(
+        json!({"models": [
+            {"value": "default", "resolvedModel": "claude-opus-5[1m]"},
+            {"value": "opus[1m]", "resolvedModel": "claude-opus-5[1m]"},
+            {"value": "claude-fable-5-1[1m]", "resolvedModel": "claude-fable-5-1"},
+            {"value": "sonnet", "resolvedModel": "claude-sonnet-5"},
+            {"value": "haiku", "resolvedModel": "claude-haiku-4-5-20251001"}
+        ]}),
+        vec!["claude-opus-5", "claude-sonnet-5", "claude-fable-5-1", "claude-haiku-4-5"]
+        ; "cli_2_1_259_resolves_opus_to_5"
+    )]
+    #[test_case(
+        json!({"models": [{"value": "opus[1m]"}, {"value": "sonnet"}]}),
+        vec!["claude-opus-5", "claude-sonnet-5"]
+        ; "aliases_without_resolved_models_still_map"
+    )]
+    fn test_listed_models_follow_what_the_cli_resolves(response: Value, expected: Vec<&str>) {
+        assert_eq!(
+            normalize_model_names(extract_model_aliases(Some(&response))),
+            expected
         );
     }
 
