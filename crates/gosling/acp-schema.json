@@ -5485,6 +5485,122 @@
       "x-side": "agent",
       "x-method": "_gosling/unstable/providers/secrets/custom/add"
     },
+    "WebsiteLoginListRequest_unstable": {
+      "type": "object",
+      "description": "List saved website logins.",
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/website-logins/list"
+    },
+    "WebsiteLoginListResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "logins": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WebsiteLoginDto"
+          }
+        }
+      },
+      "required": [
+        "logins"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/website-logins/list"
+    },
+    "WebsiteLoginDto": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "username": {
+          "type": "string"
+        },
+        "hasPassword": {
+          "type": "boolean"
+        },
+        "placeholder": {
+          "type": "string",
+          "description": "What the agent writes where this login's password belongs."
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "url",
+        "username",
+        "hasPassword",
+        "placeholder"
+      ],
+      "description": "A saved website login. The password itself is never sent to clients."
+    },
+    "WebsiteLoginSaveRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "username": {
+          "type": "string"
+        },
+        "password": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "url",
+        "username"
+      ],
+      "description": "Create a website login, or update the one named by `id`. A password is\nrequired to create one; omitting it on update keeps the saved password.",
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/website-logins/save"
+    },
+    "WebsiteLoginSaveResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "login": {
+          "$ref": "#/$defs/WebsiteLoginDto"
+        }
+      },
+      "required": [
+        "login"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/website-logins/save"
+    },
+    "WebsiteLoginDeleteRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "description": "Delete a website login and its saved password.",
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/website-logins/delete"
+    },
     "CanonicalModelInfoRequest_unstable": {
       "type": "object",
       "properties": {
@@ -10932,6 +11048,33 @@
                 {
                   "allOf": [
                     {
+                      "$ref": "#/$defs/WebsiteLoginListRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/website-logins/list",
+                  "title": "WebsiteLoginListRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/WebsiteLoginSaveRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/website-logins/save",
+                  "title": "WebsiteLoginSaveRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/WebsiteLoginDeleteRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/website-logins/delete",
+                  "title": "WebsiteLoginDeleteRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
                       "$ref": "#/$defs/CanonicalModelInfoRequest_unstable"
                     }
                   ],
@@ -11982,6 +12125,22 @@
                         }
                       ],
                       "title": "ProviderSecretsListResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/WebsiteLoginListResponse_unstable"
+                        }
+                      ],
+                      "title": "WebsiteLoginListResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/WebsiteLoginSaveResponse_unstable"
+                        }
+                      ],
+                      "title": "WebsiteLoginSaveResponse_unstable"
                     },
                     {
                       "allOf": [

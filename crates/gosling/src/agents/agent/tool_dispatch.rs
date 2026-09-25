@@ -436,26 +436,34 @@ impl Agent {
         } else if let Some(error) = resolution_error {
             ToolCallResult::from(Err(error))
         } else {
-            let result = self
-                .extension_manager
-                .dispatch_authorized_tool_call(
-                    &ctx,
-                    resolved_tool.expect("authorized non-frontend tools have a resolved owner"),
-                    tool_call.clone(),
-                    cancellation_token.unwrap_or_default(),
-                )
-                .await;
-            result.unwrap_or_else(|e| {
-                #[cfg(feature = "telemetry")]
-                crate::posthog::emit_error(
-                    "tool_execution_failed",
-                    &format!("{}: {}", tool_call.name, e),
-                );
-                let error_data = e.downcast::<ErrorData>().unwrap_or_else(|e| {
-                    ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None)
-                });
-                ToolCallResult::from(Err(error_data))
-            })
+            let mut dispatched_call = tool_call.clone();
+            match insert_website_login_passwords(&mut dispatched_call, user_confirmed) {
+                Err(error) => ToolCallResult::from(Err(error)),
+                Ok(passwords) => {
+                    let result = self
+                        .extension_manager
+                        .dispatch_authorized_tool_call(
+                            &ctx,
+                            resolved_tool
+                                .expect("authorized non-frontend tools have a resolved owner"),
+                            dispatched_call,
+                            cancellation_token.unwrap_or_default(),
+                        )
+                        .await;
+                    let result = result.unwrap_or_else(|e| {
+                        #[cfg(feature = "telemetry")]
+                        crate::posthog::emit_error(
+                            "tool_execution_failed",
+                            &format!("{}: {}", tool_call.name, e),
+                        );
+                        let error_data = e.downcast::<ErrorData>().unwrap_or_else(|e| {
+                            ErrorData::new(ErrorCode::INTERNAL_ERROR, e.to_string(), None)
+                        });
+                        ToolCallResult::from(Err(error_data))
+                    });
+                    redact_website_login_passwords(result, passwords)
+                }
+            }
         };
 
         debug!("WAITING_TOOL_END: {}", tool_call.name);
@@ -511,5 +519,101 @@ impl Agent {
                 action_required_stream,
             }),
         )
+    }
+}
+
+/// Inserts saved website passwords for `{{login:NAME}}` placeholders. Only a
+/// call the user confirmed for this exact request may receive one; the
+/// website-login inspector makes every such call prompt, so an unconfirmed
+/// call here came through a path without a prompt and is refused.
+fn insert_website_login_passwords(
+    tool_call: &mut CallToolRequestParams,
+    user_confirmed: bool,
+) -> Result<crate::website_logins::InsertedPasswords, ErrorData> {
+    let Some(arguments) = tool_call.arguments.as_mut() else {
+        return Ok(Default::default());
+    };
+    if crate::website_logins::referenced_names(Some(arguments)).is_empty() {
+        return Ok(Default::default());
+    }
+    if !user_confirmed {
+        return Err(ErrorData::new(
+            ErrorCode::INVALID_REQUEST,
+            "Saved website passwords are inserted only into a tool call the user approved. Make the call directly so the user is asked to approve it.".to_string(),
+            None,
+        ));
+    }
+    crate::website_logins::insert_passwords(arguments)
+        .map_err(|error| ErrorData::new(ErrorCode::INVALID_PARAMS, error.to_string(), None))
+}
+
+fn redact_website_login_passwords(
+    result: ToolCallResult,
+    passwords: crate::website_logins::InsertedPasswords,
+) -> ToolCallResult {
+    if passwords.is_empty() {
+        return result;
+    }
+    let passwords = Arc::new(passwords);
+    let ToolCallResult {
+        result,
+        notification_stream,
+        action_required_stream,
+    } = result;
+    let stream_passwords = passwords.clone();
+    let notification_stream = notification_stream.map(|stream| {
+        Box::new(stream.map(move |mut notification| {
+            stream_passwords.redact_notification(&mut notification);
+            notification
+        })) as Box<dyn futures::Stream<Item = ServerNotification> + Send + Unpin>
+    });
+    let result = async move {
+        let mut output = result.await;
+        match output.as_mut() {
+            Ok(call_result) => passwords.redact_result(call_result),
+            Err(error) => passwords.redact_error(error),
+        }
+        output
+    };
+    ToolCallResult {
+        result: Box::new(result.boxed()),
+        notification_stream,
+        action_required_stream,
+    }
+}
+
+#[cfg(test)]
+mod website_login_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn call(arguments: serde_json::Value) -> CallToolRequestParams {
+        CallToolRequestParams::new("browser__fill")
+            .with_arguments(arguments.as_object().expect("object").clone())
+    }
+
+    #[test]
+    fn unconfirmed_call_never_receives_a_saved_password() {
+        let mut tool_call = call(json!({"value": "{{login:Work GitHub}}"}));
+
+        let error = insert_website_login_passwords(&mut tool_call, false)
+            .err()
+            .expect("unconfirmed placeholder must be refused");
+
+        assert_eq!(error.code, ErrorCode::INVALID_REQUEST);
+        assert_eq!(
+            tool_call.arguments.unwrap()["value"],
+            json!("{{login:Work GitHub}}")
+        );
+    }
+
+    #[test]
+    fn call_without_placeholder_is_left_untouched() {
+        let mut tool_call = call(json!({"value": "plain text"}));
+
+        let inserted = insert_website_login_passwords(&mut tool_call, false).unwrap();
+
+        assert!(inserted.is_empty());
+        assert_eq!(tool_call.arguments.unwrap()["value"], json!("plain text"));
     }
 }

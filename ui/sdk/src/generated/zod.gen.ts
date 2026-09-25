@@ -1803,6 +1803,50 @@ export const zProviderSecretCustomAddRequest_unstable = z.object({
 });
 
 /**
+ * List saved website logins.
+ */
+export const zWebsiteLoginListRequest_unstable = z.record(z.unknown());
+
+/**
+ * A saved website login. The password itself is never sent to clients.
+ */
+export const zWebsiteLoginDto = z.object({
+    id: z.string(),
+    name: z.string(),
+    url: z.string(),
+    username: z.string(),
+    hasPassword: z.boolean(),
+    placeholder: z.string()
+});
+
+export const zWebsiteLoginListResponse_unstable = z.object({
+    logins: z.array(zWebsiteLoginDto)
+});
+
+/**
+ * Create a website login, or update the one named by `id`. A password is
+ * required to create one; omitting it on update keeps the saved password.
+ */
+export const zWebsiteLoginSaveRequest_unstable = z.object({
+    id: z.string().nullish(),
+    name: z.string(),
+    url: z.string(),
+    username: z.string(),
+    password: z.string().nullish()
+});
+
+export const zWebsiteLoginSaveResponse_unstable = z.object({
+    login: zWebsiteLoginDto
+});
+
+/**
+ * Delete a website login and its saved password.
+ */
+export const zWebsiteLoginDeleteRequest_unstable = z.object({
+    id: z.string()
+});
+
+/**
  * Look up canonical (bundled-registry) model info for a provider/model pair.
  */
 export const zCanonicalModelInfoRequest_unstable = z.object({
@@ -3399,6 +3443,9 @@ export const zExtRequest = z.object({
             zProviderSecretsListRequest_unstable,
             zProviderSecretDeleteRequest_unstable,
             zProviderSecretCustomAddRequest_unstable,
+            zWebsiteLoginListRequest_unstable,
+            zWebsiteLoginSaveRequest_unstable,
+            zWebsiteLoginDeleteRequest_unstable,
             zCanonicalModelInfoRequest_unstable,
             zPreferencesReadRequest_unstable,
             zPreferencesSaveRequest_unstable,
@@ -3528,6 +3575,8 @@ export const zExtResponse = z.union([
                 zProviderConfigStatusResponse_unstable,
                 zProviderConfigChangeResponse_unstable,
                 zProviderSecretsListResponse_unstable,
+                zWebsiteLoginListResponse_unstable,
+                zWebsiteLoginSaveResponse_unstable,
                 zCanonicalModelInfoResponse_unstable,
                 zPreferencesReadResponse_unstable,
                 zConfigReadResponse_unstable,

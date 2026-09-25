@@ -148,6 +148,7 @@ mod tool_notifications;
 mod tool_summaries;
 mod tools;
 mod transport;
+mod website_logins;
 mod workspace_handlers;
 
 #[cfg(test)]

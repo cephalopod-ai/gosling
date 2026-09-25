@@ -4102,5 +4102,83 @@
   },
   "toolApprovalButtons.folderAlwaysAllowed": {
     "defaultMessage": "{folder} always allowed"
+  },
+  "websiteLogins.add": {
+    "defaultMessage": "Add login"
+  },
+  "websiteLogins.agentUses": {
+    "defaultMessage": "Agent uses"
+  },
+  "websiteLogins.cancel": {
+    "defaultMessage": "Cancel"
+  },
+  "websiteLogins.delete": {
+    "defaultMessage": "Delete {name}"
+  },
+  "websiteLogins.deleteConfirm": {
+    "defaultMessage": "Delete"
+  },
+  "websiteLogins.deleteMessage": {
+    "defaultMessage": "Delete the {name} login and its saved password?"
+  },
+  "websiteLogins.deleteTitle": {
+    "defaultMessage": "Delete website login"
+  },
+  "websiteLogins.deleted": {
+    "defaultMessage": "Website login deleted"
+  },
+  "websiteLogins.description": {
+    "defaultMessage": "Save a website with its username and password so gosling can sign in for you. The agent sees the website and username, never the password: you approve each sign-in, and gosling fills the password in itself."
+  },
+  "websiteLogins.edit": {
+    "defaultMessage": "Edit {name}"
+  },
+  "websiteLogins.empty": {
+    "defaultMessage": "No website logins saved yet."
+  },
+  "websiteLogins.failedToDelete": {
+    "defaultMessage": "Failed to delete website login: {error}"
+  },
+  "websiteLogins.failedToLoad": {
+    "defaultMessage": "Failed to load website logins"
+  },
+  "websiteLogins.failedToSave": {
+    "defaultMessage": "Failed to save website login: {error}"
+  },
+  "websiteLogins.loading": {
+    "defaultMessage": "Loading website logins..."
+  },
+  "websiteLogins.nameLabel": {
+    "defaultMessage": "Name"
+  },
+  "websiteLogins.namePlaceholder": {
+    "defaultMessage": "Work GitHub"
+  },
+  "websiteLogins.passwordKeepPlaceholder": {
+    "defaultMessage": "Leave blank to keep the saved password"
+  },
+  "websiteLogins.passwordLabel": {
+    "defaultMessage": "Password"
+  },
+  "websiteLogins.passwordMissing": {
+    "defaultMessage": "No password saved"
+  },
+  "websiteLogins.save": {
+    "defaultMessage": "Save"
+  },
+  "websiteLogins.saved": {
+    "defaultMessage": "Website login saved"
+  },
+  "websiteLogins.title": {
+    "defaultMessage": "Website Logins"
+  },
+  "websiteLogins.urlLabel": {
+    "defaultMessage": "Website"
+  },
+  "websiteLogins.urlPlaceholder": {
+    "defaultMessage": "https://github.com/login"
+  },
+  "websiteLogins.usernameLabel": {
+    "defaultMessage": "Username or email"
   }
 }

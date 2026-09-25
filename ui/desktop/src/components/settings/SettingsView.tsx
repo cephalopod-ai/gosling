@@ -23,6 +23,7 @@ import { useState, useEffect, useRef } from 'react';
 import ChatSettingsSection from './chat/ChatSettingsSection';
 import KeyboardShortcutsSection from './keyboard/KeyboardShortcutsSection';
 import AuthSettingsSection from './auth/AuthSettingsSection';
+import WebsiteLoginsSection from './auth/WebsiteLoginsSection';
 import SkillsView from '../skills/SkillsView';
 import ExtensionsView from '../extensions/ExtensionsView';
 import { CONFIGURATION_ENABLED } from '../../updates';
@@ -269,7 +270,10 @@ export default function SettingsView({
                   value="auth"
                   className="mt-0 focus-visible:outline-none focus-visible:ring-0"
                 >
-                  <AuthSettingsSection />
+                  <div className="space-y-4">
+                    <WebsiteLoginsSection />
+                    <AuthSettingsSection />
+                  </div>
                 </TabsContent>
 
                 <TabsContent

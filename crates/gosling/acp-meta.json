@@ -336,6 +336,21 @@
       "responseType": "EmptyResponse"
     },
     {
+      "method": "_gosling/unstable/website-logins/list",
+      "requestType": "WebsiteLoginListRequest_unstable",
+      "responseType": "WebsiteLoginListResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/website-logins/save",
+      "requestType": "WebsiteLoginSaveRequest_unstable",
+      "responseType": "WebsiteLoginSaveResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/website-logins/delete",
+      "requestType": "WebsiteLoginDeleteRequest_unstable",
+      "responseType": "EmptyResponse"
+    },
+    {
       "method": "_gosling/unstable/providers/canonical-model-info",
       "requestType": "CanonicalModelInfoRequest_unstable",
       "responseType": "CanonicalModelInfoResponse_unstable"

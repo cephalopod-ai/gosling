@@ -42,6 +42,8 @@ impl Agent {
             crate::permission::SkillAuthorityInspector::new(session_manager),
         ));
 
+        tool_inspection_manager.add_inspector(Box::new(crate::permission::WebsiteLoginInspector));
+
         tool_inspection_manager.add_inspector(Box::new(RepetitionInspector::new(Some(3))));
 
         tool_inspection_manager

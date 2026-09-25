@@ -26,6 +26,7 @@ vi.mock('./keyboard/KeyboardShortcutsSection', () => ({
   default: () => <div>Keyboard settings</div>,
 }));
 vi.mock('./auth/AuthSettingsSection', () => ({ default: () => <div>Auth settings</div> }));
+vi.mock('./auth/WebsiteLoginsSection', () => ({ default: () => <div>Website logins</div> }));
 vi.mock('../skills/SkillsView', () => ({
   default: ({ embedded }: { embedded?: boolean }) => (
     <div>Skills catalog {embedded ? 'embedded' : 'standalone'}</div>

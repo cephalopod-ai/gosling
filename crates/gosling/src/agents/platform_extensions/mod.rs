@@ -8,6 +8,7 @@ pub mod session_history;
 pub mod summarize;
 pub mod summon;
 pub mod todo;
+pub mod website_logins;
 
 use std::collections::HashMap;
 
@@ -92,6 +93,19 @@ pub static PLATFORM_EXTENSIONS: Lazy<HashMap<&'static str, PlatformExtensionDef>
                 unprefixed_tools: true,
                 hidden: false,
                 client_factory: |ctx| Box::new(session_history::SessionHistoryClient::new(ctx)),
+            },
+        );
+
+        map.insert(
+            website_logins::EXTENSION_NAME,
+            PlatformExtensionDef {
+                name: website_logins::EXTENSION_NAME,
+                display_name: "Website Logins",
+                description: "Let gosling sign in to websites with logins saved in Credentials, without seeing the passwords",
+                default_enabled: true,
+                unprefixed_tools: false,
+                hidden: false,
+                client_factory: |ctx| Box::new(website_logins::WebsiteLoginsClient::new(ctx).unwrap()),
             },
         );
 

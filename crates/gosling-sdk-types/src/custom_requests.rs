@@ -1990,6 +1990,69 @@ pub struct ProviderSecretCustomAddRequest {
     pub value: String,
 }
 
+/// A saved website login. The password itself is never sent to clients.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct WebsiteLoginDto {
+    pub id: String,
+    pub name: String,
+    pub url: String,
+    pub username: String,
+    pub has_password: bool,
+    /// What the agent writes where this login's password belongs.
+    pub placeholder: String,
+}
+
+/// List saved website logins.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_gosling/unstable/website-logins/list",
+    response = WebsiteLoginListResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct WebsiteLoginListRequest {}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct WebsiteLoginListResponse {
+    pub logins: Vec<WebsiteLoginDto>,
+}
+
+/// Create a website login, or update the one named by `id`. A password is
+/// required to create one; omitting it on update keeps the saved password.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_gosling/unstable/website-logins/save",
+    response = WebsiteLoginSaveResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct WebsiteLoginSaveRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    pub name: String,
+    pub url: String,
+    pub username: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub password: Option<String>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcResponse)]
+#[serde(rename_all = "camelCase")]
+pub struct WebsiteLoginSaveResponse {
+    pub login: WebsiteLoginDto,
+}
+
+/// Delete a website login and its saved password.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema, JsonRpcRequest)]
+#[request(
+    method = "_gosling/unstable/website-logins/delete",
+    response = EmptyResponse
+)]
+#[serde(rename_all = "camelCase")]
+pub struct WebsiteLoginDeleteRequest {
+    pub id: String,
+}
+
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CanonicalModelInfoDto {

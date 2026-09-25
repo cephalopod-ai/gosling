@@ -564,6 +564,30 @@ impl GoslingAcpAgent {
         self.on_add_custom_provider_secret(req).await
     }
 
+    #[custom_method(WebsiteLoginListRequest)]
+    async fn dispatch_list_website_logins(
+        &self,
+        req: WebsiteLoginListRequest,
+    ) -> Result<WebsiteLoginListResponse, agent_client_protocol::Error> {
+        self.on_list_website_logins(req).await
+    }
+
+    #[custom_method(WebsiteLoginSaveRequest)]
+    async fn dispatch_save_website_login(
+        &self,
+        req: WebsiteLoginSaveRequest,
+    ) -> Result<WebsiteLoginSaveResponse, agent_client_protocol::Error> {
+        self.on_save_website_login(req).await
+    }
+
+    #[custom_method(WebsiteLoginDeleteRequest)]
+    async fn dispatch_delete_website_login(
+        &self,
+        req: WebsiteLoginDeleteRequest,
+    ) -> Result<EmptyResponse, agent_client_protocol::Error> {
+        self.on_delete_website_login(req).await
+    }
+
     #[custom_method(CanonicalModelInfoRequest)]
     async fn dispatch_canonical_model_info(
         &self,

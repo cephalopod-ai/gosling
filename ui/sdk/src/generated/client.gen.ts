@@ -231,6 +231,11 @@ import type {
   UpdateSourceRequest_unstable,
   UpdateSourceResponse_unstable,
   UpdateWorkingDirRequest_unstable,
+  WebsiteLoginDeleteRequest_unstable,
+  WebsiteLoginListRequest_unstable,
+  WebsiteLoginListResponse_unstable,
+  WebsiteLoginSaveRequest_unstable,
+  WebsiteLoginSaveResponse_unstable,
   WorkspaceCreateOutputFolderRequest_unstable,
   WorkspaceCreateRequest_unstable,
   WorkspaceDeleteRequest_unstable,
@@ -341,6 +346,8 @@ import {
   zSummarizerModelsListResponse_unstable,
   zTransitionSessionProviderResponse_unstable,
   zUpdateSourceResponse_unstable,
+  zWebsiteLoginListResponse_unstable,
+  zWebsiteLoginSaveResponse_unstable,
   zWorkspaceDeleteResponse_unstable,
   zWorkspaceExportResponse_unstable,
   zWorkspaceListResponse_unstable,
@@ -1109,6 +1116,39 @@ export class GoslingExtClient {
   ): Promise<void> {
     await this.conn.extMethod(
       "_gosling/unstable/providers/secrets/custom/add",
+      params,
+    );
+  }
+
+  async websiteLoginsList_unstable(
+    params: WebsiteLoginListRequest_unstable,
+  ): Promise<WebsiteLoginListResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/website-logins/list",
+      params,
+    );
+    return zWebsiteLoginListResponse_unstable.parse(
+      raw,
+    ) as WebsiteLoginListResponse_unstable;
+  }
+
+  async websiteLoginsSave_unstable(
+    params: WebsiteLoginSaveRequest_unstable,
+  ): Promise<WebsiteLoginSaveResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/website-logins/save",
+      params,
+    );
+    return zWebsiteLoginSaveResponse_unstable.parse(
+      raw,
+    ) as WebsiteLoginSaveResponse_unstable;
+  }
+
+  async websiteLoginsDelete_unstable(
+    params: WebsiteLoginDeleteRequest_unstable,
+  ): Promise<void> {
+    await this.conn.extMethod(
+      "_gosling/unstable/website-logins/delete",
       params,
     );
   }
