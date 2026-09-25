@@ -22,7 +22,7 @@ const i18n = defineMessages({
   description: {
     id: 'websiteLogins.description',
     defaultMessage:
-      'Save a website with its username and password so gosling can sign in for you. The agent sees the website and username, never the password: you approve each sign-in, and gosling fills the password in itself.',
+      'Save a website with its username and password so gosling can sign in for you. The agent sees the website and username, never the password: gosling fills the password in itself, asking first unless you are in Auto mode.',
   },
   add: {
     id: 'websiteLogins.add',

@@ -5,10 +5,9 @@ use crate::website_logins;
 use anyhow::Result;
 use async_trait::async_trait;
 
-/// Requires the user to approve every call that asks Gosling to insert a saved
-/// website password. The prompt is mandatory in every mode because approval of
-/// that exact call is what authorizes the password to leave the secret store;
-/// dispatch refuses to insert it for any call the user did not confirm.
+/// Asks before a call that will receive a saved website password, naming the
+/// login's site and username. Like other advisory prompts it follows the
+/// session's approval mode, so Auto mode signs in without asking.
 pub struct WebsiteLoginInspector;
 
 #[async_trait]
@@ -19,10 +18,6 @@ impl ToolInspector for WebsiteLoginInspector {
 
     fn as_any(&self) -> &dyn std::any::Any {
         self
-    }
-
-    fn auto_downgrades_require_approval(&self) -> bool {
-        false
     }
 
     async fn inspect(
@@ -91,7 +86,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn placeholder_calls_require_mandatory_approval_in_auto_mode() {
+    async fn placeholder_calls_ask_with_the_login_named() {
         let inspector = WebsiteLoginInspector;
         let requests = [
             request("plain", json!({"value": "hello"})),
@@ -102,11 +97,11 @@ mod tests {
         ];
 
         let results = inspector
-            .inspect("session", &requests, &[], GoslingMode::Auto)
+            .inspect("session", &requests, &[], GoslingMode::SmartApprove)
             .await
             .unwrap();
 
-        assert!(!inspector.auto_downgrades_require_approval());
+        assert!(inspector.auto_downgrades_require_approval());
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].tool_request_id, "login");
         assert!(matches!(

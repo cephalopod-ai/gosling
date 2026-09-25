@@ -437,7 +437,7 @@ impl Agent {
             ToolCallResult::from(Err(error))
         } else {
             let mut dispatched_call = tool_call.clone();
-            match insert_website_login_passwords(&mut dispatched_call, user_confirmed) {
+            match insert_website_login_passwords(&mut dispatched_call, dispatch_origin) {
                 Err(error) => ToolCallResult::from(Err(error)),
                 Ok(passwords) => {
                     let result = self
@@ -523,12 +523,12 @@ impl Agent {
 }
 
 /// Inserts saved website passwords for `{{login:NAME}}` placeholders. Only a
-/// call the user confirmed for this exact request may receive one; the
-/// website-login inspector makes every such call prompt, so an unconfirmed
-/// call here came through a path without a prompt and is refused.
+/// model-proposed call receives one, because only those pass through the
+/// tool inspectors and the session's approval mode; nested code-mode calls and
+/// direct app calls bypass both and are refused.
 fn insert_website_login_passwords(
     tool_call: &mut CallToolRequestParams,
-    user_confirmed: bool,
+    dispatch_origin: crate::agents::interaction_policy::DispatchOrigin,
 ) -> Result<crate::website_logins::InsertedPasswords, ErrorData> {
     let Some(arguments) = tool_call.arguments.as_mut() else {
         return Ok(Default::default());
@@ -536,10 +536,13 @@ fn insert_website_login_passwords(
     if crate::website_logins::referenced_names(Some(arguments)).is_empty() {
         return Ok(Default::default());
     }
-    if !user_confirmed {
+    if !matches!(
+        dispatch_origin,
+        crate::agents::interaction_policy::DispatchOrigin::ModelNative
+    ) {
         return Err(ErrorData::new(
             ErrorCode::INVALID_REQUEST,
-            "Saved website passwords are inserted only into a tool call the user approved. Make the call directly so the user is asked to approve it.".to_string(),
+            "Saved website passwords are inserted only into a tool call made directly by the agent, not from code mode or another client. Make the call directly.".to_string(),
             None,
         ));
     }
@@ -585,6 +588,7 @@ fn redact_website_login_passwords(
 #[cfg(test)]
 mod website_login_tests {
     use super::*;
+    use crate::agents::interaction_policy::DispatchOrigin;
     use serde_json::json;
 
     fn call(arguments: serde_json::Value) -> CallToolRequestParams {
@@ -593,12 +597,12 @@ mod website_login_tests {
     }
 
     #[test]
-    fn unconfirmed_call_never_receives_a_saved_password() {
+    fn uninspected_call_never_receives_a_saved_password() {
         let mut tool_call = call(json!({"value": "{{login:Work GitHub}}"}));
 
-        let error = insert_website_login_passwords(&mut tool_call, false)
+        let error = insert_website_login_passwords(&mut tool_call, DispatchOrigin::CodeModeNested)
             .err()
-            .expect("unconfirmed placeholder must be refused");
+            .expect("uninspected placeholder must be refused");
 
         assert_eq!(error.code, ErrorCode::INVALID_REQUEST);
         assert_eq!(
@@ -611,7 +615,8 @@ mod website_login_tests {
     fn call_without_placeholder_is_left_untouched() {
         let mut tool_call = call(json!({"value": "plain text"}));
 
-        let inserted = insert_website_login_passwords(&mut tool_call, false).unwrap();
+        let inserted =
+            insert_website_login_passwords(&mut tool_call, DispatchOrigin::AppDirect).unwrap();
 
         assert!(inserted.is_empty());
         assert_eq!(tool_call.arguments.unwrap()["value"], json!("plain text"));

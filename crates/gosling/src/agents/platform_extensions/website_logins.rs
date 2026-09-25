@@ -34,9 +34,9 @@ impl WebsiteLoginsClient {
 
                 You never see a saved password. Wherever the password belongs in a tool call
                 (for example the value typed into a browser password field), write the
-                login's placeholder exactly, such as {{login:Work GitHub}}. Gosling asks the
-                user to approve that call, inserts the password, and removes it from the
-                tool's output. Use a placeholder only on the website it belongs to, never
+                login's placeholder exactly, such as {{login:Work GitHub}}. Gosling inserts
+                the password (asking the user first unless they are in Auto mode) and
+                removes it from the tool's output. Use a placeholder only on the website it belongs to, never
                 ask the user for a saved password, and never try to reveal one.
             "#}
                 .to_string(),

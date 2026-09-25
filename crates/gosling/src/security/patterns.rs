@@ -112,7 +112,10 @@ pub const THREAT_PATTERNS: &[ThreatPattern] = &[
     },
     ThreatPattern {
         name: "password_file_access",
-        pattern: r"(cat|grep|awk|sed).*(/etc/shadow|\.password)",
+        // Word-bounded and kept within one command: identifiers like
+        // `VerificationToken` and form fields like `LogOnDetails.Password`
+        // are not a read of a password file.
+        pattern: r#"\b(cat|grep|awk|sed)\b[^\n;&|]*(/etc/shadow|(^|[\s/'"])\.password\b)"#,
         description: "Password/shadow file access",
         risk_level: RiskLevel::High,
         category: ThreatCategory::DataExfiltration,
@@ -416,6 +419,28 @@ mod tests {
             .scan_for_patterns(input)
             .iter()
             .any(|m| m.threat.name == pattern_name)
+    }
+
+    #[test]
+    fn password_file_access_matches_real_password_file_reads() {
+        let pat = "password_file_access";
+        assert!(matches(pat, "cat /etc/shadow"));
+        assert!(matches(pat, "sudo grep root /etc/shadow | head"));
+        assert!(matches(pat, "awk -F: '{print $2}' /etc/shadow"));
+        assert!(matches(pat, "cat ~/.password"));
+        assert!(matches(pat, "sed -n 1p '.password'"));
+    }
+
+    #[test]
+    fn password_file_access_ignores_substrings_and_form_fields() {
+        let pat = "password_file_access";
+        assert!(!matches(
+            pat,
+            "if d.get('name')=='__RequestVerificationToken': self.token=d.get('value','')\n\
+             curl --data-urlencode 'LogOnDetails.Password={{login:HAC}}' \"$url\""
+        ));
+        assert!(!matches(pat, "concatenate x; echo LogOnDetails.Password"));
+        assert!(!matches(pat, "cat README.md\necho user.password"));
     }
 
     #[test]
