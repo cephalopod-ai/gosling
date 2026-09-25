@@ -1,6 +1,5 @@
 use crate::config::paths::Paths;
 use crate::conversation::message::{Message, MessageContent};
-use crate::mcp_utils::extract_text_from_resource;
 use crate::providers::api_client::{
     default_inference_client_builder, AuthProvider, RequestBuilderDecorator,
 };
@@ -20,16 +19,17 @@ use chrono::{DateTime, Utc};
 use futures::future::BoxFuture;
 use futures::{StreamExt, TryStreamExt};
 use gosling_providers::errors::ProviderError;
-use gosling_providers::formats::openai_responses::responses_api_to_streaming_message;
+use gosling_providers::formats::openai_responses::{
+    responses_api_to_streaming_message, tool_result_output,
+};
 use gosling_providers::model::ModelConfig;
 use jsonwebtoken::jwk::JwkSet;
 use jsonwebtoken::{decode, decode_header, DecodingKey, Validation};
-use rmcp::model::{Content, RawContent, Role, Tool};
+use rmcp::model::{Role, Tool};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::io;
 use std::net::SocketAddr;
-use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::{Arc, LazyLock};
 use tokio::pin;
@@ -257,43 +257,6 @@ fn build_input_items(messages: &[Message]) -> Result<Vec<Value>> {
     }
 
     Ok(items)
-}
-
-// Every function_call needs a matching function_call_output or the route rejects
-// the whole request, so non-text results must still produce an output.
-fn tool_result_output(content: &[Content]) -> Value {
-    let has_images = content
-        .iter()
-        .any(|c| matches!(c.deref(), RawContent::Image(_)));
-
-    if has_images {
-        return json!(content
-            .iter()
-            .map(|c| match c.deref() {
-                RawContent::Image(image) => json!({
-                    "type": "input_image",
-                    "image_url": format!("data:{};base64,{}", image.mime_type, image.data),
-                }),
-                other => json!({ "type": "input_text", "text": content_as_text(other) }),
-            })
-            .collect::<Vec<Value>>());
-    }
-
-    json!(content
-        .iter()
-        .map(|c| content_as_text(c.deref()))
-        .collect::<Vec<String>>()
-        .join("\n"))
-}
-
-fn content_as_text(content: &RawContent) -> String {
-    match content {
-        RawContent::Text(t) => t.text.clone(),
-        RawContent::Resource(r) => extract_text_from_resource(&r.resource),
-        RawContent::Image(_) => "[Image content]".into(),
-        RawContent::Audio(_) => "[Audio content]".into(),
-        RawContent::ResourceLink(_) => "[Resource link]".into(),
-    }
 }
 
 fn get_reasoning_effort(model_name: &str) -> String {

@@ -132,10 +132,11 @@ impl ToolInspector for WorkingDirScopeInspector {
             let out_of_scope =
                 match out_of_scope_path(&candidates.targets, &allowed_dirs, &scratch_dirs)? {
                     Some(path) => Some(path),
-                    None => out_of_scope_navigation(
+                    None => first_out_of_scope(
                         &candidates.navigation,
                         &allowed_dirs,
                         &scratch_dirs,
+                        true,
                     )?,
                 };
             let Some(path) = out_of_scope else {
@@ -292,16 +293,6 @@ fn temporary_scratch_dirs() -> Vec<PathBuf> {
         .into_iter()
         .filter(|dir| dir.parent().is_some())
         .collect()
-}
-
-fn canonical_path_is_within_any(canonical_path: &Path, dirs: &[PathBuf]) -> Result<bool> {
-    let canonical_dirs = canonical_allowed_dirs(dirs);
-    if canonical_dirs.is_empty() {
-        anyhow::bail!("no working directory could be canonicalized");
-    }
-    Ok(canonical_dirs
-        .iter()
-        .any(|dir| canonical_path.starts_with(dir)))
 }
 
 fn resolve(value: &str, working_dir: &Path) -> PathBuf {
@@ -1009,42 +1000,36 @@ fn out_of_scope_path(
     allowed_dirs: &[PathBuf],
     scratch_dirs: &[PathBuf],
 ) -> Result<Option<PathBuf>> {
+    first_out_of_scope(paths, allowed_dirs, scratch_dirs, false)
+}
+
+/// `scratch_roots_allowed` exempts the temporary directories themselves, which
+/// is only safe for `cd` targets: changing into one only moves where later
+/// relative writes land, and everything beneath it is already scratch.
+fn first_out_of_scope(
+    paths: &[PathBuf],
+    allowed_dirs: &[PathBuf],
+    scratch_dirs: &[PathBuf],
+    scratch_roots_allowed: bool,
+) -> Result<Option<PathBuf>> {
+    let canonical_allowed = canonical_allowed_dirs(allowed_dirs);
     for resolved in paths {
         let canonical_path = canonicalize_potential_path(resolved)?;
         // Compare resolved targets so a temp symlink cannot exempt an outside write.
-        // The temp directories themselves are not scratch entries.
-        if !scratch_dirs.contains(&canonical_path)
+        if (scratch_roots_allowed || !scratch_dirs.contains(&canonical_path))
             && scratch_dirs
                 .iter()
                 .any(|dir| canonical_path.starts_with(dir))
         {
             continue;
         }
-        if !canonical_path_is_within_any(&canonical_path, allowed_dirs)? {
-            return Ok(Some(canonical_path));
+        if canonical_allowed.is_empty() {
+            anyhow::bail!("no working directory could be canonicalized");
         }
-    }
-
-    Ok(None)
-}
-
-/// Like `out_of_scope_path`, but a `cd` into a temporary directory itself is
-/// fine: it only moves where later relative writes land, and everything
-/// beneath that directory is already scratch.
-fn out_of_scope_navigation(
-    paths: &[PathBuf],
-    allowed_dirs: &[PathBuf],
-    scratch_dirs: &[PathBuf],
-) -> Result<Option<PathBuf>> {
-    for resolved in paths {
-        let canonical_path = canonicalize_potential_path(resolved)?;
-        if scratch_dirs
+        if !canonical_allowed
             .iter()
             .any(|dir| canonical_path.starts_with(dir))
         {
-            continue;
-        }
-        if !canonical_path_is_within_any(&canonical_path, allowed_dirs)? {
             return Ok(Some(canonical_path));
         }
     }

@@ -136,6 +136,8 @@ const SCOPED_OPTION_IDS: Record<ScopedPermission, string> = {
   always_allow_folder: 'allow_always_folder',
 };
 
+const SCOPED_OPTION_ID_SET = new Set(Object.values(SCOPED_OPTION_IDS));
+
 function permissionOptionIdForAction(
   request: RequestPermissionRequest,
   action: Permission
@@ -154,8 +156,7 @@ function permissionOptionIdForAction(
   }
 
   return request.options.find(
-    (candidate) =>
-      candidate.kind === kind && !Object.values(SCOPED_OPTION_IDS).includes(candidate.optionId)
+    (candidate) => candidate.kind === kind && !SCOPED_OPTION_ID_SET.has(candidate.optionId)
   )?.optionId;
 }
 

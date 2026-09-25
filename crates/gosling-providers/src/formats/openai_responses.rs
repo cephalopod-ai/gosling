@@ -11,7 +11,7 @@ use anyhow::{anyhow, Error};
 use async_stream::try_stream;
 use chrono;
 use futures::Stream;
-use rmcp::model::{object, CallToolRequestParams, RawContent, Role, Tool};
+use rmcp::model::{object, CallToolRequestParams, Content, RawContent, Role, Tool};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::ops::Deref;
@@ -402,6 +402,44 @@ pub enum ContentPart {
     },
 }
 
+/// A `function_call_output` payload for a tool result: plain text, or content
+/// items when images are present. Every function call needs one, so a result
+/// with no text still produces an output.
+pub fn tool_result_output(content: &[Content]) -> Value {
+    let has_images = content
+        .iter()
+        .any(|c| matches!(c.deref(), RawContent::Image(_)));
+
+    if has_images {
+        return json!(content
+            .iter()
+            .map(|c| match c.deref() {
+                RawContent::Image(image) => json!({
+                    "type": "input_image",
+                    "image_url": format!("data:{};base64,{}", image.mime_type, image.data),
+                }),
+                other => json!({ "type": "input_text", "text": content_as_text(other) }),
+            })
+            .collect::<Vec<Value>>());
+    }
+
+    json!(content
+        .iter()
+        .map(|c| content_as_text(c.deref()))
+        .collect::<Vec<String>>()
+        .join("\n"))
+}
+
+fn content_as_text(content: &RawContent) -> String {
+    match content {
+        RawContent::Text(t) => t.text.clone(),
+        RawContent::Resource(r) => extract_text_from_resource(&r.resource),
+        RawContent::Image(_) => "[Image content]".into(),
+        RawContent::Audio(_) => "[Audio content]".into(),
+        RawContent::ResourceLink(_) => "[Resource link]".into(),
+    }
+}
+
 fn add_message_items(input_items: &mut Vec<Value>, messages: &[Message]) {
     for message in messages.iter().filter(|m| m.is_agent_visible()) {
         let role = match message.role {
@@ -481,56 +519,7 @@ fn add_message_items(input_items: &mut Vec<Value>, messages: &[Message]) {
 
                     match &response.tool_result {
                         Ok(contents) => {
-                            let has_images = contents
-                                .content
-                                .iter()
-                                .any(|c| matches!(c.deref(), RawContent::Image(_)));
-
-                            let output = if has_images {
-                                json!(contents
-                                    .content
-                                    .iter()
-                                    .map(|c| match c.deref() {
-                                        RawContent::Text(t) => json!({
-                                            "type": "input_text", "text": t.text
-                                        }),
-                                        RawContent::Resource(r) => json!({
-                                            "type": "input_text",
-                                            "text": extract_text_from_resource(&r.resource)
-                                        }),
-                                        RawContent::Image(image) => json!({
-                                            "type": "input_image",
-                                            "image_url": format!(
-                                                "data:{};base64,{}",
-                                                image.mime_type, image.data
-                                            )
-                                        }),
-                                        RawContent::Audio(_) => json!({
-                                            "type": "input_text", "text": "[Audio content]"
-                                        }),
-                                        RawContent::ResourceLink(_) => json!({
-                                            "type": "input_text", "text": "[Resource link]"
-                                        }),
-                                    })
-                                    .collect::<Vec<Value>>())
-                            } else {
-                                json!(contents
-                                    .content
-                                    .iter()
-                                    .filter_map(|c| match c.deref() {
-                                        RawContent::Text(t) => Some(t.text.clone()),
-                                        RawContent::Resource(r) => {
-                                            Some(extract_text_from_resource(&r.resource))
-                                        }
-                                        RawContent::Audio(_) => Some("[Audio content]".into()),
-                                        RawContent::ResourceLink(_) => {
-                                            Some("[Resource link]".into())
-                                        }
-                                        RawContent::Image(_) => None,
-                                    })
-                                    .collect::<Vec<String>>()
-                                    .join("\n"))
-                            };
+                            let output = tool_result_output(&contents.content);
 
                             input_items.push(json!({
                                 "type": "function_call_output",
