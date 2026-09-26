@@ -10,6 +10,7 @@ import {
   acpSetSessionProviderModel,
   type AppliedSessionProviderModel,
 } from '../acp/providers';
+import { describeAcpError } from '../acp/errors';
 import { errorMessage } from '../utils/conversionUtils';
 import {
   getModelDisplayName,
@@ -268,14 +269,15 @@ export const ModelAndProviderProvider: React.FC<ModelAndProviderProviderProps> =
         return true;
       } catch (error) {
         console.error(`Failed to change model at ${phase} step -- ${modelName} ${providerName}`);
+        const detail = describeAcpError(error);
         toastError({
           title: intl.formatMessage(i18n.modelChangeFailed, {
             provider: providerName,
             model: modelName,
           }),
           msg: sessionId
-            ? `${error}\n\n${intl.formatMessage(i18n.previousProviderRetained)}`
-            : `${error}`,
+            ? `${detail}\n\n${intl.formatMessage(i18n.previousProviderRetained)}`
+            : detail,
           traceback: errorMessage(error),
         });
         return false;

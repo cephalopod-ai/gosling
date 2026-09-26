@@ -5,6 +5,11 @@
 
 use super::*;
 
+/// Bounds the whole acknowledgement turn, not just model latency: a CLI-backed
+/// target cold-starts its process and runs the user's own prompt hooks (each
+/// capped by the CLI, commonly at 30s) before the model sees the checkpoint.
+const HANDOFF_ACKNOWLEDGEMENT_TIMEOUT: Duration = Duration::from_secs(120);
+
 async fn deliver_bootstrap_handoff(
     candidate: &Arc<dyn Provider>,
     model_config: &gosling_providers::model::ModelConfig,
@@ -18,7 +23,7 @@ async fn deliver_bootstrap_handoff(
             .with_visibility(false, true),
     ];
     let acknowledgement = tokio::time::timeout(
-        Duration::from_secs(30),
+        HANDOFF_ACKNOWLEDGEMENT_TIMEOUT,
         crate::session_context::with_session_id(
             Some(session_id.to_string()),
             candidate.complete(
@@ -33,7 +38,10 @@ async fn deliver_bootstrap_handoff(
     let acknowledgement = match acknowledgement {
         Ok(Ok((message, _))) => message,
         Ok(Err(error)) => anyhow::bail!("Checkpoint acknowledgement failed: {error}"),
-        Err(_) => anyhow::bail!("Checkpoint acknowledgement timed out after 30 seconds"),
+        Err(_) => anyhow::bail!(
+            "Checkpoint acknowledgement timed out after {} seconds",
+            HANDOFF_ACKNOWLEDGEMENT_TIMEOUT.as_secs()
+        ),
     };
     let acknowledgement_is_safe = acknowledgement.content.iter().all(|content| {
         matches!(
