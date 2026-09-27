@@ -66,6 +66,13 @@ gosling also provides Desktop workspace credential profiles and a session **Outp
 inventory. In `v1.2.2`, **Hide repository files** hides files within confirmed repository directories. See [Workspaces and Outputs](documentation/docs/guides/workspaces.md#product-outputs-and-exports)
 for extension settings, previews, and filter behavior.
 
+The repository now declares version `1.3.0`. The current source adds **Website Logins** under
+**Settings → Credentials**: the agent receives a named placeholder instead of the password, while
+gosling checks the destination origin, substitutes the secret only for the approved tool call, and
+redacts it from returned tool content. Folder-specific permission prompts can also grant access for
+the current session or add a durable trusted folder. See the [v1.3.0 source notes](documentation/docs/release-notes/v1.3.0.md)
+and [Website logins manual](documentation/docs/guides/website-logins.md).
+
 `v1.2.3` adds file timestamps, workspace unread-chat indicators, output contributor/revision history,
 and a separate **Copy contents** action for complete text documents. It also fixes modal layering
 and unnecessary workspace approval prompts for ordinary temporary scratch files.
@@ -177,16 +184,13 @@ updater, and clean-machine matrix were not rerun. Host-enforced planning, Contex
 Recall Brief action landed after that playtest, so they carry their own focused automated evidence
 rather than live 127-card coverage.
 
-Current source candidate: `v1.2.5`. See the
-[v1.2.5 release notes](documentation/docs/release-notes/v1.2.5.md) for Full Session Handoff
-continuity, Safe-by-default crash recovery, multiline prompt composition, output-preview repairs,
-the ACP-only architecture cleanup, host-enforced planning, Context History, the Recall Brief action,
-and the 2026-09-13 through 2026-09-15 audit repairs since `v1.2.4`. It has not been
-tagged or published. The latest published GitHub release is named `v1.2.4` and is attached to the
-historical `release_v1.2.4` tag; the matching annotated `v1.2.4` tag identifies the same source
-commit but has no release object. These tags are preserved rather than moved. Local packaging and
-installation do not complete the maintainer-owned signing, artifact, clean-machine, or publication
-gates in the [release checklist](RELEASE_CHECKLIST.md).
+Current source version: `1.3.0`. See the
+[v1.3.0 source notes](documentation/docs/release-notes/v1.3.0.md) for website logins,
+folder-scoped approvals, provider metadata updates, and handoff reliability improvements. The
+version declared in source does not by itself prove that signed artifacts or a GitHub release were
+published. Confirm artifact availability on the release page; local packaging and installation do
+not complete the maintainer-owned signing, clean-machine, or publication gates in the
+[release checklist](RELEASE_CHECKLIST.md).
 
 ## Known limits
 
@@ -230,7 +234,8 @@ for configuration, trust, and removal guidance.
 ## Quick links
 
 - [Documentation index](documentation/INDEX.md) - user manuals, architecture, publishing, and stewardship
-- [v1.2.5 source-candidate notes](documentation/docs/release-notes/v1.2.5.md), [v1.2.4 release notes](documentation/docs/release-notes/v1.2.4.md), and [release-note archive](documentation/docs/release-notes/)
+- [v1.3.0 source notes](documentation/docs/release-notes/v1.3.0.md), [v1.2.5 source-candidate notes](documentation/docs/release-notes/v1.2.5.md), and [release-note archive](documentation/docs/release-notes/)
+- [Website logins](documentation/docs/guides/website-logins.md)
 - [Release process](RELEASE.md) and [release checklist](RELEASE_CHECKLIST.md)
 - [Context History and compaction](documentation/docs/guides/sessions/smart-context-management.md#context-history) and [CLI commands](documentation/docs/guides/gosling-cli-commands.md)
 - [Known issues](documentation/docs/troubleshooting/known-issues.md)

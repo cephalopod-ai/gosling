@@ -22,6 +22,7 @@ This file is the durable map for the repository's documentation surface.
 - [smart context management and Context History](./docs/guides/sessions/smart-context-management.md)
 - [gosling CLI commands](./docs/guides/gosling-cli-commands.md)
 - [workspaces guide](./docs/guides/workspaces.md)
+- [website logins](./docs/guides/website-logins.md)
 - [Goose and gosling feature comparison](./docs/guides/goose-comparison.md) — Goose v1.50.1 / gosling v1.2.5 source, checked 2026-09-16
 - [historical Goose v1.47 compatibility record](./docs/guides/goose-v1-47-compatibility.md)
 - [troubleshooting](./docs/troubleshooting/)
@@ -32,6 +33,7 @@ This file is the durable map for the repository's documentation surface.
 - [v1.2.3 local build notes](./docs/release-notes/v1.2.3.md)
 - [v1.2.4 release notes](./docs/release-notes/v1.2.4.md)
 - [v1.2.5 source-candidate notes](./docs/release-notes/v1.2.5.md)
+- [v1.3.0 source notes](./docs/release-notes/v1.3.0.md)
 - [release-note archive](./docs/release-notes/)
 - [tutorials](./docs/tutorials/)
 - [experimental](./docs/experimental/)
@@ -65,7 +67,7 @@ This file is the durable map for the repository's documentation surface.
 - Root `README.md` is the product entry point; `documentation/README.md` is the docs-site build and publishing guide.
 - Session-share deep links are documented with the `gosling://` scheme only. Legacy `goose://` share-link compatibility is not part of the current docs contract.
 - Durable documentation governance artifacts currently live in this directory as point-in-time records rather than a full log/archive program.
-- The current source candidate is `v1.2.5` as of 2026-09-15, and now also carries host-enforced planning, the Context History compaction ledger, and the opt-in Recall Brief ACP action. The latest published GitHub release is named `v1.2.4` and uses the historical `release_v1.2.4` tag. The local arm64 package/install passed version, hash, and ad-hoc signature checks, but UI launch remained blocked in macOS Keychain before renderer creation. Local packaging and installation do not complete the separate tagging, distributable signing/notarization, clean-machine, publication, or updater-promotion gates; see [the release process](../RELEASE.md).
+- The repository currently declares version `1.3.0`; see the [v1.3.0 source notes](./docs/release-notes/v1.3.0.md). Source-version changes and local packaging do not establish publication or signed-artifact availability; verify those separately through the release page and [release process](../RELEASE.md).
 
 ## follow-up disposition
 
