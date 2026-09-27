@@ -213,7 +213,7 @@ fn apply_line_limit(content: &str, line: Option<u32>, limit: Option<u32>) -> Str
 }
 
 pub fn resolve_path(path: &str, working_dir: Option<&Path>) -> PathBuf {
-    let path = PathBuf::from(path);
+    let path = PathBuf::from(&*shellexpand::tilde(path));
     if path.is_absolute() {
         path
     } else {
@@ -295,6 +295,18 @@ mod tests {
             RawContent::Text(text) => &text.text,
             _ => panic!("expected text"),
         }
+    }
+
+    #[test]
+    fn resolve_path_expands_home_before_applying_working_directory() {
+        let home = dirs::home_dir().expect("test requires a home directory");
+        let working_dir = Path::new("/unrelated/working/directory");
+
+        assert_eq!(
+            resolve_path("~/deliverables/report.docx", Some(working_dir)),
+            home.join("deliverables/report.docx")
+        );
+        assert_eq!(resolve_path("~", Some(working_dir)), home);
     }
 
     #[test_case(None, None, "line1\nline2\nline3" ; "full content")]
