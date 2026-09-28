@@ -419,6 +419,8 @@ Create a complete copy of any session to reuse configurations, experiment with v
     </TabItem>
 </Tabs>
 
+An imported session starts in Manual Approval (`approve`) mode with tools restricted to its working directory, because its history comes from outside this gosling instance. Switch the mode with `/mode` in the CLI or the mode selector in Desktop once you trust the session.
+
 ## Export Sessions
 
 <Tabs groupId="interface">

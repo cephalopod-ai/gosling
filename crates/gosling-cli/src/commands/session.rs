@@ -686,6 +686,15 @@ pub async fn handle_session_import(
         gosling::session::session_manager::SessionImportOutcome::Imported(session) => {
             println!("Session imported:");
             println!("{} - {}", session.id, session.name);
+            println!(
+                "Mode: {}{}. Change the mode with /mode after resuming.",
+                session.gosling_mode,
+                if session.restrict_tools_to_working_dirs {
+                    ", tools restricted to its working directory"
+                } else {
+                    ""
+                }
+            );
         }
         gosling::session::session_manager::SessionImportOutcome::AlreadyImported(session) => {
             println!("Session already imported from this exact source:");

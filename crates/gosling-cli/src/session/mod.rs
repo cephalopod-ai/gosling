@@ -1474,8 +1474,7 @@ impl CliSession {
                             }
                             if let Some((id, security_prompt)) = find_tool_confirmation(&message) {
                                 if !interactive {
-                                    let config = Config::global();
-                                    let gosling_mode = config.get_gosling_mode().unwrap_or_default();
+                                    let gosling_mode = self.agent.gosling_mode().await;
                                     self.agent.handle_confirmation(id.clone(), PermissionConfirmation {
                                         principal_type: PrincipalType::Tool,
                                         permission: non_interactive_confirmation_permission(),

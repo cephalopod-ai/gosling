@@ -68,6 +68,31 @@ fn serve(mut stream: TcpStream, chat_requests: &AtomicUsize) {
                 "application/json",
                 "{\"error\":{\"message\":\"forced provider failure\"}}".to_string(),
             )
+        } else if body.contains("C11-CALL-TREE")
+            && body.contains("\"tools\"")
+            && body.contains("\"stream\":true")
+        {
+            let tool_call = serde_json::json!({
+                "id": "r",
+                "object": "chat.completion.chunk",
+                "created": 0,
+                "model": "gpt-4o",
+                "choices": [{
+                    "index": 0,
+                    "delta": {"role": "assistant", "tool_calls": [{
+                        "index": 0,
+                        "id": "call_c11",
+                        "type": "function",
+                        "function": {"name": "tree", "arguments": "{\"path\": \".\"}"},
+                    }]},
+                    "finish_reason": "tool_calls",
+                }],
+            });
+            (
+                "200 OK",
+                "text/event-stream",
+                format!("data: {tool_call}\n\ndata: [DONE]\n\n"),
+            )
         } else if body.contains("\"stream\":true") {
             let chunk = |delta: &str, finish: &str| {
                 format!(
@@ -578,5 +603,52 @@ fn corrupt_permission_policy_is_reported_instead_of_panicking() {
             policy.display()
         )),
         "stderr: {stderr}"
+    );
+}
+
+/// GSL-PT-20260927-C11 / E-N4: the non-interactive denial named the configured
+/// default mode, not the mode stored on the session that actually asked.
+#[test]
+fn non_interactive_denial_names_the_sessions_own_mode() {
+    let env = Env::new();
+    let cwd = env.root.path();
+    let created = env
+        .command(cwd, &["run", "-n", "c11", "-t", "hi"])
+        .env("GOSLING_MODE", "approve")
+        .output()
+        .unwrap();
+    assert!(created.status.success());
+
+    let denied = env
+        .command(cwd, &["run", "-r", "-n", "c11", "-t", "C11-CALL-TREE"])
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap();
+
+    let stderr = String::from_utf8_lossy(&denied.stderr);
+    assert!(!denied.status.success(), "stderr: {stderr}");
+    assert!(
+        stderr.contains("Tool approval required in non-interactive mode with GoslingMode::approve"),
+        "stderr: {stderr}"
+    );
+}
+
+/// GSL-PT-20260927-C11: imports start in approve mode with tools restricted to
+/// their working directory; the command must say so.
+#[test]
+fn import_reports_the_imported_sessions_mode() {
+    let env = Env::new();
+    let cwd = env.root.path();
+    let created = env.run_ok(cwd, &["run", "-n", "to-export", "-t", "hi"]);
+    let exported = env.export(&banner_session_id(&created));
+    let file = env.root.path().join("export.json");
+    std::fs::write(&file, exported.to_string()).unwrap();
+
+    let imported = env.run_ok(cwd, &["session", "import", file.to_str().unwrap()]);
+
+    let stdout = String::from_utf8_lossy(&imported.stdout);
+    assert!(
+        stdout.contains("Mode: approve, tools restricted to its working directory"),
+        "stdout: {stdout}"
     );
 }
