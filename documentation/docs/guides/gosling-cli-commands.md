@@ -529,7 +529,7 @@ Execute commands from an instruction file or stdin. Check out the [full guide](/
 - **`--max-tool-repetitions <NUMBER>`**: Maximum number of times the same tool can be called consecutively with identical parameters (default: 3). Further repeats are refused; a run that keeps repeating refused calls stops after three refusals and exits non-zero. Helps prevent infinite loops
 - **`--max-turns <NUMBER>`**: Maximum number of turns allowed without user input (default: 1000)
 - **`-q, --quiet`**: Quiet mode. Suppress non-response output, printing only the model response to stdout: the banner, tool calls, tool output and status notices are left out, and the text of a provider failure goes to stderr
-- **`--output-format <FORMAT>`**: Output format (`text`, `json`, or `stream-json`). Default is `text`. Use JSON structured output for automation and scripting: `json` for results after completion, `stream-json` for events as they occur
+- **`--output-format <FORMAT>`**: Output format (`text`, `json`, or `stream-json`). Default is `text`. Use JSON structured output for automation and scripting: `json` for results after completion, `stream-json` for events as they occur. Error messages are written to stderr in every format; a run that cannot start (for example an unknown provider or a session that does not exist) writes nothing to stdout and exits non-zero
 - **`--provider`**: Specify the provider to use for this session (overrides environment variable)
 - **`--model`**: Specify the model to use for this session (overrides environment variable)
 

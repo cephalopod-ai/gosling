@@ -326,3 +326,56 @@ fn text_mode_still_shows_tool_cards_and_output() {
     assert!(stdout.contains("tool-output-marker\n"), "{stdout}");
     assert!(stdout.contains("AFTER-TOOL"), "{stdout}");
 }
+
+/// GSL-PT-20260927-A16 / F02: a run that failed before its first turn printed a
+/// human error on stdout, even for `--output-format json|stream-json`, and
+/// nothing on stderr.
+#[test]
+fn a_run_that_cannot_start_reports_on_stderr_and_leaves_stdout_empty() {
+    let env = Env::new();
+
+    for args in [
+        vec!["--output-format", "text"],
+        vec!["--output-format", "json"],
+        vec!["--output-format", "stream-json"],
+        vec!["-q"],
+    ] {
+        let mut run = vec!["run", "--provider", "bogus-prov", "-t", "hi"];
+        run.extend(args.iter().copied());
+        let output = env.gosling(&run);
+
+        assert!(!output.status.success(), "{args:?}");
+        assert_eq!(stdout(&output), "", "{args:?}");
+        assert!(
+            stderr(&output).contains("error: Unknown provider: bogus-prov."),
+            "{args:?}: {}",
+            stderr(&output)
+        );
+    }
+}
+
+/// GSL-PT-20260927-E14: resuming a session that does not exist printed the
+/// error on stdout.
+#[test]
+fn resuming_a_session_that_does_not_exist_fails_on_stderr() {
+    let env = Env::new();
+
+    let output = env.gosling(&[
+        "run",
+        "--output-format",
+        "json",
+        "-r",
+        "--session-id",
+        "20990101_99",
+        "-t",
+        "x",
+    ]);
+
+    assert!(!output.status.success());
+    assert_eq!(stdout(&output), "");
+    assert!(
+        stderr(&output).contains("Cannot resume session 20990101_99 - no such session exists"),
+        "{}",
+        stderr(&output)
+    );
+}

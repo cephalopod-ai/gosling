@@ -821,8 +821,14 @@ fn is_file_tool_name(name: &str) -> bool {
     matches!(name, "write" | "edit")
 }
 
+/// Errors go to stderr so stdout only ever carries the transcript, the reply (`--quiet`) or
+/// JSON (`--output-format json|stream-json`).
 pub fn render_error(message: &str) {
-    println!("\n  {} {}\n", style("error:").red().bold(), message);
+    anstream::eprintln!(
+        "\n  {} {}\n",
+        style("error:").for_stderr().red().bold(),
+        message
+    );
 }
 
 pub fn render_prompts(prompts: &HashMap<String, Vec<String>>) {

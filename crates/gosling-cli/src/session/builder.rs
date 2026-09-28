@@ -904,13 +904,13 @@ fn is_secret_storage_error(e: &anyhow::Error) -> bool {
 fn format_provider_creation_error(e: &anyhow::Error) -> String {
     if is_secret_storage_error(e) {
         format!(
-            "Error {e}.\n\
+            "{e}.\n\
              Please check your system keychain and run 'gosling configure' again.\n\
              If your system is unable to use the keyring, please try setting secret key(s) via environment variables.\n\
              For more info, see: https://gosling-docs.ai/docs/troubleshooting/#keychainkeyring-errors"
         )
     } else {
-        format!("Error {e}.")
+        format!("{e}.")
     }
 }
 
@@ -941,6 +941,14 @@ mod tests {
         let rendered = format_provider_creation_error(&unrelated);
         assert!(!rendered.contains("system keychain"));
         assert!(rendered.contains("not offered by agent"));
+    }
+
+    #[test]
+    fn provider_creation_errors_carry_no_second_error_label() {
+        assert_eq!(
+            format_provider_creation_error(&anyhow::anyhow!("Unknown provider: bogus-prov")),
+            "Unknown provider: bogus-prov."
+        );
     }
 
     #[test]

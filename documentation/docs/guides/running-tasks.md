@@ -173,6 +173,8 @@ The JSON output includes:
 - Tool outputs and any errors
 - Structured data suitable for parsing by scripts and CI/CD pipelines
 
+Error messages always go to stderr, so stdout stays parseable. A run that cannot start (for example an unknown provider or a session that does not exist) writes nothing to stdout and exits with a non-zero status.
+
 ## Common Use Cases
 
 ### Running Script Files
