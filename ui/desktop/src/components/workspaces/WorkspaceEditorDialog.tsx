@@ -133,6 +133,7 @@ export function WorkspaceEditorDialog({
     }
   }, [open, workspace]);
 
+  const isNewDraft = !workspace;
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
@@ -144,13 +145,27 @@ export function WorkspaceEditorDialog({
         // SwitchModelModal): only providers the user has actually set up are real
         // choices here. Anything else is reached through "Configure other providers"
         // instead of a long, mostly-inapplicable list of "— setup required" entries.
-        setProviders(
-          items
-            .filter((item) => item.is_configured)
-            .sort((left, right) =>
-              left.metadata.display_name.localeCompare(right.metadata.display_name)
-            )
-        );
+        const configured = items
+          .filter((item) => item.is_configured)
+          .sort((left, right) =>
+            left.metadata.display_name.localeCompare(right.metadata.display_name)
+          );
+        setProviders(configured);
+        // Selecting a provider lists its models at once, and listing an
+        // unconfigured OAuth provider can start its sign-in, so the preferred
+        // default only applies once the inventory says it is set up.
+        if (isNewDraft && configured.some((item) => item.name === DEFAULT_WORKSPACE_PROVIDER)) {
+          setDraft((current) =>
+            current.defaultProvider
+              ? current
+              : {
+                  ...current,
+                  defaultProvider: DEFAULT_WORKSPACE_PROVIDER,
+                  defaultModel: DEFAULT_WORKSPACE_MODEL,
+                  defaultThinkingEffort: DEFAULT_WORKSPACE_EFFORT,
+                }
+          );
+        }
       })
       .catch((cause) => {
         if (!cancelled) {
@@ -160,7 +175,7 @@ export function WorkspaceEditorDialog({
     return () => {
       cancelled = true;
     };
-  }, [open]);
+  }, [isNewDraft, open]);
 
   useEffect(() => {
     const providerId = draft.defaultProvider;
@@ -1192,9 +1207,9 @@ function createDraft(workspace?: Workspace | null): WorkspaceMutation {
     ],
     credentialBindings: [],
     defaultCredentialBindingId: null,
-    defaultProvider: DEFAULT_WORKSPACE_PROVIDER,
-    defaultModel: DEFAULT_WORKSPACE_MODEL,
-    defaultThinkingEffort: DEFAULT_WORKSPACE_EFFORT,
+    defaultProvider: null,
+    defaultModel: null,
+    defaultThinkingEffort: null,
   };
 }
 

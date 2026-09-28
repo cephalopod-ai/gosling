@@ -49,7 +49,9 @@ silently switch the session to another account.
 ## Create a workspace
 
 1. Select **Add workspace** next to the Workspaces heading.
-2. Enter a name and, optionally, a description, icon label, provider, and model.
+2. Enter a name and, optionally, a description, icon label, provider, and model. Only providers
+   you have set up are offered. A new workspace starts on **Use app default**, or on ChatGPT Codex
+   `gpt-5.6-terra` with medium effort when ChatGPT Codex is already signed in.
 3. Choose the primary working folder.
 4. Add source or reference folders as needed and choose **Read only** or **Read/write** for each.
 5. Add one or more product output destinations. Assign product types and select exactly one default

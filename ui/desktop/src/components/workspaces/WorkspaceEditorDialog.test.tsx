@@ -168,7 +168,7 @@ describe('WorkspaceEditorDialog', () => {
     });
   });
 
-  it('preselects Codex Terra with medium effort in ~/Work for new drafts', async () => {
+  it('preselects Codex Terra with medium effort in ~/Work for new drafts when Codex is configured', async () => {
     render(<WorkspaceEditorDialog open onOpenChange={vi.fn()} />, {
       wrapper: TestWrapper,
     });
@@ -181,6 +181,64 @@ describe('WorkspaceEditorDialog', () => {
     expect(screen.getByLabelText('Default model (optional)')).toHaveValue('gpt-5.6-terra');
     expect(screen.getByLabelText('Default reasoning effort (optional)')).toHaveValue('medium');
     expect(screen.queryByRole('option', { name: 'Ultra' })).not.toBeInTheDocument();
+  });
+
+  it('starts new drafts on the app default and lists no models while ChatGPT Codex is not configured', async () => {
+    const user = userEvent.setup();
+    vi.mocked(acpListProviderDetails).mockResolvedValueOnce([
+      {
+        name: 'chatgpt_codex',
+        is_configured: false,
+        manages_own_context: false,
+        provider_type: 'Preferred',
+        metadata: {
+          name: 'chatgpt_codex',
+          display_name: 'ChatGPT Codex',
+          description: 'Codex via ChatGPT',
+          default_model: 'gpt-5.6-sol',
+          known_models: [],
+          model_doc_link: '',
+          config_keys: [],
+        },
+      },
+      {
+        name: 'local_fast',
+        is_configured: true,
+        manages_own_context: false,
+        provider_type: 'Custom',
+        metadata: {
+          name: 'local_fast',
+          display_name: 'Local Fast',
+          description: 'Local non-reasoning provider',
+          default_model: 'fast-model',
+          known_models: [],
+          model_doc_link: '',
+          config_keys: [],
+        },
+      },
+    ]);
+
+    render(<WorkspaceEditorDialog open onOpenChange={vi.fn()} />, {
+      wrapper: TestWrapper,
+    });
+
+    expect(await screen.findByRole('option', { name: 'Local Fast' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Default provider (optional)')).toHaveValue('');
+    expect(screen.queryByRole('option', { name: 'chatgpt_codex' })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Default model (optional)')).toBeDisabled();
+
+    await user.type(screen.getByLabelText('Name'), 'App default');
+    await user.click(screen.getByRole('button', { name: 'Save workspace' }));
+
+    expect(validateWorkspace).toHaveBeenCalledWith(
+      expect.objectContaining({
+        defaultProvider: null,
+        defaultModel: null,
+        defaultThinkingEffort: null,
+      }),
+      undefined
+    );
+    expect(acpListProviderModels).not.toHaveBeenCalled();
   });
 
   it('uses the directory chooser and submits folders plus product outputs', async () => {
@@ -388,12 +446,33 @@ describe('WorkspaceEditorDialog', () => {
   it('keeps a provider-list failure visible when model loading succeeds', async () => {
     vi.mocked(acpListProviderDetails).mockRejectedValueOnce(new Error('inventory unavailable'));
 
+    render(
+      <WorkspaceEditorDialog
+        open
+        workspace={{
+          ...activeWorkspace,
+          defaultProvider: 'chatgpt_codex',
+          defaultModel: 'gpt-5.6-terra',
+        }}
+        onOpenChange={vi.fn()}
+      />,
+      { wrapper: TestWrapper }
+    );
+
+    expect(await screen.findByText('inventory unavailable')).toBeInTheDocument();
+    expect(await screen.findByRole('option', { name: 'gpt-5.6-terra' })).toBeInTheDocument();
+  });
+
+  it('does not preselect ChatGPT Codex for a new draft when the provider list is unavailable', async () => {
+    vi.mocked(acpListProviderDetails).mockRejectedValueOnce(new Error('inventory unavailable'));
+
     render(<WorkspaceEditorDialog open onOpenChange={vi.fn()} />, {
       wrapper: TestWrapper,
     });
 
     expect(await screen.findByText('inventory unavailable')).toBeInTheDocument();
-    expect(await screen.findByRole('option', { name: 'gpt-5.6-terra' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Default provider (optional)')).toHaveValue('');
+    expect(acpListProviderModels).not.toHaveBeenCalled();
   });
 
   it('updates an existing workspace without creating a replacement', async () => {
