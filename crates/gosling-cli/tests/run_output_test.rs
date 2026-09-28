@@ -202,7 +202,12 @@ impl Env {
     }
 
     fn gosling(&self, args: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_gosling"))
+        self.command(args).output().unwrap()
+    }
+
+    fn command(&self, args: &[&str]) -> Command {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_gosling"));
+        command
             .args(args)
             .current_dir(self.root.path().join("work"))
             .env("GOSLING_PATH_ROOT", self.root.path())
@@ -212,8 +217,8 @@ impl Env {
             .env_remove("GOSLING_MODE")
             .env_remove("GOSLING_PROVIDER")
             .env_remove("GOSLING_MODEL")
-            .output()
-            .unwrap()
+            .env_remove("GOSLING_CODE_EXECUTION_RUNTIME");
+        command
     }
 }
 
@@ -477,4 +482,38 @@ fn stats_are_printed_on_stderr_in_every_output_format() {
     let text = env.gosling(&["run", "--stats", "-t", "hi"]);
     assert!(stderr(&text).contains("Stats:"), "{}", stderr(&text));
     assert!(!stdout(&text).contains("Stats:"), "{}", stdout(&text));
+}
+
+/// GSL-PT-20260927-E11: the Code Mode gate said the runtime was "disabled by
+/// GOSLING_CODE_EXECUTION_RUNTIME=disabled" also when the variable was unset
+/// or held a value that is not a runtime setting.
+#[test]
+fn the_code_mode_gate_names_the_actual_setting() {
+    let env = Env::new();
+    let gate = |value: Option<&str>| {
+        let mut command = env.command(&["run", "--with-builtin", "code_execution", "-t", "hi"]);
+        if let Some(value) = value {
+            command.env("GOSLING_CODE_EXECUTION_RUNTIME", value);
+        }
+        let output = command.output().unwrap();
+        assert!(!output.status.success(), "{value:?}");
+        stderr(&output)
+    };
+
+    let unset = gate(None);
+    assert!(
+        unset.contains("GOSLING_CODE_EXECUTION_RUNTIME is not set"),
+        "{unset}"
+    );
+    assert!(!unset.contains("=disabled"), "{unset}");
+
+    let invalid = gate(Some("bogus"));
+    assert!(invalid.contains("bogus"), "{invalid}");
+    assert!(!invalid.contains("=disabled"), "{invalid}");
+
+    let disabled = gate(Some("disabled"));
+    assert!(
+        disabled.contains("disabled by GOSLING_CODE_EXECUTION_RUNTIME=disabled"),
+        "{disabled}"
+    );
 }

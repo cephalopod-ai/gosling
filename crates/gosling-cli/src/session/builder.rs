@@ -6,8 +6,8 @@ use console::style;
 use gosling::agents::{Agent, AgentConfig, Container, ExtensionError, GoslingPlatform};
 use gosling::config::extensions::name_to_key;
 use gosling::config::{
-    ignored_legacy_model, ignored_legacy_provider, Config, ExtensionConfig, GoslingMode,
-    PermissionManager,
+    ignored_legacy_model, ignored_legacy_provider, CodeExecutionRuntime, Config, ConfigError,
+    ExtensionConfig, GoslingMode, PermissionManager,
 };
 use gosling::config::{
     resolve_extensions_for_new_session, resolve_extensions_for_new_session_for_cwd,
@@ -584,12 +584,9 @@ async fn collect_extension_configs(
                 .split(',')
                 .any(|name| name_to_key(name.trim()) == "code_execution")
             {
-                return Err(ExtensionError::ConfigError(
-                    "Cannot start '--with-builtin code_execution': code execution runtime is \
-                     disabled by GOSLING_CODE_EXECUTION_RUNTIME=disabled. Set it to enabled and \
-                     restart Gosling to use Code Mode."
-                        .to_string(),
-                ));
+                return Err(ExtensionError::ConfigError(code_mode_unavailable(
+                    Config::global().get_gosling_code_execution_runtime(),
+                )));
             }
         }
     }
@@ -604,6 +601,27 @@ async fn collect_extension_configs(
     all.extend(cli_flag_extensions.into_iter().map(|(_, cfg)| cfg));
 
     Ok(all)
+}
+
+/// Why `--with-builtin code_execution` cannot start, given the runtime setting as read. The
+/// runtime is disabled when the setting is absent or unreadable too, not only when it says so.
+fn code_mode_unavailable(setting: Result<CodeExecutionRuntime, ConfigError>) -> String {
+    let cause = match setting {
+        Ok(_) => "the code execution runtime is disabled by GOSLING_CODE_EXECUTION_RUNTIME=disabled"
+            .to_string(),
+        Err(ConfigError::NotFound(_)) => {
+            "the code execution runtime is off by default and GOSLING_CODE_EXECUTION_RUNTIME is not set"
+                .to_string()
+        }
+        Err(error) => format!(
+            "GOSLING_CODE_EXECUTION_RUNTIME is set to a value Gosling cannot use ({error}), so the \
+             code execution runtime stays disabled"
+        ),
+    };
+    format!(
+        "Cannot start '--with-builtin code_execution': {cause}. Set \
+         GOSLING_CODE_EXECUTION_RUNTIME=enabled and restart Gosling to use Code Mode."
+    )
 }
 
 async fn resolve_and_load_extensions(
@@ -950,6 +968,28 @@ mod tests {
             format_provider_creation_error(&anyhow::anyhow!("Unknown provider: bogus-prov")),
             "Unknown provider: bogus-prov."
         );
+    }
+
+    #[test]
+    fn the_code_mode_gate_names_why_the_runtime_is_off() {
+        let disabled = code_mode_unavailable(Ok(CodeExecutionRuntime::Disabled));
+        assert!(disabled.contains("disabled by GOSLING_CODE_EXECUTION_RUNTIME=disabled"));
+
+        let unset = code_mode_unavailable(Err(ConfigError::NotFound(
+            "GOSLING_CODE_EXECUTION_RUNTIME".into(),
+        )));
+        assert!(unset.contains("off by default and GOSLING_CODE_EXECUTION_RUNTIME is not set"));
+        assert!(!unset.contains("=disabled"));
+
+        let invalid = code_mode_unavailable(Err(ConfigError::DeserializeError(
+            "unknown variant `bogus`".into(),
+        )));
+        assert!(invalid.contains("unknown variant `bogus`"));
+        assert!(!invalid.contains("=disabled"));
+
+        for message in [disabled, unset, invalid] {
+            assert!(message.contains("Set GOSLING_CODE_EXECUTION_RUNTIME=enabled"));
+        }
     }
 
     #[test]
