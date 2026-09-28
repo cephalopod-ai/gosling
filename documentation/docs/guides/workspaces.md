@@ -24,6 +24,12 @@ A workspace is a repeatable environment for new chats. It can define:
 gosling creates a usable `Default` workspace automatically. Existing sessions remain valid and do
 not need to be migrated manually.
 
+The `Default` workspace is created the first time a gosling backend starts with a data directory
+that has no workspaces yet, and its working folder is the directory that backend started in: usually
+your home folder for gosling Desktop, or the current directory of `gosling acp` or `gosling serve`
+(an absolute `GOSLING_WORKING_DIR` takes precedence). Start a server from the folder you want as
+the default, or edit the workspace afterwards. `gosling shell-validate` never creates it.
+
 ## Start or filter workspace chats
 
 Open the sidebar and expand **Workspaces**.

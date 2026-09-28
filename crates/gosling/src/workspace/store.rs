@@ -235,6 +235,10 @@ impl WorkspaceStore {
         result
     }
 
+    pub(crate) fn exists(&self) -> bool {
+        self.path.exists()
+    }
+
     pub(crate) fn mutate<T>(
         &self,
         mutate: impl FnOnce(&mut WorkspaceStoreDocument) -> Result<T>,

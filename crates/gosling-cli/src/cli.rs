@@ -1,15 +1,17 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{Args, CommandFactory, Parser, Subcommand};
 use clap_complete::{generate, Shell as ClapShell};
 use clap_complete_nushell::Nushell as ClapNushell;
 use gosling::acp::custom_requests::{
     ShellAuthorityMode, ShellIdentity, ShellProtocolPolicy, ShellProvisioning,
+    ShellProvisioningIssue, ShellProvisioningIssueCode, ShellProvisioningIssueSeverity,
     ShellSessionProvisioning, SHELL_PROVISIONING_SCHEMA_VERSION,
 };
 use gosling::acp::domain_adapter::McpDomainAdapter;
 use gosling::acp::shell::{DomainAdapter, ShellRuntime};
+use gosling::agents::platform_extensions::PLATFORM_EXTENSIONS;
 use gosling::agents::GoslingPlatform;
-use gosling::builtin_extension::register_builtin_extensions;
+use gosling::builtin_extension::{get_builtin_extension, register_builtin_extensions};
 use gosling::config::paths::{Paths, RuntimePaths};
 use gosling::config::{
     get_domain_adapter_registration, Config, ConfigError, GoslingMode,
@@ -1534,7 +1536,13 @@ async fn build_shell_runtime(
     let runtime_namespace = shell_runtime_namespace.unwrap_or(&shell_id).to_owned();
     validate_shell_id(&runtime_namespace)?;
     let mut provisioning = match provisioning_path {
-        Some(path) => serde_json::from_slice::<ShellProvisioning>(&std::fs::read(path)?)?,
+        Some(path) => {
+            let document = std::fs::read(path)
+                .with_context(|| format!("could not read {}", path.display()))?;
+            serde_json::from_slice::<ShellProvisioning>(&document).with_context(|| {
+                format!("invalid shell provisioning document {}", path.display())
+            })?
+        }
         None => ShellProvisioning {
             schema_version: SHELL_PROVISIONING_SCHEMA_VERSION,
             protocol_policy: ShellProtocolPolicy {
@@ -1596,11 +1604,22 @@ async fn handle_shell_validate_command(
         default_working_dir.clone(),
     )
     .await?;
-    let base_paths = RuntimePaths::new(Paths::config_dir(), Paths::data_dir(), Paths::state_dir());
+    let data_dir = Paths::data_dir();
+    // Creating the workspace store would pin this installation's Default
+    // workspace to wherever the validator ran, so a missing store is
+    // validated through a scratch copy instead.
+    let scratch_data_dir = if WorkspaceService::store_exists(&data_dir) {
+        None
+    } else {
+        Some(tempfile::tempdir()?)
+    };
+    let workspace_data_dir = scratch_data_dir
+        .as_ref()
+        .map_or(data_dir.as_path(), |scratch| scratch.path());
     let workspace_service =
-        WorkspaceService::initialize(&base_paths.data_dir, &default_working_dir).await?;
+        WorkspaceService::initialize(workspace_data_dir, &default_working_dir).await?;
     let builtins = resolve_serve_builtins(builtins, true);
-    let report = gosling::acp::shell_validation::validate_shell_provisioning(
+    let mut report = gosling::acp::shell_validation::validate_shell_provisioning(
         runtime.provisioning(),
         Config::global(),
         &workspace_service,
@@ -1608,11 +1627,30 @@ async fn handle_shell_validate_command(
         &default_working_dir,
     )
     .await;
+    report.issues.extend(unknown_builtin_issues(&builtins));
+    report.valid = report.issues.is_empty();
     println!("{}", serde_json::to_string_pretty(&report)?);
     if !report.valid {
         anyhow::bail!("shell provisioning is invalid");
     }
     Ok(())
+}
+
+fn unknown_builtin_issues(builtins: &[String]) -> Vec<ShellProvisioningIssue> {
+    builtins
+        .iter()
+        .enumerate()
+        .filter(|(_, name)| {
+            !PLATFORM_EXTENSIONS.contains_key(name.as_str())
+                && get_builtin_extension(name).is_none()
+        })
+        .map(|(index, name)| ShellProvisioningIssue {
+            code: ShellProvisioningIssueCode::MissingExtension,
+            severity: ShellProvisioningIssueSeverity::Error,
+            path: format!("--with-builtin[{index}]"),
+            message: format!("builtin extension '{name}' does not exist"),
+        })
+        .collect()
 }
 
 async fn handle_serve_command(args: ServeCommandArgs) -> Result<()> {
