@@ -674,19 +674,19 @@ fn run_names_an_unparsable_config_instead_of_a_missing_provider() {
     .unwrap();
 
     let broken = env.gosling(env.root.path(), &["run", "--no-session", "-t", "hi"]);
-    let stdout = String::from_utf8_lossy(&broken.stdout);
+    let stderr = String::from_utf8_lossy(&broken.stderr);
     assert!(!broken.status.success());
-    assert!(stdout.contains("could not be parsed"), "{stdout}");
-    assert!(stdout.contains(config_file.to_str().unwrap()), "{stdout}");
-    assert!(!stdout.contains("gosling configure"), "{stdout}");
+    assert!(stderr.contains("could not be parsed"), "{stderr}");
+    assert!(stderr.contains(config_file.to_str().unwrap()), "{stderr}");
+    assert!(!stderr.contains("gosling configure"), "{stderr}");
 
     std::fs::write(&config_file, "GOSLING_MODE: auto\n").unwrap();
     let unconfigured = env.gosling(env.root.path(), &["run", "--no-session", "-t", "hi"]);
-    let stdout = String::from_utf8_lossy(&unconfigured.stdout);
+    let stderr = String::from_utf8_lossy(&unconfigured.stderr);
     assert!(!unconfigured.status.success());
     assert!(
-        stdout.contains("No provider configured. Run 'gosling configure' first."),
-        "{stdout}"
+        stderr.contains("No provider configured. Run 'gosling configure' first."),
+        "{stderr}"
     );
     assert_eq!(env.mock.chat_requests.load(Ordering::SeqCst), 0);
 }
