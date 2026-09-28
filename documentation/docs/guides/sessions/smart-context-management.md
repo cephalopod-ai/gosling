@@ -31,8 +31,12 @@ Auto-compaction is triggered by default when you reach 80% of the token limit in
 Control the auto-compaction behavior with the `GOSLING_AUTO_COMPACT_THRESHOLD` [environment variable](/docs/guides/environment-variables.md#session-management). 
 Disable this feature by setting the value to `0.0`. Values must be finite and less than `1.0`;
 `1.0` is rejected by preference/config saves. Reduction is a proportion of threshold usage,
-not a number of percentage points. Invalid reduction settings stop compaction with an error
-instead of silently selecting full compaction.
+not a number of percentage points, so any reduction from `0.0` up to (but not including) `1.0`
+is valid whatever the threshold. Preference and config saves reject out-of-range values. If an
+environment variable or hand-edited config file holds one anyway, the CLI warns at startup and
+the runtime does not fail: an invalid threshold disables auto-compaction until it is corrected
+(a value that is not a number falls back to the default `0.8`), and an invalid reduction falls
+back to the default `0.15`.
 
 ```
 # Automatically compact sessions when 60% of available tokens are used

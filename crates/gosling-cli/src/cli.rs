@@ -51,33 +51,35 @@ fn warn_about_invalid_config_values() {
         }
     }
 
+    let default_threshold = gosling::context_mgmt::DEFAULT_COMPACTION_THRESHOLD;
     match config.get_param::<f64>("GOSLING_AUTO_COMPACT_THRESHOLD") {
         Ok(threshold)
             if gosling::context_mgmt::validate_compaction_settings(threshold, 0.0).is_err() =>
         {
             eprintln!(
-                "Warning: Invalid GOSLING_AUTO_COMPACT_THRESHOLD: {threshold}. Use 0 to disable auto-compaction or a value greater than 0 and less than 1."
+                "Warning: Invalid GOSLING_AUTO_COMPACT_THRESHOLD: {threshold}. Use 0 to disable auto-compaction or a value greater than 0 and less than 1. Auto-compaction is disabled until it is corrected."
             );
         }
         Err(error) if !matches!(error, ConfigError::NotFound(_)) => {
             eprintln!(
-                "Warning: Invalid GOSLING_AUTO_COMPACT_THRESHOLD: {error}. Falling back to the default."
+                "Warning: Invalid GOSLING_AUTO_COMPACT_THRESHOLD: {error}. Falling back to the default {default_threshold}."
             );
         }
         _ => {}
     }
 
+    let default_reduction = gosling::context_mgmt::DEFAULT_AUTO_COMPACT_REDUCTION;
     match config.get_param::<f64>("GOSLING_AUTO_COMPACT_REDUCTION") {
         Ok(reduction)
             if gosling::context_mgmt::validate_compaction_settings(0.0, reduction).is_err() =>
         {
             eprintln!(
-                "Warning: Invalid GOSLING_AUTO_COMPACT_REDUCTION: {reduction}. Use 0 to always fully collapse on auto-compaction, or a value greater than 0 and less than 1."
+                "Warning: Invalid GOSLING_AUTO_COMPACT_REDUCTION: {reduction}. Use 0 to always fully collapse on auto-compaction, or a value greater than 0 and less than 1. Falling back to the default {default_reduction}."
             );
         }
         Err(error) if !matches!(error, ConfigError::NotFound(_)) => {
             eprintln!(
-                "Warning: Invalid GOSLING_AUTO_COMPACT_REDUCTION: {error}. Falling back to the default."
+                "Warning: Invalid GOSLING_AUTO_COMPACT_REDUCTION: {error}. Falling back to the default {default_reduction}."
             );
         }
         _ => {}
