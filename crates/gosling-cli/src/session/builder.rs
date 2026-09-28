@@ -1033,6 +1033,7 @@ mod tests {
                 Some("openai".to_string()),
                 Some(saved.clone()),
             )
+            .expect("provider and model resolve")
             .model_config
             .context_limit
         };
