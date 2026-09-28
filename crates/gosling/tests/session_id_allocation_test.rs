@@ -1,9 +1,11 @@
 //! Session id identity across deletion, restarts, and concurrent stores
-//! (GSL-PT-20260927-D01).
+//! (GSL-PT-20260927-D01), and refusal of stores written by a newer schema
+//! (GSL-PT-20260927-C14).
 
 use gosling::config::GoslingMode;
 use gosling::session::import_formats::SessionImportTransport;
-use gosling::session::{SessionImportOutcome, SessionManager, SessionType};
+use gosling::session::session_manager::CURRENT_SCHEMA_VERSION;
+use gosling::session::{SessionImportOutcome, SessionManager, SessionNotFound, SessionType};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{Pool, Sqlite};
 use std::collections::HashSet;
@@ -201,4 +203,71 @@ async fn concurrent_stores_never_allocate_the_same_id() {
     let unique: HashSet<&String> = issued.iter().collect();
     assert_eq!(issued.len(), STORES * SESSIONS_PER_STORE);
     assert_eq!(unique.len(), issued.len(), "an id was issued twice");
+}
+
+#[tokio::test]
+async fn a_store_written_by_a_newer_schema_is_refused_without_changes() {
+    let temp = TempDir::new().unwrap();
+    let manager = SessionManager::new(temp.path().to_path_buf());
+    let existing = create_user_session(&manager, temp.path(), "existing").await;
+    drop(manager);
+
+    let newer_version = CURRENT_SCHEMA_VERSION + 1;
+    let pool = raw_pool(temp.path()).await;
+    sqlx::query("INSERT INTO schema_version (version) VALUES (?)")
+        .bind(newer_version)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let older_build = SessionManager::new(temp.path().to_path_buf());
+    let refusal = older_build.list_sessions().await.unwrap_err().to_string();
+    assert!(
+        refusal.contains(&format!("schema version {newer_version}"))
+            && refusal.contains(&format!("up to version {CURRENT_SCHEMA_VERSION}")),
+        "refusal must name both versions: {refusal}"
+    );
+    let resume_lookup = older_build.get_session(&existing, false).await.unwrap_err();
+    assert!(
+        resume_lookup.downcast_ref::<SessionNotFound>().is_none(),
+        "a refused store must not be reported as a missing session"
+    );
+    assert!(older_build
+        .create_session(
+            temp.path().to_path_buf(),
+            "must-not-be-written".to_string(),
+            SessionType::User,
+            GoslingMode::Auto,
+        )
+        .await
+        .is_err());
+
+    let session_ids: Vec<String> = sqlx::query_scalar("SELECT id FROM sessions")
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    assert_eq!(session_ids, vec![existing]);
+    let max_version: i32 = sqlx::query_scalar("SELECT MAX(version) FROM schema_version")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(max_version, newer_version);
+    pool.close().await;
+}
+
+#[tokio::test]
+async fn a_store_at_the_current_schema_opens_normally() {
+    let temp = TempDir::new().unwrap();
+    let manager = SessionManager::new(temp.path().to_path_buf());
+    let existing = create_user_session(&manager, temp.path(), "existing").await;
+    drop(manager);
+
+    let reopened = SessionManager::new(temp.path().to_path_buf());
+    let sessions = reopened.list_all_sessions().await.unwrap();
+    assert_eq!(
+        sessions.into_iter().map(|s| s.id).collect::<Vec<_>>(),
+        vec![existing]
+    );
+    let missing = reopened.get_session("19700101_1", false).await.unwrap_err();
+    assert!(missing.downcast_ref::<SessionNotFound>().is_some());
 }

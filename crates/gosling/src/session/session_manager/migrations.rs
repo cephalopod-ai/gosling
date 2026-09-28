@@ -13,13 +13,28 @@
 use super::{SessionStorage, CURRENT_SCHEMA_VERSION};
 use anyhow::Result;
 use sqlx::{Pool, Sqlite};
+use std::path::Path;
 use tracing::info;
 
 impl SessionStorage {
-    pub(super) async fn run_migrations(pool: &Pool<Sqlite>) -> Result<()> {
+    pub(super) async fn run_migrations(pool: &Pool<Sqlite>, db_path: &Path) -> Result<()> {
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
 
         let current_version = Self::get_schema_version(&mut tx).await?;
+
+        // An older build cannot know what a newer schema changed (a new
+        // table it would not maintain, a column meaning it would violate),
+        // so writing through it can silently break invariants the newer
+        // release relies on. Refuse before touching anything.
+        if current_version > CURRENT_SCHEMA_VERSION {
+            anyhow::bail!(
+                "The session database {} uses schema version {current_version}, but this Gosling \
+                 build only supports up to version {CURRENT_SCHEMA_VERSION}. It was upgraded by a \
+                 newer Gosling release; update Gosling to open it. Opening it with an older \
+                 release is not supported.",
+                db_path.display()
+            );
+        }
 
         if current_version < CURRENT_SCHEMA_VERSION {
             info!(

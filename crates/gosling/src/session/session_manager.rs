@@ -100,6 +100,12 @@ pub enum SessionImportOutcome {
     SourceChanged(Session),
 }
 
+/// The id names no session: it was never issued, or the session was deleted.
+/// Lets callers tell a stale id apart from a store that could not be read.
+#[derive(Debug, thiserror::Error)]
+#[error("Session not found")]
+pub struct SessionNotFound;
+
 fn validate_session_name(name: &str) -> Result<()> {
     anyhow::ensure!(!name.trim().is_empty(), "Session name must not be empty");
     Ok(())

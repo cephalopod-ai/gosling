@@ -11,7 +11,7 @@
 
 use super::{
     message_timestamp_to_datetime, normalized_message_timestamp_sql, Session, SessionInsights,
-    SessionStorage, SessionType, SessionUpdateBuilder,
+    SessionNotFound, SessionStorage, SessionType, SessionUpdateBuilder,
 };
 use crate::config::GoslingMode;
 use crate::session::extension_data::ExtensionData;
@@ -153,7 +153,7 @@ impl SessionStorage {
         .bind(id)
         .fetch_optional(pool)
         .await?
-        .ok_or_else(|| anyhow::anyhow!("Session not found"))
+        .ok_or_else(|| SessionNotFound.into())
     }
 
     pub(super) async fn get_session_with_messages_in_tx(
@@ -178,7 +178,7 @@ impl SessionStorage {
         .bind(id)
         .fetch_optional(&mut **tx)
         .await?
-        .ok_or_else(|| anyhow::anyhow!("Session not found"))?;
+        .ok_or(SessionNotFound)?;
         let conversation = Self::get_conversation_in_tx(tx, id).await?;
         session.message_count = conversation.messages().len();
         session.last_message_at = conversation
@@ -570,7 +570,7 @@ impl SessionStorage {
                 .await?;
 
         if !exists {
-            return Err(anyhow::anyhow!("Session not found"));
+            return Err(SessionNotFound.into());
         }
 
         Self::delete_plan_history_in_tx(&mut tx, session_id).await?;

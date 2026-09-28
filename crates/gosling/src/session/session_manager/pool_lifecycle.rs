@@ -139,7 +139,7 @@ impl SessionStorage {
                 .await?;
 
                 if schema_exists {
-                    Self::run_migrations(&self.pool).await?;
+                    Self::run_migrations(&self.pool, &self.session_dir.join(DB_NAME)).await?;
                 } else {
                     Self::create_schema(&self.pool).await?;
                 }

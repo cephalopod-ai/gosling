@@ -39,6 +39,10 @@ Prior to version 1.10.0, gosling stored session records in individual `.jsonl` f
 When you upgrade to v1.10.0 or later, your existing sessions are automatically imported into the database. Legacy `.jsonl` files remain on disk but are no longer managed by gosling.
 :::
 
+:::warning Downgrades are not supported
+Each gosling release upgrades the session database in place the first time it opens it. A release refuses to open a database that a newer release has already upgraded, and the error names both schema versions; update gosling to open it. Releases from before this check existed (1.3.0 and earlier) open such a database without warning, so do not run an older gosling against a database that a newer one has used.
+:::
+
 This database contains all saved session data including:
 - Session metadata (ID, name, working directory, timestamps)
 - Conversation messages (user commands, assistant responses, role information)

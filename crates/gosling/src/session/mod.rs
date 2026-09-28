@@ -45,8 +45,8 @@ pub use plans::{
 pub use session_manager::{
     CompactionHistoryError, CompactionHistoryPolicyV1, CompactionRevision, CompactionRevisionDraft,
     Session, SessionArtifactPage, SessionImportOutcome, SessionInsights, SessionManager,
-    SessionNameUpdate, SessionSummary, SessionSummaryFact, SessionSummaryStatus, SessionType,
-    SessionUpdateBuilder, DEFAULT_SESSION_TAIL_LIMIT, MAX_SESSION_MESSAGE_PAGE_LIMIT,
+    SessionNameUpdate, SessionNotFound, SessionSummary, SessionSummaryFact, SessionSummaryStatus,
+    SessionType, SessionUpdateBuilder, DEFAULT_SESSION_TAIL_LIMIT, MAX_SESSION_MESSAGE_PAGE_LIMIT,
 };
 pub(crate) use session_manager::{SkillScopeGate, ToolOperationStart};
 

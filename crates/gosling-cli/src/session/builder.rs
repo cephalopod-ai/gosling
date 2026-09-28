@@ -12,7 +12,7 @@ use gosling::config::{Config, ExtensionConfig, GoslingMode, PermissionManager};
 use gosling::model_config::model_config_from_user_config;
 use gosling::providers::create;
 use gosling::session::session_manager::SessionType;
-use gosling::session::EnabledExtensionsState;
+use gosling::session::{EnabledExtensionsState, SessionNotFound};
 use rustyline::EditMode;
 use std::collections::BTreeSet;
 use std::process;
@@ -330,9 +330,16 @@ async fn resolve_session_id(
                     process::exit(1);
                 }
                 Ok(_) => session_id.clone(),
-                Err(_) => {
+                Err(error) if error.downcast_ref::<SessionNotFound>().is_some() => {
                     output::render_error(&format!(
                         "Cannot resume session {} - no such session exists",
+                        style(session_id).cyan()
+                    ));
+                    process::exit(1);
+                }
+                Err(error) => {
+                    output::render_error(&format!(
+                        "Cannot resume session {}: {error}",
                         style(session_id).cyan()
                     ));
                     process::exit(1);
