@@ -16,16 +16,7 @@ impl GoslingAcpAgent {
             .get_session(source_session_id, false)
             .await
             .internal_err()?;
-        let source_name = source
-            .name
-            .strip_prefix("branch:")
-            .unwrap_or(&source.name)
-            .trim();
-        let fork_name = if source_name.is_empty() {
-            "branch:".to_string()
-        } else {
-            format!("branch: {source_name}")
-        };
+        let fork_name = crate::session::branch_session_name(&source.name);
 
         let new_session = self
             .session_manager

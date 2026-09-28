@@ -218,8 +218,8 @@ Start or resume interactive chat sessions.
 - **`-n, --name <name>`**: Give the session a name
 - **`--path <path>`**: Legacy parameter for specifying session by file path
 - **`-r, --resume`**: Resume a previous session
-- **`--edit`**: Open the session's conversation in your editor (`$VISUAL` / `$EDITOR` / `vi`) as YAML. Edit, trim, or rewrite messages, then save and close to continue the session with the edited conversation. Must be used with `--resume`. Can be combined with `--fork` to create a new session from the edited result.
-- **`--fork`**: Create a new duplicate session with copied history. Must be used with `--resume` and an interactive terminal. Provide `--name` or `--session-id` to fork a specific session. Otherwise, forks the most recent session. Non-interactive invocation exits before copying the source session.
+- **`--edit`**: Open the session's conversation in your editor (`$VISUAL` / `$EDITOR` / `vi`) as YAML. Edit, trim, or rewrite messages, then save and close to continue the session with the edited conversation. Must be used with `--resume`. Can be combined with `--fork` to create a new session from the edited result; the editor runs first, so if it fails or the YAML is invalid, no fork is created.
+- **`--fork`**: Create a new duplicate session with copied history, named `branch: <original name>` like a Desktop branch. Must be used with `--resume` and an interactive terminal. Provide `--name` or `--session-id` to fork a specific session. Otherwise, forks the most recent session. Non-interactive invocation exits before copying the source session.
 - **`--history`**: Show previous messages when resuming a session
 - **`--container <container_id>`**: Run extensions inside a [Docker container](/docs/tutorials/gosling-in-docker#running-extensions-in-docker-containers).
 - **`--debug`**: Enable debug mode to output complete tool responses, detailed parameter values, and full file paths

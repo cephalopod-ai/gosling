@@ -28,6 +28,7 @@ use crate::commands::session::{handle_session_list, handle_session_remove};
 use crate::commands::skills::handle_skills_list;
 use crate::session::{build_session, SessionBuilderConfig};
 use gosling::agents::Container;
+use gosling::conversation::Conversation;
 use gosling::session::session_manager::SessionType;
 use gosling::session::SessionManager;
 use std::io::{IsTerminal, Read};
@@ -2051,29 +2052,9 @@ async fn handle_interactive_session(
 
     if edit || fork {
         if let Some(ref id) = session_id {
-            let session_manager = SessionManager::instance();
-            let original = session_manager.get_session(id, true).await?;
-
-            let target_id = if fork {
-                let copied = session_manager
-                    .copy_session(id, original.name.clone())
-                    .await?;
-                let copied_id = copied.id.clone();
-                session_id = Some(copied.id);
-                copied_id
-            } else {
-                id.clone()
-            };
-
-            if edit {
-                let conversation = original
-                    .conversation
-                    .ok_or_else(|| anyhow::anyhow!("session has no messages to edit"))?;
-                let edited = crate::session::editor::edit_conversation(&conversation)?;
-                session_manager
-                    .replace_conversation(&target_id, &edited)
-                    .await?;
-            }
+            let editor = edit.then_some(crate::session::editor::edit_conversation);
+            session_id =
+                Some(fork_or_edit_session(&SessionManager::instance(), id, fork, editor).await?);
         }
     }
 
@@ -2109,6 +2090,59 @@ async fn handle_interactive_session(
     let result = session.interactive(None).await;
     log_session_completion(&session, session_start, session_type, result.is_ok()).await;
     result
+}
+
+/// Applies `--fork`/`--edit` to the session being resumed and returns the
+/// session to open. The editor runs before any fork exists, so a failed or
+/// abandoned edit leaves no copy behind, and a fork whose edited history
+/// cannot be saved is removed again. A fork is named like a Desktop branch,
+/// so it keeps its name instead of being retitled and does not shadow its
+/// source in `--name` lookups.
+async fn fork_or_edit_session<E>(
+    session_manager: &SessionManager,
+    session_id: &str,
+    fork: bool,
+    editor: Option<E>,
+) -> Result<String>
+where
+    E: FnOnce(&Conversation) -> Result<Conversation>,
+{
+    let original = session_manager.get_session(session_id, true).await?;
+    let edited = match editor {
+        Some(edit) => {
+            let conversation = original
+                .conversation
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("session has no messages to edit"))?;
+            Some(edit(conversation)?)
+        }
+        None => None,
+    };
+
+    let target_id = if fork {
+        session_manager
+            .copy_session(
+                session_id,
+                gosling::session::branch_session_name(&original.name),
+            )
+            .await?
+            .id
+    } else {
+        session_id.to_string()
+    };
+
+    if let Some(edited) = edited {
+        if let Err(error) = session_manager
+            .replace_conversation(&target_id, &edited)
+            .await
+        {
+            if fork {
+                let _ = session_manager.delete_session(&target_id).await;
+            }
+            return Err(error);
+        }
+    }
+    Ok(target_id)
 }
 
 async fn log_session_completion(
@@ -2601,6 +2635,119 @@ pub async fn cli() -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gosling::conversation::message::Message;
+
+    async fn named_source_session(manager: &SessionManager, dir: &std::path::Path) -> String {
+        let source = manager
+            .create_session(
+                dir.to_path_buf(),
+                "ac03-src".to_string(),
+                SessionType::User,
+                GoslingMode::Auto,
+            )
+            .await
+            .unwrap();
+        manager
+            .update(&source.id)
+            .user_provided_name("ac03-src")
+            .apply()
+            .await
+            .unwrap();
+        manager
+            .add_message(&source.id, &Message::user().with_text("SOURCE-BASE"))
+            .await
+            .unwrap();
+        source.id
+    }
+
+    fn texts(conversation: Option<Conversation>) -> Vec<String> {
+        conversation
+            .unwrap_or_default()
+            .messages()
+            .iter()
+            .map(|message| message.as_concat_text())
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn a_failed_fork_edit_creates_no_fork_and_leaves_the_source_unchanged() {
+        let temp = tempfile::tempdir().unwrap();
+        let manager = SessionManager::new(temp.path().to_path_buf());
+        let source_id = named_source_session(&manager, temp.path()).await;
+
+        let failed = fork_or_edit_session(
+            &manager,
+            &source_id,
+            true,
+            Some(|_: &Conversation| -> Result<Conversation> {
+                anyhow::bail!("Editor exited with non-zero status: 3")
+            }),
+        )
+        .await;
+
+        assert!(failed.is_err());
+        let sessions = manager.list_all_sessions().await.unwrap();
+        assert_eq!(
+            sessions.iter().map(|s| s.id.as_str()).collect::<Vec<_>>(),
+            vec![source_id.as_str()]
+        );
+        let source = manager.get_session(&source_id, true).await.unwrap();
+        assert_eq!(texts(source.conversation), vec!["SOURCE-BASE"]);
+    }
+
+    #[tokio::test]
+    async fn a_fork_edit_changes_only_a_branch_named_after_its_source() {
+        let temp = tempfile::tempdir().unwrap();
+        let manager = SessionManager::new(temp.path().to_path_buf());
+        let source_id = named_source_session(&manager, temp.path()).await;
+
+        let fork_id = fork_or_edit_session(
+            &manager,
+            &source_id,
+            true,
+            Some(|_: &Conversation| -> Result<Conversation> {
+                Ok(Conversation::new_unvalidated(vec![
+                    Message::user().with_text("EDITED")
+                ]))
+            }),
+        )
+        .await
+        .unwrap();
+
+        assert_ne!(fork_id, source_id);
+        let fork = manager.get_session(&fork_id, true).await.unwrap();
+        assert_eq!(fork.name, "branch: ac03-src");
+        assert!(fork.user_set_name);
+        assert_eq!(texts(fork.conversation), vec!["EDITED"]);
+        let source = manager.get_session(&source_id, true).await.unwrap();
+        assert_eq!(source.name, "ac03-src");
+        assert_eq!(texts(source.conversation), vec!["SOURCE-BASE"]);
+    }
+
+    #[tokio::test]
+    async fn an_edit_without_fork_rewrites_the_resumed_session() {
+        let temp = tempfile::tempdir().unwrap();
+        let manager = SessionManager::new(temp.path().to_path_buf());
+        let source_id = named_source_session(&manager, temp.path()).await;
+
+        let opened = fork_or_edit_session(
+            &manager,
+            &source_id,
+            false,
+            Some(|_: &Conversation| -> Result<Conversation> {
+                Ok(Conversation::new_unvalidated(vec![
+                    Message::user().with_text("TRIMMED")
+                ]))
+            }),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(opened, source_id);
+        assert_eq!(manager.list_all_sessions().await.unwrap().len(), 1);
+        let source = manager.get_session(&source_id, true).await.unwrap();
+        assert_eq!(texts(source.conversation), vec!["TRIMMED"]);
+    }
 
     #[test]
     fn session_remove_accepts_non_interactive_confirmation() {

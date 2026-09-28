@@ -765,6 +765,7 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
     if !session_config.quiet && session_config.output_format == "text" {
         output::display_session_info(
             session_config.resume,
+            session_config.fork,
             &effective_provider_name,
             &effective_model_name,
             &Some(session_id),

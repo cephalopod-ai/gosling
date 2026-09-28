@@ -49,6 +49,7 @@ pub use session_manager::{
     SessionType, SessionUpdateBuilder, DEFAULT_SESSION_TAIL_LIMIT, MAX_SESSION_MESSAGE_PAGE_LIMIT,
 };
 pub(crate) use session_manager::{SkillScopeGate, ToolOperationStart};
+pub use session_naming::branch_session_name;
 
 #[cfg(test)]
 mod tests {

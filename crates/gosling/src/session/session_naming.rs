@@ -172,9 +172,33 @@ pub(crate) async fn generate_session_name(
     Ok(safe_truncate(&extract_short_title(&description), 100))
 }
 
+/// The name of a session forked from one named `source_name`: `branch: <name>`,
+/// without stacking prefixes when a branch is forked again.
+pub fn branch_session_name(source_name: &str) -> String {
+    let source_name = source_name
+        .strip_prefix("branch:")
+        .unwrap_or(source_name)
+        .trim();
+    if source_name.is_empty() {
+        "branch:".to_string()
+    } else {
+        format!("branch: {source_name}")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn branch_names_show_their_source_once() {
+        assert_eq!(branch_session_name("ac02-source"), "branch: ac02-source");
+        assert_eq!(
+            branch_session_name("branch: ac02-source"),
+            "branch: ac02-source"
+        );
+        assert_eq!(branch_session_name("  "), "branch:");
+    }
 
     // GSL-PT-20260912-F-6: a 1 MiB prompt produced a 2 MiB title request.
     #[test]

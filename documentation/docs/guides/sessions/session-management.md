@@ -340,7 +340,7 @@ Create a complete copy of any session to reuse configurations, experiment with v
         - Provider and model configuration
         - Extension data and configurations
 
-        The new session is named the same as the original and appears at the top of your session list.
+        The new session is named `branch: <original name>` and appears at the top of your session list.
 
         :::tip Duplicate vs Fork Session
         - **Duplicate** (Copy button in session list): Creates a complete copy of the entire session. Use this to preserve a working session or reuse its configuration.
@@ -371,6 +371,8 @@ Create a complete copy of any session to reuse configurations, experiment with v
         - All session metadata and settings
         - Provider and model configuration
         - Extension data and configurations
+
+        The fork is named `branch: <original name>` and keeps that name, so `--name <original name>` still resumes the original session.
     </TabItem>
 </Tabs>
 

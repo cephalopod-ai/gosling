@@ -1380,13 +1380,16 @@ fn shorten_path(path: &str, debug: bool) -> String {
 
 pub fn display_session_info(
     resume: bool,
+    fork: bool,
     provider: &str,
     model: &str,
     session_id: &Option<String>,
 ) {
     set_terminal_title();
 
-    let status = if resume {
+    let status = if fork {
+        "forked"
+    } else if resume {
         "resuming"
     } else if session_id.is_none() {
         "ephemeral"
