@@ -187,6 +187,9 @@ fn replay_message_gosling_meta(message: &Message) -> serde_json::Map<String, ser
     if message.metadata.imported_untrusted {
         gosling.insert("importedUntrusted".to_string(), serde_json::json!(true));
     }
+    if message.metadata.incomplete {
+        gosling.insert("incomplete".to_string(), serde_json::json!(true));
+    }
     gosling
 }
 

@@ -228,6 +228,10 @@ impl GoslingAcpAgent {
             .recover_tool_operations(&session_id_str)
             .await
             .internal_err_ctx("Failed to recover interrupted tool operations")?;
+        self.session_manager
+            .close_interrupted_turn(&session_id_str)
+            .await
+            .internal_err_ctx("Failed to close the interrupted turn")?;
 
         let mut session = self
             .session_manager

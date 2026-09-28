@@ -180,7 +180,7 @@ impl SessionStorage {
         Ok(Conversation::new_unvalidated(messages))
     }
 
-    fn row_to_message(
+    pub(super) fn row_to_message(
         role_str: String,
         content_json: String,
         created_timestamp: i64,

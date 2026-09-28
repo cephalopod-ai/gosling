@@ -344,6 +344,22 @@ async fn resolve_session_id(
     }
 }
 
+/// A turn that was killed mid-run is closed before the history is loaded, so
+/// it is shown as interrupted and never merged into the next prompt.
+async fn close_interrupted_turn(
+    session_manager: &gosling::session::session_manager::SessionManager,
+    session_id: &str,
+) {
+    let closed = match session_manager.recover_tool_operations(session_id).await {
+        Ok(_) => session_manager.close_interrupted_turn(session_id).await,
+        Err(e) => Err(e),
+    };
+    if let Err(e) = closed {
+        output::render_error(&format!("Failed to close the interrupted turn: {}", e));
+        process::exit(1);
+    }
+}
+
 async fn handle_resumed_session_workdir(agent: &Agent, session_id: &str, interactive: bool) {
     let session = agent
         .config
@@ -597,6 +613,7 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
         resolve_session_id(&session_config, &session_manager, agent.config.gosling_mode).await;
 
     if session_config.resume {
+        close_interrupted_turn(&session_manager, &session_id).await;
         handle_resumed_session_workdir(&agent, &session_id, session_config.interactive).await;
     }
 

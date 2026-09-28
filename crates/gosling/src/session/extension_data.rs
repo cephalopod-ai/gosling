@@ -107,11 +107,15 @@ pub enum AcpPromptRunState {
     Completed,
     Cancelled,
     Failed,
+    /// The run stopped without reaching an outcome (its process or client went away) and the
+    /// session has since been reopened, which closed the turn in history. Nothing is running any
+    /// more, but its effects are as unknown as an in-progress record's.
+    Interrupted,
 }
 
 impl AcpPromptRunState {
     pub fn has_terminal_outcome(&self) -> bool {
-        !matches!(self, Self::InProgress)
+        !matches!(self, Self::InProgress | Self::Interrupted)
     }
 }
 
@@ -396,6 +400,16 @@ mod tests {
             .unwrap();
         let completed = AcpPromptRunState::from_extension_data(&extension_data).unwrap();
         assert!(completed.has_terminal_outcome());
+
+        AcpPromptRunState::Interrupted
+            .to_extension_data(&mut extension_data)
+            .unwrap();
+        assert_eq!(
+            extension_data.get_extension_state("acp_prompt_run", "v1"),
+            Some(&json!("interrupted"))
+        );
+        let interrupted = AcpPromptRunState::from_extension_data(&extension_data).unwrap();
+        assert!(!interrupted.has_terminal_outcome());
     }
 
     #[test]

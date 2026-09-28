@@ -574,11 +574,7 @@ impl SessionStorage {
             let mut response = Message::user().with_generated_id();
             response.add_tool_response_with_metadata(
                 request_id,
-                Err(ErrorData::new(
-                    ErrorCode::INVALID_REQUEST,
-                    "Tool execution was cancelled before it started because the prior turn ended. It will not be retried automatically.".to_string(),
-                    None,
-                )),
+                Err(cancelled_before_dispatch()),
                 request_metadata.as_ref(),
             );
             self.upsert_message_in_tx(&mut tx, session_id, &response)
@@ -589,6 +585,16 @@ impl SessionStorage {
         tx.commit().await?;
         Ok(cancelled)
     }
+}
+
+/// The result recorded for a tool call that was never dispatched because its
+/// turn ended first.
+pub(super) fn cancelled_before_dispatch() -> ErrorData {
+    ErrorData::new(
+        ErrorCode::INVALID_REQUEST,
+        "Tool execution was cancelled before it started because the prior turn ended. It will not be retried automatically.".to_string(),
+        None,
+    )
 }
 
 fn serialize_tool_operation_result(result: &ToolResult<CallToolResult>) -> Result<String> {

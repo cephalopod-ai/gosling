@@ -992,6 +992,29 @@ fn test_merge_replay_message_meta_omits_steer_when_not_set() {
     let merged = merge_replay_message_meta(None, &message);
 
     assert_eq!(merged.get("gosling").and_then(|g| g.get("steer")), None);
+    assert_eq!(
+        merged.get("gosling").and_then(|g| g.get("incomplete")),
+        None
+    );
+}
+
+#[test]
+fn test_replay_message_meta_marks_a_reply_cut_off_mid_stream() {
+    let message = Message::new(Role::Assistant, 1_700_000_000, vec![])
+        .with_id("msg_partial")
+        .with_incomplete();
+
+    let meta = replay_message_meta(&message);
+
+    assert_eq!(
+        meta.get("gosling"),
+        Some(&serde_json::json!({
+            "created": 1_700_000_000,
+            "messageId": "msg_partial",
+            "incomplete": true,
+        })),
+        "a reloaded partial reply must not look finished"
+    );
 }
 
 #[test]

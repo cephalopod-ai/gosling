@@ -1172,11 +1172,25 @@ pub fn redact_session_history_for_agent(value: &str, max_chars: usize) -> String
     Redactor::default().text(value, max_chars)
 }
 
+const HANDOFF_CHECKPOINT_ID_PREFIX: &str = "handoff_snapshot_";
+
 pub fn handoff_bootstrap_message(snapshot: &SessionHandoffSnapshotV1Dto) -> Result<Message> {
     Ok(Message::user()
-        .with_id(format!("handoff_snapshot_{}", snapshot.snapshot_id))
+        .with_id(format!(
+            "{HANDOFF_CHECKPOINT_ID_PREFIX}{}",
+            snapshot.snapshot_id
+        ))
         .with_text(render_handoff_envelope(snapshot)?)
         .with_visibility(false, true))
+}
+
+/// The stored checkpoint that opens a handed-off context. It stays the last
+/// message until the next prompt, which is sent together with it.
+pub(crate) fn is_handoff_checkpoint(message: &Message) -> bool {
+    message
+        .id
+        .as_deref()
+        .is_some_and(|id| id.starts_with(HANDOFF_CHECKPOINT_ID_PREFIX))
 }
 
 pub async fn conversation_for_pending_handoff(
@@ -1188,7 +1202,7 @@ pub async fn conversation_for_pending_handoff(
         return Ok((conversation.clone(), None));
     };
     if snapshot.delivery_strategy == HandoffDeliveryStrategyDto::NewContext {
-        let checkpoint_id = format!("handoff_snapshot_{}", snapshot.snapshot_id);
+        let checkpoint_id = format!("{HANDOFF_CHECKPOINT_ID_PREFIX}{}", snapshot.snapshot_id);
         return Ok((
             Conversation::new_unvalidated(
                 conversation

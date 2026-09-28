@@ -247,6 +247,12 @@ impl Agent {
                 );
             }
         }
+        // A previous turn that stopped without closing its history (killed
+        // process, lost client, lost lease) would otherwise have its prompt
+        // merged into this one and re-executed.
+        session_manager
+            .close_unfinished_turn(&session_config.id)
+            .await?;
         let is_first_turn = session.message_count == 0;
         if is_first_turn && !planning_turn {
             self.emit_hook(crate::hooks::HookEvent::SessionStart, &session_config.id)

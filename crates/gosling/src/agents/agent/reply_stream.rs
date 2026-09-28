@@ -532,7 +532,10 @@ impl Agent {
                                             .unwrap_or(true);
                                         if is_new_message || checkpoint_due {
                                             session_manager
-                                                .upsert_message(&session_config.id, message)
+                                                .upsert_message(
+                                                    &session_config.id,
+                                                    &message.clone().with_incomplete(),
+                                                )
                                                 .await?;
                                             last_stream_checkpoint_at = Some(Instant::now());
                                             last_stream_checkpoint_id = message.id.clone();

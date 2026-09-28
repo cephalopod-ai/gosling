@@ -74,17 +74,6 @@ impl PolicyDeniedTools {
     }
 }
 
-/// Closes a cancelled turn in history. Without it the cancelled user message
-/// is merged into the next prompt and the model re-executes the cancelled
-/// request as if it were live instruction. Matches the CLI headless notice.
-const CANCELLED_TURN_NOTICE: &str = "Run cancelled by user before completion.";
-
-fn cancelled_turn_needs_notice(messages: &[Message]) -> bool {
-    messages
-        .last()
-        .is_some_and(|message| message.role == rmcp::model::Role::User)
-}
-
 fn to_nonnegative_u64(value: Option<i32>) -> Option<u64> {
     value.and_then(|v| u64::try_from(v).ok())
 }
@@ -545,27 +534,12 @@ impl GoslingAcpAgent {
         Self::send_active_run_update(cx, &args.session_id, None)?;
         was_cancelled |= cancel_token.is_cancelled();
         if was_cancelled {
-            let session = self
-                .session_manager
-                .get_session(&session_id, true)
+            // Without a closed turn the cancelled prompt merges into the next
+            // one and the model re-executes it as live instruction.
+            self.session_manager
+                .close_cancelled_turn(&session_id)
                 .await
-                .internal_err_ctx("Failed to load session")?;
-            let messages = session
-                .conversation
-                .as_ref()
-                .map(|conversation| conversation.messages().as_slice())
-                .unwrap_or_default();
-            if cancelled_turn_needs_notice(messages) {
-                self.session_manager
-                    .add_message(
-                        &session_id,
-                        &Message::assistant()
-                            .with_text(CANCELLED_TURN_NOTICE)
-                            .with_generated_id(),
-                    )
-                    .await
-                    .internal_err_ctx("Failed to record the cancelled turn")?;
-            }
+                .internal_err_ctx("Failed to record the cancelled turn")?;
         }
         if stream_error.is_none() && !was_cancelled {
             match research_completion::verify_deep_research_completion(
@@ -714,32 +688,6 @@ impl GoslingAcpAgent {
         }
         drop(completed_run);
         Ok(response)
-    }
-}
-
-#[cfg(test)]
-mod cancelled_turn_tests {
-    use super::*;
-
-    #[test]
-    fn cancelled_turn_ending_on_user_content_is_closed() {
-        assert!(cancelled_turn_needs_notice(&[
-            Message::user().with_text("run it")
-        ]));
-        assert!(cancelled_turn_needs_notice(&[
-            Message::user().with_text("run it"),
-            Message::assistant().with_text("calling a tool"),
-            Message::user().with_text("tool output"),
-        ]));
-    }
-
-    #[test]
-    fn cancelled_turn_with_assistant_reply_or_no_history_is_unchanged() {
-        assert!(!cancelled_turn_needs_notice(&[]));
-        assert!(!cancelled_turn_needs_notice(&[
-            Message::user().with_text("run it"),
-            Message::assistant().with_text("partial"),
-        ]));
     }
 }
 

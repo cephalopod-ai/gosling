@@ -301,6 +301,10 @@ Search allows you to find specific content within sessions or find specific sess
 
 Sessions created in gosling Desktop can be resumed in the CLI and vice versa. All sessions are stored in the [same database](/docs/guides/logs#session-records).
 
+:::note Interrupted turns
+A turn can stop before it finishes: you cancel it, quit or close gosling while it is running or waiting for a tool approval, the client disconnects, or the process is killed. When you reopen or resume the session, or send the next message, gosling closes that turn in the history instead of sending it again. Tool calls that never ran are recorded as not run, a reply that was cut off stays visible to you but is marked incomplete and is not sent back to the model, and the turn ends with `Run interrupted before completion.` (or `Run cancelled by user before completion.` when you cancelled it). Your next message starts a new turn on its own; to continue the stopped task, ask for it explicitly.
+:::
+
 :::tip Create New Sessions for New Tasks
 While you can resume sessions, we recommend creating new sessions for new tasks to reduce the chance of [doom spiraling](/docs/troubleshooting/known-issues#stuck-in-a-loop-or-unresponsive).
 :::

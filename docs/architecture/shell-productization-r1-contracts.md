@@ -99,7 +99,9 @@ consequence for session/prompt/interaction state explicit, since the Gate 2 cont
   begins and replaces it only after a terminal completion, cancellation, or failure. `session.info`
   projects `resumeIntegrity: clean | uncertain` from that durable state before compacted load:
   `clean` means the prior prompt reached a known terminal outcome, while `uncertain` means a prompt
-  was in progress (or predates this record) when the connection was lost. The renderer receives that
+  was in progress (or predates this record) when the connection was lost. Reopening a session whose
+  record is still in progress, with no live turn, closes that turn in history and records it as
+  `interrupted`, which stays `uncertain` because its effects are unknown. The renderer receives that
   fact through the safe snapshot and must not treat `uncertain` as permission to silently resubmit.
   This is an outcome fence, not an automatic replay or an idempotency guarantee for an operator who
   chooses to repeat a completed prompt.

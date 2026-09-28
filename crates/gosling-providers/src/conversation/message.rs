@@ -718,6 +718,12 @@ pub struct MessageMetadata {
     /// guard, so clients report that stop distinctly from a finished turn.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub turn_limit: Option<TurnLimit>,
+    /// Saved while the reply was still streaming. The final save of a reply
+    /// clears it, so a stored message that keeps it was cut off (process
+    /// stopped, client gone, or cancelled) and may be missing its end.
+    /// Surfaced as `_meta.gosling.incomplete`; never sent to providers.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub incomplete: bool,
 }
 
 impl Default for MessageMetadata {
@@ -730,6 +736,7 @@ impl Default for MessageMetadata {
             imported_untrusted: false,
             terminal_error: None,
             turn_limit: None,
+            incomplete: false,
         }
     }
 }
@@ -806,6 +813,11 @@ impl MessageMetadata {
 
     pub fn with_imported_untrusted(mut self) -> Self {
         self.imported_untrusted = true;
+        self
+    }
+
+    pub fn with_incomplete(mut self) -> Self {
+        self.incomplete = true;
         self
     }
 }
@@ -1107,6 +1119,11 @@ impl Message {
 
     pub fn with_steer(mut self) -> Self {
         self.metadata.steer = true;
+        self
+    }
+
+    pub fn with_incomplete(mut self) -> Self {
+        self.metadata.incomplete = true;
         self
     }
 

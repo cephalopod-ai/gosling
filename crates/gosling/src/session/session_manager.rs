@@ -16,6 +16,7 @@ mod session_transfer;
 mod skill_admission_storage;
 mod summary_storage;
 mod tool_operations;
+mod turn_closure;
 
 #[cfg(test)]
 use summary_storage::summary_covers_history_before;
@@ -1047,6 +1048,32 @@ impl SessionManager {
     ) -> Result<usize> {
         self.storage
             .cancel_undispatched_tool_requests(session_id, cancelled_request_id)
+            .await
+    }
+
+    /// Run when a session is reopened (ACP `session/load`, CLI resume): unless
+    /// a live turn still owns the session, closes a trailing turn that stopped
+    /// before finishing and records a stale in-progress ACP run as interrupted.
+    /// Returns whether a closure notice was written.
+    pub async fn close_interrupted_turn(&self, session_id: &str) -> Result<bool> {
+        self.storage
+            .close_unfinished_turn(session_id, turn_closure::TurnClosureTrigger::Reopen)
+            .await
+    }
+
+    /// Closes the previous turn before a new turn adds its prompt. The caller
+    /// holds the session's turn lease.
+    pub(crate) async fn close_unfinished_turn(&self, session_id: &str) -> Result<bool> {
+        self.storage
+            .close_unfinished_turn(session_id, turn_closure::TurnClosureTrigger::NextTurn)
+            .await
+    }
+
+    /// Closes the caller's cancelled turn with the cancellation notice. The
+    /// caller still holds the session's turn lease.
+    pub(crate) async fn close_cancelled_turn(&self, session_id: &str) -> Result<bool> {
+        self.storage
+            .close_unfinished_turn(session_id, turn_closure::TurnClosureTrigger::Cancel)
             .await
     }
 
