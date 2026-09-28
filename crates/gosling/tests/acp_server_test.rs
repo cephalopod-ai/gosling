@@ -727,6 +727,56 @@ fn test_load_session_error_session_not_found() {
 }
 
 #[test]
+fn test_load_session_names_a_working_folder_that_was_moved_away() {
+    run_test(async {
+        let data_root = tempfile::tempdir().unwrap();
+        let parent = tempfile::tempdir().unwrap();
+        let working_dir = parent.path().join("playtest-primary");
+        std::fs::create_dir(&working_dir).unwrap();
+        seed_list_sessions(data_root.path(), &working_dir, 1).await;
+        let session_id = SessionManager::new(data_root.path().to_path_buf())
+            .list_all_sessions()
+            .await
+            .unwrap()
+            .remove(0)
+            .id;
+        std::fs::rename(&working_dir, parent.path().join("playtest-primary-moved")).unwrap();
+        let conn = new_connection(data_root.path()).await;
+        let load = |cwd: std::path::PathBuf| {
+            conn.cx()
+                .send_request(agent_client_protocol::schema::v1::LoadSessionRequest::new(
+                    agent_client_protocol::schema::v1::SessionId::new(session_id.clone()),
+                    cwd,
+                ))
+        };
+
+        let error: anyhow::Error = load(working_dir.clone())
+            .block_task()
+            .await
+            .unwrap_err()
+            .into();
+        let error = error.downcast::<agent_client_protocol::Error>().unwrap();
+        assert_eq!(error.code, ErrorCode::InvalidParams);
+        let reason = error.data.as_ref().and_then(|data| data.as_str()).unwrap();
+        assert!(
+            reason.contains(&working_dir.display().to_string()),
+            "{reason}"
+        );
+
+        let error: anyhow::Error = load("relative/folder".into())
+            .block_task()
+            .await
+            .unwrap_err()
+            .into();
+        let error = error.downcast::<agent_client_protocol::Error>().unwrap();
+        assert_eq!(
+            error.data.as_ref().and_then(|data| data.as_str()),
+            Some("cwd must be an absolute path")
+        );
+    });
+}
+
+#[test]
 fn test_load_session_mcp() {
     run_test(async { run_load_session_mcp::<AcpServerConnection>().await });
 }

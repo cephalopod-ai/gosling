@@ -128,7 +128,10 @@ When a new chat starts, the backend:
 4. gives the agent the workspace's non-secret folder and output context.
 
 Resuming a session uses that pinned snapshot and profile reference, not whichever workspace is
-active now. Deleting a workspace preserves its sessions and files; historical sessions continue to
+active now. A chat therefore keeps the folders it started with: if its working folder is moved or
+deleted, reopening it fails with an error that names the folder, and it opens again once the folder
+is back at that path. Relinking the workspace to the new location changes the folders of new chats
+only. Deleting a workspace preserves its sessions and files; historical sessions continue to
 show the saved workspace name. A missing profile produces a relink error instead of falling back to
 another account.
 

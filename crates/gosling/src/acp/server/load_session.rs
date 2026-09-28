@@ -1,5 +1,17 @@
 use super::*;
 
+/// Clients reopen a chat in its own working folder, so a missing folder is named: it was
+/// usually moved or deleted, and restoring it at that path is how the chat opens again.
+fn validate_load_cwd(cwd: &std::path::Path) -> Result<(), agent_client_protocol::Error> {
+    if cwd.is_absolute() && !cwd.is_dir() {
+        return Err(agent_client_protocol::Error::invalid_params().data(format!(
+            "working folder {} is missing or not a folder; restore it at that path and retry",
+            cwd.display()
+        )));
+    }
+    validate_absolute_cwd(cwd)
+}
+
 fn replay_audience_annotations(audience: &[Role]) -> Annotations {
     Annotations::new().audience(
         audience
@@ -217,7 +229,7 @@ impl GoslingAcpAgent {
         args: LoadSessionRequest,
     ) -> Result<LoadSessionResponse, agent_client_protocol::Error> {
         debug!(?args, "load session request");
-        validate_absolute_cwd(&args.cwd)?;
+        validate_load_cwd(&args.cwd)?;
 
         let session_id_str = args.session_id.0.to_string();
         let sid = sid_short(&session_id_str);
