@@ -180,6 +180,7 @@ impl SessionStorage {
         Self::create_session_plan_schema(&mut tx).await?;
         Self::create_compaction_history_schema(&mut tx).await?;
         Self::create_skill_admission_schema(&mut tx).await?;
+        Self::create_session_id_high_water_schema(&mut tx).await?;
 
         sqlx::query(
             r#"
@@ -448,6 +449,77 @@ impl SessionStorage {
                 acquired_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL
             )
+            "#,
+        )
+        .execute(&mut **tx)
+        .await?;
+        Ok(())
+    }
+
+    /// Session ids are `<UTC day>_<n>`. Allocating `n` from the day's highest
+    /// *surviving* id freed a deleted session's id for the next session, so
+    /// every stale reference to it — a script's `--session-id`, an open
+    /// window, `term`'s `AGENT_SESSION_ID`, a handoff source, a subagent's
+    /// parent — silently resolved to an unrelated session. This table keeps
+    /// the highest `n` ever issued per day so an id is never handed out
+    /// twice. A trigger, not the allocator, maintains it, so every insert
+    /// advances it: legacy imports, and older builds sharing the database.
+    pub(super) async fn create_session_id_high_water_schema(
+        tx: &mut sqlx::Transaction<'_, Sqlite>,
+    ) -> Result<()> {
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS session_id_high_water (
+                day TEXT PRIMARY KEY,
+                last_seq INTEGER NOT NULL
+            )
+            "#,
+        )
+        .execute(&mut **tx)
+        .await?;
+        sqlx::query(
+            r#"
+            CREATE TRIGGER IF NOT EXISTS sessions_id_high_water_after_insert
+            AFTER INSERT ON sessions
+            WHEN NEW.id GLOB '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_[0-9]*'
+            BEGIN
+                INSERT INTO session_id_high_water (day, last_seq)
+                VALUES (substr(NEW.id, 1, 8), CAST(substr(NEW.id, 10) AS INTEGER))
+                ON CONFLICT(day) DO UPDATE SET last_seq = MAX(last_seq, excluded.last_seq);
+            END
+            "#,
+        )
+        .execute(&mut **tx)
+        .await?;
+        Ok(())
+    }
+
+    /// Seeds the high-water mark of a store that predates it from every
+    /// surviving session id and from the ids surviving rows still point at
+    /// although that session may already be gone: a handoff's source session
+    /// and a subagent's parent. Ids deleted earlier that nothing references
+    /// any more cannot be recovered.
+    pub(super) async fn backfill_session_id_high_water(
+        tx: &mut sqlx::Transaction<'_, Sqlite>,
+    ) -> Result<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO session_id_high_water (day, last_seq)
+            SELECT substr(referenced_id, 1, 8), MAX(CAST(substr(referenced_id, 10) AS INTEGER))
+            FROM (
+                SELECT id AS referenced_id FROM sessions
+                UNION ALL
+                SELECT json_extract(snapshot_json, '$.sourceSessionId')
+                FROM session_handoff_snapshots
+                WHERE json_valid(snapshot_json)
+                UNION ALL
+                SELECT json_extract(extension_data, '$."output_agent.v1".parentSessionId')
+                FROM sessions
+                WHERE json_valid(extension_data)
+            )
+            WHERE referenced_id GLOB '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_[0-9]*'
+            GROUP BY substr(referenced_id, 1, 8)
+            ON CONFLICT(day) DO UPDATE SET last_seq = MAX(last_seq, excluded.last_seq)
             "#,
         )
         .execute(&mut **tx)

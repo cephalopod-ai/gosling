@@ -68,7 +68,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 use utoipa::ToSchema;
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 37;
+pub const CURRENT_SCHEMA_VERSION: i32 = 38;
 
 pub use compaction_history_storage::{
     CompactionHistoryError, CompactionHistoryPolicyV1, CompactionRevision, CompactionRevisionDraft,
@@ -5138,6 +5138,110 @@ mod tests {
         assert!(migrated.context_usage_estimated);
         assert_eq!(migrated.last_request_tokens, None);
         assert_eq!(migrated.usage.total_tokens, Some(758_000));
+    }
+
+    #[tokio::test]
+    async fn session_id_high_water_migrates_from_schema_37() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join(SESSIONS_FOLDER).join(DB_NAME);
+        std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
+        let pool = SqlitePoolOptions::new()
+            .connect_with(
+                SqliteConnectOptions::new()
+                    .filename(&db_path)
+                    .create_if_missing(true)
+                    .foreign_keys(true),
+            )
+            .await
+            .unwrap();
+        SessionStorage::create_schema(&pool).await.unwrap();
+        sqlx::query("DROP TRIGGER sessions_id_high_water_after_insert")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DROP TABLE session_id_high_water")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE schema_version SET version = 37")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        // A v37 store: `_7` was a handoff source and `_9` a subagent parent,
+        // both deleted before the upgrade; only their references survive.
+        let today = Utc::now().format("%Y%m%d").to_string();
+        for (id, extension_data) in [
+            (format!("{today}_1"), "{}".to_string()),
+            (format!("{today}_3"), "{}".to_string()),
+            (
+                format!("{today}_4"),
+                format!(
+                    r#"{{"output_agent.v1":{{"name":"delegate","parentSessionId":"{today}_9"}}}}"#
+                ),
+            ),
+            ("20250101_5".to_string(), "{}".to_string()),
+            ("legacy-workspace".to_string(), "{}".to_string()),
+        ] {
+            sqlx::query(
+                "INSERT INTO sessions (id, name, working_dir, extension_data, gosling_mode) VALUES (?, 'pre-upgrade', '/tmp', ?, 'auto')",
+            )
+            .bind(id)
+            .bind(extension_data)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+        sqlx::query(
+            r#"
+            INSERT INTO session_handoff_snapshots (
+                snapshot_id, session_id, generation, schema_version, trigger, status,
+                to_provider, to_model, source_hash, estimated_tokens, snapshot_json
+            ) VALUES ('snap-1', ?, 1, 1, 'manual', 'active', 'p', 'm', 'h', 0, ?)
+            "#,
+        )
+        .bind(format!("{today}_3"))
+        .bind(format!(r#"{{"sourceSessionId":"{today}_7"}}"#))
+        .execute(&pool)
+        .await
+        .unwrap();
+        pool.close().await;
+
+        let manager = SessionManager::new(temp_dir.path().to_path_buf());
+        let created = manager
+            .create_session(
+                PathBuf::from("/tmp"),
+                "after-upgrade".to_string(),
+                SessionType::User,
+                GoslingMode::Auto,
+            )
+            .await
+            .unwrap();
+        assert_eq!(created.id, format!("{today}_10"));
+        assert_eq!(
+            manager
+                .get_session("legacy-workspace", false)
+                .await
+                .unwrap()
+                .name,
+            "pre-upgrade"
+        );
+
+        let pool = manager.storage().pool().await.unwrap();
+        let high_water: Vec<(String, i64)> =
+            sqlx::query_as("SELECT day, last_seq FROM session_id_high_water ORDER BY day")
+                .fetch_all(pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            high_water,
+            vec![("20250101".to_string(), 5), (today.clone(), 10)]
+        );
+        let schema_version: i32 = sqlx::query_scalar("SELECT MAX(version) FROM schema_version")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        assert_eq!(schema_version, CURRENT_SCHEMA_VERSION);
     }
 
     #[tokio::test]

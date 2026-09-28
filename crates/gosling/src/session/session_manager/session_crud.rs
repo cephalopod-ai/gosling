@@ -56,11 +56,16 @@ impl SessionStorage {
             r#"
                 INSERT INTO sessions (id, name, user_set_name, session_type, working_dir, extension_data, gosling_mode)
                 VALUES (
-                    ? || '_' || CAST(COALESCE((
-                        SELECT MAX(CAST(SUBSTR(id, 10) AS INTEGER))
-                        FROM sessions
-                        WHERE id LIKE ? || '_%'
-                    ), 0) + 1 AS TEXT),
+                    ? || '_' || CAST(MAX(
+                        COALESCE((
+                            SELECT MAX(CAST(SUBSTR(id, 10) AS INTEGER))
+                            FROM sessions
+                            WHERE id LIKE ? || '_%'
+                        ), 0),
+                        COALESCE((
+                            SELECT last_seq FROM session_id_high_water WHERE day = ?
+                        ), 0)
+                    ) + 1 AS TEXT),
                     ?,
                     FALSE,
                     ?,
@@ -71,6 +76,7 @@ impl SessionStorage {
                 RETURNING *
                 "#,
         )
+            .bind(&today)
             .bind(&today)
             .bind(&today)
             .bind(&name)
