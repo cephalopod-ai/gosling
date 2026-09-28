@@ -690,11 +690,12 @@ impl Provider for DatabricksProvider {
     }
 
     async fn fetch_supported_model_info(&self) -> Result<Vec<ModelInfo>, ProviderError> {
-        let response = self
-            .api_client
-            .request("api/2.0/serving-endpoints")
-            .response_get()
-            .await?;
+        let response = super::oauth::without_browser_sign_in(
+            self.api_client
+                .request("api/2.0/serving-endpoints")
+                .response_get(),
+        )
+        .await?;
         let response = handle_status(response).await?;
 
         let json: Value = response.json().await.map_err(|e| {
@@ -738,6 +739,56 @@ impl Provider for DatabricksProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn listing_models_without_a_sign_in_never_starts_the_browser_sign_in() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let root = tempfile::tempdir().unwrap();
+        let root_path = root.path().to_string_lossy().to_string();
+        let _env = env_lock::lock_env([("GOSLING_PATH_ROOT", Some(root_path.as_str()))]);
+        let server = MockServer::start().await;
+        // OIDC discovery comes right before the browser is opened; answering 500
+        // keeps an attempted sign-in from getting that far.
+        Mock::given(method("GET"))
+            .and(path("/oidc/.well-known/oauth-authorization-server"))
+            .respond_with(ResponseTemplate::new(500))
+            .expect(0)
+            .mount(&server)
+            .await;
+        let host = server.uri();
+        let auth = DatabricksAuth::oauth(host.clone());
+        let token_cache = Arc::new(Mutex::new(None));
+        let provider = DatabricksProvider {
+            api_client: ApiClient::with_read_timeout_and_tls(
+                host.clone(),
+                AuthMethod::Custom(Box::new(DatabricksAuthProvider {
+                    auth: auth.clone(),
+                    token_cache: token_cache.clone(),
+                })),
+                Duration::from_secs(5),
+                None,
+            )
+            .unwrap(),
+            host,
+            auth,
+            image_format: ImageFormat::OpenAi,
+            retry_config: RetryConfig::default(),
+            name: DATABRICKS_PROVIDER_NAME.to_string(),
+            token_cache,
+            instance_id: None,
+        };
+
+        let error = provider.fetch_supported_models().await.unwrap_err();
+
+        assert!(
+            error.to_string().contains("Databricks sign-in required"),
+            "{error}"
+        );
+        server.verify().await;
+    }
 
     #[test]
     fn endpoint_metadata_marks_reasoning_alias_from_external_model() {
