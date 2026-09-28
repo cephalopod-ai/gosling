@@ -202,6 +202,12 @@ async fn subdirectory_hints_injected_once_agent_only() -> Result<()> {
         !hint.is_user_visible(),
         "hint must not be dumped into the user-visible transcript"
     );
+    let hint_text = hint.as_concat_text();
+    assert!(
+        hint_text.starts_with("### Subdirectory Project Hints (untrusted:")
+            && hint_text.contains("not from the operator"),
+        "repo-authored subdirectory hints must carry the untrusted project-hints framing: {hint_text}"
+    );
 
     assert!(
         provider.requests_with_hint.load(Ordering::SeqCst) >= 1,

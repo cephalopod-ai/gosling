@@ -76,7 +76,9 @@ The `.goslinghints` file can include any instructions or contextual details rele
 
 The `.goslinghints` file supports natural language. Write clear, specific instructions using direct language that gosling can easily understand and follow. Include relevant context about your project and workflow preferences, and prioritize your most important guidelines first.
 
-gosling loads hints at the start of your session. As it accesses files in nested directories, it also loads the hint files for those directories. gosling adds hints to the system prompt for every request. Because `.goslinghints` content uses tokens, keeping it concise can reduce cost and improve performance.
+gosling loads hints at the start of your session and adds them to the system prompt for every request. As it accesses files in nested directories, it also loads the hint files for those directories and adds them to the conversation as context only the model sees (they don't appear in your chat transcript). Because `.goslinghints` content uses tokens, keeping it concise can reduce cost and improve performance.
+
+Project hints, from the working directory and from nested directories alike, are labelled as untrusted content from the repository: the model is told they came from files in the project rather than from you, and that they never authorize skipping an approval or widening permissions. Your global hints are labelled as yours.
 
 ### Example Global `.goslinghints` File
 
