@@ -1731,14 +1731,36 @@ fn estimate_cost_usd(provider: &str, model: &str, usage: &Usage) -> Option<f64> 
     canonical_model.cost.estimate_cost(usage)
 }
 
-/// Display cost information, if price data is available.
-pub fn display_cost_usage(provider: &str, model: &str, usage: &Usage) {
-    if let Some(cost) = estimate_cost_usd(provider, model, usage) {
-        use console::style;
-        let input_tokens = usage.input_tokens.unwrap_or(0);
-        let output_tokens = usage.output_tokens.unwrap_or(0);
-        let cache_read = usage.cache_read_input_tokens.unwrap_or(0);
-        let cache_write = usage.cache_write_input_tokens.unwrap_or(0);
+/// Display cost information, if price data is available: the session's accumulated cost (what
+/// session exports and ACP report) and, labelled as such, the cost of the last request.
+pub fn display_cost_usage(
+    provider: &str,
+    model: &str,
+    last_request: &Usage,
+    session_cost: Option<f64>,
+) {
+    let last_request_cost = estimate_cost_usd(provider, model, last_request);
+    if let Some(summary) = cost_summary(session_cost, last_request_cost, last_request) {
+        eprintln!("Cost: {summary}");
+    }
+}
+
+fn cost_summary(
+    session_cost: Option<f64>,
+    last_request_cost: Option<f64>,
+    last_request: &Usage,
+) -> Option<String> {
+    if last_request.input_tokens.unwrap_or(0) + last_request.output_tokens.unwrap_or(0) == 0 {
+        // No request yet: only the total, which is zero when nothing was recorded.
+        return last_request_cost
+            .or(session_cost)
+            .map(|_| format!("${:.4} USD this session", session_cost.unwrap_or(0.0)));
+    }
+    let last_request = last_request_cost.map(|cost| {
+        let input_tokens = last_request.input_tokens.unwrap_or(0);
+        let output_tokens = last_request.output_tokens.unwrap_or(0);
+        let cache_read = last_request.cache_read_input_tokens.unwrap_or(0);
+        let cache_write = last_request.cache_write_input_tokens.unwrap_or(0);
 
         let cache_breakdown = match (cache_read, cache_write) {
             (0, 0) => String::new(),
@@ -1747,14 +1769,21 @@ pub fn display_cost_usage(provider: &str, model: &str, usage: &Usage) {
             (read, write) => format!(" ({} cache read, {} cache write)", read, write),
         };
 
-        eprintln!(
-            "Cost: {} USD ({} tokens: in {}{}, out {})",
-            style(format!("${:.4}", cost)).cyan(),
+        format!(
+            "${cost:.4} USD ({} tokens: in {}{}, out {})",
             input_tokens + output_tokens,
             input_tokens,
             cache_breakdown,
             output_tokens
-        );
+        )
+    });
+    match (session_cost, last_request) {
+        (Some(total), Some(last)) => Some(format!(
+            "${total:.4} USD this session · last request {last}"
+        )),
+        (Some(total), None) => Some(format!("${total:.4} USD this session")),
+        (None, Some(last)) => Some(format!("last request {last}")),
+        (None, None) => None,
     }
 }
 
@@ -1931,6 +1960,30 @@ mod tests {
             json!({"top_up_url": "https://router.tetrate.ai/billing"}),
         );
         assert_eq!(get_credits_top_up_url(&message), None);
+    }
+
+    #[test]
+    fn the_cost_line_names_the_session_total_and_labels_the_last_request() {
+        let last = Usage::new(Some(100_000), Some(2_000), Some(102_000))
+            .with_cache_tokens(Some(40_000), None);
+        assert_eq!(
+            cost_summary(Some(0.2564), Some(0.22), &last).as_deref(),
+            Some("$0.2564 USD this session · last request $0.2200 USD (102000 tokens: in 100000 (40000 cache read), out 2000)")
+        );
+        assert_eq!(
+            cost_summary(Some(0.0364), None, &last).as_deref(),
+            Some("$0.0364 USD this session")
+        );
+        let small = Usage::new(Some(5_000), Some(50), Some(5_050));
+        assert_eq!(
+            cost_summary(None, Some(0.013), &small).as_deref(),
+            Some("last request $0.0130 USD (5050 tokens: in 5000, out 50)")
+        );
+        assert_eq!(cost_summary(None, None, &small), None);
+        assert_eq!(
+            cost_summary(None, Some(0.0), &Usage::default()).as_deref(),
+            Some("$0.0000 USD this session")
+        );
     }
 
     fn note(label: &'static str, reason: Option<&str>) -> Option<ToolFailureNote> {

@@ -1799,15 +1799,14 @@ impl CliSession {
                 }),
                 Some(_) => {}
             }
+        } else if is_quiet_text_mode {
+            reply_text.end_line();
         } else {
-            if is_quiet_text_mode {
-                reply_text.end_line();
-            } else {
-                println!();
-            }
-            if self.stats {
-                print_run_stats(run_started, first_token_at, last_usage.as_ref());
-            }
+            println!();
+        }
+        // On stderr, so it never mixes with a reply or JSON on stdout.
+        if self.stats {
+            print_run_stats(run_started, first_token_at, last_usage.as_ref());
         }
 
         match terminal_error {
@@ -2066,10 +2065,6 @@ impl CliSession {
             .get_param::<bool>("GOSLING_CLI_SHOW_COST")
             .unwrap_or(false);
 
-        let provider_name = config
-            .get_gosling_provider()
-            .unwrap_or_else(|_| "unknown".to_string());
-
         match self.get_session().await {
             Ok(metadata) => {
                 let total_tokens = metadata.usage.total_tokens.unwrap_or(0) as usize;
@@ -2077,10 +2072,16 @@ impl CliSession {
                 output::display_context_usage(total_tokens, context_limit);
 
                 if show_cost {
+                    // Priced like the recorded session cost: by the session's own provider,
+                    // not the configured default.
                     output::display_cost_usage(
-                        &provider_name,
+                        metadata
+                            .provider_name
+                            .as_deref()
+                            .unwrap_or(provider.get_name()),
                         &model_config.model_name,
                         &metadata.usage,
+                        metadata.accumulated_cost,
                     );
                 }
             }

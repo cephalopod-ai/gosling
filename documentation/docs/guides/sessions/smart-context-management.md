@@ -476,7 +476,7 @@ Pricing data is regularly fetched from the OpenRouter API and cached locally. Th
 These costs are estimates only, and not connected to your actual provider bill. The cost shown is an approximation based on token counts and public pricing data.
 </TabItem>
     <TabItem value="cli" label="gosling CLI">
-    Show estimated cost in the gosling CLI by setting the `GOSLING_CLI_SHOW_COST` [environment variable](/docs/guides/environment-variables.md#session-management) or including it in the [configuration file](/docs/guides/config-files.md).
+    Show estimated cost in the gosling CLI by setting the `GOSLING_CLI_SHOW_COST` [environment variable](/docs/guides/environment-variables.md#session-management) or including it in the [configuration file](/docs/guides/config-files.md). Before each prompt the CLI prints the session's accumulated cost (the value session exports report) and, labelled "last request", the cost and tokens of the most recent model request, for example `Cost: $0.2564 USD this session · last request $0.2200 USD (102000 tokens: in 100000 (40000 cache read), out 2000)`.
 
   ```
   # Set environment variable

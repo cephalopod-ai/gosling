@@ -448,3 +448,33 @@ fn a_successful_stream_json_run_still_ends_with_complete() {
     assert_eq!(events.last().unwrap()["type"], "complete", "{events:?}");
     assert!(!events.iter().any(|event| event["type"] == "error"));
 }
+
+/// GSL-PT-20260927-B18: `--stats` was accepted and silently ignored with
+/// `--output-format json|stream-json`.
+#[test]
+fn stats_are_printed_on_stderr_in_every_output_format() {
+    let env = Env::new();
+
+    let json = env.gosling(&["run", "--stats", "--output-format", "json", "-t", "hi"]);
+    assert!(json.status.success(), "stderr: {}", stderr(&json));
+    let document: Value =
+        serde_json::from_slice(&json.stdout).expect("stdout is one JSON document");
+    assert_eq!(document["metadata"]["status"], "completed");
+    assert!(stderr(&json).contains("Stats:"), "{}", stderr(&json));
+
+    let stream = env.gosling(&[
+        "run",
+        "--stats",
+        "--output-format",
+        "stream-json",
+        "-t",
+        "hi",
+    ]);
+    assert!(stream.status.success(), "stderr: {}", stderr(&stream));
+    assert_eq!(stream_events(&stream).last().unwrap()["type"], "complete");
+    assert!(stderr(&stream).contains("Stats:"), "{}", stderr(&stream));
+
+    let text = env.gosling(&["run", "--stats", "-t", "hi"]);
+    assert!(stderr(&text).contains("Stats:"), "{}", stderr(&text));
+    assert!(!stdout(&text).contains("Stats:"), "{}", stdout(&text));
+}
