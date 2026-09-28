@@ -155,5 +155,7 @@ pub async fn run(builtins: Vec<String>) -> Result<()> {
         },
     );
     let agent = server.create_agent().await?;
-    serve(agent, incoming, outgoing).await
+    let result = serve(agent, incoming, outgoing).await;
+    server.shutdown().await;
+    result
 }

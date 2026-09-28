@@ -33,6 +33,10 @@ impl AcpServer {
         }
     }
 
+    pub async fn shutdown(&self) {
+        self.session_manager.shutdown().await
+    }
+
     pub async fn create_agent(&self) -> Result<Arc<GoslingAcpAgent>> {
         Paths::scope(self.runtime_paths(), async {
             let config = crate::config::Config::global();

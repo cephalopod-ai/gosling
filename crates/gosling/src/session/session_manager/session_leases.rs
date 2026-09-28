@@ -95,16 +95,39 @@ impl Drop for SessionTurnLease {
         if self.released {
             return;
         }
-        let storage = Arc::clone(&self.storage);
         let session_id = self.session_id.clone();
         let lease_id = self.lease_id.clone();
         if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            let release = InFlightLeaseRelease::start(Arc::clone(&self.storage));
             runtime.spawn(async move {
-                let _ = storage
+                let _ = release
+                    .0
                     .release_session_turn_lease(&session_id, &lease_id)
                     .await;
             });
         }
+    }
+}
+
+/// Counts a lease release that is still running, so a graceful shutdown can
+/// wait for it: a process that exits first aborts the release and leaves a
+/// stale lease row (GSL-PT-20260927-S01).
+struct InFlightLeaseRelease(Arc<SessionStorage>);
+
+impl InFlightLeaseRelease {
+    fn start(storage: Arc<SessionStorage>) -> Self {
+        storage
+            .lease_releases_in_flight
+            .send_modify(|in_flight| *in_flight += 1);
+        Self(storage)
+    }
+}
+
+impl Drop for InFlightLeaseRelease {
+    fn drop(&mut self) {
+        self.0
+            .lease_releases_in_flight
+            .send_modify(|in_flight| *in_flight -= 1);
     }
 }
 

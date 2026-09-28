@@ -666,6 +666,11 @@ impl SessionManager {
         Ok(())
     }
 
+    /// Call once before a graceful process exit; see `SessionStorage::shutdown`.
+    pub async fn shutdown(&self) {
+        self.storage.shutdown().await
+    }
+
     pub(crate) async fn acquire_session_turn_lease(
         &self,
         session_id: &str,
@@ -1506,6 +1511,8 @@ pub struct SessionStorage {
     active_tool_operations: std::sync::Mutex<HashSet<String>>,
     plan_updates: tokio::sync::broadcast::Sender<crate::session::plans::PlanUpdate>,
     plan_source_hash_cache: std::sync::Mutex<PlanSourceHashCache>,
+    /// Turn-lease releases still running; a graceful shutdown waits for them.
+    lease_releases_in_flight: tokio::sync::watch::Sender<usize>,
 }
 
 pub(crate) fn role_to_string(role: &Role) -> &'static str {
@@ -6180,6 +6187,121 @@ mod tests {
             .release()
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn shutdown_waits_for_a_turn_lease_release_still_in_flight() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = SessionManager::new(temp_dir.path().to_path_buf());
+        let session = manager
+            .create_session(
+                temp_dir.path().to_path_buf(),
+                "Released at exit".to_string(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        let lease = manager
+            .acquire_session_turn_lease(&session.id, None)
+            .await
+            .unwrap();
+
+        // Contention stands in for the busy store that made releases lag.
+        let write_gate = manager.storage().acquire_write_guard().await;
+        drop(lease);
+        let shutdown = tokio::spawn({
+            let manager = manager.clone();
+            async move { manager.shutdown().await }
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        assert!(!shutdown.is_finished());
+        drop(write_gate);
+        shutdown.await.unwrap();
+
+        let reopened = SessionManager::new(temp_dir.path().to_path_buf());
+        let leases: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM session_turn_leases")
+            .fetch_one(reopened.storage().pool().await.unwrap())
+            .await
+            .unwrap();
+        assert_eq!(leases, 0);
+    }
+
+    #[tokio::test]
+    async fn shutdown_leaves_a_complete_database_file_without_its_log() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = SessionManager::new(temp_dir.path().to_path_buf());
+        let session = manager
+            .create_session(
+                temp_dir.path().to_path_buf(),
+                "Checkpointed".to_string(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        manager
+            .add_message(&session.id, &Message::user().with_text("persisted"))
+            .await
+            .unwrap();
+
+        manager.shutdown().await;
+
+        let session_dir = temp_dir.path().join(SESSIONS_FOLDER);
+        let log = std::fs::metadata(session_dir.join(format!("{DB_NAME}-wal")));
+        assert!(log.map(|log| log.len() == 0).unwrap_or(true));
+        let copy = temp_dir.path().join("sessions-copy.db");
+        std::fs::copy(session_dir.join(DB_NAME), &copy).unwrap();
+        let copy_pool = SqlitePoolOptions::new()
+            .connect_with(SqliteConnectOptions::new().filename(&copy).read_only(true))
+            .await
+            .unwrap();
+        let counts: (i64, i64) = sqlx::query_as(
+            "SELECT (SELECT COUNT(*) FROM sessions), (SELECT COUNT(*) FROM messages)",
+        )
+        .fetch_one(&copy_pool)
+        .await
+        .unwrap();
+        assert_eq!(counts, (1, 1));
+
+        let never_opened = temp_dir.path().join("never-opened");
+        SessionManager::new(never_opened.clone()).shutdown().await;
+        assert!(!never_opened.exists());
+    }
+
+    #[tokio::test]
+    async fn shutdown_does_not_wait_for_another_process_reading_the_store() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = SessionManager::new(temp_dir.path().to_path_buf());
+        manager
+            .create_session(
+                temp_dir.path().to_path_buf(),
+                "Shared store".to_string(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        let other_process = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(
+                SqliteConnectOptions::new()
+                    .filename(temp_dir.path().join(SESSIONS_FOLDER).join(DB_NAME)),
+            )
+            .await
+            .unwrap();
+        let mut reading = other_process.begin().await.unwrap();
+        let _: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM sessions")
+            .fetch_one(&mut *reading)
+            .await
+            .unwrap();
+
+        let started = std::time::Instant::now();
+        manager.shutdown().await;
+
+        assert!(started.elapsed() < std::time::Duration::from_secs(2));
+        reading.commit().await.unwrap();
+        other_process.close().await;
     }
 
     #[tokio::test]

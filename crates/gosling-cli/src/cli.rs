@@ -1696,7 +1696,7 @@ async fn handle_serve_command(args: ServeCommandArgs) -> Result<()> {
         .collect::<Result<Vec<_>>>()?;
     let secret_key = env_secret.unwrap_or_else(generate_serve_secret_key);
     let router = create_router(
-        server,
+        Arc::clone(&server),
         secret_key,
         require_token,
         additional_allowed_origins,
@@ -1776,6 +1776,7 @@ async fn handle_serve_command(args: ServeCommandArgs) -> Result<()> {
         .await?;
     }
 
+    server.shutdown().await;
     Ok(())
 }
 
