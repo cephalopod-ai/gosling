@@ -241,6 +241,65 @@ fn resume_keeps_the_sessions_stored_permission_mode() {
     );
 }
 
+fn listed_sessions(env: &Env) -> Vec<(String, u64)> {
+    let output = env.run_ok(env.root.path(), &["session", "list", "--format", "json"]);
+    let sessions: Vec<serde_json::Value> = serde_json::from_slice(&output.stdout).unwrap();
+    sessions
+        .iter()
+        .map(|session| {
+            (
+                session["id"].as_str().unwrap().to_string(),
+                session["message_count"].as_u64().unwrap(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn a_start_that_fails_before_its_first_turn_leaves_no_session() {
+    let env = Env::new();
+    let cwd = env.root.path();
+    let kept = env.run_ok(cwd, &["run", "-n", "kept", "-t", "hi"]);
+    let kept_id = banner_session_id(&kept);
+
+    for args in [
+        &["run", "-t", "Say READY"][..],
+        &["run", "-n", "named-start", "-t", "Say READY"][..],
+        &["session"][..],
+    ] {
+        let failed = env
+            .command(cwd, args)
+            .env("GOSLING_PROVIDER", "nonsense-prov")
+            .output()
+            .unwrap();
+        assert!(!failed.status.success(), "{args:?} must fail to start");
+    }
+    std::fs::write(
+        env.root.path().join("config").join("config.yaml"),
+        "GOSLING_MODEL: gpt-4o\n",
+    )
+    .unwrap();
+    let unconfigured = env.gosling(cwd, &["run", "-t", "Say READY"]);
+    assert!(!unconfigured.status.success());
+
+    let resume_failure = env.gosling(
+        cwd,
+        &[
+            "run",
+            "-r",
+            "--session-id",
+            &kept_id,
+            "--provider",
+            "nonsense-prov",
+            "-t",
+            "again",
+        ],
+    );
+    assert!(!resume_failure.status.success());
+
+    assert_eq!(listed_sessions(&env), vec![(kept_id, 2)]);
+}
+
 #[test]
 fn resuming_from_another_directory_moves_the_session_to_it() {
     let env = Env::new();

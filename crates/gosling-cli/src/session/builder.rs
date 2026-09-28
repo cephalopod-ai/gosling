@@ -151,6 +151,7 @@ async fn load_extensions(
     agent: Agent,
     extensions_to_load: Vec<(String, ExtensionConfig)>,
     session_id: &str,
+    startup: &StartupGuard<'_>,
 ) -> Arc<Agent> {
     let mut set = JoinSet::new();
     let agent_ptr = Arc::new(agent);
@@ -192,6 +193,7 @@ async fn load_extensions(
             // initializing; exiting straight from the signal would orphan them.
             set.shutdown().await;
             spinner.clear();
+            startup.discard_created_session().await;
             process::exit(130);
         }
     } {
@@ -244,26 +246,20 @@ fn resolve_provider_and_model(
     config: &Config,
     saved_provider: Option<String>,
     saved_model_config: Option<gosling_providers::model::ModelConfig>,
-) -> ResolvedProviderConfig {
+) -> Result<ResolvedProviderConfig, String> {
     let provider_name = session_config
         .provider
         .clone()
         .or(saved_provider)
         .or_else(|| config.get_gosling_provider().ok())
-        .unwrap_or_else(|| {
-            output::render_error("No provider configured. Run 'gosling configure' first.");
-            process::exit(1);
-        });
+        .ok_or("No provider configured. Run 'gosling configure' first.")?;
 
     let model_name = session_config
         .model
         .clone()
         .or_else(|| saved_model_config.as_ref().map(|mc| mc.model_name.clone()))
         .or_else(|| config.get_gosling_model().ok())
-        .unwrap_or_else(|| {
-            output::render_error("No model configured. Run 'gosling configure' first.");
-            process::exit(1);
-        });
+        .ok_or("No model configured. Run 'gosling configure' first.")?;
 
     let model_config = if session_config.resume
         && saved_model_config
@@ -283,16 +279,42 @@ fn resolve_provider_and_model(
         saved
     } else {
         gosling::model_config::model_config_from_user_config(&provider_name, &model_name)
-            .unwrap_or_else(|e| {
-                output::render_error(&format!("Failed to create model configuration: {}", e));
-                process::exit(1);
-            })
+            .map_err(|e| format!("Failed to create model configuration: {}", e))?
     };
 
-    ResolvedProviderConfig {
+    Ok(ResolvedProviderConfig {
         provider_name,
         model_name,
         model_config,
+    })
+}
+
+/// The session `build_session` was handed that this start itself created —
+/// a new session, or a fork — as opposed to one being resumed.
+fn session_created_for_this_start(session_config: &SessionBuilderConfig) -> Option<String> {
+    let created = session_config.fork || !(session_config.resume || session_config.no_session);
+    created.then(|| session_config.session_id.clone()).flatten()
+}
+
+/// A new session or a fork created for this start becomes the user's only
+/// once startup succeeds. A start that fails first removes it, so it cannot
+/// linger empty (or as an orphaned copy) and be picked by a later `--resume`.
+struct StartupGuard<'a> {
+    session_manager: &'a gosling::session::SessionManager,
+    created_session_id: Option<String>,
+}
+
+impl StartupGuard<'_> {
+    async fn discard_created_session(&self) {
+        if let Some(session_id) = &self.created_session_id {
+            let _ = self.session_manager.delete_session(session_id).await;
+        }
+    }
+
+    async fn fail<T>(&self, message: &str) -> T {
+        self.discard_created_session().await;
+        output::render_error(message);
+        process::exit(1)
     }
 }
 
@@ -375,27 +397,40 @@ async fn close_interrupted_turn(
     }
 }
 
-async fn handle_resumed_session_workdir(agent: &Agent, session_id: &str, interactive: bool) {
-    let session = agent
+async fn handle_resumed_session_workdir(
+    agent: &Agent,
+    session_id: &str,
+    interactive: bool,
+    startup: &StartupGuard<'_>,
+) {
+    let session = match agent
         .config
         .session_manager
         .get_session(session_id, false)
         .await
-        .unwrap_or_else(|e| {
-            output::render_error(&format!("Failed to read session metadata: {}", e));
-            process::exit(1);
-        });
+    {
+        Ok(session) => session,
+        Err(e) => {
+            startup
+                .fail(&format!("Failed to read session metadata: {}", e))
+                .await
+        }
+    };
 
-    let current_workdir = std::env::current_dir().unwrap_or_else(|e| {
-        output::render_error(&format!("Failed to get current working directory: {}", e));
-        process::exit(1);
-    });
+    let current_workdir = match std::env::current_dir() {
+        Ok(current_workdir) => current_workdir,
+        Err(e) => {
+            startup
+                .fail(&format!("Failed to get current working directory: {}", e))
+                .await
+        }
+    };
     if current_workdir == session.working_dir {
         return;
     }
 
     if interactive {
-        let change_workdir = cliclack::confirm(format!(
+        let change_workdir = match cliclack::confirm(format!(
             "{} The original working directory of this session was set to {}. \
              Your current directory is {}. \
              Do you want to switch back to the original working directory?",
@@ -405,10 +440,14 @@ async fn handle_resumed_session_workdir(agent: &Agent, session_id: &str, interac
         ))
         .initial_value(true)
         .interact()
-        .unwrap_or_else(|e| {
-            output::render_error(&format!("Failed to get user input: {}", e));
-            process::exit(1);
-        });
+        {
+            Ok(change_workdir) => change_workdir,
+            Err(e) => {
+                startup
+                    .fail(&format!("Failed to get user input: {}", e))
+                    .await
+            }
+        };
 
         if change_workdir {
             if !session.working_dir.exists() {
@@ -440,20 +479,21 @@ async fn handle_resumed_session_workdir(agent: &Agent, session_id: &str, interac
     // process cwd, so staying put must be persisted to take effect.
     let effective_workdir = std::env::current_dir().unwrap_or(current_workdir);
     if effective_workdir != session.working_dir {
-        agent
+        if let Err(e) = agent
             .config
             .session_manager
             .update(session_id)
             .working_dir(effective_workdir)
             .apply()
             .await
-            .unwrap_or_else(|e| {
-                output::render_error(&format!(
+        {
+            startup
+                .fail(&format!(
                     "Failed to update session working directory: {}",
                     e
-                ));
-                process::exit(1);
-            });
+                ))
+                .await
+        }
     }
 }
 
@@ -521,6 +561,7 @@ async fn resolve_and_load_extensions(
     agent: Agent,
     extensions: Vec<ExtensionConfig>,
     session_id: &str,
+    startup: &StartupGuard<'_>,
 ) -> Arc<Agent> {
     for warning in gosling::config::get_warnings() {
         eprintln!("{}", style(format!("Warning: {}", warning)).yellow());
@@ -531,7 +572,7 @@ async fn resolve_and_load_extensions(
         .map(|cfg| (cfg.name(), cfg))
         .collect();
 
-    load_extensions(agent, extensions_to_load, session_id).await
+    load_extensions(agent, extensions_to_load, session_id, startup).await
 }
 
 async fn configure_session_prompts(
@@ -539,6 +580,7 @@ async fn configure_session_prompts(
     config: &Config,
     session_config: &SessionBuilderConfig,
     session_id: &str,
+    startup: &StartupGuard<'_>,
 ) {
     if let Err(e) = session.agent.persist_extension_state(session_id).await {
         tracing::warn!("Failed to save extension state: {}", e);
@@ -554,13 +596,17 @@ async fn configure_session_prompts(
     let system_prompt_file: Option<String> =
         config.get_param("GOSLING_SYSTEM_PROMPT_FILE_PATH").ok();
     if let Some(ref path) = system_prompt_file {
-        let override_prompt = std::fs::read_to_string(path).unwrap_or_else(|e| {
-            output::render_error(&format!(
-                "Failed to read system prompt file '{}': {}",
-                path, e
-            ));
-            process::exit(1);
-        });
+        let override_prompt = match std::fs::read_to_string(path) {
+            Ok(override_prompt) => override_prompt,
+            Err(e) => {
+                startup
+                    .fail(&format!(
+                        "Failed to read system prompt file '{}': {}",
+                        path, e
+                    ))
+                    .await
+            }
+        };
         session.agent.override_system_prompt(override_prompt).await;
     }
 }
@@ -607,6 +653,10 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
     }
 
     let session_manager = agent.config.session_manager.clone();
+    let startup = StartupGuard {
+        session_manager: &session_manager,
+        created_session_id: session_created_for_this_start(&session_config),
+    };
 
     let (saved_provider, saved_model_config) = if session_config.resume {
         if let Some(ref session_id) = session_config.session_id {
@@ -621,23 +671,32 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
         (None, None)
     };
 
-    let resolved =
-        resolve_provider_and_model(&session_config, config, saved_provider, saved_model_config);
+    let resolved = match resolve_provider_and_model(
+        &session_config,
+        config,
+        saved_provider,
+        saved_model_config,
+    ) {
+        Ok(resolved) => resolved,
+        Err(message) => startup.fail(&message).await,
+    };
 
     let session_id =
         resolve_session_id(&session_config, &session_manager, agent.config.gosling_mode).await;
 
     if session_config.resume {
         close_interrupted_turn(&session_manager, &session_id).await;
-        handle_resumed_session_workdir(&agent, &session_id, session_config.interactive).await;
+        handle_resumed_session_workdir(&agent, &session_id, session_config.interactive, &startup)
+            .await;
     }
 
     let extensions_for_provider =
         match collect_extension_configs(&agent, &session_config, &session_id).await {
             Ok(exts) => exts,
             Err(e) => {
-                output::render_error(&format!("Failed to collect extensions: {}", e));
-                process::exit(1);
+                startup
+                    .fail(&format!("Failed to collect extensions: {}", e))
+                    .await
             }
         };
 
@@ -654,14 +713,22 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
                     && session_config.provider.is_none()
                     && is_provider_unavailable_error(&e) =>
             {
-                let fallback_provider = config.get_gosling_provider().unwrap_or_else(|_| {
-                    output::render_error("No provider configured. Run 'gosling configure' first.");
-                    process::exit(1);
-                });
-                let fallback_model = config.get_gosling_model().unwrap_or_else(|_| {
-                    output::render_error("No model configured. Run 'gosling configure' first.");
-                    process::exit(1);
-                });
+                let fallback_provider = match config.get_gosling_provider() {
+                    Ok(fallback_provider) => fallback_provider,
+                    Err(_) => {
+                        startup
+                            .fail("No provider configured. Run 'gosling configure' first.")
+                            .await
+                    }
+                };
+                let fallback_model = match config.get_gosling_model() {
+                    Ok(fallback_model) => fallback_model,
+                    Err(_) => {
+                        startup
+                            .fail("No model configured. Run 'gosling configure' first.")
+                            .await
+                    }
+                };
                 eprintln!(
                     "{}",
                     style(format!(
@@ -671,15 +738,17 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
                     ))
                     .yellow()
                 );
-                let fallback_model_config =
-                    model_config_from_user_config(fallback_provider.as_str(), &fallback_model)
-                        .unwrap_or_else(|e| {
-                            output::render_error(&format!(
-                                "Failed to create model configuration: {}",
-                                e
-                            ));
-                            process::exit(1);
-                        });
+                let fallback_model_config = match model_config_from_user_config(
+                    fallback_provider.as_str(),
+                    &fallback_model,
+                ) {
+                    Ok(fallback_model_config) => fallback_model_config,
+                    Err(e) => {
+                        startup
+                            .fail(&format!("Failed to create model configuration: {}", e))
+                            .await
+                    }
+                };
                 match create(&fallback_provider, extensions_for_provider.clone()).await {
                     Ok(provider) => (
                         provider,
@@ -687,49 +756,43 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
                         fallback_model,
                         fallback_model_config,
                     ),
-                    Err(e2) => {
-                        output::render_error(&format_provider_creation_error(&e2));
-                        process::exit(1);
-                    }
+                    Err(e2) => startup.fail(&format_provider_creation_error(&e2)).await,
                 }
             }
-            Err(e) => {
-                output::render_error(&format_provider_creation_error(&e));
-                process::exit(1);
-            }
+            Err(e) => startup.fail(&format_provider_creation_error(&e)).await,
         };
     tracing::info!("🤖 Using model: {}", effective_model_name);
 
-    agent
+    if let Err(e) = agent
         .update_provider(new_provider, effective_model_config, &session_id)
         .await
-        .unwrap_or_else(|e| {
-            output::render_error(&format!("Failed to initialize agent: {}", e));
-            process::exit(1);
-        });
+    {
+        startup
+            .fail(&format!("Failed to initialize agent: {}", e))
+            .await
+    }
 
     let session_mode = if session_config.resume {
-        session_manager
-            .get_session(&session_id, false)
-            .await
-            .map(|session| session.gosling_mode)
-            .unwrap_or_else(|e| {
-                output::render_error(&format!("Failed to read session metadata: {}", e));
-                process::exit(1);
-            })
+        match session_manager.get_session(&session_id, false).await {
+            Ok(session) => session.gosling_mode,
+            Err(e) => {
+                startup
+                    .fail(&format!("Failed to read session metadata: {}", e))
+                    .await
+            }
+        }
     } else {
         agent.config.gosling_mode
     };
-    agent
-        .update_gosling_mode(session_mode, &session_id)
-        .await
-        .unwrap_or_else(|e| {
-            output::render_error(&format!("Failed to set session mode: {}", e));
-            process::exit(1);
-        });
+    if let Err(e) = agent.update_gosling_mode(session_mode, &session_id).await {
+        startup
+            .fail(&format!("Failed to set session mode: {}", e))
+            .await
+    }
 
     // Extensions are loaded after session creation because we may change directory when resuming
-    let agent_ptr = resolve_and_load_extensions(agent, extensions_for_provider, &session_id).await;
+    let agent_ptr =
+        resolve_and_load_extensions(agent, extensions_for_provider, &session_id, &startup).await;
 
     let edit_mode = config
         .get_param::<String>("EDIT_MODE")
@@ -760,7 +823,7 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
         session.use_ephemeral_state(session_dir, transcript_suppression);
     }
 
-    configure_session_prompts(&session, config, &session_config, &session_id).await;
+    configure_session_prompts(&session, config, &session_config, &session_id, &startup).await;
 
     if !session_config.quiet && session_config.output_format == "text" {
         output::display_session_info(
@@ -940,5 +1003,71 @@ mod tests {
         assert_eq!(truncate_with_ellipsis("hello world", 5), "hello…");
 
         assert_eq!(truncate_with_ellipsis("", 5), "");
+    }
+
+    #[test]
+    fn only_new_sessions_and_forks_count_as_created_for_this_start() {
+        let with_id = |resume: bool, fork: bool, no_session: bool| SessionBuilderConfig {
+            session_id: Some("20260928_7".to_string()),
+            resume,
+            fork,
+            no_session,
+            ..SessionBuilderConfig::default()
+        };
+
+        let created = |config: SessionBuilderConfig| session_created_for_this_start(&config);
+        assert_eq!(
+            created(with_id(false, false, false)).as_deref(),
+            Some("20260928_7")
+        );
+        assert_eq!(
+            created(with_id(true, true, false)).as_deref(),
+            Some("20260928_7")
+        );
+        assert_eq!(created(with_id(true, false, false)), None);
+        assert_eq!(created(with_id(false, false, true)), None);
+    }
+
+    #[tokio::test]
+    async fn a_failed_start_discards_only_the_session_it_created() {
+        let temp = tempfile::tempdir().unwrap();
+        let manager = gosling::session::SessionManager::new(temp.path().to_path_buf());
+        let mut ids = Vec::new();
+        for name in ["created", "resumed"] {
+            ids.push(
+                manager
+                    .create_session(
+                        temp.path().to_path_buf(),
+                        name.to_string(),
+                        SessionType::User,
+                        GoslingMode::Auto,
+                    )
+                    .await
+                    .unwrap()
+                    .id,
+            );
+        }
+
+        StartupGuard {
+            session_manager: &manager,
+            created_session_id: None,
+        }
+        .discard_created_session()
+        .await;
+        StartupGuard {
+            session_manager: &manager,
+            created_session_id: Some(ids[0].clone()),
+        }
+        .discard_created_session()
+        .await;
+
+        let remaining: Vec<String> = manager
+            .list_all_sessions()
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|session| session.id)
+            .collect();
+        assert_eq!(remaining, vec![ids[1].clone()]);
     }
 }
