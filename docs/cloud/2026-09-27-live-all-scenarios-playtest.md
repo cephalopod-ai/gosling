@@ -190,7 +190,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Medium | C01 | ACP client `mcpServers` replace all of gosling's configured extensions | open — queued R10 |
 | Medium | C02 | A hanging MCP extension blocks session start for 300 s with no feedback (run/ACP) | open — queued R11 |
 | Medium | C03 | Removed MCP extensions come back when an older session is resumed/loaded | open — queued R11 |
-| Medium | C05 | Skill discovery ignores `GOSLING_PATH_ROOT` and reads/writes HOME-based skill dirs | open — queued R7 |
+| Medium | C05 | Skill discovery ignores `GOSLING_PATH_ROOT` and reads/writes HOME-based skill dirs | fixed (R7) |
 | Medium | C06 | `disabledPlugins` does not disable an installed plugin's skills | open — queued R11 |
 | Medium | C08 | ACP: parallel subagents' tool activity is attributed to the first delegate call | open — queued R11 |
 | Medium | C10 | A stalled provider stream inside a synchronous subagent blocks the parent indefinitely | open — queued R11 |
@@ -201,8 +201,8 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Medium | D07 | `session list -w` leaks sibling directories (case-insensitive substring) and misses paths with a trailing slash | open — queued R8b |
 | Medium | D08 | Terminal control sequences in session names are printed raw; imported transcripts can inject them | open — queued R8b |
 | Medium | E05 | CLI text mode never shows a permission refusal; the operator sees a tool card as if the call ran | fixed (R8a) |
-| Medium | E06 | `GOSLING_PATH_ROOT` does not isolate skills/agents; operator's personal skill catalog is sent to the disposable root's provider (suspicion) | open — queued R7 |
-| Medium | E07 | Nested (subdirectory) context files are injected as a plain `user` message without the "untrusted project hints" framing | open — queued R7 |
+| Medium | E06 | `GOSLING_PATH_ROOT` does not isolate skills/agents; operator's personal skill catalog is sent to the disposable root's provider (suspicion) | fixed (R7) |
+| Medium | E07 | Nested (subdirectory) context files are injected as a plain `user` message without the "untrusted project hints" framing | fixed (R7) |
 | Medium | F01 | `--max-tool-repetitions` denies the repeated call but lets the turn loop to the 1000-turn default | fixed (R3) |
 | Medium | F14 | Interrupted turns stay `in_progress` forever (EOF, disconnect, SIGTERM, SIGKILL); nothing reconciles them | fixed (R1a) |
 | Medium | F15 | SIGTERM "graceful" shutdown keeps running turns alive for 5 s, then drops every client without a terminal event | open — queued R1b |
@@ -231,7 +231,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Medium | S11 | Sessions created over `gosling serve`/`gosling acp` are invisible to `gosling session list` | open — queued R8b |
 | Medium | S13 | Corrupt config.yaml silently drops `GOSLING_DISABLE_KEYRING: true` (keyring re-enabled) (suspicion) | fixed (R5) |
 | Medium | S18 | Corrupt permission.yaml: CLI/ACP panic, serve hangs `initialize`, `doctor` stays green, denials mislead | fixed (R6) |
-| Medium | S20 | Subdirectory AGENTS.md from any touched directory (including ignored ones) is injected into the user turn | open — queued R7 |
+| Medium | S20 | Subdirectory AGENTS.md from any touched directory (including ignored ones) is injected into the user turn | fixed (R7) |
 | Low | A02 | Unknown provider from `GOSLING_PROVIDER` env is reported as "No model configured" | open — queued R8b |
 | Low | A04 | Ctrl-C in `gosling configure` leaves the terminal cursor hidden | open — queued R8b |
 | Low | A05 | Broken config.yaml: session/run say "Run 'gosling configure' first" but configure refuses to run | fixed (R5) |
@@ -245,7 +245,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | A18 | Tool output and the following assistant text are printed with no separator (text and quiet modes) | fixed (R8a) |
 | Low | A19 | Hidden internal subcommands leak into shell completion and typo suggestions | open — queued R8b |
 | Low | A20 | (exploratory) `gosling secret` reports the wrong storage location and "removes" servers that don't exist | fixed (R5) |
-| Low | A21 | (exploratory) `shell-validate` has side effects and accepts unknown builtins | open — queued R7 |
+| Low | A21 | (exploratory) `shell-validate` has side effects and accepts unknown builtins | fixed (R7) |
 | Low | B07 | CLI stdout keeps the retracted partial attempt (text/-q/stream-json) | open — queued R1b |
 | Low | B12 | Auth failures end with "Please retry if you think this is a transient or recoverable error" | open — queued R9 |
 | Low | B13 | Empty or space-containing `--model` / `GOSLING_MODEL` accepted and sent verbatim | open — queued R9 |
@@ -284,14 +284,14 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | D24 | Import de-duplication blocks importing new turns of a grown transcript | note (product question) |
 | Low | D25 | `gosling tui` with non-interactive stdin renders a frame, then dumps an Ink/React stack trace | open — queued R8b |
 | Low | D26 | Default `review --dry-run` does not show what would run: `--checks-only` and `--instructions` produce byte-identical output that still announces a main pass | open — queued R8b |
-| Low | E08 | Nested hints are re-appended on every resume / `session/load` + access (unbounded duplication) | open — queued R7 |
-| Low | E09 | Unreadable or invalid-UTF-8 `AGENTS.md`/`.goslinghints` are dropped silently (warning only in the log file) | open — queued R7 |
+| Low | E08 | Nested hints are re-appended on every resume / `session/load` + access (unbounded duplication) | fixed (R7) |
+| Low | E09 | Unreadable or invalid-UTF-8 `AGENTS.md`/`.goslinghints` are dropped silently (warning only in the log file) | fixed (R7) |
 | Low | E10 | `run -i` reports every read failure as "Instruction file not found" | open — queued R8b |
 | Low | E11 | Code-execution gate blames `GOSLING_CODE_EXECUTION_RUNTIME=disabled` when the variable is unset or invalid | fixed (R8a) |
 | Low | E12 | `run --no-session` banner still announces "● new session" with an ID that cannot be resumed | fixed (R8a) |
-| Low | E13 | Every CLI invocation, including `--help` and `--version`, creates a new log file in the state directory | open — queued R7 |
+| Low | E13 | Every CLI invocation, including `--help` and `--version`, creates a new log file in the state directory | fixed (R7) |
 | Low | E14 | Session-start errors go to stdout (rc 1), unlike other CLI errors | fixed (R8a) |
-| Low | E15 | Context-file documentation disagrees with runtime (default order, fallback text) | open — queued R7 |
+| Low | E15 | Context-file documentation disagrees with runtime (default order, fallback text) | fixed (R7) |
 | Low | F02 | `run --output-format json\|stream-json`: startup failures are printed as human text on stdout | fixed (R8a) |
 | Low | F03 | `gosling serve` is silent on the console and its log misreports failed starts | open — queued R10 |
 | Low | F04 | WebSocket closes never carry a server close frame (client always sees 1006) | upstream crate (agent-client-protocol-http) |
@@ -353,9 +353,9 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Note | D21 | Terminal integration: hidden session per shell start; typed shell commands forwarded to the provider | note (product question) |
 | Note | D22 | Headless resume from another directory permanently re-homes the session | documented (behaviour kept) (R4) |
 | Note | D23 | Session metadata changes on every no-op resume (updated_at, shuffled enabled_extensions) | fixed (R4) |
-| Note | D27 | Review discovers global checks from `$HOME` regardless of `GOSLING_PATH_ROOT`; `--summary-only` omits untracked files; scoped REVIEW.md mislabeled under `--check-scope` | open — queued R7 |
+| Note | D27 | Review discovers global checks from `$HOME` regardless of `GOSLING_PATH_ROOT`; `--summary-only` omits untracked files; scoped REVIEW.md mislabeled under `--check-scope` | fixed (R7) |
 | Note | G115 | "Gosling secure storage" wording when keyring is disabled (plaintext secrets.yaml) | open — queued R13b |
-| Note | G118 | Skills tab in an isolated GOSLING_PATH_ROOT lists the operator's real skills | open — queued R7 |
+| Note | G118 | Skills tab in an isolated GOSLING_PATH_ROOT lists the operator's real skills | fixed (R7) |
 | Note | G121 | Duplicate element id / test id for the composer | open — queued R13b |
 | Note | G127 | Isolated Desktop instance lists and grants the operator's real Research Library | open — queued R7 |
 | Note | G134 | Renderer asks for git-branch info on folders it was never granted (37 main-process errors); persisted grants contain only the operator's Research Library | open — queued R13b |
@@ -368,4 +368,4 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Note | S06 | Compaction token figures disagree between the CLI cue and context-history | fixed (R2) |
 | Note | S14 | kill -9 during a shell tool: the child keeps running; the operation is honestly marked in_doubt | note (honest in-doubt marker) |
 | Note | S15 | Headless limit message is glued and asks a question nobody can answer | fixed (R3) |
-| Note | S17 | `gosling acp`/`serve` create a Default workspace rooted at the server process's cwd | open — queued R7 |
+| Note | S17 | `gosling acp`/`serve` create a Default workspace rooted at the server process's cwd | deferred (product decision; documented) (R7) |
