@@ -190,6 +190,8 @@ pub struct CliSession {
     edit_mode: Option<EditMode>,
     output_format: String,
     stats: bool,
+    /// Text output carries only the model's reply (`run --quiet`).
+    quiet: bool,
     persist_local_state: bool,
     _ephemeral_state: Option<EphemeralSessionState>,
 }
@@ -254,6 +256,7 @@ impl CliSession {
             edit_mode,
             output_format,
             stats,
+            quiet: false,
             persist_local_state: true,
             _ephemeral_state: None,
         }
@@ -1408,6 +1411,7 @@ impl CliSession {
     ) -> Result<()> {
         let is_json_mode = self.output_format == "json";
         let is_stream_json_mode = self.output_format == "stream-json";
+        let is_quiet_text_mode = self.quiet && !is_json_mode && !is_stream_json_mode;
 
         let session_config = SessionConfig {
             id: self.session_id.clone(),
@@ -1448,6 +1452,7 @@ impl CliSession {
         let mut progress_bars = output::McpSpinners::new();
         let cancel_token_clone = cancel_token.clone();
         let mut markdown_buffer = streaming_buffer::MarkdownBuffer::new();
+        let mut reply_text = output::TextBlocks::default();
         let mut prompted_credits_urls: HashSet<String> = HashSet::new();
         let mut thinking_header_shown = false;
         let run_started = Instant::now();
@@ -1591,6 +1596,13 @@ impl CliSession {
                                     !interactive && message.metadata.turn_limit.is_some();
                                 if is_stream_json_mode {
                                     emit_stream_event(&StreamEvent::Message { message: message.clone() });
+                                } else if is_quiet_text_mode {
+                                    if let Some(error) = &message.metadata.terminal_error {
+                                        let text = message.as_concat_text();
+                                        eprintln!("{}", if text.trim().is_empty() { error } else { &text });
+                                    } else if !unanswerable_limit_prompt {
+                                        output::render_reply_text_streaming(&message, &mut markdown_buffer, &mut reply_text);
+                                    }
                                 } else if !is_json_mode && !unanswerable_limit_prompt {
                                     output::render_message_streaming(&message, &mut markdown_buffer, &mut thinking_header_shown, self.debug);
                                     maybe_open_credits_top_up_url(
@@ -1612,7 +1624,7 @@ impl CliSession {
                                 &mut progress_bars,
                                 is_stream_json_mode,
                                 interactive,
-                                is_json_mode,
+                                is_json_mode || is_quiet_text_mode,
                                 self.debug,
                             );
                         }
@@ -1691,6 +1703,11 @@ impl CliSession {
             if is_stream_json_mode {
                 emit_stream_event(&StreamEvent::Message { message: notice });
                 handle_agent_error(&anyhow::anyhow!(notice_text.clone()), false, true);
+            } else if is_quiet_text_mode {
+                // A headless run reports the stop on stderr when it exits.
+                if interactive {
+                    eprintln!("{notice_text}");
+                }
             } else if !is_json_mode {
                 output::flush_markdown_buffer_current_theme(&mut markdown_buffer);
                 println!();
@@ -1770,7 +1787,11 @@ impl CliSession {
                 });
             }
         } else {
-            println!();
+            if is_quiet_text_mode {
+                reply_text.end_line();
+            } else {
+                println!();
+            }
             if self.stats {
                 print_run_stats(run_started, first_token_at, last_usage.as_ref());
             }

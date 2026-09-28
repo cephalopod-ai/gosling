@@ -866,6 +866,7 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
         session_config.stats,
     )
     .await;
+    session.quiet = session_config.quiet;
 
     if let Some((session_dir, transcript_suppression)) = ephemeral_state {
         session.use_ephemeral_state(session_dir, transcript_suppression);

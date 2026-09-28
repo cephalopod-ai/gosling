@@ -375,6 +375,58 @@ pub fn render_message_streaming(
     let _ = std::io::stdout().flush();
 }
 
+/// Where the streamed reply text left the cursor. Text from another message than the one
+/// printed last starts on a new line when the earlier text did not end one; streamed chunks of
+/// one message share its id and continue each other.
+#[derive(Default)]
+pub struct TextBlocks {
+    message_id: Option<String>,
+    line_open: bool,
+}
+
+impl TextBlocks {
+    fn push(&mut self, message: &Message, text: &str, buffer: &mut MarkdownBuffer, theme: Theme) {
+        if self.line_open && self.message_id != message.id {
+            flush_markdown_buffer(buffer, theme);
+            println!();
+        }
+        self.message_id = message.id.clone();
+        if let Some(last) = text.chars().last() {
+            self.line_open = last != '\n';
+        }
+        if let Some(safe_content) = buffer.push(text) {
+            print_markdown(&safe_content, theme);
+        }
+    }
+
+    /// Ends the reply's last line, if one is open; an empty reply prints nothing.
+    pub fn end_line(&mut self) {
+        if self.line_open {
+            println!();
+            self.line_open = false;
+        }
+    }
+}
+
+/// `run --quiet`: stdout carries only the model's reply, the text of its messages. Tool calls,
+/// tool output, notices and thinking are left out.
+pub fn render_reply_text_streaming(
+    message: &Message,
+    buffer: &mut MarkdownBuffer,
+    blocks: &mut TextBlocks,
+) {
+    if message.role != rmcp::model::Role::Assistant {
+        return;
+    }
+    let theme = get_theme();
+    for content in &message.content {
+        if let MessageContent::Text(text) = content {
+            blocks.push(message, &text.text, buffer, theme);
+        }
+    }
+    let _ = std::io::stdout().flush();
+}
+
 fn render_credits_exhausted_notification(notification: &SystemNotificationContent) {
     hide_thinking();
     println!("\n{}", style(&notification.msg).yellow());

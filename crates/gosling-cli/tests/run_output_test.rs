@@ -8,11 +8,14 @@ use std::net::{TcpListener, TcpStream};
 use std::process::{Command, Output};
 use tempfile::TempDir;
 
-/// Replies to the newest message of each chat request:
-/// - a user prompt with a line `CALL <tool> <json-arguments>` gets that tool call;
-/// - a tool result gets the text `AFTER-TOOL` (no trailing newline, so glued
-///   output is visible);
-/// - any other prompt gets `REPLY`.
+/// Replies to the newest message of each chat request. A user prompt is read
+/// for these lines:
+/// - `STATUS <code>`: answer with that HTTP status;
+/// - `CALL <tool> <json-arguments>`: call that tool;
+/// - `SAY <text>`: reply with that text (alongside a `CALL`, before the call).
+///
+/// A prompt without either gets `REPLY`, and a tool result gets `AFTER-TOOL`.
+/// Replies never end with a newline, so glued output stays visible.
 fn start_provider() -> u16 {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -45,11 +48,19 @@ fn serve(mut stream: TcpStream) {
     let mut body = vec![0u8; content_length];
     let _ = reader.read_exact(&mut body);
 
-    let (content_type, payload) = if request_line.contains("/chat/completions") {
+    let (status, content_type, payload) = if request_line.contains("/chat/completions") {
         let request: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
-        let delta = reply_delta(&request);
-        if request["stream"] == json!(true) {
-            let chunk = |delta: &Value, finish: Value| {
+        let prompt = prompt(&request);
+        if let Some(code) = prompt.as_deref().and_then(|p| directive(p, "STATUS")) {
+            let error = json!({"error": {"message": "scripted failure"}});
+            (
+                format!("{code} Scripted"),
+                "application/json",
+                error.to_string(),
+            )
+        } else if request["stream"] == json!(true) {
+            let delta = reply_delta(prompt.as_deref());
+            let chunk = |delta: Value, finish: Value| {
                 let chunk = json!({
                     "id": "r",
                     "object": "chat.completion.chunk",
@@ -59,18 +70,28 @@ fn serve(mut stream: TcpStream) {
                 });
                 format!("data: {chunk}\n\n")
             };
-            let finish = if delta.get("tool_calls").is_some() {
-                "tool_calls"
-            } else {
-                "stop"
+            let mut events = String::new();
+            if let Some(content) = delta.get("content") {
+                events += &chunk(
+                    json!({"role": "assistant", "content": content}),
+                    Value::Null,
+                );
+            }
+            let finish = match delta.get("tool_calls") {
+                Some(tool_calls) => {
+                    events += &chunk(
+                        json!({"role": "assistant", "tool_calls": tool_calls}),
+                        Value::Null,
+                    );
+                    "tool_calls"
+                }
+                None => "stop",
             };
+            events += &chunk(json!({}), json!(finish));
             (
+                "200 OK".to_string(),
                 "text/event-stream",
-                format!(
-                    "{}{}data: [DONE]\n\n",
-                    chunk(&delta, Value::Null),
-                    chunk(&json!({}), json!(finish))
-                ),
+                events + "data: [DONE]\n\n",
             )
         } else {
             let completion = json!({
@@ -80,50 +101,70 @@ fn serve(mut stream: TcpStream) {
                 "model": "gpt-4o",
                 "choices": [{"index": 0, "message": {"role": "assistant", "content": "Title"}, "finish_reason": "stop"}],
             });
-            ("application/json", completion.to_string())
+            (
+                "200 OK".to_string(),
+                "application/json",
+                completion.to_string(),
+            )
         }
     } else {
         (
+            "200 OK".to_string(),
             "application/json",
             json!({"object": "list", "data": []}).to_string(),
         )
     };
     let _ = write!(
         stream,
-        "HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
+        "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
         payload.len()
     );
 }
 
-fn reply_delta(request: &Value) -> Value {
-    let last = request["messages"]
-        .as_array()
-        .and_then(|messages| messages.last())
-        .cloned()
-        .unwrap_or(Value::Null);
-    if last["role"] == "tool" {
-        return json!({"role": "assistant", "content": "AFTER-TOOL"});
+/// The newest message's text when it is the user's prompt; `None` after a tool result.
+fn prompt(request: &Value) -> Option<String> {
+    let last = request["messages"].as_array()?.last()?;
+    if last["role"] != "user" {
+        return None;
     }
-    let text = match &last["content"] {
+    Some(match &last["content"] {
         Value::String(text) => text.clone(),
-        other => other.to_string(),
-    };
-    let call = text
+        Value::Array(parts) => parts
+            .iter()
+            .filter_map(|part| part["text"].as_str())
+            .collect::<Vec<_>>()
+            .join("\n"),
+        _ => String::new(),
+    })
+}
+
+fn directive<'a>(prompt: &'a str, name: &str) -> Option<&'a str> {
+    prompt
         .lines()
-        .find_map(|line| line.trim().strip_prefix("CALL "))
-        .and_then(|call| call.split_once(' '));
-    match call {
-        Some((name, arguments)) => json!({
-            "role": "assistant",
-            "tool_calls": [{
+        .find_map(|line| line.trim().strip_prefix(name)?.strip_prefix(' '))
+}
+
+fn reply_delta(prompt: Option<&str>) -> Value {
+    let Some(prompt) = prompt else {
+        return json!({"role": "assistant", "content": "AFTER-TOOL"});
+    };
+    let mut delta = json!({"role": "assistant"});
+    if let Some(text) = directive(prompt, "SAY") {
+        delta["content"] = json!(text);
+    }
+    match directive(prompt, "CALL").and_then(|call| call.split_once(' ')) {
+        Some((name, arguments)) => {
+            delta["tool_calls"] = json!([{
                 "index": 0,
                 "id": "call_1",
                 "type": "function",
                 "function": {"name": name, "arguments": arguments},
-            }],
-        }),
-        None => json!({"role": "assistant", "content": "REPLY"}),
+            }]);
+        }
+        None if delta.get("content").is_none() => delta["content"] = json!("REPLY"),
+        None => {}
     }
+    delta
 }
 
 struct Env {
@@ -233,4 +274,55 @@ fn a_failed_tool_call_is_marked_failed_and_a_successful_one_is_not() {
         "{succeeded_stdout}"
     );
     assert!(!succeeded_stdout.contains('✗'), "{succeeded_stdout}");
+}
+
+/// GSL-PT-20260927-A17: `run -q` promises only the model's reply on stdout but
+/// printed tool cards and raw tool output, glued to the reply.
+#[test]
+fn quiet_mode_prints_only_the_reply_text() {
+    let env = Env::new();
+
+    let output = env.gosling(&[
+        "run",
+        "-q",
+        "-t",
+        "SAY Checking first.\nCALL shell {\"command\": \"echo tool-output-marker\"}",
+    ]);
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "Checking first.\nAFTER-TOOL\n");
+}
+
+/// GSL-PT-20260927-A17: a provider failure under `run -q` printed the error
+/// text on stdout as if it were the answer.
+#[test]
+fn quiet_mode_reports_a_failed_run_on_stderr_only() {
+    let env = Env::new();
+
+    let output = env.gosling(&["run", "-q", "-t", "STATUS 401"]);
+
+    assert!(!output.status.success());
+    assert_eq!(stdout(&output), "");
+    assert!(
+        stderr(&output).contains("Authentication"),
+        "{}",
+        stderr(&output)
+    );
+}
+
+#[test]
+fn text_mode_still_shows_tool_cards_and_output() {
+    let env = Env::new();
+
+    let output = env.gosling(&[
+        "run",
+        "-t",
+        "CALL shell {\"command\": \"echo tool-output-marker\"}",
+    ]);
+
+    let stdout = stdout(&output);
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert!(stdout.contains("▸ shell"), "{stdout}");
+    assert!(stdout.contains("tool-output-marker\n"), "{stdout}");
+    assert!(stdout.contains("AFTER-TOOL"), "{stdout}");
 }
