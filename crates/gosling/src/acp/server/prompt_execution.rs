@@ -306,50 +306,6 @@ impl GoslingAcpAgent {
         }
     }
 
-    /// Messages this prompt already showed the client that are no longer in
-    /// the session's history, like a reply attempt that broke off and was
-    /// retried. Some shown messages are stored without being part of the
-    /// agent's working conversation (an elicitation request), so the stored
-    /// history decides.
-    async fn retracted_message_ids(
-        &self,
-        session_id: &str,
-        conversation: &crate::conversation::Conversation,
-        shown_message_ids: &[String],
-    ) -> Result<Vec<String>, agent_client_protocol::Error> {
-        let kept: HashSet<&str> = conversation
-            .messages()
-            .iter()
-            .filter_map(|message| message.id.as_deref())
-            .collect();
-        let missing: Vec<&String> = shown_message_ids
-            .iter()
-            .filter(|id| !kept.contains(id.as_str()))
-            .collect();
-        if missing.is_empty() {
-            return Ok(Vec::new());
-        }
-        let stored: HashSet<String> = self
-            .session_manager
-            .get_session(session_id, true)
-            .await
-            .internal_err_ctx("Failed to load the session history")?
-            .conversation
-            .map(|history| {
-                history
-                    .messages()
-                    .iter()
-                    .filter_map(|message| message.id.clone())
-                    .collect()
-            })
-            .unwrap_or_default();
-        Ok(missing
-            .into_iter()
-            .filter(|id| !stored.contains(*id))
-            .cloned()
-            .collect())
-    }
-
     pub(super) async fn on_prompt(
         &self,
         cx: &ConnectionTo<Client>,
@@ -621,8 +577,10 @@ impl GoslingAcpAgent {
                 }
                 Ok(crate::agents::AgentEvent::HistoryReplaced(conversation)) => {
                     let retracted = self
+                        .session_manager
                         .retracted_message_ids(&session_id, &conversation, &shown_message_ids)
-                        .await?;
+                        .await
+                        .internal_err_ctx("Failed to load the session history")?;
                     if !retracted.is_empty() {
                         shown_message_ids.retain(|id| !retracted.contains(id));
                         cx.send_notification(retracted_messages_update(

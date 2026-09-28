@@ -96,6 +96,11 @@ enum StreamEvent {
     Error {
         error: String,
     },
+    /// Messages emitted earlier that are not part of the history, like a reply
+    /// attempt that broke off and was retried.
+    MessagesRetracted {
+        message_ids: Vec<String>,
+    },
     Complete {
         total_tokens: Option<i32>,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -1463,6 +1468,8 @@ impl CliSession {
         let mut turn_limit = None;
         let mut interrupted = false;
         let mut error_event_emitted = false;
+        let mut shown_message_ids: Vec<String> = Vec::new();
+        let mut held_reply = HeldReply::default();
 
         use futures::StreamExt;
         loop {
@@ -1470,6 +1477,14 @@ impl CliSession {
                 result = stream.next() => {
                     match result {
                         Some(Ok(AgentEvent::Message(message))) => {
+                            if is_quiet_text_mode {
+                                held_reply.release_unless_continued_by(&message, &mut markdown_buffer, &mut reply_text);
+                            }
+                            if let Some(message_id) = &message.id {
+                                if !shown_message_ids.contains(message_id) {
+                                    shown_message_ids.push(message_id.clone());
+                                }
+                            }
                             if !interactive && terminal_error.is_none() {
                                 terminal_error = terminal_error_reason(&message);
                             }
@@ -1602,7 +1617,7 @@ impl CliSession {
                                         let text = message.as_concat_text();
                                         eprintln!("{}", if text.trim().is_empty() { error } else { &text });
                                     } else if !unanswerable_limit_prompt {
-                                        output::render_reply_text_streaming(&message, &mut markdown_buffer, &mut reply_text);
+                                        held_reply.hold(&message);
                                     }
                                 } else if !is_json_mode && !unanswerable_limit_prompt {
                                     output::render_message_streaming(&message, &mut markdown_buffer, &mut thinking_header_shown, &mut reply_text, self.debug);
@@ -1630,7 +1645,26 @@ impl CliSession {
                             );
                         }
                         Some(Ok(AgentEvent::HistoryReplaced(updated_conversation))) => {
+                            let retracted = self
+                                .agent
+                                .config
+                                .session_manager
+                                .retracted_message_ids(&self.session_id, &updated_conversation, &shown_message_ids)
+                                .await?;
                             self.messages = updated_conversation;
+                            if !retracted.is_empty() {
+                                shown_message_ids.retain(|id| !retracted.contains(id));
+                                if is_stream_json_mode {
+                                    emit_stream_event(&StreamEvent::MessagesRetracted { message_ids: retracted });
+                                } else if is_quiet_text_mode {
+                                    held_reply.discard(&retracted);
+                                } else if !is_json_mode {
+                                    // Printed text cannot be taken back; say that it no longer counts.
+                                    output::flush_markdown_buffer_current_theme(&mut markdown_buffer);
+                                    print!("{}", console::style(" (discarded)").dim());
+                                    let _ = std::io::Write::flush(&mut std::io::stdout());
+                                }
+                            }
                         }
                         Some(Err(e)) => {
                             let lease_lost = is_turn_lease_lost(&e);
@@ -1682,6 +1716,7 @@ impl CliSession {
                 }
             }
         }
+        held_reply.release(&mut markdown_buffer, &mut reply_text);
 
         if interrupted {
             if let Err(e) = self
@@ -2408,6 +2443,46 @@ fn maybe_open_credits_top_up_url(
 fn emit_stream_event(event: &StreamEvent) {
     if let Ok(json) = serde_json::to_string(event) {
         println!("{}", json);
+    }
+}
+
+/// `run --quiet` prints a reply message once it is complete (the next message
+/// started or the turn ended), so a reply attempt that breaks off and is
+/// retried never reaches stdout.
+#[derive(Default)]
+struct HeldReply {
+    chunks: Vec<Message>,
+}
+
+impl HeldReply {
+    fn hold(&mut self, message: &Message) {
+        self.chunks.push(message.clone());
+    }
+
+    fn release_unless_continued_by(
+        &mut self,
+        message: &Message,
+        buffer: &mut streaming_buffer::MarkdownBuffer,
+        blocks: &mut output::TextBlocks,
+    ) {
+        if self.chunks.last().is_some_and(|held| held.id != message.id) {
+            self.release(buffer, blocks);
+        }
+    }
+
+    fn release(
+        &mut self,
+        buffer: &mut streaming_buffer::MarkdownBuffer,
+        blocks: &mut output::TextBlocks,
+    ) {
+        for chunk in self.chunks.drain(..) {
+            output::render_reply_text_streaming(&chunk, buffer, blocks);
+        }
+    }
+
+    fn discard(&mut self, message_ids: &[String]) {
+        self.chunks
+            .retain(|chunk| !chunk.id.as_ref().is_some_and(|id| message_ids.contains(id)));
     }
 }
 

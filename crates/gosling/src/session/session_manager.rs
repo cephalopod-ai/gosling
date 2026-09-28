@@ -1109,6 +1109,49 @@ impl SessionManager {
             .await
     }
 
+    /// Of the messages a client was shown during a turn, those that are no
+    /// longer part of the session's history now that the agent replaced its
+    /// working conversation with `replaced`, like a reply attempt that broke
+    /// off and was retried. Some shown messages are stored without being part
+    /// of the working conversation (an elicitation request), so the stored
+    /// history decides.
+    pub async fn retracted_message_ids(
+        &self,
+        session_id: &str,
+        replaced: &Conversation,
+        shown_message_ids: &[String],
+    ) -> Result<Vec<String>> {
+        let kept: HashSet<&str> = replaced
+            .messages()
+            .iter()
+            .filter_map(|message| message.id.as_deref())
+            .collect();
+        let missing: Vec<&String> = shown_message_ids
+            .iter()
+            .filter(|id| !kept.contains(id.as_str()))
+            .collect();
+        if missing.is_empty() {
+            return Ok(Vec::new());
+        }
+        let stored: HashSet<String> = self
+            .get_session(session_id, true)
+            .await?
+            .conversation
+            .map(|history| {
+                history
+                    .messages()
+                    .iter()
+                    .filter_map(|message| message.id.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok(missing
+            .into_iter()
+            .filter(|id| !stored.contains(*id))
+            .cloned()
+            .collect())
+    }
+
     pub async fn add_model_switch_record(
         &self,
         id: &str,

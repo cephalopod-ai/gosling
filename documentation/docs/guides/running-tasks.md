@@ -173,6 +173,11 @@ The JSON output includes:
 - Tool outputs and any errors
 - Structured data suitable for parsing by scripts and CI/CD pipelines
 
+When a model's reply breaks off mid-stream, gosling discards the partial reply and asks again. In
+`stream-json` output a `{"type": "messages_retracted", "message_ids": [...]}` event then names the
+earlier `message` events to drop. With `-q`, a discarded attempt never reaches stdout, and text output
+marks it `(discarded)`.
+
 With `stream-json`, the last event of a run that started is `complete` when it succeeded and `error` when it failed. Error messages always go to stderr, so stdout stays parseable. A run that cannot start (for example an unknown provider or a session that does not exist) writes nothing to stdout and exits with a non-zero status.
 
 ## Common Use Cases
