@@ -303,6 +303,11 @@ fn resolve(value: &str, working_dir: &Path) -> PathBuf {
             }
         }
     }
+    if matches!(value, "~" | "$HOME" | "${HOME}") {
+        if let Some(home) = dirs::home_dir() {
+            return home;
+        }
+    }
     for prefix in ["~/", "$HOME/", "${HOME}/"] {
         if let Some(relative) = value.strip_prefix(prefix) {
             if let Some(home) = dirs::home_dir() {
@@ -378,7 +383,8 @@ fn argument_key_is_text_payload(key: &str) -> bool {
 
 fn looks_like_explicit_path(value: &str) -> bool {
     let bytes = value.as_bytes();
-    value.starts_with('/')
+    matches!(value, ".." | "~")
+        || value.starts_with('/')
         || value.starts_with("./")
         || value.starts_with("../")
         || value.starts_with("~/")
@@ -728,24 +734,28 @@ fn unwrap_command_words(segment: &[String]) -> &[String] {
     words
 }
 
-/// The directory a `cd` segment would change to, if unambiguous. `cd -`
-/// (previous directory) and bare `cd` (home) are not tracked since this
-/// inspector has no notion of `OLDPWD` and `resolve` cannot express "home".
+/// The directory a `cd` or `pushd` segment would change to, if unambiguous.
+/// A bare `cd` goes home. `cd -` (previous directory) and `pushd` stack
+/// rotations are not tracked since this inspector has no notion of `OLDPWD`
+/// or the directory stack.
 fn cd_target(segment: &[String]) -> Option<&str> {
     let words = unwrap_command_words(segment);
     let executable = words.first()?;
     let executable = Path::new(executable.as_str())
         .file_name()
         .and_then(|name| name.to_str())?;
-    if executable != "cd" {
+    if !matches!(executable, "cd" | "pushd") {
         return None;
     }
-    let mut targets = words[1..].iter().filter(|word| !word.starts_with('-'));
-    let target = targets.next()?;
-    if targets.next().is_some() {
-        return None;
+    let operands: Vec<&String> = words[1..]
+        .iter()
+        .filter(|word| !word.starts_with('-') || word.as_str() == "-")
+        .collect();
+    match operands.as_slice() {
+        [] if executable == "cd" => Some("~"),
+        [target] if target.as_str() != "-" && !target.starts_with('+') => Some(target.as_str()),
+        _ => None,
     }
-    Some(target.as_str())
 }
 
 fn collect_shell_segment_paths(segment: &[String], working_dir: &Path, paths: &mut Vec<PathBuf>) {
@@ -781,9 +791,14 @@ fn referenced_paths(tool_call: &CallToolRequestParams, working_dir: &Path) -> Ve
     if let Some(command) = args.get("command").and_then(|value| value.as_str()) {
         let mut current_dir = working_dir.to_path_buf();
         for segment in analyze_shell(command).segments {
-            collect_shell_segment_paths(&segment.words, &current_dir, &mut paths);
-            if let Some(target) = cd_target(&segment.words) {
-                current_dir = normalize_resolved_path(resolve(target, &current_dir));
+            match cd_target(&segment.words) {
+                // A directory operand is a path even when it is a bare name such as
+                // `outside` or `..`; checking it covers every later relative path.
+                Some(target) => {
+                    current_dir = normalize_resolved_path(resolve(target, &current_dir));
+                    paths.push(current_dir.clone());
+                }
+                None => collect_shell_segment_paths(&segment.words, &current_dir, &mut paths),
             }
         }
     }
@@ -835,16 +850,16 @@ fn scoped_mutation_paths(tool_call: &CallToolRequestParams, working_dir: &Path) 
     let analysis = analyze_shell(command);
     let has_mutations = analysis.segments.iter().any(|segment| !segment.read_only);
     for segment in analysis.segments {
-        let directory_target = cd_target(&segment.words);
         if !segment.read_only {
             collect_shell_segment_paths(&segment.words, &current_dir, &mut paths.targets);
-        } else if has_mutations && directory_target.is_some() {
-            // Keep the navigation guard for mixed scripts: bare relative write targets
-            // are not collected as explicit paths, so dropping it could hide an escape.
-            collect_shell_segment_paths(&segment.words, &current_dir, &mut paths.navigation);
         }
-        if let Some(target) = directory_target {
+        if let Some(target) = cd_target(&segment.words) {
             current_dir = normalize_resolved_path(resolve(target, &current_dir));
+            if has_mutations {
+                // Keep the navigation guard for mixed scripts: bare relative write targets
+                // are not collected as explicit paths, so dropping it could hide an escape.
+                paths.navigation.push(current_dir.clone());
+            }
         }
     }
     paths
@@ -965,7 +980,7 @@ fn shell_segment_is_read_only(segment: &[String]) -> bool {
         | "type" | "printenv" | "date" | "diff" | "du" | "df" | "basename" | "dirname"
         | "realpath" | "readlink" | "jq" | "md5" | "md5sum" | "shasum" | "sha256sum" | "cut"
         | "tr" | "whoami" | "uname" | "hostname" | "id" => true,
-        "cd" => cd_target(segment).is_some(),
+        "cd" | "pushd" => cd_target(segment).is_some(),
         "sort" => !words
             .iter()
             .any(|token| token == "-o" || token.starts_with("-o") || token.starts_with("--output")),
@@ -992,9 +1007,9 @@ fn shell_segment_is_read_only(segment: &[String]) -> bool {
 }
 
 /// Returns the first out-of-scope path among the given resolved paths, if
-/// any. Callers only pass explicit `path` arguments and explicit absolute or
-/// relative shell paths; ambiguous path-free calls are left alone rather than
-/// guessed at.
+/// any. Callers only pass explicit `path` arguments, explicit absolute or
+/// relative shell paths and `cd` destinations; ambiguous path-free calls are
+/// left alone rather than guessed at.
 fn out_of_scope_path(
     paths: &[PathBuf],
     allowed_dirs: &[PathBuf],
@@ -2486,5 +2501,170 @@ mod tests {
             result,
             Some(canonicalize_potential_path(&root.path().join("outside")).unwrap())
         );
+    }
+
+    #[test]
+    fn cd_target_tracks_home_and_pushd_but_not_previous_directory() {
+        let words = |command: &str| shell_words::split(command).unwrap();
+        assert_eq!(cd_target(&words("cd")), Some("~"));
+        assert_eq!(cd_target(&words("cd -P")), Some("~"));
+        assert_eq!(cd_target(&words("cd ..")), Some(".."));
+        assert_eq!(cd_target(&words("cd -- outside")), Some("outside"));
+        assert_eq!(cd_target(&words("pushd ../lib")), Some("../lib"));
+        assert_eq!(cd_target(&words("cd -")), None);
+        assert_eq!(cd_target(&words("pushd")), None);
+        assert_eq!(cd_target(&words("pushd +1")), None);
+        assert_eq!(cd_target(&words("cd a b")), None);
+        assert_eq!(cd_target(&words("ls ..")), None);
+    }
+
+    #[test]
+    fn bare_home_references_resolve_to_the_home_directory() {
+        let home = dirs::home_dir().unwrap();
+        let working_dir = Path::new("/home/user/project");
+        for value in ["~", "$HOME", "${HOME}"] {
+            assert_eq!(resolve(value, working_dir), home, "{value}");
+        }
+        assert_eq!(resolve("~/notes", working_dir), home.join("notes"));
+        assert_eq!(resolve("notes", working_dir), working_dir.join("notes"));
+    }
+
+    fn restricted_scope_fixture() -> (tempfile::TempDir, PathBuf) {
+        let root = tempfile::tempdir().unwrap();
+        let project = root.path().join("project");
+        std::fs::create_dir_all(project.join("sub")).unwrap();
+        std::fs::create_dir_all(project.join("components/math_mcp")).unwrap();
+        std::fs::create_dir_all(root.path().join("outside")).unwrap();
+        std::fs::write(root.path().join("outside/o.txt"), "outside").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(root.path().join("outside"), project.join("link")).unwrap();
+        (root, project)
+    }
+
+    async fn restricted_session_results(
+        project: &Path,
+        commands: &[&str],
+    ) -> Vec<InspectionResult> {
+        let data = tempfile::tempdir().unwrap();
+        let session_manager = Arc::new(SessionManager::new(data.path().to_path_buf()));
+        let session = session_manager
+            .create_session(
+                project.to_path_buf(),
+                "restricted".into(),
+                crate::session::SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        session_manager
+            .update(&session.id)
+            .restrict_tools_to_working_dirs(true)
+            .apply()
+            .await
+            .unwrap();
+        let requests: Vec<ToolRequest> = commands
+            .iter()
+            .map(|command| shell_request(command, command))
+            .collect();
+        WorkingDirScopeInspector::new(session_manager)
+            .inspect(&session.id, &requests, &[], GoslingMode::Auto)
+            .await
+            .unwrap()
+    }
+
+    /// GSL-PT-20260927-E04: a `cd` whose operand is a bare name (`..`,
+    /// `outside`, a symlink, `~` or nothing at all) used to be invisible to the
+    /// scope check, so a restricted session read and wrote outside its folders.
+    #[tokio::test]
+    async fn restricted_session_flags_cd_escapes_with_bare_operands() {
+        let (root, project) = restricted_scope_fixture();
+        let mut commands = vec![
+            "cd .. && echo PWNED > escaped.txt",
+            "cd .. && ls",
+            "cd .. && cat outside/o.txt",
+            "cd ..; cd outside; cat o.txt",
+            "ls ..",
+            "pushd .. && cat outside/o.txt",
+            "cd && ls",
+            "cd ~ && ls",
+            "cd $HOME && ls",
+        ];
+        if cfg!(unix) {
+            commands.push("cd link && cat o.txt");
+        }
+
+        let results = restricted_session_results(&project, &commands).await;
+
+        let flagged: Vec<&str> = results
+            .iter()
+            .map(|result| result.tool_request_id.as_str())
+            .collect();
+        assert_eq!(flagged, commands);
+        let parent = canonicalize_potential_path(root.path()).unwrap();
+        match &results[0].action {
+            InspectionAction::RequireApproval(Some(message)) => {
+                assert!(
+                    message.contains(&format!("touches {},", parent.display())),
+                    "{message}"
+                );
+            }
+            other => panic!("expected RequireApproval with a message, got {other:?}"),
+        }
+    }
+
+    /// The false positives fixed on 2026-09-06 and 2026-09-09 (device-stream
+    /// redirects, glued separators, `cd` tracked across segments, read-only
+    /// git queries) must stay quiet now that `cd` operands are checked.
+    #[tokio::test]
+    async fn restricted_session_keeps_in_scope_navigation_quiet() {
+        let (_root, project) = restricted_scope_fixture();
+        let commands = [
+            "echo hi > /dev/null",
+            "ls 2>/dev/null",
+            "echo a;echo b",
+            "echo hi>out.txt",
+            "cd sub && ls",
+            "cd sub; cat notes.txt",
+            "cd sub && cat ../x.txt",
+            "git rev-parse --show-toplevel",
+            "cd components\ncd math_mcp\ncat ../shared.txt",
+            "cd sub && cd .. && cat x.txt",
+            "cd . && ls",
+        ];
+
+        let results = restricted_session_results(&project, &commands).await;
+
+        assert!(results.is_empty(), "{results:?}");
+    }
+
+    /// Without the restriction, a workspace session still gates out-of-scope
+    /// writes; `cd ..` followed by a bare relative write target is one.
+    #[tokio::test]
+    async fn workspace_session_flags_writes_after_cd_to_the_parent() {
+        let data = tempfile::tempdir().unwrap();
+        let project = non_temporary_target("project");
+        let session_manager = Arc::new(SessionManager::new(data.path().to_path_buf()));
+        let session = workspace_session(&session_manager, &project).await;
+        assert!(!session.restrict_tools_to_working_dirs);
+
+        let results = WorkingDirScopeInspector::new(session_manager)
+            .inspect(
+                &session.id,
+                &[
+                    shell_request("write-parent", "cd .. && echo PWNED > escaped.txt"),
+                    shell_request("read-parent", "cd .. && ls"),
+                    shell_request("write-here", "cd . && echo ok > kept.txt"),
+                ],
+                &[],
+                GoslingMode::Auto,
+            )
+            .await
+            .unwrap();
+
+        let flagged: Vec<&str> = results
+            .iter()
+            .map(|result| result.tool_request_id.as_str())
+            .collect();
+        assert_eq!(flagged, vec!["write-parent"]);
     }
 }
