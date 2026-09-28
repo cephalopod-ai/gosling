@@ -38,6 +38,7 @@ impl Agent {
             implementation_reference,
             interaction_policy,
         } = invocation;
+        self.tool_inspection_manager.start_turn(&session_config.id);
         let context = self
             .prepare_reply_context(
                 &session.id,
