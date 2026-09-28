@@ -2,7 +2,9 @@
 // Extracted from `summon.rs` in a behavior-preserving modularization.
 // The `summon` compatibility facade keeps delegation behind `SummonClient` and MCP dispatch.
 
-use super::delegate_config::{delegate_mode_notice, sync_delegate_timeout, PreparedDelegate};
+use super::delegate_config::{
+    delegate_mode_notice, ensure_parent_allows_delegation, sync_delegate_timeout, PreparedDelegate,
+};
 use super::*;
 
 /// How long a timed-out synchronous delegate is given to unwind after its
@@ -85,7 +87,7 @@ impl SummonClient {
         });
 
         Tool::new(
-            "delegate",
+            DELEGATE_TOOL_NAME,
             "Delegate a task to a subagent that runs independently with its own context.\n\n\
              Modes:\n\
              1. Ad-hoc: Provide `instructions` for a custom task and omit `source` entirely\n\
@@ -135,6 +137,7 @@ impl SummonClient {
         if session.session_type == SessionType::SubAgent {
             return Err("Delegated tasks cannot spawn further delegations".to_string());
         }
+        ensure_parent_allows_delegation(session.gosling_mode)?;
 
         if params.r#async {
             let (content, task_id) = self.handle_async_delegate(session_id, params).await?;

@@ -397,6 +397,12 @@ impl Agent {
         if gosling_mode == crate::config::GoslingMode::Chat && !planning {
             tools.clear();
         }
+        // A delegate runs its tools without approval prompts, so it is only offered
+        // to Autonomous sessions; `handle_delegate` refuses any other caller.
+        if gosling_mode != crate::config::GoslingMode::Auto {
+            tools
+                .retain(|tool| !crate::agents::platform_extensions::summon::is_delegate_tool(tool));
+        }
 
         // Prepare system prompt
         let mut extensions_info = if planning {
@@ -1604,6 +1610,67 @@ mod tests {
 
         assert!(tools.is_empty());
         assert!(toolshim_tools.is_empty());
+        Ok(())
+    }
+
+    /// GSL-PT-20260927-E03: a delegate answers no approval prompts, so the
+    /// tool is only offered while the session is Autonomous.
+    #[tokio::test]
+    async fn delegate_is_only_offered_to_autonomous_sessions() -> anyhow::Result<()> {
+        let agent = crate::agents::Agent::new();
+        let session = agent
+            .config
+            .session_manager
+            .create_session(
+                std::env::current_dir().unwrap(),
+                "test-delegate-offer".to_string(),
+                SessionType::Hidden,
+                GoslingMode::Approve,
+            )
+            .await?;
+        agent
+            .update_provider(
+                std::sync::Arc::new(MockProvider),
+                ModelConfig::new("test-model"),
+                &session.id,
+            )
+            .await?;
+        agent
+            .add_extension(
+                crate::agents::extension::ExtensionConfig::Platform {
+                    name: crate::agents::platform_extensions::summon::EXTENSION_NAME.to_string(),
+                    description: "Summon".to_string(),
+                    display_name: None,
+                    bundled: Some(true),
+                    available_tools: vec![],
+                },
+                &session.id,
+            )
+            .await?;
+
+        let mut offered = Vec::new();
+        for mode in [
+            GoslingMode::Approve,
+            GoslingMode::SmartApprove,
+            GoslingMode::Auto,
+        ] {
+            agent.update_gosling_mode(mode, &session.id).await?;
+            let (tools, _, _, _) = agent
+                .prepare_tools_and_prompt(&session.id, session.working_dir.as_path())
+                .await?;
+            let names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
+            assert!(names.iter().any(|name| name == "load"), "{mode}: {names:?}");
+            offered.push((mode, names.iter().any(|name| name == "delegate")));
+        }
+
+        assert_eq!(
+            offered,
+            vec![
+                (GoslingMode::Approve, false),
+                (GoslingMode::SmartApprove, false),
+                (GoslingMode::Auto, true),
+            ]
+        );
         Ok(())
     }
 

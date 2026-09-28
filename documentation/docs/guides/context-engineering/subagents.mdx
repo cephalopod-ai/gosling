@@ -27,6 +27,10 @@ Subagents are independent instances that execute tasks while keeping your main c
 gosling can autonomously decide to use subagents when it determines they would be beneficial for your task - you don't always need to explicitly request them. This happens automatically in autonomous [permission mode](/docs/guides/managing-tools/gosling-permissions) (the default). Subagents are disabled in manual approval, smart approval, and chat-only modes.
 :::
 
+:::info Why subagents need Autonomous mode
+A subagent has no way to show you approval prompts, so it runs its tools without asking. For that reason the `delegate` tool is only offered while the session is in Autonomous mode, and a delegation request from any other mode is refused with a message that names the current mode; no subagent is started. To use subagents, switch the session to Autonomous (`/mode auto` in the CLI, or the mode selector in Desktop).
+:::
+
 To use subagents, ask gosling to delegate tasks using natural language. gosling automatically decides when to spawn subagents and handles their lifecycle. You can:
 
 1. **Request specialized help**: "Use a code reviewer to analyze this function for security issues"
