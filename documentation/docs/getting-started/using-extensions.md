@@ -26,7 +26,7 @@ gosling includes several built-in extensions you can start using out of the box:
 - [Auto Visualiser](/docs/mcp/autovisualiser-mcp): Automatically generates graphical data visualizations in conversations.
 
 :::warning Access Control
-gosling operates autonomously by default. Combined with the Developer extension's tools, this means gosling can execute commands and modify files without your approval. If you want more control over this behavior, you can configure the [gosling permission mode](/docs/guides/managing-tools/gosling-permissions), [tool permissions](/docs/guides/managing-tools/tool-permissions), and [.goslingignore files](/docs/guides/context-engineering/using-goslingignore). See [Configuring Access Controls](/docs/mcp/developer-mcp#configuring-access-controls) for a brief overview.
+gosling operates autonomously by default. Combined with the Developer extension's tools, this means gosling can execute commands and modify files without your approval. If you want more control over this behavior, you can configure the [gosling permission mode](/docs/guides/managing-tools/gosling-permissions), [tool permissions](/docs/guides/managing-tools/tool-permissions), and the per-session **Restrict tools to working directories** setting. `.goslingignore` files are not enforced ([details](/docs/guides/context-engineering/using-goslingignore)). See [Configuring Access Controls](/docs/mcp/developer-mcp#configuring-access-controls) for a brief overview.
 :::
 
 ### Built-in Platform Extensions

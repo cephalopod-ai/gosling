@@ -120,4 +120,4 @@ If the analysis results exceed 1000 lines, the tool returns a warning message in
 
 - Start with smaller scopes (specific files or subdirectories) before analyzing entire projects
 - Use `max_depth=1` or `max_depth=2` to limit directory traversal depth
-- Use [`.goslingignore`](/docs/guides/context-engineering/using-goslingignore) and `.gitignore` files to exclude unnecessary files from analysis (like `node_modules/`, build artifacts, or sensitive files)
+- `.goslingignore` files are not enforced, and `.gitignore` only keeps ignored entries such as `node_modules/` out of `tree` listings; neither keeps a file away from gosling's tools (see [Protecting Sensitive Files](/docs/guides/context-engineering/using-goslingignore))

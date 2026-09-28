@@ -37,7 +37,7 @@ Consider enabling [Code Mode](/docs/guides/managing-tools/code-mode), an alterna
 Help gosling remember how you like to work by using [`.goslinghints` or other context files](/docs/guides/context-engineering/using-goslinghints) or [skills](/docs/guides/context-engineering/using-skills) for permanent project preferences. Both can save valuable context window space while keeping your preferences available.
 
 ### Protect sensitive files
-gosling is often eager to make changes. You can stop it from changing specific files by creating a [.goslingignore](/docs/guides/context-engineering/using-goslingignore) file. In this file, you can list all the file paths you want it to avoid.
+gosling is often eager to make changes. `.goslingignore` files do not stop it: gosling does not enforce them. To review changes before they happen, use [Manual Approval](/docs/guides/managing-tools/gosling-permissions), set [`Never Allow`](/docs/guides/managing-tools/tool-permissions) for tools you do not want used, turn on **Restrict tools to working directories**, and keep secrets outside the folders gosling works in. See [Protecting Sensitive Files](/docs/guides/context-engineering/using-goslingignore).
 
 ### Version Control
 Commit your code changes early and often. This allows you to rollback any unexpected changes.

@@ -203,9 +203,11 @@ You can layer multiple controls to match your risk tolerance and workflow:
   | Smart Approval<br />CLI: `smart_approve` | AI decides what needs review | Balanced approach |
   | Chat Only<br />CLI: `chat` | Disable all tools | For maximum security and models that don't support tool-calling |
 
-- **[Tool Permissions](/docs/guides/managing-tools/tool-permissions)** let you set `Always allow`, `Ask before`, and `Never allow` permissions for individual extension tools when in Manual Approval or Smart Approval modes
+- **[Tool Permissions](/docs/guides/managing-tools/tool-permissions)** let you set `Always allow`, `Ask before`, and `Never allow` permissions for individual extension tools. `Never allow` blocks a tool in every mode; `Always allow` and `Ask before` change how Manual Approval and Smart Approval treat it
 
-- **[.goslingignore files](/docs/guides/context-engineering/using-goslingignore)** restrict which files and directories gosling can access (`.gitignore` files are fallback)
+- **Restrict tools to working directories** (Desktop working directories menu, per session) requires approval for tool calls that touch paths outside the session's working directories
+
+- **`.goslingignore` files are not enforced**: they do not block the Developer tools from reading, changing, or deleting the files they list, and `.gitignore` is not used as a fallback. See [Protecting Sensitive Files](/docs/guides/context-engineering/using-goslingignore)
 
 :::tip Changing Modes In-Session
 You can change gosling permission modes during a session without restarting:
@@ -225,16 +227,9 @@ Here's an example configuration that enables oversight:
    GOSLING_MODE: smart_approve  # or approve
    ```
 
-2. **Create a [`.goslingignore` file](/docs/guides/context-engineering/using-goslingignore)** in your project to protect sensitive files:
-   ```
-   .env*
-   secrets.*
-   *.key
-   *.pem
-   .git/
-   ```
+2. **Keep gosling inside your project**: turn on **Restrict tools to working directories** for the session in Desktop, and keep secret files such as `.env*`, `*.key`, and `*.pem` outside the folders gosling works in. A `.goslingignore` file does not protect them ([why](/docs/guides/context-engineering/using-goslingignore)).
 
-3. **Configure [tool permissions](/docs/guides/managing-tools/tool-permissions)** based on your needs
+3. **Configure [tool permissions](/docs/guides/managing-tools/tool-permissions)** based on your needs, for example `Never allow` for tools you do not want used at all
 
 As you become more comfortable with gosling's behavior, you can adjust these settings to reduce friction while maintaining appropriate safeguards for your environment.
 
