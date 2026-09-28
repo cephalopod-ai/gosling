@@ -80,6 +80,8 @@ gosling loads hints at the start of your session and adds them to the system pro
 
 Project hints, from the working directory and from nested directories alike, are labelled as untrusted content from the repository: the model is told they came from files in the project rather than from you, and that they never authorize skipping an approval or widening permissions. Your global hints are labelled as yours.
 
+If gosling can't read a context file (for example because of its permissions), it prints a warning that names the file and continues without it. A file with bytes that aren't valid UTF-8 is still loaded, with those bytes replaced by the Unicode replacement character (U+FFFD), and gosling warns about that too. Each warning appears once per gosling process on standard error and is also written to the log file.
+
 ### Example Global `.goslinghints` File
 
 ```
