@@ -4,9 +4,13 @@ use std::sync::LazyLock;
 pub static SECRET_PATTERNS: LazyLock<Vec<(&'static str, Regex)>> = LazyLock::new(|| {
     vec![
         (
+            // JSON payloads quote the header name and value
+            // (`"authorization":"Bearer ..."`).
             "authorization",
-            Regex::new(r"(?i)\b(authorization\s*[:=]\s*(?:bearer\s+)?)[^\s,;]+")
-                .expect("authorization regex"),
+            Regex::new(
+                r#"(?i)\b(authorization["']?\s*[:=]\s*["']?(?:bearer\s+)?)[^\s,;"']+"#,
+            )
+            .expect("authorization regex"),
         ),
         (
             // Key names carry identifier prefixes/suffixes in real payloads

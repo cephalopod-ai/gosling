@@ -3,8 +3,9 @@ use crate::conversation::token_usage::{ProviderUsage, Usage};
 use crate::errors::ProviderError;
 use crate::formats::openai::{
     extract_reasoning_effort, is_openai_responses_model, openai_reasoning_effort_for_thinking,
+    stream_decode_error_with_line,
 };
-use crate::http_status::is_context_length_exceeded_message;
+use crate::http_status::{is_context_length_exceeded_message, redact_provider_error_text};
 use crate::mcp_utils::extract_text_from_resource;
 use crate::model::ModelConfig;
 use anyhow::{anyhow, Error};
@@ -294,7 +295,10 @@ fn classify_stream_error(context: &str, error: &Value) -> ProviderError {
             .filter_map(|value| value.as_str())
             .any(|value| value.contains(needle))
     };
-    if marker("context_length_exceeded") || is_context_length_exceeded_message(&details) {
+    let context_limit =
+        marker("context_length_exceeded") || is_context_length_exceeded_message(&details);
+    let details = redact_provider_error_text(&details);
+    if context_limit {
         ProviderError::ContextLengthExceeded(details)
     } else if marker("server_error")
         || marker("service_unavailable")
@@ -313,10 +317,7 @@ fn classify_stream_error(context: &str, error: &Value) -> ProviderError {
 
 fn parse_responses_stream_event(data_line: &str) -> anyhow::Result<Option<ResponsesStreamEvent>> {
     let raw_event: Value = serde_json::from_str(data_line).map_err(|e| {
-        ProviderError::stream_decode_error(format!(
-            "Failed to parse Responses stream event: {}: {:?}",
-            e, data_line
-        ))
+        stream_decode_error_with_line("Failed to parse Responses stream event", e, data_line)
     })?;
 
     let Some(event_type) = raw_event.get("type").and_then(Value::as_str) else {
@@ -328,10 +329,7 @@ fn parse_responses_stream_event(data_line: &str) -> anyhow::Result<Option<Respon
     }
 
     let event = serde_json::from_value(raw_event).map_err(|e| {
-        ProviderError::stream_decode_error(format!(
-            "Failed to parse Responses stream event: {}: {:?}",
-            e, data_line
-        ))
+        stream_decode_error_with_line("Failed to parse Responses stream event", e, data_line)
     })?;
     Ok(Some(event))
 }
@@ -1284,6 +1282,31 @@ mod tests {
         assert!(text_parts.concat().contains("Paris."));
 
         Ok(())
+    }
+
+    /// GSL-PT-20260927-B11
+    #[test]
+    fn malformed_responses_events_and_error_details_are_redacted() {
+        let leak = "sk-proj-LEAKYLEAKYLEAKY0123456789abcdefXYZ";
+        let bearer = "opaque-bearer-0123456789abcdef";
+        let malformed = format!(
+            r#"{{"type":"response.output_text.delta","debug":{{"authorization":"Bearer {bearer}","api_key":"{leak}"}},"delta":"#
+        );
+        let message = parse_responses_stream_event(&malformed)
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("Failed to parse Responses stream event"));
+        assert!(!message.contains(leak), "{message}");
+        assert!(!message.contains(bearer), "{message}");
+
+        let error = serde_json::json!({
+            "message": format!("upstream rejected Authorization: Bearer {bearer} ({leak})"),
+            "code": "invalid_request"
+        });
+        let details = classify_stream_error("Responses API error", &error).to_string();
+        assert!(details.contains("Responses API error"), "{details}");
+        assert!(!details.contains(leak), "{details}");
+        assert!(!details.contains(bearer), "{details}");
     }
 
     #[tokio::test]
