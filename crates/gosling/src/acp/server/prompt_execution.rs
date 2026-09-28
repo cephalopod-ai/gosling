@@ -363,6 +363,7 @@ impl GoslingAcpAgent {
         let mut terminal_assistant_text = String::new();
         let mut current_assistant_message_ids = HashSet::new();
         let mut latest_context_usage = None;
+        let mut provider_usage_after_context = false;
         let mut policy_denied_tools = PolicyDeniedTools::default();
         let mut turn_limit_reached = false;
 
@@ -490,8 +491,10 @@ impl GoslingAcpAgent {
                         ))?;
                     }
                 }
+                Ok(crate::agents::AgentEvent::Usage(_)) => provider_usage_after_context = true,
                 Ok(crate::agents::AgentEvent::ContextUsage(context_usage)) => {
                     latest_context_usage = Some(context_usage);
+                    provider_usage_after_context = false;
                     let session = self
                         .session_manager
                         .get_session(&session_id, false)
@@ -632,11 +635,17 @@ impl GoslingAcpAgent {
             .get_session(&session_id, false)
             .await
             .internal_err_ctx("Failed to load session")?;
-        let updates = if latest_context_usage.is_some() {
-            build_usage_updates_with_context(&session, latest_context_usage.as_ref())
-        } else {
-            let context_limit = resolve_active_context_limit(&agent, &session).await;
-            build_usage_updates_with_limit(&session, context_limit)
+        let updates = match latest_context_usage.as_ref() {
+            Some(context) if !provider_usage_after_context => {
+                build_usage_updates_with_context(&session, Some(context))
+            }
+            // The agent reports its snapshot before each provider call; the
+            // total that provider recorded afterwards is the newer measurement.
+            Some(context) => build_usage_updates_with_limit(&session, Some(context.context_limit)),
+            None => {
+                let context_limit = resolve_active_context_limit(&agent, &session).await;
+                build_usage_updates_with_limit(&session, context_limit)
+            }
         };
         if let Some(updates) = updates {
             if self.supports_gosling_custom_notifications() {

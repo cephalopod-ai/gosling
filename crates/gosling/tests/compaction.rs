@@ -2057,7 +2057,11 @@ impl Provider for InFlightToolProvider {
     }
 }
 
-async fn run_in_flight_tool_turn(provider: Arc<InFlightToolProvider>) -> Result<TurnEvents> {
+const IN_FLIGHT_PROMPT: &str = "Record the side effect once";
+
+async fn in_flight_tool_agent(
+    provider: Arc<InFlightToolProvider>,
+) -> Result<(TempDir, Agent, String)> {
     let temp_dir = TempDir::new()?;
     let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
     let agent = Agent::with_config(AgentConfig::new(
@@ -2081,16 +2085,25 @@ async fn run_in_flight_tool_turn(provider: Arc<InFlightToolProvider>) -> Result<
     agent
         .update_provider(provider, ModelConfig::new("mock-model"), &session.id)
         .await?;
+    Ok((temp_dir, agent, session.id))
+}
+
+fn bounded_turn(session_id: &str) -> SessionConfig {
+    SessionConfig {
+        id: session_id.to_string(),
+        max_turns: Some(6),
+        compacted_context: false,
+        tail_limit: None,
+    }
+}
+
+async fn run_in_flight_tool_turn(provider: Arc<InFlightToolProvider>) -> Result<TurnEvents> {
+    let (_temp_dir, agent, session_id) = in_flight_tool_agent(provider).await?;
 
     let reply_stream = agent
         .reply(
-            Message::user().with_text("Record the side effect once"),
-            SessionConfig {
-                id: session.id.clone(),
-                max_turns: Some(6),
-                compacted_context: false,
-                tail_limit: None,
-            },
+            Message::user().with_text(IN_FLIGHT_PROMPT),
+            bounded_turn(&session_id),
             None,
         )
         .await?;
@@ -2176,5 +2189,104 @@ async fn in_flight_turn_that_outgrows_the_window_stops_without_repeating_tools()
         .lock()
         .unwrap()
         .is_empty());
+    Ok(())
+}
+
+struct CompactionReport {
+    notice_tokens: usize,
+    context_tokens: usize,
+    message_tokens: usize,
+}
+
+fn estimate_in_notice(notice: &str) -> Option<usize> {
+    let (_, rest) = notice.split_once("estimated at ")?;
+    rest.split_whitespace().next()?.parse().ok()
+}
+
+async fn compaction_report(
+    agent: &Agent,
+    session_id: &str,
+    prompt: &str,
+) -> Result<CompactionReport> {
+    let reply_stream = agent
+        .reply(
+            Message::user().with_text(prompt),
+            bounded_turn(session_id),
+            None,
+        )
+        .await?;
+    tokio::pin!(reply_stream);
+    let mut replaced = None;
+    let mut context_tokens = None;
+    let mut notice_tokens = None;
+    while let Some(event) = reply_stream.next().await {
+        match event? {
+            AgentEvent::HistoryReplaced(conversation) => replaced = Some(conversation),
+            AgentEvent::ContextUsage(usage) if replaced.is_some() && context_tokens.is_none() => {
+                context_tokens = Some(usage.current_tokens);
+            }
+            AgentEvent::Message(message) => {
+                for content in &message.content {
+                    if let Some(notification) = content.as_system_notification() {
+                        if notification.msg.starts_with("Compaction ") {
+                            notice_tokens = estimate_in_notice(&notification.msg);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    let replaced = replaced.expect("compaction replaced the history");
+    Ok(CompactionReport {
+        notice_tokens: notice_tokens.expect("completion notice"),
+        context_tokens: context_tokens.expect("context usage after compaction"),
+        message_tokens: gosling::context_mgmt::estimate_conversation_tokens(&replaced).await?,
+    })
+}
+
+/// GSL-PT-20260927-B10: the completion notice and the context usage reported
+/// after compaction counted messages only, although every request also
+/// carries the system prompt and tool definitions.
+#[tokio::test]
+#[serial]
+async fn compaction_reports_include_the_system_prompt_and_tools() -> Result<()> {
+    let _threshold = pin_auto_compact_threshold();
+
+    let pre_turn_dir = TempDir::new()?;
+    let pre_turn_agent = Agent::new();
+    let session = setup_test_session_with_usage(
+        &pre_turn_agent,
+        &pre_turn_dir,
+        "pre-turn-report",
+        vec![
+            Message::user().with_text("Hello"),
+            Message::assistant().with_text("Hi there"),
+        ],
+        Usage::new(Some(109_900), Some(100), Some(110_000)),
+    )
+    .await?;
+    pre_turn_agent
+        .update_provider(
+            Arc::new(ThresholdCompactionProvider::for_case1()),
+            ModelConfig::new("mock-model"),
+            &session.id,
+        )
+        .await?;
+    let pre_turn = compaction_report(&pre_turn_agent, &session.id, "Continue").await?;
+
+    let provider = Arc::new(InFlightToolProvider::new("release note".to_string()));
+    let (_in_loop_dir, in_loop_agent, session_id) = in_flight_tool_agent(provider).await?;
+    let in_loop = compaction_report(&in_loop_agent, &session_id, IN_FLIGHT_PROMPT).await?;
+
+    for (path, report) in [("pre-turn", pre_turn), ("in-loop", in_loop)] {
+        assert!(
+            report.notice_tokens > report.message_tokens,
+            "{path}: notice {} vs conversation {}",
+            report.notice_tokens,
+            report.message_tokens
+        );
+        assert_eq!(report.context_tokens, report.notice_tokens, "{path}");
+    }
     Ok(())
 }

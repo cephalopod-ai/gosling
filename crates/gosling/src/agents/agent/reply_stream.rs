@@ -240,12 +240,14 @@ impl Agent {
                 )
                 .await?
                 {
-                    yield AgentEvent::ContextUsage(auto_compaction.usage.clone());
+                    let request_overhead = crate::context_mgmt::request_overhead_tokens(&system_prompt, &tools).await?;
+                    let reported_usage = auto_compaction.usage.clone().with_request_overhead(request_overhead);
+                    yield AgentEvent::ContextUsage(reported_usage.clone());
                     if let Some(plan) = auto_compaction.plan {
                         yield AgentEvent::Message(
                             Message::assistant().with_system_notification(
                                 SystemNotificationType::InlineMessage,
-                                auto_compaction_started_message(&auto_compaction.usage, &plan),
+                                auto_compaction_started_message(&reported_usage, &plan),
                             )
                         );
                         yield AgentEvent::Message(
@@ -267,12 +269,13 @@ impl Agent {
                                 conversation = compacted_conversation;
                                 token_accumulator.reset();
                                 let after_tokens = crate::context_mgmt::estimate_conversation_tokens(&conversation).await?;
+                                let reported_after_tokens = after_tokens + request_overhead;
                                 yield AgentEvent::HistoryReplaced(conversation.clone());
-                                yield AgentEvent::ContextUsage(context_usage_after_compaction(&auto_compaction.usage, after_tokens));
+                                yield AgentEvent::ContextUsage(context_usage_after_compaction(&reported_usage, reported_after_tokens));
                                 yield AgentEvent::Message(
                                     Message::assistant().with_system_notification(
                                         SystemNotificationType::InlineMessage,
-                                        auto_compaction_completed_message(&auto_compaction.usage, after_tokens, &plan),
+                                        auto_compaction_completed_message(&reported_usage, reported_after_tokens, request_overhead, &plan),
                                     )
                                 );
                                 if let Some(exceeded) = crate::context_mgmt::context_window_exceeded(

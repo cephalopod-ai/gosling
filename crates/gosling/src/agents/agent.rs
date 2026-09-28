@@ -495,11 +495,17 @@ fn auto_compaction_started_message(
 fn auto_compaction_completed_message(
     before: &ContextUsageSnapshot,
     after_tokens: usize,
+    request_overhead: usize,
     plan: &AutoCompactionPlan,
 ) -> String {
+    let overhead_note = if request_overhead > 0 {
+        format!(", including {request_overhead} tokens of system prompt and tool definitions")
+    } else {
+        String::new()
+    };
     if after_tokens >= before.current_tokens {
         return format!(
-            "Compaction finished but did not reduce the active context: it is still estimated at {} / {} tokens ({:.1}%).",
+            "Compaction finished but did not reduce the active context: it is still estimated at {} / {} tokens ({:.1}%){overhead_note}.",
             after_tokens,
             before.context_limit,
             usage_percentage(after_tokens, before.context_limit),
@@ -507,7 +513,7 @@ fn auto_compaction_completed_message(
     }
     match plan.target_tokens {
         Some(target) => format!(
-            "Compaction complete: active context is now estimated at {} / {} tokens ({:.1}%). It started at {} tokens; the raw-context target was {} tokens.",
+            "Compaction complete: active context is now estimated at {} / {} tokens ({:.1}%){overhead_note}. It started at {} tokens; the raw-context target was {} tokens.",
             after_tokens,
             before.context_limit,
             usage_percentage(after_tokens, before.context_limit),
@@ -515,7 +521,7 @@ fn auto_compaction_completed_message(
             target,
         ),
         None => format!(
-            "Compaction complete: active context is now estimated at {} / {} tokens ({:.1}%). It started at {} tokens.",
+            "Compaction complete: active context is now estimated at {} / {} tokens ({:.1}%){overhead_note}. It started at {} tokens.",
             after_tokens,
             before.context_limit,
             usage_percentage(after_tokens, before.context_limit),

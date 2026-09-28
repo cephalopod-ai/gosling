@@ -4,12 +4,13 @@ mod common_tests;
 use agent_client_protocol::schema::v1::{
     ContentBlock, ListSessionsRequest, ListSessionsResponse, NewSessionRequest, PromptRequest,
     SessionConfigKind, SessionConfigOptionCategory, SessionConfigOptionValue, SessionInfo,
-    SetSessionConfigOptionRequest, StopReason, TextContent,
+    SessionUpdate, SetSessionConfigOptionRequest, StopReason, TextContent,
 };
 use agent_client_protocol::ErrorCode;
 use common_tests::fixtures::server::AcpServerConnection;
 use common_tests::fixtures::{
-    run_test, Connection, OpenAiFixture, Session, SessionData, TestConnectionConfig,
+    run_test, Connection, OpenAiFixture, PermissionDecision, Session, SessionData,
+    TestConnectionConfig,
 };
 #[cfg(feature = "code-mode")]
 use common_tests::run_prompt_codemode;
@@ -916,4 +917,40 @@ fn test_shell_terminal_false() {
 #[test]
 fn test_shell_terminal_true() {
     run_test(async { run_shell_terminal_true::<AcpServerConnection>().await });
+}
+
+// GSL-PT-20260927-B10: the usage update sent when a prompt ended reused the
+// context snapshot taken before the turn's provider call, so the gauge showed
+// a local message estimate instead of the request the provider had just measured.
+#[test]
+fn test_prompt_end_usage_update_reports_the_last_provider_request() {
+    run_test(async {
+        let expected_session_id = AcpServerConnection::expected_session_id();
+        let openai = OpenAiFixture::new(
+            vec![(
+                "what is 1+1".to_string(),
+                include_str!("acp_test_data/openai_basic.txt"),
+            )],
+            expected_session_id.clone(),
+        )
+        .await;
+        let mut conn = AcpServerConnection::new(TestConnectionConfig::default(), openai).await;
+        let SessionData { mut session, .. } = conn.new_session().await.unwrap();
+        expected_session_id.set(&session.session_id().0);
+
+        session
+            .prompt("what is 1+1", PermissionDecision::Cancel)
+            .await
+            .unwrap();
+
+        let last_used = session
+            .session_updates()
+            .into_iter()
+            .filter_map(|update| match update {
+                SessionUpdate::UsageUpdate(usage) => Some(usage.used),
+                _ => None,
+            })
+            .last();
+        assert_eq!(last_used, Some(110));
+    });
 }

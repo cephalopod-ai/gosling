@@ -45,7 +45,7 @@ export GOSLING_AUTO_COMPACT_THRESHOLD=0.6
 
 When you reach the auto-compaction threshold:
   1. gosling reports the active-context estimate, threshold, target, and that it is compacting the oldest safe prefix.
-  2. Once complete, you'll see the measured starting estimate, configured raw-context target, and resulting active-context estimate.
+  2. Once complete, you'll see the measured starting estimate, configured raw-context target, and resulting active-context estimate. These estimates include the system prompt and tool definitions that every request carries, and the notice says how many tokens they account for; Context History snapshots count the conversation only.
   3. Continue the session. Your previous conversation remains visible, but only the compacted conversion is included in the active context for gosling.
 
 Auto-compaction targets a level below the threshold rather than fully collapsing the conversation every time — controlled by `GOSLING_AUTO_COMPACT_REDUCTION` (default `0.15`, meaning 15% of threshold usage). With the example above, crossing 60% usage selects the oldest safe prefix whose raw token count is enough to target 51%, leaving the remainder untouched. At the default 80% threshold, a 25% reduction targets 60% (`80% × 75%`). Generated summary and continuation framing also occupy context, so the completion notice reports the resulting estimate rather than claiming it landed exactly on the raw-context target. The budget is computed from the same snapshot that triggered compaction, even if one tool-heavy turn caused usage to jump far past the threshold. Set the reduction to `0.0` to fully collapse the eligible history on every auto-compaction, matching the previous behavior:

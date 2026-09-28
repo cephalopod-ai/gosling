@@ -11,7 +11,7 @@ use gosling_providers::errors::ProviderError;
 use gosling_providers::model::ModelConfig;
 use gosling_providers::retry::{retry_operation, RetryConfig};
 use indoc::indoc;
-use rmcp::model::Role;
+use rmcp::model::{Role, Tool};
 use serde::Serialize;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -52,6 +52,29 @@ pub struct ContextUsageSnapshot {
     pub current_tokens: usize,
     pub last_request_tokens: Option<usize>,
     pub estimated_tokens: usize,
+}
+
+impl ContextUsageSnapshot {
+    /// The local estimate counts messages only, while every request also
+    /// carries the system prompt and tool definitions. A provider-reported
+    /// total already includes them, so only the estimate side grows.
+    pub fn with_request_overhead(mut self, overhead_tokens: usize) -> Self {
+        self.estimated_tokens += overhead_tokens;
+        self.current_tokens = self.current_tokens.max(self.estimated_tokens);
+        self
+    }
+}
+
+/// Tokens the system prompt and tool definitions add to every request on top
+/// of [`estimate_conversation_tokens`].
+pub async fn request_overhead_tokens(system_prompt: &str, tools: &[Tool]) -> Result<usize> {
+    let token_counter = crate::token_counter::shared_token_counter()
+        .await
+        .map_err(|error| anyhow::anyhow!("Failed to create token counter: {error}"))?;
+    // The reply primer is already part of the conversation estimate.
+    Ok(token_counter
+        .count_chat_tokens(system_prompt, &[], tools)
+        .saturating_sub(3))
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -2725,6 +2748,41 @@ mod tests {
         assert!(validate_compaction_settings(0.0, 0.15).is_ok());
         assert!(validate_compaction_settings(0.6, 0.8).is_ok());
         assert!(validate_compaction_settings(1.0, 0.15).is_err());
+    }
+
+    // GSL-PT-20260927-B10: reported context left out the system prompt and
+    // tool definitions whenever the local message estimate was the figure used.
+    #[tokio::test]
+    async fn reported_context_adds_the_request_overhead_to_the_local_estimate() {
+        let provider_measured = ContextUsageSnapshot {
+            context_limit: 8_000,
+            current_tokens: 4_600,
+            last_request_tokens: Some(4_600),
+            estimated_tokens: 300,
+        };
+        let reported = provider_measured.clone().with_request_overhead(4_000);
+        assert_eq!(
+            (reported.current_tokens, reported.estimated_tokens),
+            (4_600, 4_300)
+        );
+
+        let estimate_led = ContextUsageSnapshot {
+            current_tokens: 8_600,
+            estimated_tokens: 8_600,
+            ..provider_measured
+        };
+        let reported = estimate_led.with_request_overhead(4_000);
+        assert_eq!(
+            (reported.current_tokens, reported.estimated_tokens),
+            (12_600, 12_600)
+        );
+
+        let system_prompt = "You are a helpful agent. ".repeat(50);
+        let token_counter = crate::token_counter::shared_token_counter().await.unwrap();
+        assert_eq!(
+            request_overhead_tokens(&system_prompt, &[]).await.unwrap(),
+            token_counter.count_tokens(&system_prompt) + 4
+        );
     }
 
     #[tokio::test]

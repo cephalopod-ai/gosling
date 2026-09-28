@@ -49,12 +49,36 @@ fn auto_compaction_completion_does_not_claim_success_without_reduction() {
         tokens_to_remove: Some(210),
     };
 
-    let grew = auto_compaction_completed_message(&usage, 812, &plan);
+    let grew = auto_compaction_completed_message(&usage, 812, 0, &plan);
     assert!(grew.starts_with("Compaction finished but did not reduce the active context"));
     assert!(grew.contains("812 / 1000 tokens (81.2%)"));
 
-    assert!(auto_compaction_completed_message(&usage, 590, &plan)
+    assert!(auto_compaction_completed_message(&usage, 590, 0, &plan)
         .starts_with("Compaction complete: active context is now estimated at 590"));
+}
+
+// GSL-PT-20260927-B10 / S06: the figure includes the system prompt and tool
+// definitions, and says how much of it they are so it can be matched against
+// the conversation-only Context History estimate.
+#[test]
+fn auto_compaction_completion_names_the_request_overhead() {
+    let usage = ContextUsageSnapshot {
+        context_limit: 8_000,
+        current_tokens: 8_642,
+        last_request_tokens: Some(4_600),
+        estimated_tokens: 8_642,
+    };
+    let plan = AutoCompactionPlan {
+        threshold: 0.8,
+        reduction: 0.15,
+        target_tokens: Some(5_440),
+        tokens_to_remove: Some(3_202),
+    };
+
+    assert_eq!(
+        auto_compaction_completed_message(&usage, 5_053, 4_500, &plan),
+        "Compaction complete: active context is now estimated at 5053 / 8000 tokens (63.2%), including 4500 tokens of system prompt and tool definitions. It started at 8642 tokens; the raw-context target was 5440 tokens."
+    );
 }
 
 #[test]

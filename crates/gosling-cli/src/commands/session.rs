@@ -598,7 +598,7 @@ fn render_context_history_markdown(
         };
         let _ = writeln!(
             output,
-            "## Snapshot #{}\n\n- Created: {}\n- Trigger: {}\n- Effect: {}\n- Model: {}\n- Context estimate: {} → {} tokens\n- Source messages: {}\n- Retention: {}\n- Summary hash: `{}`\n\n{}\n",
+            "## Snapshot #{}\n\n- Created: {}\n- Trigger: {}\n- Effect: {}\n- Model: {}\n- Conversation estimate: {} → {} tokens (system prompt and tools not included)\n- Source messages: {}\n- Retention: {}\n- Summary hash: `{}`\n\n{}\n",
             revision.generation,
             revision.created_at,
             trigger,

@@ -463,11 +463,13 @@ impl Agent {
 
             let final_conversation = if let Some(check) = auto_compaction {
                 if let Some(plan) = check.plan {
-                    yield AgentEvent::ContextUsage(check.usage.clone());
+                    let request_overhead = self.request_overhead_tokens(&session, &interaction_policy).await?;
+                    let reported_usage = check.usage.clone().with_request_overhead(request_overhead);
+                    yield AgentEvent::ContextUsage(reported_usage.clone());
                     yield AgentEvent::Message(
                         Message::assistant().with_system_notification(
                             SystemNotificationType::InlineMessage,
-                            auto_compaction_started_message(&check.usage, &plan),
+                            auto_compaction_started_message(&reported_usage, &plan),
                         )
                     );
 
@@ -491,12 +493,13 @@ impl Agent {
                     {
                         Ok(compacted_conversation) => {
                             let after_tokens = crate::context_mgmt::estimate_conversation_tokens(&compacted_conversation).await?;
+                            let reported_after_tokens = after_tokens + request_overhead;
                             yield AgentEvent::HistoryReplaced(compacted_conversation.clone());
-                            yield AgentEvent::ContextUsage(context_usage_after_compaction(&check.usage, after_tokens));
+                            yield AgentEvent::ContextUsage(context_usage_after_compaction(&reported_usage, reported_after_tokens));
                             yield AgentEvent::Message(
                                 Message::assistant().with_system_notification(
                                     SystemNotificationType::InlineMessage,
-                                    auto_compaction_completed_message(&check.usage, after_tokens, &plan),
+                                    auto_compaction_completed_message(&reported_usage, reported_after_tokens, request_overhead, &plan),
                                 )
                             );
                             if let Some(exceeded) = crate::context_mgmt::context_window_exceeded(
@@ -578,6 +581,28 @@ impl Agent {
             "Session turn lease was lost; this turn stopped before completion. Reload the session before retrying."
         );
         Ok(())
+    }
+
+    /// System prompt and tool definitions the turn's requests will carry,
+    /// which the conversation estimate leaves out.
+    async fn request_overhead_tokens(
+        &self,
+        session: &crate::session::Session,
+        interaction_policy: &crate::session::InteractionPolicy,
+    ) -> Result<usize> {
+        let (tools, _, system_prompt, _) = self
+            .prepare_tools_and_prompt_for_policy(
+                &session.id,
+                &session.working_dir,
+                &session.additional_working_dirs,
+                interaction_policy,
+            )
+            .await?;
+        let system_prompt = match self.load_project_instructions(session).await {
+            Some(addendum) => format!("{system_prompt}\n\n{addendum}"),
+            None => system_prompt,
+        };
+        crate::context_mgmt::request_overhead_tokens(&system_prompt, &tools).await
     }
 
     /// Ends a turn whose request cannot fit the context window before it
