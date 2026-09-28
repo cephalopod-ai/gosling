@@ -1488,7 +1488,15 @@ impl CliSession {
                                         "Tool approval required in non-interactive mode with GoslingMode::{gosling_mode}; the tool was denied because no operator is available."
                                     ));
                                 }
-                                let permission = prompt_tool_confirmation(&security_prompt)?;
+                                let working_dir = self
+                                    .agent
+                                    .config
+                                    .session_manager
+                                    .get_session(&self.session_id, false)
+                                    .await?
+                                    .working_dir;
+                                let permission =
+                                    prompt_tool_confirmation(&security_prompt, &working_dir)?;
 
                                 if permission == Permission::Cancel {
                                     output::render_text("Tool call cancelled. Returning to chat...", Some(Color::Yellow), true);
@@ -2359,25 +2367,34 @@ fn emit_stream_event(event: &StreamEvent) {
 const TOOL_CONFIRMATION_DEFAULT: Permission = Permission::Cancel;
 
 /// Prompt user for tool call confirmation, returns the Permission selected
-fn prompt_tool_confirmation(security_prompt: &Option<String>) -> Result<Permission> {
+fn prompt_tool_confirmation(
+    security_prompt: &Option<String>,
+    working_dir: &std::path::Path,
+) -> Result<Permission> {
     output::hide_thinking();
 
     let prompt = if let Some(security_message) = security_prompt {
         println!("\n{}", security_message);
-        "Do you allow this tool call?".to_string()
+        format!(
+            "Do you allow this tool call (working directory {})?",
+            working_dir.display()
+        )
     } else {
-        "Gosling would like to call the above tool, do you allow?".to_string()
+        format!(
+            "Gosling would like to call the above tool in {}, do you allow?",
+            working_dir.display()
+        )
     };
 
     let permission_result = if security_prompt.is_none() {
         cliclack::select(prompt)
-            .item(Permission::AllowOnce, "Allow", "Allow the tool call once")
+            .item(Permission::AllowOnce, "Allow", "Allow this call only")
             .item(
                 Permission::AlwaysAllow,
                 "Always Allow",
-                "Always allow the tool call",
+                "Allow this tool without asking in every session (saved to permission.yaml)",
             )
-            .item(Permission::DenyOnce, "Deny", "Deny the tool call")
+            .item(Permission::DenyOnce, "Deny", "Deny this call only")
             .item(
                 Permission::Cancel,
                 "Cancel",
@@ -2387,8 +2404,8 @@ fn prompt_tool_confirmation(security_prompt: &Option<String>) -> Result<Permissi
             .interact()
     } else {
         cliclack::select(prompt)
-            .item(Permission::AllowOnce, "Allow", "Allow the tool call once")
-            .item(Permission::DenyOnce, "Deny", "Deny the tool call")
+            .item(Permission::AllowOnce, "Allow", "Allow this call only")
+            .item(Permission::DenyOnce, "Deny", "Deny this call only")
             .item(
                 Permission::Cancel,
                 "Cancel",
