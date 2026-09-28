@@ -410,3 +410,41 @@ fn session_commands_without_a_selector_or_terminal_fail_with_a_hint() {
         );
     }
 }
+
+fn stream_events(output: &Output) -> Vec<Value> {
+    stdout(output)
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap_or_else(|e| panic!("not JSON ({e}): {line}")))
+        .collect()
+}
+
+/// GSL-PT-20260927-B15: a stream-json run that the provider failed ended with
+/// an ordinary `message` event; only a success had a terminal event.
+#[test]
+fn a_failed_stream_json_run_ends_with_an_error_event() {
+    let env = Env::new();
+
+    let output = env.gosling(&["run", "--output-format", "stream-json", "-t", "STATUS 401"]);
+
+    assert!(!output.status.success());
+    let events = stream_events(&output);
+    let last = events.last().expect("at least one event");
+    assert_eq!(last["type"], "error", "{events:?}");
+    assert!(
+        last["error"].as_str().unwrap().contains("Authentication"),
+        "{last}"
+    );
+    assert!(!events.iter().any(|event| event["type"] == "complete"));
+}
+
+#[test]
+fn a_successful_stream_json_run_still_ends_with_complete() {
+    let env = Env::new();
+
+    let output = env.gosling(&["run", "--output-format", "stream-json", "-t", "hi"]);
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    let events = stream_events(&output);
+    assert_eq!(events.last().unwrap()["type"], "complete", "{events:?}");
+    assert!(!events.iter().any(|event| event["type"] == "error"));
+}

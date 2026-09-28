@@ -1462,6 +1462,7 @@ impl CliSession {
         let mut execution_limit_reached = false;
         let mut turn_limit = None;
         let mut interrupted = false;
+        let mut error_event_emitted = false;
 
         use futures::StreamExt;
         loop {
@@ -1633,6 +1634,7 @@ impl CliSession {
                         }
                         Some(Err(e)) => {
                             handle_agent_error(&e, is_json_mode, is_stream_json_mode);
+                            error_event_emitted = is_stream_json_mode;
                             terminal_error = Some(e.to_string());
                             cancel_token_clone.cancel();
                             drop(stream);
@@ -1703,6 +1705,7 @@ impl CliSession {
             if is_stream_json_mode {
                 emit_stream_event(&StreamEvent::Message { message: notice });
                 handle_agent_error(&anyhow::anyhow!(notice_text.clone()), false, true);
+                error_event_emitted = true;
             } else if is_quiet_text_mode {
                 // A headless run reports the stop on stderr when it exits.
                 if interactive {
@@ -1783,12 +1786,18 @@ impl CliSession {
                 ),
                 None => (None, None, None),
             };
-            if terminal_error.is_none() {
-                emit_stream_event(&StreamEvent::Complete {
+            match &terminal_error {
+                None => emit_stream_event(&StreamEvent::Complete {
                     total_tokens,
                     input_tokens,
                     output_tokens,
-                });
+                }),
+                // A provider failure or a cancelled run ends with a message, not an error event;
+                // consumers still need a terminal event.
+                Some(error) if !error_event_emitted => emit_stream_event(&StreamEvent::Error {
+                    error: error.clone(),
+                }),
+                Some(_) => {}
             }
         } else {
             if is_quiet_text_mode {
