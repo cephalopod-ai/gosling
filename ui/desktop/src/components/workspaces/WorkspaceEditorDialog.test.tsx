@@ -1,3 +1,4 @@
+import { RequestError } from '@agentclientprotocol/sdk';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
@@ -473,6 +474,25 @@ describe('WorkspaceEditorDialog', () => {
     expect(await screen.findByText('inventory unavailable')).toBeInTheDocument();
     expect(screen.getByLabelText('Default provider (optional)')).toHaveValue('');
     expect(acpListProviderModels).not.toHaveBeenCalled();
+  });
+
+  it('shows why a save was rejected where it stays visible', async () => {
+    const user = userEvent.setup();
+    updateWorkspace.mockRejectedValueOnce(
+      RequestError.invalidParams('workspace name is already in use')
+    );
+    render(<WorkspaceEditorDialog open workspace={activeWorkspace} onOpenChange={vi.fn()} />, {
+      wrapper: TestWrapper,
+    });
+
+    await user.clear(screen.getByLabelText('Name'));
+    await user.type(screen.getByLabelText('Name'), 'Alpha');
+    await user.click(screen.getByRole('button', { name: 'Save workspace' }));
+
+    const alert = await screen.findByText('workspace name is already in use');
+    expect(alert).toHaveAttribute('role', 'alert');
+    // The form body scrolls; the error must not be left below its fold.
+    expect(alert.closest('.overflow-y-auto')).toBeNull();
   });
 
   it('updates an existing workspace without creating a replacement', async () => {

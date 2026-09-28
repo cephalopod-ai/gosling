@@ -470,7 +470,13 @@ export function WorkspaceEditorDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="grid max-h-[90vh] grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-5xl">
+        <DialogContent
+          className={`grid max-h-[90vh] sm:max-w-5xl ${
+            error
+              ? 'grid-rows-[auto_minmax(0,1fr)_auto_auto]'
+              : 'grid-rows-[auto_minmax(0,1fr)_auto]'
+          }`}
+        >
           <DialogHeader>
             <DialogTitle>{workspace ? 'Edit workspace' : 'Create workspace'}</DialogTitle>
             <DialogDescription>
@@ -1094,12 +1100,14 @@ export function WorkspaceEditorDialog({
                     ))}
               </div>
             )}
-            {error && (
-              <p role="alert" className="text-sm text-red-600">
-                {error}
-              </p>
-            )}
           </div>
+
+          {/* Outside the scrolling body so a failed save is visible without scrolling. */}
+          {error && (
+            <p role="alert" className="text-sm text-red-600">
+              {error}
+            </p>
+          )}
 
           <DialogFooter>
             <Button
