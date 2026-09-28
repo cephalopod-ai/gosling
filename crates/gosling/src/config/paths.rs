@@ -71,6 +71,17 @@ impl Paths {
         Self::agents_home_dir().join(subpath)
     }
 
+    /// Stands in for `~` in the home-relative locations gosling discovers and
+    /// writes (`~/.agents`, `~/.claude`, `~/.config/agents`, ...). Under
+    /// `GOSLING_PATH_ROOT` this is the root, as it already is for
+    /// `agents_home_dir`, so an isolated root never reaches the real home.
+    pub fn home_dir() -> Option<PathBuf> {
+        match std::env::var("GOSLING_PATH_ROOT") {
+            Ok(root) => Some(PathBuf::from(root)),
+            Err(_) => dirs::home_dir(),
+        }
+    }
+
     pub fn in_state_dir(subpath: &str) -> PathBuf {
         Self::state_dir().join(subpath)
     }

@@ -39,6 +39,9 @@ Place a `SKILL.md` file inside a named subdirectory. For example, a global skill
 > `.claude/skills/`, `~/.claude/skills/`, and platform-specific config directories,
 > but `agents/skills/` is the recommended standard.
 
+When [`GOSLING_PATH_ROOT`](/docs/guides/environment-variables#development--testing) is set,
+the root takes the place of `~` in these locations (for example `$GOSLING_PATH_ROOT/.agents/skills/`).
+
 Private or independently versioned ecosystems can provide a compiled routing
 index without publishing their skills with gosling. See
 [External Skill Catalogs](./external-skill-catalogs).

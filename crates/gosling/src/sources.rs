@@ -419,7 +419,7 @@ fn is_global_agent_file(path: &Path) -> bool {
     let canonical_path = canonicalize_or_original(path);
     let mut global_roots = Vec::new();
     global_roots.push(Paths::agents_dir());
-    if let Some(home) = dirs::home_dir() {
+    if let Some(home) = Paths::home_dir() {
         global_roots.push(home.join(".agents").join("agents"));
         global_roots.push(home.join(".gosling").join("agents"));
         global_roots.push(home.join(".claude").join("agents"));
@@ -492,7 +492,7 @@ fn list_agent_dirs(working_dir: Option<&Path>, additional_roots: &[SourceRoot]) 
         path: Paths::agents_dir(),
         writable: true,
     });
-    if let Some(home) = dirs::home_dir() {
+    if let Some(home) = Paths::home_dir() {
         dirs.push(SourceRoot {
             path: home.join(".agents").join("agents"),
             writable: true,

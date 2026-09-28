@@ -219,7 +219,7 @@ pub fn discover_filesystem_sources(working_dir: &Path) -> Vec<SourceEntry> {
     let mut sources: Vec<SourceEntry> = Vec::new();
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-    let home = dirs::home_dir();
+    let home = Paths::home_dir();
     let config = Paths::config_dir();
 
     let local_agent_dirs: Vec<PathBuf> = vec![

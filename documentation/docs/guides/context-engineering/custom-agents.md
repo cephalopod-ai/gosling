@@ -26,6 +26,8 @@ Project agents are available when gosling is working in that project:
 
 :::note Compatibility paths
 gosling also discovers agents from `.gosling/agents/`, `.claude/agents/`, `~/.gosling/agents/`, `~/.claude/agents/`, gosling's platform-specific config agents directory, and project-local `.agents/agents/`. New shared agents should use `.agents/agents/` for project agents or `~/.agents/agents/` for global agents.
+
+When [`GOSLING_PATH_ROOT`](/docs/guides/environment-variables#development--testing) is set, the root takes the place of `~` in these locations.
 :::
 
 Create the directory if it does not already exist, then add a Markdown file for your agent:

@@ -5,6 +5,7 @@
 //! User-facing CRUD lives in `crate::sources` for parity with skills and
 //! projects; `gosling review` consumes [`Check`] and [`discover`] directly.
 
+use crate::config::paths::Paths;
 use crate::sources::parse_frontmatter;
 use anyhow::{anyhow, bail, Context, Result};
 use gosling_sdk_types::custom_requests::{SourceEntry, SourceType};
@@ -278,17 +279,11 @@ fn synthesize_review_md_check(scope_dir: &str, path: &Path, body: &str) -> Check
 /// (repo root, then sub-trees) shadow these globals when names collide.
 pub fn global_checks_dirs() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
-    if let Some(home) = dirs_home() {
+    if let Some(home) = Paths::home_dir() {
         dirs.push(home.join(".config").join("gosling").join("checks"));
         dirs.push(home.join(".config").join("agents").join("checks"));
     }
     dirs
-}
-
-fn dirs_home() -> Option<PathBuf> {
-    std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("USERPROFILE").map(PathBuf::from))
 }
 
 /// Discover all checks and REVIEW.md files relevant to `touched_files`.
