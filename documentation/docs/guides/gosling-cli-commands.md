@@ -223,7 +223,7 @@ Start or resume interactive chat sessions.
 - **`--history`**: Show previous messages when resuming a session
 - **`--container <container_id>`**: Run extensions inside a [Docker container](/docs/tutorials/gosling-in-docker#running-extensions-in-docker-containers).
 - **`--debug`**: Enable debug mode to output complete tool responses, detailed parameter values, and full file paths
-- **`--max-tool-repetitions <NUMBER>`**: Set the maximum number of times the same tool can be called consecutively with identical parameters. Helps prevent infinite loops.
+- **`--max-tool-repetitions <NUMBER>`**: Set the maximum number of times the same tool can be called consecutively with identical parameters within one turn (default: 3). Further repeats are refused, and a turn that keeps repeating refused calls stops after three refusals. Helps prevent infinite loops.
 - **`--max-turns <NUMBER>`**: Set the maximum number of turns allowed without user input (default: 1000)
 
 **Extension Options:**
@@ -516,7 +516,7 @@ Execute commands from an instruction file or stdin. Check out the [full guide](/
 
 **Control Options:**
 - **`--debug`**: Output complete tool responses, detailed parameter values, and full file paths
-- **`--max-tool-repetitions <NUMBER>`**: Maximum number of times the same tool can be called consecutively with identical parameters. Helps prevent infinite loops
+- **`--max-tool-repetitions <NUMBER>`**: Maximum number of times the same tool can be called consecutively with identical parameters (default: 3). Further repeats are refused; a run that keeps repeating refused calls stops after three refusals and exits non-zero. Helps prevent infinite loops
 - **`--max-turns <NUMBER>`**: Maximum number of turns allowed without user input (default: 1000)
 - **`-q, --quiet`**: Quiet mode. Suppress non-response output, printing only the model response to stdout
 - **`--output-format <FORMAT>`**: Output format (`text`, `json`, or `stream-json`). Default is `text`. Use JSON structured output for automation and scripting: `json` for results after completion, `stream-json` for events as they occur

@@ -2,13 +2,15 @@
 #[path = "acp_common_tests/mod.rs"]
 mod common_tests;
 use agent_client_protocol::schema::v1::{
-    ListSessionsRequest, ListSessionsResponse, NewSessionRequest, SessionConfigKind,
-    SessionConfigOptionCategory, SessionConfigOptionValue, SessionInfo,
-    SetSessionConfigOptionRequest,
+    ContentBlock, ListSessionsRequest, ListSessionsResponse, NewSessionRequest, PromptRequest,
+    SessionConfigKind, SessionConfigOptionCategory, SessionConfigOptionValue, SessionInfo,
+    SetSessionConfigOptionRequest, StopReason, TextContent,
 };
 use agent_client_protocol::ErrorCode;
 use common_tests::fixtures::server::AcpServerConnection;
-use common_tests::fixtures::{run_test, Connection, OpenAiFixture, Session, TestConnectionConfig};
+use common_tests::fixtures::{
+    run_test, Connection, OpenAiFixture, Session, SessionData, TestConnectionConfig,
+};
 #[cfg(feature = "code-mode")]
 use common_tests::run_prompt_codemode;
 use common_tests::{
@@ -151,6 +153,49 @@ fn last_message_snippet(session: &SessionInfo) -> Option<&str> {
 #[test]
 fn test_config_mcp() {
     run_test(async { run_config_mcp::<AcpServerConnection>().await });
+}
+
+#[test]
+fn test_prompt_repeating_a_failing_tool_call_stops_with_max_turn_requests() {
+    run_test(async {
+        let prompt = "Keep calling get_code until it works.";
+        // One tool call that fails (no such tool), then three repetition denials. A fifth
+        // provider request would find no exchange and fail the prompt instead.
+        let exchanges = (0..4)
+            .map(|_| {
+                (
+                    prompt.to_string(),
+                    include_str!("acp_test_data/openai_tool_call.txt"),
+                )
+            })
+            .collect();
+        let openai = OpenAiFixture::new(
+            exchanges,
+            <AcpServerConnection as Connection>::expected_session_id(),
+        )
+        .await;
+        let mut conn = <AcpServerConnection as Connection>::new(
+            TestConnectionConfig {
+                gosling_mode: GoslingMode::Auto,
+                ..Default::default()
+            },
+            openai,
+        )
+        .await;
+        let SessionData { session, .. } = conn.new_session().await.unwrap();
+
+        let response = conn
+            .cx()
+            .send_request(PromptRequest::new(
+                session.session_id().clone(),
+                vec![ContentBlock::Text(TextContent::new(prompt))],
+            ))
+            .block_task()
+            .await
+            .unwrap();
+
+        assert_eq!(response.stop_reason, StopReason::MaxTurnRequests);
+    });
 }
 
 #[test]

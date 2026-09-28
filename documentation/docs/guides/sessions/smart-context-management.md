@@ -235,6 +235,10 @@ Context maxed out - automatically cleared session.
 ## Maximum Turns
 The `Max Turns` limit is the maximum number of consecutive turns that gosling can take without user input (default: 1000). When the limit is reached, gosling stops and prompts: "I've reached the maximum number of actions I can do without user input. Would you like me to continue?" If the user answers in the affirmative, gosling continues until the limit is reached and then prompts again.
 
+A headless `gosling run` has nobody to answer that question, so it instead ends with a non-zero exit code and a message naming the limit that stopped it. ACP clients (including gosling Desktop) receive the stop reason `max_turn_requests` instead of `end_turn`.
+
+gosling also stops a turn early when the model keeps repeating tool calls it has been refused. Within one turn, a tool call is refused when it repeats, with identical arguments, a call that already failed in that turn, or when the same call is repeated more times in a row than the repetition limit allows (default 3, `--max-tool-repetitions`). After three such refusals the turn stops and is reported the same way as the turn limit. A declined approval does not count as a failure: asking for the same call again asks you again. Your next message starts a new turn, so a call that failed earlier can be run again, for example after you fix what made it fail.
+
 This feature gives you control over agent autonomy and prevents infinite loops and runaway behavior, which could have significant cost consequences or damaging impact in production environments. Use it for:
 
 - Preventing infinite loops and excessive API calls or resource consumption in automated tasks

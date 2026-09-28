@@ -5,6 +5,7 @@
 //! Clients: streamed events, retries, tool execution, and terminal behavior remain stable.
 
 use super::*;
+use crate::conversation::message::TurnLimit;
 use std::collections::HashSet;
 
 impl Agent {
@@ -151,6 +152,7 @@ impl Agent {
             let mut failover_target = failover_target;
             let mut failover_attempted = false;
             let mut consecutive_stop_hook_blocks = 0u32;
+            let mut repetition_denials: Vec<String> = Vec::new();
             let stop_hook_block_cap = self.stop_hook_block_cap();
             let mut can_drain_pending_steers = false;
             let turn_started_at = chrono::Utc::now() - chrono::Duration::seconds(1);
@@ -199,7 +201,22 @@ impl Agent {
                 }
                 if turns_taken > max_turns {
                     last_assistant_text = MAX_TURNS_MESSAGE.to_string();
-                    yield AgentEvent::Message(Message::assistant().with_text(last_assistant_text.clone()));
+                    yield AgentEvent::Message(
+                        Message::assistant()
+                            .with_text(last_assistant_text.clone())
+                            .with_turn_limit(TurnLimit::MaxTurns),
+                    );
+                    break;
+                }
+                if repetition_denials.len() >= MAX_REPETITION_DENIALS_PER_TURN {
+                    last_assistant_text = repeated_tool_denials_message(
+                        repetition_denials.last().map(String::as_str).unwrap_or_default(),
+                    );
+                    yield AgentEvent::Message(
+                        Message::assistant()
+                            .with_text(last_assistant_text.clone())
+                            .with_turn_limit(TurnLimit::RepeatedToolDenials),
+                    );
                     break;
                 }
 
@@ -724,6 +741,12 @@ impl Agent {
                                                 });
                                             (inspection_results, permission_check_result)
                                         };
+                                    repetition_denials.extend(
+                                        inspection_results
+                                            .iter()
+                                            .filter(|result| crate::tool_monitor::is_repetition_denial(result))
+                                            .map(|result| result.reason.clone()),
+                                    );
 
                                     Self::redirect_unapprovable_subagent_requests(
                                         gosling_mode,
@@ -1571,6 +1594,14 @@ impl Agent {
         }.instrument(reply_stream_span));
         Ok(inner)
     }
+}
+
+fn repeated_tool_denials_message(last_denial: &str) -> String {
+    format!(
+        "I stopped because I kept repeating tool calls that were denied as repeats \
+         (last: {last_denial}). Fix what made the call fail or change the request, then \
+         send a new message to continue."
+    )
 }
 
 fn configured_context_side_channels_allowed(

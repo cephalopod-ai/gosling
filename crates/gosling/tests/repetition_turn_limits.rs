@@ -1,6 +1,8 @@
 //! Repetition protection through the real reply, inspection and dispatch path
-//! (GSL-PT-20260927-E02): failures are remembered for the user turn they
-//! happened in, and a decline is not a failure.
+//! (GSL-PT-20260927-E02, H01, S03, F01): failures are remembered for the user
+//! turn they happened in, a decline is not a failure, and a turn that keeps
+//! repeating denied calls ends with a distinct turn limit instead of running
+//! to `max_turns`.
 
 use async_trait::async_trait;
 use futures::StreamExt;
@@ -10,7 +12,9 @@ use gosling::agents::{
 };
 use gosling::config::permission::PermissionManager;
 use gosling::config::GoslingMode;
-use gosling::conversation::message::{ActionRequiredData, Message, MessageContent, ToolResponse};
+use gosling::conversation::message::{
+    ActionRequiredData, Message, MessageContent, ToolResponse, TurnLimit,
+};
 use gosling::permission::permission_confirmation::PrincipalType;
 use gosling::permission::{Permission, PermissionConfirmation};
 use gosling::providers::base::{stream_from_single_message, MessageStream, Provider};
@@ -136,6 +140,12 @@ impl TurnOutcome {
             .flat_map(|message| &message.content)
             .filter_map(MessageContent::as_tool_response)
             .collect()
+    }
+
+    fn turn_limit(&self) -> Option<TurnLimit> {
+        self.messages
+            .iter()
+            .find_map(|message| message.metadata.turn_limit)
     }
 }
 
@@ -270,6 +280,46 @@ impl Harness {
 }
 
 #[tokio::test]
+async fn a_repeated_failing_call_runs_once_and_the_turn_stops_after_three_denials() {
+    let harness = Harness::new(GoslingMode::Auto, usize::MAX, Vec::new()).await;
+
+    let outcome = harness.turn(VecDeque::new()).await;
+
+    assert_eq!(harness.tool_calls(), 1);
+    assert_eq!(harness.provider_requests(), 4);
+    assert_eq!(outcome.turn_limit(), Some(TurnLimit::RepeatedToolDenials));
+    let results = outcome.tool_results();
+    assert_eq!(results.len(), 4);
+    assert!(result_text(results[0]).contains("CHECK-FAILED"));
+    for denied in &results[1..] {
+        assert!(
+            result_text(denied).contains("already failed with identical arguments"),
+            "{}",
+            result_text(denied)
+        );
+    }
+    let stop = outcome.messages.last().unwrap();
+    assert!(
+        stop.as_concat_text()
+            .contains("Tool 'fixture__run_check' already failed with identical arguments"),
+        "{}",
+        stop.as_concat_text()
+    );
+}
+
+#[tokio::test]
+async fn successful_identical_calls_keep_the_repetition_limit_then_the_turn_stops() {
+    let harness = Harness::new(GoslingMode::Auto, 0, Vec::new()).await;
+
+    let outcome = harness.turn(VecDeque::new()).await;
+
+    assert_eq!(harness.tool_calls(), 3);
+    assert_eq!(harness.provider_requests(), 6);
+    assert_eq!(outcome.turn_limit(), Some(TurnLimit::RepeatedToolDenials));
+    assert!(result_text(outcome.tool_results()[3]).contains("has exceeded maximum repetitions"));
+}
+
+#[tokio::test]
 async fn a_call_that_failed_in_an_earlier_turn_runs_again_in_the_next_turn() {
     let harness = Harness::new(GoslingMode::Auto, 1, vec![true, false, true, false]).await;
 
@@ -285,6 +335,7 @@ async fn a_call_that_failed_in_an_earlier_turn_runs_again_in_the_next_turn() {
         "{}",
         result_text(second.tool_results()[0])
     );
+    assert_eq!(second.turn_limit(), None);
 }
 
 #[tokio::test]
@@ -301,4 +352,35 @@ async fn a_declined_call_is_asked_again_instead_of_being_denied_as_failed() {
     assert_eq!(outcome.approval_prompts, 2);
     assert_eq!(harness.tool_calls(), 1);
     assert!(result_text(outcome.tool_results()[1]).contains("CHECK-PASSED"));
+    assert_eq!(outcome.turn_limit(), None);
+}
+
+#[tokio::test]
+async fn the_turn_budget_is_reported_as_a_max_turns_limit() {
+    let harness = Harness::new(GoslingMode::Auto, 0, Vec::new()).await;
+
+    let reply = harness
+        .agent
+        .reply(
+            Message::user().with_text("run the check"),
+            SessionConfig {
+                id: harness.session_id.clone(),
+                max_turns: Some(2),
+                compacted_context: false,
+                tail_limit: None,
+            },
+            None,
+        )
+        .await
+        .unwrap();
+    tokio::pin!(reply);
+    let mut limits = Vec::new();
+    while let Some(event) = reply.next().await {
+        if let AgentEvent::Message(message) = event.unwrap() {
+            limits.extend(message.metadata.turn_limit);
+        }
+    }
+
+    assert_eq!(limits, vec![TurnLimit::MaxTurns]);
+    assert_eq!(harness.tool_calls(), 2);
 }

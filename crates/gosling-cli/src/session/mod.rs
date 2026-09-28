@@ -42,7 +42,7 @@ use rmcp::model::{ErrorCode, ErrorData};
 use strum::VariantNames;
 
 use gosling::config::paths::Paths;
-use gosling::conversation::message::{ActionRequiredData, Message, MessageContent};
+use gosling::conversation::message::{ActionRequiredData, Message, MessageContent, TurnLimit};
 use rustyline::EditMode;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -1430,6 +1430,7 @@ impl CliSession {
         let mut last_usage: Option<ProviderUsage> = None;
         let mut terminal_error: Option<String> = None;
         let mut execution_limit_reached = false;
+        let mut turn_limit = None;
         let mut interrupted = false;
 
         use futures::StreamExt;
@@ -1442,6 +1443,7 @@ impl CliSession {
                                 terminal_error = terminal_error_reason(&message);
                             }
                             execution_limit_reached |= execution_limit_reason(&message);
+                            turn_limit = turn_limit.or(message.metadata.turn_limit);
                             if first_token_at.is_none() && message_has_text(&message) {
                                 first_token_at = Some(Instant::now());
                             }
@@ -1551,9 +1553,13 @@ impl CliSession {
                                 if interactive { output::hide_thinking() };
                                 let _ = progress_bars.hide();
 
+                                // A turn-limit message asks the user how to continue. A headless
+                                // run has nobody to answer; the execution notice reports the stop.
+                                let unanswerable_limit_prompt =
+                                    !interactive && message.metadata.turn_limit.is_some();
                                 if is_stream_json_mode {
                                     emit_stream_event(&StreamEvent::Message { message: message.clone() });
-                                } else if !is_json_mode {
+                                } else if !is_json_mode && !unanswerable_limit_prompt {
                                     output::render_message_streaming(&message, &mut markdown_buffer, &mut thinking_header_shown, self.debug);
                                     maybe_open_credits_top_up_url(
                                         &message,
@@ -1639,9 +1645,9 @@ impl CliSession {
         }
 
         if terminal_error.is_none() && execution_limit_reached {
-            let notice_text = "Execution stopped before all requested work completed because an action or repetition limit was reached. Some requested operations did not run; do not treat earlier completion claims as authoritative.";
+            let notice_text = execution_limit_notice(turn_limit);
             let notice = Message::assistant()
-                .with_text(notice_text)
+                .with_text(&notice_text)
                 .with_generated_id();
             self.messages.push(notice.clone());
             let _ = self
@@ -1652,11 +1658,13 @@ impl CliSession {
                 .await;
             if is_stream_json_mode {
                 emit_stream_event(&StreamEvent::Message { message: notice });
-                handle_agent_error(&anyhow::anyhow!(notice_text), false, true);
+                handle_agent_error(&anyhow::anyhow!(notice_text.clone()), false, true);
             } else if !is_json_mode {
+                output::flush_markdown_buffer_current_theme(&mut markdown_buffer);
+                println!();
                 output::render_message(&notice, self.debug);
             }
-            terminal_error = Some(notice_text.to_string());
+            terminal_error = Some(notice_text);
         }
 
         if !is_json_mode && !is_stream_json_mode {
@@ -2161,10 +2169,26 @@ fn terminal_error_reason(message: &Message) -> Option<String> {
 }
 
 fn execution_limit_reason(message: &Message) -> bool {
-    let text = message.as_concat_text();
-    (message.role == rmcp::model::Role::User && text.contains("has exceeded maximum repetitions"))
-        || (message.role == rmcp::model::Role::Assistant
-            && text.contains("reached the maximum number of actions"))
+    message.metadata.turn_limit.is_some()
+        || (message.role == rmcp::model::Role::User
+            && message
+                .as_concat_text()
+                .contains("has exceeded maximum repetitions"))
+}
+
+fn execution_limit_notice(turn_limit: Option<TurnLimit>) -> String {
+    let cause = match turn_limit {
+        Some(TurnLimit::MaxTurns) => {
+            "the turn used all of its allowed actions (--max-turns / GOSLING_MAX_TURNS)"
+        }
+        Some(TurnLimit::RepeatedToolDenials) => {
+            "the model kept repeating tool calls that were denied as repeats (an identical call that already failed, or more than --max-tool-repetitions identical calls)"
+        }
+        None => "an action or repetition limit was reached",
+    };
+    format!(
+        "Execution stopped before all requested work completed because {cause}. Some requested operations did not run; do not treat earlier completion claims as authoritative."
+    )
 }
 
 fn remove_local_turn(conversation: &mut Conversation, message_id: &str) -> bool {
@@ -3094,7 +3118,14 @@ mod tests {
         assert!(execution_limit_reason(
             &Message::user().with_text("Tool 'shell' has exceeded maximum repetitions")
         ));
-        assert!(execution_limit_reason(&Message::assistant().with_text(
+        for limit in [TurnLimit::MaxTurns, TurnLimit::RepeatedToolDenials] {
+            assert!(execution_limit_reason(
+                &Message::assistant()
+                    .with_text("I stopped.")
+                    .with_turn_limit(limit)
+            ));
+        }
+        assert!(!execution_limit_reason(&Message::assistant().with_text(
             "I've reached the maximum number of actions I can do without user input."
         )));
         assert!(!execution_limit_reason(&Message::assistant().with_text(
@@ -3103,6 +3134,23 @@ mod tests {
         assert!(!execution_limit_reason(
             &Message::assistant().with_text("All requested work completed")
         ));
+    }
+
+    #[test]
+    fn execution_limit_notice_names_the_limit_that_stopped_the_turn() {
+        let max_turns = execution_limit_notice(Some(TurnLimit::MaxTurns));
+        let repeated = execution_limit_notice(Some(TurnLimit::RepeatedToolDenials));
+        let generic = execution_limit_notice(None);
+
+        assert!(max_turns.contains("--max-turns"), "{max_turns}");
+        assert!(repeated.contains("denied as repeats"), "{repeated}");
+        assert_eq!(
+            generic,
+            "Execution stopped before all requested work completed because an action or repetition limit was reached. Some requested operations did not run; do not treat earlier completion claims as authoritative."
+        );
+        for notice in [&max_turns, &repeated, &generic] {
+            assert!(!notice.contains('?'), "{notice}");
+        }
     }
 
     #[test]

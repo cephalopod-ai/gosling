@@ -375,6 +375,7 @@ impl GoslingAcpAgent {
         let mut current_assistant_message_ids = HashSet::new();
         let mut latest_context_usage = None;
         let mut policy_denied_tools = PolicyDeniedTools::default();
+        let mut turn_limit_reached = false;
 
         loop {
             let event = tokio::select! {
@@ -403,6 +404,7 @@ impl GoslingAcpAgent {
                 Ok(crate::agents::AgentEvent::Message(message)) => {
                     // Agent persists messages via session_manager.add_message() internally.
                     let stored_message_id = message.id.clone();
+                    turn_limit_reached |= message.metadata.turn_limit.is_some();
 
                     if message.role == Role::Assistant {
                         if let Some(message_id) = stored_message_id.as_ref() {
@@ -700,6 +702,8 @@ impl GoslingAcpAgent {
         );
         let stop_reason = if was_cancelled {
             StopReason::Cancelled
+        } else if turn_limit_reached {
+            StopReason::MaxTurnRequests
         } else {
             StopReason::EndTurn
         };

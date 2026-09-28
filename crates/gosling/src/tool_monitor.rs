@@ -129,6 +129,10 @@ impl RepetitionInspector {
     }
 }
 
+pub fn is_repetition_denial(result: &InspectionResult) -> bool {
+    result.inspector_name == REPETITION_INSPECTOR_NAME && result.action == InspectionAction::Deny
+}
+
 fn tool_call_failed(response: &ToolResponse) -> bool {
     match &response.tool_result {
         Err(_) => true,
@@ -292,6 +296,7 @@ mod tests {
         let denied = denials(&inspector, failing_request("repeat"), &messages).await;
         assert_eq!(denied.len(), 1);
         assert!(denied[0].reason.contains("already failed"));
+        assert!(is_repetition_denial(&denied[0]));
 
         assert!(denials(&inspector, request("corrected", 2), &messages)
             .await

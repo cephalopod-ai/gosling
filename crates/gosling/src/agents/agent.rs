@@ -85,6 +85,10 @@ const DEFAULT_STOP_HOOK_BLOCK_CAP: u32 = 8;
 // grind goal that never completes re-injects "keep working" on every no-tool
 // turn, run after run, relying solely on the shared 1000-turn ceiling to end it.
 const DEFAULT_MAX_GRIND_NUDGES: u32 = 50;
+// Repetition protection denies each repeated call, but the model can keep asking
+// for it: without a turn budget that loop ran until `max_turns` (1000 provider
+// requests by default). After this many denials in one turn the turn stops.
+const MAX_REPETITION_DENIALS_PER_TURN: usize = 3;
 const COMPACTION_THINKING_TEXT: &str = "gosling is compacting the conversation...";
 const MAX_TURNS_MESSAGE: &str = "I've reached the maximum number of actions I can do without user input. Would you like me to continue?";
 const MAX_GRIND_NUDGES_MESSAGE: &str = "I've kept working on the grind goal without completing it after many attempts. Stopping to avoid an unbounded loop — let me know if you'd like me to continue.";
