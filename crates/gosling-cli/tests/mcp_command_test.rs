@@ -543,3 +543,47 @@ fn config_dir_is_isolated_by_path_root() {
     assert!(output.status.success());
     assert!(Path::new(&root.path().join("config").join("config.yaml")).exists());
 }
+
+/// GSL-PT-20260927-C22: an Always Allow grant made for one server must not
+/// carry over when `mcp install` replaces the server behind the same name.
+#[test]
+fn reinstalling_a_different_server_revokes_its_always_allow_grants() {
+    let root = TempDir::new().unwrap();
+    let install = |cmd: &str| {
+        let output = gosling(&root, &["mcp", "install", "fxone", "--cmd", cmd]);
+        assert!(
+            output.status.success(),
+            "stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    };
+    let policy = root.path().join("config").join("permission.yaml");
+    let user_policy = || -> Value {
+        let content = std::fs::read_to_string(&policy).unwrap();
+        serde_yaml::from_str::<Value>(&content).unwrap()["user"].clone()
+    };
+
+    install("python3 server-one.py");
+    std::fs::write(
+        &policy,
+        "user:\n  always_allow: [fxone__fx_write, fxtwo__fx_write]\n  ask_before: []\n  never_allow: [fxone__fx_delete]\n",
+    )
+    .unwrap();
+
+    install("python3 server-one.py");
+    assert_eq!(
+        user_policy()["always_allow"],
+        serde_yaml::from_str::<Value>("[fxone__fx_write, fxtwo__fx_write]").unwrap()
+    );
+
+    install("python3 replaced-server.py");
+    let user = user_policy();
+    assert_eq!(
+        user["always_allow"],
+        serde_yaml::from_str::<Value>("[fxtwo__fx_write]").unwrap()
+    );
+    assert_eq!(
+        user["never_allow"],
+        serde_yaml::from_str::<Value>("[fxone__fx_delete]").unwrap()
+    );
+}

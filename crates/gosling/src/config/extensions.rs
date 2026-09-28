@@ -205,10 +205,11 @@ fn get_extension_by_name_with_config(config: &Config, name: &str) -> Option<Exte
         .find(|config| config.name() == name || config.key() == key)
 }
 
-pub fn set_extension(entry: ExtensionEntry) -> Result<(), ConfigError> {
+pub fn set_extension(entry: ExtensionEntry) -> anyhow::Result<()> {
     let _guard = lock_extension_mutations();
     let _file_guard = Config::global().lock_extension_transaction()?;
-    set_extension_with_config(Config::global(), entry)
+    revoke_grants_if_definition_changed(Config::global(), &entry)?;
+    Ok(set_extension_with_config(Config::global(), entry)?)
 }
 
 pub fn set_extension_with_secrets(
@@ -217,7 +218,23 @@ pub fn set_extension_with_secrets(
 ) -> anyhow::Result<()> {
     let _guard = lock_extension_mutations();
     let _file_guard = Config::global().lock_extension_transaction()?;
+    revoke_grants_if_definition_changed(Config::global(), &entry)?;
     set_extension_with_secrets_and_config(Config::global(), entry, secret_updates)
+}
+
+/// An Always Allow grant was given to the server configured when the user chose it,
+/// so a different server definition under the same name has to earn it again.
+fn revoke_grants_if_definition_changed(
+    config: &Config,
+    entry: &ExtensionEntry,
+) -> anyhow::Result<()> {
+    let key = entry.config.key();
+    match get_extensions_map_with_config(config).get(&key) {
+        Some(previous) if previous.config != entry.config => {
+            crate::config::PermissionManager::instance().revoke_extension_grants(&key)
+        }
+        _ => Ok(()),
+    }
 }
 
 fn set_extension_with_secrets_and_config(

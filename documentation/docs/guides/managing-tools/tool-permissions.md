@@ -38,6 +38,8 @@ Each tool can be set to one of three permission levels:
 | **Ask Before** | Requires confirmation | State-changing operations | • File writing/editing<br></br>• System commands<br></br>• Resource creation |
 | **Never Allow** | Tool cannot be used | Sensitive operations | • Credential access<br></br>• System-critical files<br></br>• Resource deletion |
 
+**Always Allow** is tied to the extension you granted it for. When an extension's definition changes (for example `gosling mcp install` with a different command, or editing it in Desktop), its **Always Allow** grants are cleared and its tools ask again. **Never Allow** and **Ask Before** rules are kept.
+
 ## Configuring Tool Permissions
 
 <Tabs groupId="interface">

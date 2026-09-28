@@ -418,6 +418,27 @@ impl PermissionManager {
             }
         })
     }
+
+    /// Drops the Always Allow grants in an extension's tool namespace. Never Allow
+    /// and Ask Before entries stay because they only restrict.
+    pub fn revoke_extension_grants(&self, extension_name: &str) -> anyhow::Result<()> {
+        let prefix = format!("{extension_name}__");
+        let is_grant = |principal: &String| principal.starts_with(prefix.as_str());
+        let has_grants = self
+            .read_permissions_snapshot()?
+            .values()
+            .any(|permission_config| permission_config.always_allow.iter().any(is_grant));
+        if !has_grants {
+            return Ok(());
+        }
+        self.mutate_permissions(|map| {
+            for permission_config in map.values_mut() {
+                permission_config
+                    .always_allow
+                    .retain(|principal| !is_grant(principal));
+            }
+        })
+    }
 }
 
 fn acp_provider_principal(provider_name: &str, tool_name: &str) -> String {
@@ -652,6 +673,47 @@ mod tests {
         assert!(config
             .always_allow
             .contains(&"prefix-extra__tool4".to_string()));
+    }
+
+    /// GSL-PT-20260927-C22: replacing the server behind an extension name must
+    /// not inherit its Always Allow grants; restrictive entries stay.
+    #[test]
+    fn revoking_extension_grants_keeps_restrictions_and_other_extensions() {
+        let (manager, temp_dir) = create_test_permission_manager();
+        assert!(manager.revoke_extension_grants("fxone").is_ok());
+        assert!(!temp_dir.path().join(PERMISSION_FILE).exists());
+
+        manager
+            .bulk_update_user_permissions(&[
+                ("fxone__fx_write".to_string(), PermissionLevel::AlwaysAllow),
+                ("fxone__fx_read".to_string(), PermissionLevel::AskBefore),
+                ("fxone__fx_delete".to_string(), PermissionLevel::NeverAllow),
+                ("fxtwo__fx_write".to_string(), PermissionLevel::AlwaysAllow),
+                (
+                    "fxone-extra__fx_write".to_string(),
+                    PermissionLevel::AlwaysAllow,
+                ),
+            ])
+            .unwrap();
+
+        manager.revoke_extension_grants("fxone").unwrap();
+
+        assert_eq!(manager.get_user_permission("fxone__fx_write"), None);
+        assert_eq!(
+            manager.get_user_permission("fxone__fx_read"),
+            Some(PermissionLevel::AskBefore)
+        );
+        assert_eq!(
+            manager.get_user_permission("fxone__fx_delete"),
+            Some(PermissionLevel::NeverAllow)
+        );
+        for other in ["fxtwo__fx_write", "fxone-extra__fx_write"] {
+            assert_eq!(
+                manager.get_user_permission(other),
+                Some(PermissionLevel::AlwaysAllow),
+                "{other}"
+            );
+        }
     }
 
     #[test]
