@@ -61,6 +61,11 @@ impl KeychainSecretSource {
 /// so tests can exercise the wiring without touching the real keychain.
 #[cfg(feature = "system-keyring")]
 fn read_keychain_secret(source: &KeychainSecretSource) -> Result<String, String> {
+    // Same rule `Config` applies to its own storage: unit tests never reach the
+    // real keychain, even if a test's config resolves to the operator's.
+    if cfg!(test) {
+        return Err("keychain reads are disabled in unit tests".to_string());
+    }
     let Some(account) = source.account() else {
         return Err("no keychain_account given and USER is unset".to_string());
     };
