@@ -228,7 +228,7 @@ Like prompts, this is not an extensive list to shape your `.goslinghints` file. 
 
 ## Custom Context Files
 
-gosling looks for `AGENTS.md` then `.goslinghints` files by default, but you can configure a different filename or multiple context files using the `CONTEXT_FILE_NAMES` environment variable. This is useful for:
+gosling looks for `.goslinghints` then `AGENTS.md` files by default (when both exist, `.goslinghints` comes first in the prompt), but you can configure a different filename or multiple context files using the `CONTEXT_FILE_NAMES` environment variable. This is useful for:
 
 - **Tool compatibility**: Use conventions from other AI tools (e.g. `CLAUDE.md`)
 - **Organization**: Separate frequently-used rules into multiple files that load automatically
@@ -242,7 +242,7 @@ Here's how it works:
 
 ### Configuration
 
-Set the `CONTEXT_FILE_NAMES` environment variable to a JSON array of filenames. The default is `["AGENTS.md", ".goslinghints"]`.
+Set the `CONTEXT_FILE_NAMES` environment variable to a JSON array of filenames. The default is `[".goslinghints", "AGENTS.md"]`, and files load in the order you list them. If the value isn't a list of filenames, gosling prints a warning (once per process) and uses the default.
 
 ```bash
 # Single custom file

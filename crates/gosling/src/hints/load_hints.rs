@@ -2,6 +2,7 @@ use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use std::{
     collections::HashSet,
     path::{Component, Path, PathBuf},
+    sync::atomic::{AtomicBool, Ordering},
 };
 
 use crate::config::paths::Paths;
@@ -44,6 +45,8 @@ fn default_context_filenames() -> Vec<String> {
     ]
 }
 
+static INVALID_CONTEXT_FILE_NAMES_WARNED: AtomicBool = AtomicBool::new(false);
+
 pub fn get_context_filenames() -> Vec<String> {
     use crate::config::{Config, ConfigError};
 
@@ -57,12 +60,23 @@ pub fn get_context_filenames() -> Vec<String> {
         }
         Err(ConfigError::NotFound(_)) => default_context_filenames(),
         Err(error) => {
-            eprintln!(
-                "Warning: Invalid CONTEXT_FILE_NAMES: {error}. Falling back to .goslinghints and AGENTS.md."
-            );
+            warn_invalid_context_file_names(&error, &INVALID_CONTEXT_FILE_NAMES_WARNED);
             default_context_filenames()
         }
     }
+}
+
+/// The context file names are read again whenever the system prompt is
+/// rebuilt, so the fallback is announced once per process, not every turn.
+/// Returns whether this call printed the warning.
+fn warn_invalid_context_file_names(error: &impl std::fmt::Display, warned: &AtomicBool) -> bool {
+    let first_warning = !warned.swap(true, Ordering::Relaxed);
+    if first_warning {
+        eprintln!(
+            "Warning: Invalid CONTEXT_FILE_NAMES: {error}. Falling back to .goslinghints and AGENTS.md."
+        );
+    }
+    first_warning
 }
 
 #[derive(Default)]
@@ -522,6 +536,32 @@ mod tests {
         std::env::remove_var("CONTEXT_FILE_NAMES");
 
         assert_eq!(filenames, vec!["AGENTS.md", "CLAUDE.md"]);
+    }
+
+    #[test]
+    fn default_context_files_load_goslinghints_before_agents_md() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join(AGENTS_MD_FILENAME), "AGENTS-RULE").unwrap();
+        fs::write(dir.path().join(GOSLING_HINTS_FILENAME), "GOSLINGHINTS-RULE").unwrap();
+
+        let hints = load_project_hint_files(
+            dir.path(),
+            &default_context_filenames(),
+            &create_dummy_gitignore(),
+        );
+
+        assert_eq!(default_context_filenames(), [".goslinghints", "AGENTS.md"]);
+        let goslinghints_at = hints.find("GOSLINGHINTS-RULE").unwrap();
+        let agents_md_at = hints.find("AGENTS-RULE").unwrap();
+        assert!(goslinghints_at < agents_md_at, "{hints}");
+    }
+
+    #[test]
+    fn invalid_context_file_names_warning_is_printed_once() {
+        let warned = AtomicBool::new(false);
+
+        assert!(warn_invalid_context_file_names(&"not-json", &warned));
+        assert!(!warn_invalid_context_file_names(&"not-json", &warned));
     }
 
     #[test]
