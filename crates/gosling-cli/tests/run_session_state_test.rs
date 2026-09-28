@@ -446,16 +446,23 @@ fn no_session_run_leaves_nothing_resumable() {
     let response_marker = "CX07-NO-SESSION-RESPONSE-20260913";
 
     let ephemeral = env.run_ok(cwd, &["run", "--no-session", "-t", marker]);
-    let id = banner_session_id(&ephemeral);
     assert_eq!(
         env.mock.chat_requests.load(Ordering::SeqCst),
         1,
         "a --no-session run must not make a title-generation request"
     );
+    // GSL-PT-20260927-E12: the banner announced "new session" with an id that
+    // could never be resumed.
+    let banner = String::from_utf8_lossy(&ephemeral.stdout);
+    assert!(banner.contains("ephemeral"), "{banner}");
+    assert!(
+        !banner
+            .split(|c: char| !(c.is_ascii_digit() || c == '_'))
+            .any(|token| token.len() > 9 && token.as_bytes()[8] == b'_'),
+        "a --no-session run must not announce a session id: {banner}"
+    );
 
-    let export = env.gosling(cwd, &["session", "export", "--session-id", &id]);
-    assert!(!export.status.success());
-    let resume = env.gosling(cwd, &["run", "-r", "--session-id", &id, "-t", "probe"]);
+    let resume = env.gosling(cwd, &["run", "-r", "-t", "probe"]);
     assert!(!resume.status.success());
     assert_eq!(
         files_containing(env.root.path(), marker.as_bytes()),

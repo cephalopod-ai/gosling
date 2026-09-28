@@ -875,12 +875,13 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
     configure_session_prompts(&session, config, &session_config, &session_id, &startup).await;
 
     if !session_config.quiet && session_config.output_format == "text" {
+        // A --no-session run lives in a throwaway store; its id can never be resumed.
         output::display_session_info(
             session_config.resume,
             session_config.fork,
             &effective_provider_name,
             &effective_model_name,
-            &Some(session_id),
+            &(!session_config.no_session).then_some(session_id),
         );
     }
     session

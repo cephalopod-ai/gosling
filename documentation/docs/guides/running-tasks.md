@@ -91,7 +91,7 @@ gosling run -n my-project -t "initial instructions"
 gosling run -n my-project -r
 ```
 
-You can also run commands without creating or storing a session file by using the `--no-session` flag. This is useful for automated scripts, or one-off tasks where you don't need to maintain the conversation history or state. This flag routes the session output to a temporary null path (`/dev/null` on Unix or `NUL` on Windows), and discards it when complete.
+You can also run commands without creating or storing a session file by using the `--no-session` flag. This is useful for automated scripts, or one-off tasks where you don't need to maintain the conversation history or state. This flag routes the session output to a temporary null path (`/dev/null` on Unix or `NUL` on Windows), and discards it when complete. The startup banner says `ephemeral` instead of showing a session ID, because there is nothing to resume.
 
 ```bash
 # Run a command without creating a session file
