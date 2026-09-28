@@ -30,6 +30,7 @@ use gosling::config::GoslingMode;
 use gosling::conversation::message::{Message, MessageMetadata};
 use gosling::custom_requests::{GetSessionInfoRequest, GetSessionInfoResponse};
 use gosling::session::{SessionManager, SessionType};
+use gosling_test_support::TEST_MODEL;
 use std::path::Path;
 
 tests_config_option_set_error!(AcpServerConnection);
@@ -628,6 +629,41 @@ fn test_close_session() {
 #[test]
 fn test_config_option_model_set() {
     run_test(async { run_config_option_model_set::<AcpServerConnection>().await });
+}
+
+#[test]
+fn test_config_option_reselecting_the_current_model_keeps_the_session_as_is() {
+    run_test(async {
+        let data_root = tempfile::tempdir().unwrap();
+        let mut conn = new_connection(data_root.path()).await;
+        let session_manager = SessionManager::new(data_root.path().to_path_buf());
+        let data = conn.new_session().await.unwrap();
+        let session_id = data.session.session_id().0.to_string();
+        let generation = || async {
+            session_manager
+                .latest_handoff_generation(&session_id)
+                .await
+                .unwrap()
+        };
+        let initial = generation().await;
+
+        conn.set_config_option(&session_id, "model", TEST_MODEL)
+            .await
+            .unwrap();
+        let after_reselecting_the_initial_model = generation().await;
+        conn.set_config_option(&session_id, "model", "gpt-4o")
+            .await
+            .unwrap();
+        let after_switch = generation().await;
+        conn.set_config_option(&session_id, "model", "gpt-4o")
+            .await
+            .unwrap();
+        let after_reselect = generation().await;
+
+        assert_eq!(after_reselecting_the_initial_model, initial);
+        assert_eq!(after_switch, initial + 1);
+        assert_eq!(after_reselect, after_switch);
+    });
 }
 
 #[test]
