@@ -13,10 +13,23 @@ use utoipa::ToSchema;
 
 /// Extension data containing all extension states
 /// Keys are in format "extension_name.version" (e.g., "todo.v0")
-#[derive(Debug, Clone, Serialize, Deserialize, Default, ToSchema)]
+#[derive(Debug, Clone, Deserialize, Default, ToSchema)]
 pub struct ExtensionData {
     #[serde(flatten)]
     pub extension_states: HashMap<String, Value>,
+}
+
+impl Serialize for ExtensionData {
+    /// Keys in sorted order: the map's own iteration order differs from
+    /// process to process, which made stored rows and exports of an
+    /// unchanged session differ byte for byte.
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_map(
+            self.extension_states
+                .iter()
+                .collect::<std::collections::BTreeMap<_, _>>(),
+        )
+    }
 }
 
 impl ExtensionData {
@@ -270,6 +283,31 @@ impl EnabledExtensionsState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn extension_data_serializes_the_same_whatever_the_insertion_order() {
+        let keys = [
+            "todo.v0",
+            "enabled_extensions.v0",
+            "import_provenance.v1",
+            "a.v1",
+        ];
+        let serialized = |order: &[&str]| {
+            let mut data = ExtensionData::new();
+            for key in order {
+                data.extension_states
+                    .insert(key.to_string(), serde_json::json!({ "key": key }));
+            }
+            serde_json::to_string(&data).unwrap()
+        };
+
+        let forward = serialized(&keys);
+        let reversed: Vec<&str> = keys.iter().rev().copied().collect();
+        assert_eq!(forward, serialized(&reversed));
+        assert!(forward.starts_with(r#"{"a.v1":"#));
+        let round_trip: ExtensionData = serde_json::from_str(&forward).unwrap();
+        assert_eq!(round_trip.extension_states.len(), keys.len());
+    }
     use serde_json::json;
     use tempfile::NamedTempFile;
     use test_case::test_case;

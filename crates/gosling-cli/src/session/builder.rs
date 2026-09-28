@@ -161,7 +161,7 @@ async fn load_extensions(
         let agent_ptr = agent_ptr.clone();
         let cfg = extension.clone();
         let sid = session_id.to_string();
-        set.spawn(async move { (id, agent_ptr.add_extension(cfg, &sid).await) });
+        set.spawn(async move { (id, agent_ptr.start_extension(cfg, &sid).await) });
     }
 
     let get_message = |waiting_ids: &BTreeSet<usize>| {

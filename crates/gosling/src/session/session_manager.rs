@@ -6183,6 +6183,73 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn rewriting_stored_metadata_unchanged_keeps_updated_at() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let session = sm
+            .create_session(
+                temp_dir.path().to_path_buf(),
+                "Resumed without a turn".to_string(),
+                SessionType::User,
+                GoslingMode::Auto,
+            )
+            .await
+            .unwrap();
+        let resumed_state = || {
+            sm.update(&session.id)
+                .provider_name("openai")
+                .model_config(ModelConfig::new("test-model"))
+                .gosling_mode(GoslingMode::Auto)
+        };
+        let enabled_key = "enabled_extensions.v0";
+        let enabled = serde_json::json!({"extensions": [], "platform_catalog_revision": 1});
+        resumed_state().apply().await.unwrap();
+        sm.merge_extension_state(&session.id, enabled_key, enabled.clone())
+            .await
+            .unwrap();
+        set_sessions_updated_at(
+            &sm,
+            std::slice::from_ref(&session.id),
+            "2024-01-01T00:00:00Z",
+        )
+        .await;
+        let pinned = sm.get_session(&session.id, false).await.unwrap().updated_at;
+
+        resumed_state().apply().await.unwrap();
+        sm.merge_extension_state(&session.id, enabled_key, enabled)
+            .await
+            .unwrap();
+        assert_eq!(
+            sm.get_session(&session.id, false).await.unwrap().updated_at,
+            pinned
+        );
+
+        sm.update(&session.id)
+            .gosling_mode(GoslingMode::Approve)
+            .apply()
+            .await
+            .unwrap();
+        let changed = sm.get_session(&session.id, false).await.unwrap();
+        assert_eq!(changed.gosling_mode, GoslingMode::Approve);
+        assert!(changed.updated_at > pinned);
+
+        set_sessions_updated_at(
+            &sm,
+            std::slice::from_ref(&session.id),
+            "2024-01-01T00:00:00Z",
+        )
+        .await;
+        sm.merge_extension_state(
+            &session.id,
+            enabled_key,
+            serde_json::json!({"extensions": [], "platform_catalog_revision": 2}),
+        )
+        .await
+        .unwrap();
+        assert!(sm.get_session(&session.id, false).await.unwrap().updated_at > pinned);
+    }
+
+    #[tokio::test]
     async fn turn_writes_for_a_session_removed_elsewhere_fail_as_not_found() {
         let temp_dir = TempDir::new().unwrap();
         let open_window = SessionManager::new(temp_dir.path().to_path_buf());

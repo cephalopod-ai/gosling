@@ -304,9 +304,20 @@ impl SessionStorage {
             return Ok(false);
         }
 
+        // `updated_at` says when the session last changed. A write that
+        // stores the values already there (resume re-applies the session's
+        // own provider, model, and mode) must not move it.
+        let stored_values_sql = format!(
+            "SELECT json_array({}) FROM sessions WHERE id = ?",
+            updates.join(", ")
+        );
+        let values_before: Option<String> = sqlx::query_scalar(&stored_values_sql)
+            .bind(&snapshot_session_id)
+            .fetch_optional(&mut **tx)
+            .await?;
+
         let guard_on_user_set_name = builder.only_if_not_user_named;
-        query.push_str(", ");
-        query.push_str("updated_at = datetime('now') WHERE id = ?");
+        query.push_str(" WHERE id = ?");
         if guard_on_user_set_name {
             query.push_str(" AND user_set_name = 0");
         }
@@ -423,6 +434,17 @@ impl SessionStorage {
                 return Err(anyhow::anyhow!("Session not found: {}", builder.session_id));
             }
             return Err(anyhow::anyhow!("Session not found: {}", builder.session_id));
+        }
+
+        let values_after: Option<String> = sqlx::query_scalar(&stored_values_sql)
+            .bind(&snapshot_session_id)
+            .fetch_optional(&mut **tx)
+            .await?;
+        if values_after != values_before {
+            sqlx::query("UPDATE sessions SET updated_at = datetime('now') WHERE id = ?")
+                .bind(&snapshot_session_id)
+                .execute(&mut **tx)
+                .await?;
         }
 
         let plan_staled = if let Some(old_scope_hash) = old_scope_hash {
@@ -671,6 +693,10 @@ impl SessionStorage {
 
         let mut extension_data: ExtensionData =
             serde_json::from_str(&extension_data_json).unwrap_or_default();
+        if extension_data.extension_states.get(key) == Some(&value) {
+            tx.commit().await?;
+            return Ok(());
+        }
         extension_data
             .extension_states
             .insert(key.to_string(), value);

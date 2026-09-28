@@ -993,6 +993,56 @@ async fn update_provider_propagates_active_mode() -> Result<()> {
 }
 
 #[tokio::test]
+async fn starting_an_extension_leaves_saving_the_list_to_the_caller() -> Result<()> {
+    let temp_dir = tempfile::tempdir()?;
+    let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
+    let agent = Agent::with_config(AgentConfig::new(
+        session_manager.clone(),
+        Arc::new(PermissionManager::new(temp_dir.path().to_path_buf())),
+        GoslingMode::Auto,
+        true,
+        GoslingPlatform::GoslingCli,
+    ));
+    let session = session_manager
+        .create_session(
+            PathBuf::default(),
+            "start-then-save".to_string(),
+            SessionType::Hidden,
+            GoslingMode::Auto,
+        )
+        .await?;
+    agent
+        .update_provider(
+            Arc::new(CountingTextProvider::new()),
+            gosling_providers::model::ModelConfig::new("mock-model"),
+            &session.id,
+        )
+        .await?;
+    let developer = ExtensionConfig::Platform {
+        name: "developer".to_string(),
+        description: "Developer tools".to_string(),
+        display_name: Some("Developer".to_string()),
+        bundled: Some(true),
+        available_tools: vec![],
+    };
+
+    agent.start_extension(developer, &session.id).await?;
+    let started = session_manager.get_session(&session.id, false).await?;
+    assert!(EnabledExtensionsState::from_extension_data(&started.extension_data).is_none());
+
+    agent.persist_extension_state(&session.id).await?;
+    let saved = session_manager.get_session(&session.id, false).await?;
+    let names: Vec<String> = EnabledExtensionsState::from_extension_data(&saved.extension_data)
+        .expect("the caller's save records the started extension")
+        .extensions
+        .iter()
+        .map(|config| config.name())
+        .collect();
+    assert_eq!(names, vec!["developer".to_string()]);
+    Ok(())
+}
+
+#[tokio::test]
 async fn provider_persistence_failure_preserves_live_provider() -> Result<()> {
     let temp_dir = tempfile::tempdir()?;
     let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
