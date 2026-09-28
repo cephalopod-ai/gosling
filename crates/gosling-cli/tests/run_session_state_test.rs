@@ -553,3 +553,30 @@ fn configure_refuses_a_config_file_it_cannot_parse() {
     assert!(stderr.contains(config_file.to_str().unwrap()), "{stderr}");
     assert_eq!(env.mock.chat_requests.load(Ordering::SeqCst), 0);
 }
+
+/// GSL-PT-20260927-S18: a corrupt permission policy used to panic `run`; it
+/// now runs with tools denied and names the unreadable file.
+#[test]
+fn corrupt_permission_policy_is_reported_instead_of_panicking() {
+    let env = Env::new();
+    let policy = env.root.path().join("config").join("permission.yaml");
+    std::fs::write(&policy, "user: [unclosed\n  - : :\n").unwrap();
+
+    let output = env.gosling(env.root.path(), &["run", "--no-session", "-t", "hi"]);
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "stdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(stdout.contains("MOCK-REPLY"), "stdout: {stdout}");
+    assert!(!stderr.contains("panicked"), "stderr: {stderr}");
+    assert!(
+        stderr.contains(&format!(
+            "Permission policy {} could not be read",
+            policy.display()
+        )),
+        "stderr: {stderr}"
+    );
+}

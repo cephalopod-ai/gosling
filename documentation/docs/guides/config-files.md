@@ -16,7 +16,7 @@ The configuration files allow you to set default behaviors, configure language m
 ## Configuration Files
 
 - **config.yaml** - Provider, model, extensions, and general settings
-- **permission.yaml** - Tool permission levels configured via `gosling configure`
+- **permission.yaml** - Tool permission levels configured via `gosling configure`. If this file cannot be read or parsed, gosling still starts but denies tool calls until it is fixed or removed; the CLI, `gosling doctor`, and each denial name the file
 - **secrets.yaml** - API keys and secrets (when gosling is using [file-based secret storage](#security-considerations))
 - **permissions/tool_permissions.json** - Runtime permission decisions (auto-managed)
 - **prompts/** - Customized [prompt templates](/docs/guides/context-engineering/prompt-templates)

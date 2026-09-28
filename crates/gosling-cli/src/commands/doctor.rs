@@ -1,7 +1,7 @@
 use anyhow::Result;
 use std::path::Path;
 
-use gosling::config::Config;
+use gosling::config::{Config, PermissionManager};
 use gosling::providers::get_from_registry;
 use gosling::providers::provider_test::test_provider_configuration;
 use gosling::session::{config_path, SystemInfo};
@@ -12,15 +12,21 @@ pub async fn handle_doctor() -> Result<()> {
     let provider = config.get_gosling_provider().ok();
     let model = config.get_gosling_model().ok();
     let problem = setup_problem(provider.as_deref(), model.as_deref()).await;
-    let report = render_report(
+    let policy_problem = PermissionManager::instance().policy_problem();
+    let mut report = render_report(
         &system_info,
         &config_path(),
         provider.as_deref(),
         model.as_deref(),
         problem.is_none(),
     );
+    if let Some(policy_problem) = &policy_problem {
+        report.push_str(&format!("\n{policy_problem}"));
+    }
     println!("{report}");
-    problem.map_or(Ok(()), |problem| Err(anyhow::anyhow!(problem)))
+    problem
+        .or(policy_problem)
+        .map_or(Ok(()), |problem| Err(anyhow::anyhow!(problem)))
 }
 
 async fn setup_problem(provider: Option<&str>, model: Option<&str>) -> Option<String> {

@@ -671,6 +671,9 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
     } else {
         (Agent::new(), None)
     };
+    if let Some(problem) = agent.config.permission_manager.policy_problem() {
+        eprintln!("Warning: {problem}");
+    }
     if let Some(max_repetitions) = session_config.max_tool_repetitions {
         agent.set_max_tool_repetitions(max_repetitions);
     }

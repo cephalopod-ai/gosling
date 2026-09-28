@@ -103,33 +103,30 @@ const EGRESS_DOMAIN_PERMISSION: &str = "egress_domain";
 const ACP_PROVIDER_PERMISSION: &str = "acp_provider";
 
 impl PermissionManager {
-    /// Validates an existing policy at startup, panicking if it cannot be read or parsed.
+    /// Reports an existing policy that cannot be read instead of refusing to start:
+    /// every lookup already fails closed, and `policy_problem` names the file.
     pub fn new(config_dir: PathBuf) -> Self {
-        let permission_path = config_dir.join(PERMISSION_FILE);
-        let _: HashMap<String, PermissionConfig> = if permission_path.exists() {
-            let file_contents =
-                fs::read_to_string(&permission_path).expect("Failed to read permission.yaml");
-            serde_yaml::from_str(&file_contents).unwrap_or_else(|e| {
-                tracing::error!(
-                    "Failed to parse {}: {}. Refusing to start with corrupted permission config.",
-                    permission_path.display(),
-                    e,
-                );
-                panic!(
-                    "Corrupted permission config at {}. Fix or remove the file to continue.",
-                    permission_path.display(),
-                );
-            })
-        } else {
-            // Directory creation failure is deferred to the normal read/write error paths.
-            if let Err(e) = fs::create_dir_all(&config_dir) {
-                tracing::error!("Failed to create config directory {config_dir:?}: {e}");
-            }
-            HashMap::new()
+        let manager = PermissionManager {
+            config_path: config_dir.join(PERMISSION_FILE),
         };
-        PermissionManager {
-            config_path: permission_path,
+        if manager.config_path.exists() {
+            if let Some(problem) = manager.policy_problem() {
+                tracing::error!(security.event_type = "permission_read_failed", "{problem}");
+            }
+        } else if let Err(e) = fs::create_dir_all(&config_dir) {
+            // Directory creation failure is deferred to the normal read/write error paths.
+            tracing::error!("Failed to create config directory {config_dir:?}: {e}");
         }
+        manager
+    }
+
+    /// Why the stored policy cannot be used, naming the file; `None` when it reads cleanly.
+    pub fn policy_problem(&self) -> Option<String> {
+        let error = self.read_permissions_snapshot().err()?;
+        Some(format!(
+            "Permission policy {} could not be read ({error}). Tool calls are denied until the file is fixed or removed.",
+            self.config_path.display()
+        ))
     }
 
     pub fn instance() -> Arc<PermissionManager> {
@@ -718,13 +715,38 @@ mod tests {
         assert_eq!(manager.get_user_permission("unknown"), None);
     }
 
+    /// GSL-PT-20260927-S18: a corrupt policy used to panic every CLI/ACP start and
+    /// hang a WebSocket `initialize`; it now fails closed and names the file.
     #[test]
-    #[should_panic(expected = "Corrupted permission config")]
-    fn test_corrupted_permission_file_panics() {
+    fn a_corrupted_permission_file_fails_closed_and_names_the_file() {
         let temp_dir = TempDir::new().unwrap();
         let permission_path = temp_dir.path().join(PERMISSION_FILE);
-        fs::write(&permission_path, "{{invalid yaml: [broken").unwrap();
-        PermissionManager::new(temp_dir.path().to_path_buf());
+        fs::write(&permission_path, "user: [unclosed\n  - : :\n").unwrap();
+
+        let manager = PermissionManager::new(temp_dir.path().to_path_buf());
+
+        assert_eq!(
+            manager.get_user_permission("shell"),
+            Some(PermissionLevel::NeverAllow)
+        );
+        let problem = manager
+            .policy_problem()
+            .expect("corrupt policy is reported");
+        assert!(
+            problem.contains(&permission_path.display().to_string()),
+            "{problem}"
+        );
+        assert!(manager
+            .update_user_permission("shell", PermissionLevel::AlwaysAllow)
+            .is_err());
+        assert_eq!(
+            fs::read_to_string(&permission_path).unwrap(),
+            "user: [unclosed\n  - : :\n"
+        );
+
+        fs::remove_file(&permission_path).unwrap();
+        assert_eq!(manager.policy_problem(), None);
+        assert_eq!(manager.get_user_permission("shell"), None);
     }
 
     use test_case::test_case;

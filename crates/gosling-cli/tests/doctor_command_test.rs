@@ -132,3 +132,31 @@ fn doctor_verifies_a_healthy_configured_provider() {
     );
     assert!(String::from_utf8_lossy(&output.stdout).contains("provider request verified"));
 }
+
+/// GSL-PT-20260927-S18: doctor stayed green while every run panicked on a
+/// corrupt permission policy.
+#[test]
+fn doctor_reports_an_unreadable_permission_policy() {
+    let root = TempDir::new().unwrap();
+    let policy = root.path().join("config").join("permission.yaml");
+    std::fs::create_dir_all(policy.parent().unwrap()).unwrap();
+    std::fs::write(&policy, "user: [unclosed\n  - : :\n").unwrap();
+    let host = healthy_openai_server();
+    let output = doctor(
+        &root,
+        Some("GOSLING_PROVIDER: openai\nGOSLING_MODEL: gpt-4o\n"),
+        &[("OPENAI_HOST", &host), ("OPENAI_API_KEY", "sk-test")],
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "stdout: {stdout}");
+    assert!(
+        stdout.contains(&format!(
+            "Permission policy {} could not be read",
+            policy.display()
+        )),
+        "stdout: {stdout}"
+    );
+    assert!(!stderr.contains("panicked"), "stderr: {stderr}");
+}
