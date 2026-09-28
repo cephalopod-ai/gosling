@@ -71,6 +71,32 @@ async fn acp_active_run_pins_the_agent_manager_lru_entry() {
 }
 
 #[tokio::test]
+async fn stopping_prompt_runs_cancels_them_and_waits_until_they_answer() {
+    let shutdown = PromptRunShutdown::new();
+    let running = shutdown.run_token();
+    let answering = shutdown.track();
+    let stop = tokio::spawn({
+        let shutdown = shutdown.clone();
+        async move { shutdown.stop_all(std::time::Duration::from_secs(5)).await }
+    });
+
+    tokio::time::timeout(std::time::Duration::from_secs(1), running.cancelled())
+        .await
+        .expect("the running prompt is cancelled");
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    assert!(!stop.is_finished(), "waits for the prompt to answer");
+    drop(answering);
+    tokio::time::timeout(std::time::Duration::from_secs(1), stop)
+        .await
+        .expect("returns once every prompt has answered")
+        .unwrap();
+    assert!(
+        shutdown.run_token().is_cancelled(),
+        "a prompt arriving later is stopped at once"
+    );
+}
+
+#[tokio::test]
 async fn provider_transition_waits_for_the_confirmed_run_and_blocks_the_next_prompt() {
     let gate = Arc::new(SessionOperationGate::default());
     let active = gate.begin_prompt("run-1").await.unwrap();

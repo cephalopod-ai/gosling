@@ -151,6 +151,7 @@ mod transport;
 mod website_logins;
 mod workspace_handlers;
 
+pub(crate) use active_runs::PromptRunShutdown;
 #[cfg(test)]
 use active_runs::{register_active_prompt_run, unregister_active_prompt_run};
 use active_runs::{ActivePromptRun, SessionOperationGate};
@@ -293,6 +294,7 @@ pub struct GoslingAcpAgent {
     runtime_paths: RuntimePaths,
     sessions: Arc<Mutex<HashMap<String, GoslingAcpSession>>>,
     active_prompt_runs: Arc<Mutex<HashMap<String, ActivePromptRun>>>,
+    prompt_run_shutdown: PromptRunShutdown,
     closed_session_ids: Arc<Mutex<HashSet<String>>>,
     agent_manager: Arc<AgentManager>,
     provider_factory: AcpProviderFactory,
@@ -509,6 +511,7 @@ impl GoslingAcpAgent {
                 runtime_paths: agent_runtime_paths,
                 sessions: Arc::new(Mutex::new(HashMap::new())),
                 active_prompt_runs: Arc::new(Mutex::new(HashMap::new())),
+                prompt_run_shutdown: PromptRunShutdown::new(),
                 closed_session_ids: Arc::new(Mutex::new(HashSet::new())),
                 agent_manager,
                 provider_factory: options.provider_factory,
@@ -533,6 +536,12 @@ impl GoslingAcpAgent {
             })
         })
         .await
+    }
+
+    /// Puts this connection's prompt runs under a server-wide shutdown.
+    pub(crate) fn with_prompt_run_shutdown(mut self, shutdown: PromptRunShutdown) -> Self {
+        self.prompt_run_shutdown = shutdown;
+        self
     }
 
     fn config(&self) -> Result<&'static Config, agent_client_protocol::Error> {

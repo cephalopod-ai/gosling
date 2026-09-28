@@ -33,6 +33,9 @@ pub(super) enum TurnClosureTrigger {
     /// it the turn lease) was dropped. Left alone once a turn in another
     /// process owns the session.
     Cancel,
+    /// Like `Cancel`, but the server stopped the turn on its way down; nobody
+    /// chose to end it, so it is closed as interrupted.
+    Shutdown,
 }
 
 #[derive(Debug, PartialEq)]
@@ -108,7 +111,7 @@ impl SessionStorage {
             TurnClosureTrigger::Reopen => {
                 self.live_turn_owner(&mut tx, session_id).await?.is_some()
             }
-            TurnClosureTrigger::Cancel => self
+            TurnClosureTrigger::Cancel | TurnClosureTrigger::Shutdown => self
                 .live_turn_owner(&mut tx, session_id)
                 .await?
                 .is_some_and(|owner_id| owner_id != self.owner_id),
@@ -129,7 +132,9 @@ impl SessionStorage {
                 .await?;
                 stored.map(|json| serde_json::from_str::<ExtensionData>(&json).unwrap_or_default())
             }
-            TurnClosureTrigger::NextTurn | TurnClosureTrigger::Cancel => None,
+            TurnClosureTrigger::NextTurn
+            | TurnClosureTrigger::Cancel
+            | TurnClosureTrigger::Shutdown => None,
         };
         // Only ACP prompts record a run state, so a terminal value can predate
         // later CLI turns; an in-progress one always describes the last turn.
@@ -139,6 +144,7 @@ impl SessionStorage {
             == Some(AcpPromptRunState::InProgress);
         let (notice, turn_known_stopped) = match trigger {
             TurnClosureTrigger::Cancel => (CANCELLED_TURN_NOTICE, true),
+            TurnClosureTrigger::Shutdown => (INTERRUPTED_TURN_NOTICE, true),
             TurnClosureTrigger::Reopen => (INTERRUPTED_TURN_NOTICE, run_in_progress),
             TurnClosureTrigger::NextTurn => (INTERRUPTED_TURN_NOTICE, false),
         };
@@ -365,6 +371,23 @@ mod tests {
             Some(CANCELLED_TURN_NOTICE)
         );
         assert!(!sm.close_cancelled_turn(&id).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn a_turn_stopped_by_shutdown_is_closed_as_interrupted() {
+        let (_temp, sm, id) = session_with(vec![
+            Message::user().with_text("run it"),
+            tool_request("done"),
+            tool_response("done"),
+        ])
+        .await;
+
+        assert!(sm.close_turn_stopped_by_shutdown(&id).await.unwrap());
+        assert_eq!(
+            texts(&sm, &id).await.last().map(String::as_str),
+            Some(INTERRUPTED_TURN_NOTICE)
+        );
+        assert!(!sm.close_turn_stopped_by_shutdown(&id).await.unwrap());
     }
 
     #[tokio::test]

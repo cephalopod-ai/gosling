@@ -158,6 +158,54 @@ impl SessionOperationGate {
     }
 }
 
+/// The prompt runs of every connection a server holds, so a server that is
+/// shutting down can stop them and wait until each has answered its client.
+#[derive(Clone)]
+pub(crate) struct PromptRunShutdown {
+    stop: CancellationToken,
+    in_flight: Arc<tokio::sync::watch::Sender<usize>>,
+}
+
+impl PromptRunShutdown {
+    pub(crate) fn new() -> Self {
+        Self {
+            stop: CancellationToken::new(),
+            in_flight: Arc::new(tokio::sync::watch::channel(0).0),
+        }
+    }
+
+    /// Cancel token for a new run: cancelled with the run, and by shutdown.
+    pub(super) fn run_token(&self) -> CancellationToken {
+        self.stop.child_token()
+    }
+
+    pub(super) fn is_stopping(&self) -> bool {
+        self.stop.is_cancelled()
+    }
+
+    /// Counts a prompt until the returned guard drops.
+    pub(super) fn track(&self) -> InFlightPrompt {
+        self.in_flight.send_modify(|in_flight| *in_flight += 1);
+        InFlightPrompt(Arc::clone(&self.in_flight))
+    }
+
+    /// Stops every running prompt, including prompts that arrive later, and
+    /// waits up to `grace` until each has answered.
+    pub(crate) async fn stop_all(&self, grace: std::time::Duration) {
+        self.stop.cancel();
+        let mut in_flight = self.in_flight.subscribe();
+        let _ = tokio::time::timeout(grace, in_flight.wait_for(|in_flight| *in_flight == 0)).await;
+    }
+}
+
+pub(super) struct InFlightPrompt(Arc<tokio::sync::watch::Sender<usize>>);
+
+impl Drop for InFlightPrompt {
+    fn drop(&mut self) {
+        self.0.send_modify(|in_flight| *in_flight -= 1);
+    }
+}
+
 pub(super) struct ActivePromptRun {
     run_id: String,
     cancel_token: CancellationToken,

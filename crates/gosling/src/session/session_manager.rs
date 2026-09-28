@@ -1100,6 +1100,15 @@ impl SessionManager {
             .await
     }
 
+    /// Closes the caller's turn that a shutting down server stopped, as
+    /// interrupted, unless a turn in another process has taken the session
+    /// over since.
+    pub(crate) async fn close_turn_stopped_by_shutdown(&self, session_id: &str) -> Result<bool> {
+        self.storage
+            .close_unfinished_turn(session_id, turn_closure::TurnClosureTrigger::Shutdown)
+            .await
+    }
+
     pub async fn add_model_switch_record(
         &self,
         id: &str,

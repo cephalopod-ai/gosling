@@ -279,14 +279,19 @@ impl GoslingAcpAgent {
         &self,
         session_id: &str,
         state: AcpPromptRunState,
+        stopped_by_shutdown: bool,
     ) -> Result<(), agent_client_protocol::Error> {
         let bookkeeping = async {
             // Without a closed turn the cancelled prompt merges into the next
             // one and the model re-executes it as live instruction.
-            self.session_manager
-                .close_cancelled_turn(session_id)
-                .await
-                .internal_err_ctx("Failed to record the cancelled turn")?;
+            let closed = if stopped_by_shutdown {
+                self.session_manager
+                    .close_turn_stopped_by_shutdown(session_id)
+                    .await
+            } else {
+                self.session_manager.close_cancelled_turn(session_id).await
+            };
+            closed.internal_err_ctx("Failed to record the cancelled turn")?;
             self.record_acp_prompt_state(session_id, state).await
         };
         match tokio::time::timeout(CANCELLED_TURN_BOOKKEEPING_LIMIT, bookkeeping).await {
@@ -313,7 +318,8 @@ impl GoslingAcpAgent {
         let research_run_started_at = chrono::Utc::now() - chrono::Duration::seconds(1);
 
         let run_id = format!("run_{}", Uuid::new_v4());
-        let cancel_token = CancellationToken::new();
+        let cancel_token = self.prompt_run_shutdown.run_token();
+        let _in_flight = self.prompt_run_shutdown.track();
         self.start_active_run(&session_id, run_id.clone(), cancel_token.clone())
             .await?;
 
@@ -592,12 +598,17 @@ impl GoslingAcpAgent {
         Self::send_active_run_update(cx, &args.session_id, None)?;
         was_cancelled |= cancel_token.is_cancelled();
         if was_cancelled {
+            // Stopped by the server shutting down, not by the user: recorded
+            // like a turn whose process went away.
+            let stopped_by_shutdown = self.prompt_run_shutdown.is_stopping();
             let terminal_state = if stream_error.is_some() {
                 AcpPromptRunState::Failed
+            } else if stopped_by_shutdown {
+                AcpPromptRunState::Interrupted
             } else {
                 AcpPromptRunState::Cancelled
             };
-            self.record_cancelled_turn(&session_id, terminal_state)
+            self.record_cancelled_turn(&session_id, terminal_state, stopped_by_shutdown)
                 .await?;
         }
         if stream_error.is_none() && !was_cancelled {

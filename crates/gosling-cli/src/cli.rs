@@ -1794,8 +1794,10 @@ async fn handle_serve_command(args: ServeCommandArgs) -> Result<()> {
             info!("Starting ACP server on https://{}", addr);
             let shutdown_handle = axum_server::Handle::new();
             let signal_handle = shutdown_handle.clone();
+            let stopping_server = Arc::clone(&server);
             tokio::spawn(async move {
                 crate::signal::shutdown_signal().await;
+                stopping_server.stop_prompt_runs(SERVE_SHUTDOWN_GRACE).await;
                 signal_handle.graceful_shutdown(Some(std::time::Duration::from_secs(5)));
             });
 
@@ -1823,10 +1825,14 @@ async fn handle_serve_command(args: ServeCommandArgs) -> Result<()> {
     } else {
         info!("Starting ACP server on http://{}", addr);
         let listener = tokio::net::TcpListener::bind(addr).await?;
+        let stopping_server = Arc::clone(&server);
         serve_http_until_shutdown(
             listener,
             router,
-            crate::signal::shutdown_signal(),
+            async move {
+                crate::signal::shutdown_signal().await;
+                stopping_server.stop_prompt_runs(SERVE_SHUTDOWN_GRACE).await;
+            },
             SERVE_SHUTDOWN_GRACE,
         )
         .await?;
@@ -1836,6 +1842,10 @@ async fn handle_serve_command(args: ServeCommandArgs) -> Result<()> {
     Ok(())
 }
 
+/// How long a stopping server waits for running prompts to answer, and then
+/// for open connections to close. Running prompts are stopped first: an SSE or
+/// WebSocket connection outlives the grace, so a turn left running would
+/// stream on until the forced close and its client would never get an answer.
 const SERVE_SHUTDOWN_GRACE: std::time::Duration = std::time::Duration::from_secs(5);
 
 async fn resolve_serve_addr(host: &str, port: u16) -> Result<std::net::SocketAddr> {

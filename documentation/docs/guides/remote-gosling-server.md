@@ -40,6 +40,11 @@ The supported command and security controls are:
 `--dangerously-unauthenticated` is present. The unauthenticated mode is for deliberate loopback
 development only and cannot bind to a non-loopback address.
 
+On `SIGTERM` or `Ctrl+C` the server first stops every prompt that is still running: each client gets
+its `session/prompt` answer with `stopReason: cancelled`, and the turn is recorded as interrupted
+(`Run interrupted before completion.`), the same as a turn cut short by a crash. The server then stops
+accepting connections and waits up to 5 seconds for open ones to close before it exits.
+
 ### Optional TLS
 
 For a self-signed local certificate:
