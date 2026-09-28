@@ -296,6 +296,7 @@ pub fn render_message_streaming(
     message: &Message,
     buffer: &mut MarkdownBuffer,
     thinking_header_shown: &mut bool,
+    blocks: &mut TextBlocks,
     debug: bool,
 ) {
     let theme = get_theme();
@@ -309,11 +310,7 @@ pub fn render_message_streaming(
         }
 
         match content {
-            MessageContent::Text(text) => {
-                if let Some(safe_content) = buffer.push(&text.text) {
-                    print_markdown(&safe_content, theme);
-                }
-            }
+            MessageContent::Text(text) => blocks.push(message, &text.text, buffer, theme),
             MessageContent::ToolRequest(req) => {
                 flush_markdown_buffer(buffer, theme);
                 render_tool_request(req, theme, debug);
@@ -370,6 +367,18 @@ pub fn render_message_streaming(
                 eprintln!("WARNING: Message content type could not be rendered");
             }
         }
+        // Everything else printed here starts and ends its own lines.
+        if !matches!(
+            content,
+            MessageContent::Text(_)
+                | MessageContent::Thinking(_)
+                | MessageContent::SystemNotification(SystemNotificationContent {
+                    notification_type: SystemNotificationType::ThinkingMessage,
+                    ..
+                })
+        ) {
+            blocks.line_open = false;
+        }
     }
 
     let _ = std::io::stdout().flush();
@@ -389,6 +398,7 @@ impl TextBlocks {
         if self.line_open && self.message_id != message.id {
             flush_markdown_buffer(buffer, theme);
             println!();
+            self.line_open = false;
         }
         self.message_id = message.id.clone();
         if let Some(last) = text.chars().last() {
@@ -1708,7 +1718,7 @@ pub fn display_session_status(
     println!("  {:<10} {}", "Provider:", provider);
     println!("  {:<10} {}", "Model:", model);
     println!("  {:<10} {}", "Mode:", mode);
-    println!("\n{}", style("Subscription token usage:").cyan().bold());
+    println!("\n{}", style("Token usage:").cyan().bold());
 
     for (label, usage) in [
         ("This turn:", current_usage),

@@ -1605,7 +1605,7 @@ impl CliSession {
                                         output::render_reply_text_streaming(&message, &mut markdown_buffer, &mut reply_text);
                                     }
                                 } else if !is_json_mode && !unanswerable_limit_prompt {
-                                    output::render_message_streaming(&message, &mut markdown_buffer, &mut thinking_header_shown, self.debug);
+                                    output::render_message_streaming(&message, &mut markdown_buffer, &mut thinking_header_shown, &mut reply_text, self.debug);
                                     maybe_open_credits_top_up_url(
                                         &message,
                                         interactive,
@@ -2016,18 +2016,19 @@ impl CliSession {
 
     /// Render all past messages from the session history
     pub fn render_message_history(&self) {
-        if self.messages.is_empty() {
+        let visible = user_visible_messages(&self.messages);
+        if visible.is_empty() {
             return;
         }
 
         println!(
             "\n  {} {}",
             console::style("↻").cyan(),
-            console::style(format!("{} messages restored", self.messages.len())).dim()
+            console::style(format!("{} messages restored", visible.len())).dim()
         );
 
         // Render each message
-        for message in self.messages.iter() {
+        for message in visible {
             output::render_message(message, self.debug);
             println!();
         }
@@ -2198,6 +2199,15 @@ impl CliSession {
     fn push_message(&mut self, message: Message) {
         self.messages.push(message);
     }
+}
+
+/// Messages written for the agent only (turn-closing notices, hints) are not part of what the
+/// user saw in the conversation.
+fn user_visible_messages(conversation: &Conversation) -> Vec<&Message> {
+    conversation
+        .iter()
+        .filter(|message| message.metadata.user_visible)
+        .collect()
 }
 
 fn message_has_text(message: &Message) -> bool {
@@ -3227,6 +3237,24 @@ mod tests {
         for notice in [&max_turns, &repeated, &generic] {
             assert!(!notice.contains('?'), "{notice}");
         }
+    }
+
+    #[test]
+    fn restored_history_leaves_out_agent_only_messages() {
+        let conversation = Conversation::new_unvalidated(vec![
+            Message::user().with_text("question"),
+            Message::assistant().with_text("answer"),
+            Message::assistant()
+                .with_text("Run ended by a provider error before completion.")
+                .agent_only(),
+        ]);
+
+        let shown: Vec<String> = user_visible_messages(&conversation)
+            .into_iter()
+            .map(|message| message.as_concat_text())
+            .collect();
+
+        assert_eq!(shown, vec!["question", "answer"]);
     }
 
     #[test]

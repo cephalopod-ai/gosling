@@ -517,3 +517,37 @@ fn the_code_mode_gate_names_the_actual_setting() {
         "{disabled}"
     );
 }
+
+/// GSL-PT-20260927-A18: tool output and the reply after it were printed with
+/// no separator (`Created a.txt (1 lines)TOOL-DONE …`).
+#[test]
+fn tool_output_and_the_following_reply_are_on_separate_lines() {
+    let env = Env::new();
+
+    let output = env.gosling(&[
+        "run",
+        "-t",
+        "CALL shell {\"command\": \"printf no-trailing-newline\"}",
+    ]);
+
+    let stdout = stdout(&output);
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert!(
+        stdout.contains("no-trailing-newline\nAFTER-TOOL"),
+        "{stdout}"
+    );
+}
+
+/// GSL-PT-20260927-B14: text of a new message continued the line another
+/// message left open (`/compactCompaction complete`).
+#[test]
+fn text_from_a_new_message_starts_on_a_new_line() {
+    let env = Env::new();
+
+    let output = env.gosling(&["run", "-t", "/compact"]);
+
+    let stdout = stdout(&output);
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert!(!stdout.contains("/compactCompaction"), "{stdout}");
+    assert!(stdout.contains("/compact\nCompaction"), "{stdout}");
+}
