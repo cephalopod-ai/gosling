@@ -1713,7 +1713,11 @@ impl CliSession {
                 println!();
                 output::render_message(&notice, self.debug);
             }
-            terminal_error = Some(notice_text);
+            // An interactive user reads the notice and answers at the next prompt; only a run
+            // nobody can answer ends here with a failure.
+            if !interactive {
+                terminal_error = Some(notice_text);
+            }
         }
 
         if !is_json_mode && !is_stream_json_mode {
@@ -3531,6 +3535,80 @@ mod tests {
 
         fn executes_tools_outside_gosling(&self) -> bool {
             self.external_tools.load(Ordering::SeqCst)
+        }
+    }
+
+    /// Asks for a tool call on every turn, so any turn budget runs out.
+    struct ToolLoopProvider;
+
+    #[async_trait::async_trait]
+    impl gosling::providers::base::Provider for ToolLoopProvider {
+        fn get_name(&self) -> &str {
+            "tool-loop-test"
+        }
+
+        async fn stream(
+            &self,
+            _model_config: &gosling_providers::model::ModelConfig,
+            _system: &str,
+            _messages: &[Message],
+            _tools: &[rmcp::model::Tool],
+        ) -> Result<gosling_providers::base::MessageStream, gosling_providers::errors::ProviderError>
+        {
+            let message = Message::assistant().with_tool_request(
+                "loop-call",
+                Ok(rmcp::model::CallToolRequestParams::new("missing_tool")),
+            );
+            let usage = gosling_providers::conversation::token_usage::ProviderUsage::new(
+                "tool-loop-test".to_string(),
+                gosling_providers::conversation::token_usage::Usage::default(),
+            );
+            Ok(gosling::providers::base::stream_from_single_message(
+                message, usage,
+            ))
+        }
+    }
+
+    /// A turn that used its whole `--max-turns` budget fails a headless run, but an interactive
+    /// session shows the notice and goes on to the next prompt (it used to exit with status 1).
+    #[tokio::test]
+    async fn a_turn_limit_ends_a_headless_run_but_not_an_interactive_session() {
+        for interactive in [true, false] {
+            let temp = tempfile::tempdir().unwrap();
+            let (mut cli, manager, session_id) = cli_session_with_messages(&temp, &[]).await;
+            cli.agent
+                .update_provider(
+                    Arc::new(ToolLoopProvider),
+                    gosling_providers::model::ModelConfig::new("loop-model"),
+                    &session_id,
+                )
+                .await
+                .unwrap();
+            cli.max_turns = Some(1);
+            cli.messages
+                .push(Message::user().with_text("keep going").with_generated_id());
+
+            let result = cli
+                .process_agent_response(interactive, CancellationToken::new())
+                .await;
+
+            assert_eq!(
+                result.is_ok(),
+                interactive,
+                "interactive = {interactive}: {result:?}"
+            );
+            let stored = manager.get_session(&session_id, true).await.unwrap();
+            assert!(
+                stored
+                    .conversation
+                    .unwrap()
+                    .messages()
+                    .iter()
+                    .any(|message| message
+                        .as_concat_text()
+                        .starts_with("Execution stopped before all requested work completed")),
+                "the stop notice is recorded either way (interactive = {interactive})"
+            );
         }
     }
 
