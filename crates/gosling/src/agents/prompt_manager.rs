@@ -159,7 +159,7 @@ impl<'a> SystemPromptBuilder<'a, PromptManager> {
 
         let gosling_mode = self
             .gosling_mode
-            .unwrap_or_else(|| Config::global().get_gosling_mode().unwrap_or_default());
+            .unwrap_or_else(|| Config::global().effective_gosling_mode());
 
         let extension_tool_limits = self
             .extension_tool_count

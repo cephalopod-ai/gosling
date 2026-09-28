@@ -70,7 +70,7 @@ impl AgentManager {
                 let max_sessions = config
                     .get_gosling_max_active_agents()
                     .unwrap_or(DEFAULT_MAX_SESSION);
-                let default_mode = config.get_gosling_mode().unwrap_or_default();
+                let default_mode = config.effective_gosling_mode();
                 let session_manager = Arc::new(SessionManager::instance());
                 // Workspace sessions pin a credential profile that provider
                 // construction resolves through this service; without it any

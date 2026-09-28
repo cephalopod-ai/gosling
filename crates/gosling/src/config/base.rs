@@ -120,6 +120,9 @@ pub enum ConfigError {
 
 pub const GOSLING_CODE_EXECUTION_RUNTIME_KEY: &str = "GOSLING_CODE_EXECUTION_RUNTIME";
 
+/// The mode used when `GOSLING_MODE` is set but unreadable.
+pub const INVALID_GOSLING_MODE_FALLBACK: GoslingMode = GoslingMode::Approve;
+
 #[derive(Debug, Clone, Default)]
 pub struct ConfigResolutionScope {
     scoped_keys: HashSet<String>,
@@ -1517,6 +1520,25 @@ impl Config {
             Ok(mode) => Ok(mode),
             Err(ConfigError::NotFound(_)) => Ok(GoslingMode::default()),
             Err(error) => Err(error),
+        }
+    }
+
+    /// The configured default mode. A value that cannot be read (for example a
+    /// typo such as `aprove`) must never grant unattended tool execution, so it
+    /// falls back to [`INVALID_GOSLING_MODE_FALLBACK`] instead of the Autonomous
+    /// default that applies when the key is unset.
+    pub fn effective_gosling_mode(&self) -> GoslingMode {
+        match self.resolve_gosling_mode() {
+            Ok(mode) => mode,
+            Err(error) => {
+                tracing::warn!(
+                    key = "GOSLING_MODE",
+                    error = %error,
+                    fallback = %INVALID_GOSLING_MODE_FALLBACK,
+                    "Invalid GOSLING_MODE; new sessions ask before every tool call until it is fixed"
+                );
+                INVALID_GOSLING_MODE_FALLBACK
+            }
         }
     }
 
@@ -3370,5 +3392,27 @@ extensions:
             config.resolve_gosling_mode(),
             Err(ConfigError::DeserializeError(_))
         ));
+    }
+
+    /// GSL-PT-20260927-G130: an unreadable mode such as `yolo` or the typo
+    /// `aprove` used to become Autonomous through `unwrap_or_default`.
+    #[test]
+    fn effective_gosling_mode_fails_closed_only_for_unreadable_values() {
+        let _guard = env_lock::lock_env([("GOSLING_MODE", None::<&str>)]);
+        let config = new_test_config();
+        assert_eq!(config.effective_gosling_mode(), GoslingMode::Auto);
+
+        for (value, expected) in [
+            ("yolo", GoslingMode::Approve),
+            ("aprove", GoslingMode::Approve),
+            ("Auto", GoslingMode::Approve),
+            ("auto", GoslingMode::Auto),
+            ("smart_approve", GoslingMode::SmartApprove),
+            ("approve", GoslingMode::Approve),
+            ("chat", GoslingMode::Chat),
+        ] {
+            config.set_param("GOSLING_MODE", value).unwrap();
+            assert_eq!(config.effective_gosling_mode(), expected, "{value}");
+        }
     }
 }

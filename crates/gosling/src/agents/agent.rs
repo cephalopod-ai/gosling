@@ -595,7 +595,7 @@ impl Agent {
         let agent_config = AgentConfig::new(
             Arc::new(SessionManager::instance()),
             PermissionManager::instance(),
-            config.get_gosling_mode().unwrap_or_default(),
+            config.effective_gosling_mode(),
             config.get_gosling_disable_session_naming().unwrap_or(false),
             GoslingPlatform::GoslingCli,
         )

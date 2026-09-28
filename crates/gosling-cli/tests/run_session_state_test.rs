@@ -300,6 +300,40 @@ fn a_start_that_fails_before_its_first_turn_leaves_no_session() {
     assert_eq!(listed_sessions(&env), vec![(kept_id, 2)]);
 }
 
+/// GSL-PT-20260927-G130: an unreadable GOSLING_MODE used to start Autonomous
+/// sessions silently; it must fall back to asking before every tool call.
+#[test]
+fn invalid_mode_starts_sessions_that_ask_before_tools() {
+    let env = Env::new();
+    let cwd = env.root.path();
+
+    for (value, session_name) in [("yolo", "invalid-yolo"), ("aprove", "invalid-typo")] {
+        let created = env
+            .command(cwd, &["run", "-n", session_name, "-t", "hi"])
+            .env("GOSLING_MODE", value)
+            .output()
+            .unwrap();
+        assert!(created.status.success());
+        let stderr = String::from_utf8_lossy(&created.stderr);
+        assert!(
+            stderr.contains("Invalid GOSLING_MODE") && stderr.contains("New sessions use approve"),
+            "stderr: {stderr}"
+        );
+        assert_eq!(
+            env.export(&banner_session_id(&created))["gosling_mode"],
+            "approve",
+            "{value}"
+        );
+    }
+
+    let unset = env.run_ok(cwd, &["run", "-n", "unset-mode", "-t", "hi"]);
+    assert!(!String::from_utf8_lossy(&unset.stderr).contains("Invalid GOSLING_MODE"));
+    assert_eq!(
+        env.export(&banner_session_id(&unset))["gosling_mode"],
+        "auto"
+    );
+}
+
 #[test]
 fn resuming_from_another_directory_moves_the_session_to_it() {
     let env = Env::new();

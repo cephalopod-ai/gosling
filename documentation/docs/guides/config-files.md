@@ -38,7 +38,7 @@ The following settings can be configured at the root level of your config.yaml f
 | `GOSLING_FAILOVER_MODEL` | Model paired with `GOSLING_FAILOVER_PROVIDER` | Provider model name | Disabled | No |
 | `GOSLING_TEMPERATURE` | Model response randomness | Float between 0.0 and 1.0 | Model-specific | No |
 | `GOSLING_MAX_TOKENS` | Maximum number of tokens for each model response (truncates longer responses) | Positive integer | Model-specific | No |
-| `GOSLING_MODE` | [Tool execution behavior](/docs/guides/managing-tools/gosling-permissions) | "auto", "approve", "chat", "smart_approve" | "auto" | No |
+| `GOSLING_MODE` | [Tool execution behavior](/docs/guides/managing-tools/gosling-permissions). An unrecognized value (for example a typo) makes new sessions use "approve" until it is corrected | "auto", "approve", "chat", "smart_approve" | "auto" | No |
 | `GOSLING_CODE_EXECUTION_RUNTIME` | Allow or block [Code Mode](/docs/guides/managing-tools/code-mode) runtime loading for new gosling processes | "enabled", "disabled" | "enabled" | No |
 | `GOSLING_MAX_TURNS` | [Maximum number of turns](/docs/guides/sessions/smart-context-management#maximum-turns) allowed without user input | Integer (e.g., 10, 50, 100) | 1000 | No |
 | `GOSLING_PLANNER_PROVIDER` | Legacy CLI planning compatibility assertion | Exact active `GOSLING_PROVIDER` value | Unset; planning uses the active provider | No |

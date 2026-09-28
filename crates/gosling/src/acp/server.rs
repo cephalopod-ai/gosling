@@ -497,7 +497,7 @@ impl GoslingAcpAgent {
             let agent_config = AgentConfig::new(
                 Arc::clone(&session_manager),
                 Arc::clone(&permission_manager),
-                config.get_gosling_mode().unwrap_or_default(),
+                config.effective_gosling_mode(),
                 options.disable_session_naming,
                 options.gosling_platform.clone(),
             )

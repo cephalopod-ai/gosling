@@ -294,7 +294,7 @@ These variables control how gosling handles [tool execution](/docs/guides/managi
 
 | Variable | Purpose | Values | Default |
 |----------|---------|---------|---------|
-| `GOSLING_MODE` | Controls how gosling handles tool execution | "auto", "approve", "chat", "smart_approve" | "smart_approve" |
+| `GOSLING_MODE` | Controls how gosling handles tool execution. Any other value is reported as invalid and new sessions use "approve" (ask before every tool call) until it is corrected | "auto", "approve", "chat", "smart_approve" | "auto" |
 | `GOSLING_CODE_EXECUTION_RUNTIME` | Allows or blocks [Code Mode](/docs/guides/managing-tools/code-mode) runtime loading for new gosling processes. Changing it requires restart. | "enabled", "disabled" | "enabled" |
 | `GOSLING_TOOLSHIM` | Enables/disables tool call interpretation | "1", "true" (case-insensitive) to enable | false |
 | `GOSLING_TOOLSHIM_OLLAMA_MODEL` | Specifies the model for [tool call interpretation](/docs/experimental/ollama) | Model name (e.g. llama3.2, qwen2.5) | System default |

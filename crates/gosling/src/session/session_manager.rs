@@ -1730,7 +1730,7 @@ impl sqlx::FromRow<'_, sqlx::sqlite::SqliteRow> for Session {
                 .try_get::<String, _>("gosling_mode")
                 .ok()
                 .and_then(|s| s.parse().ok())
-                .unwrap_or_default(),
+                .unwrap_or(crate::config::INVALID_GOSLING_MODE_FALLBACK),
             archived_at: row.try_get("archived_at").ok(),
             project_id: row.try_get("project_id").ok().flatten(),
             last_message_snippet: None,
@@ -5418,7 +5418,7 @@ mod tests {
                 temp_dir.path().to_path_buf(),
                 "test".into(),
                 SessionType::User,
-                GoslingMode::Approve,
+                GoslingMode::Chat,
             )
             .await
             .unwrap();
@@ -5431,7 +5431,7 @@ mod tests {
             .unwrap();
 
         let reloaded = sm.get_session(&session.id, false).await.unwrap();
-        assert_eq!(reloaded.gosling_mode, GoslingMode::default());
+        assert_eq!(reloaded.gosling_mode, GoslingMode::Approve);
     }
 
     #[tokio::test]

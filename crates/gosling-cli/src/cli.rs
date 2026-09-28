@@ -11,7 +11,10 @@ use gosling::acp::shell::{DomainAdapter, ShellRuntime};
 use gosling::agents::GoslingPlatform;
 use gosling::builtin_extension::register_builtin_extensions;
 use gosling::config::paths::{Paths, RuntimePaths};
-use gosling::config::{get_domain_adapter_registration, Config, ConfigError, GoslingMode};
+use gosling::config::{
+    get_domain_adapter_registration, Config, ConfigError, GoslingMode,
+    INVALID_GOSLING_MODE_FALLBACK,
+};
 use gosling::source_roots::SourceRoot;
 use gosling_mcp::mcp_server_runner::{serve, McpCommand};
 use gosling_mcp::{AutoVisualiserRouter, ComputerControllerServer};
@@ -33,6 +36,7 @@ use gosling::session::session_manager::SessionType;
 use gosling::session::SessionManager;
 use std::io::{IsTerminal, Read};
 use std::path::PathBuf;
+use strum::VariantNames;
 use tracing::warn;
 
 const GOSLING_SERVER_SECRET_KEY_ENV: &str = "GOSLING_SERVER__SECRET_KEY";
@@ -40,10 +44,11 @@ const GOSLING_SERVER_SECRET_KEY_ENV: &str = "GOSLING_SERVER__SECRET_KEY";
 fn warn_about_invalid_config_values() {
     let config = Config::global();
 
-    if let Err(error) = config.get_gosling_mode() {
-        if !matches!(error, ConfigError::NotFound(_)) {
-            eprintln!("Warning: Invalid GOSLING_MODE: {error}. Falling back to smart_approve.");
-        }
+    if let Err(error) = config.resolve_gosling_mode() {
+        eprintln!(
+            "Warning: Invalid GOSLING_MODE: {error}. New sessions use {INVALID_GOSLING_MODE_FALLBACK} (ask before every tool call) until it is set to one of: {}.",
+            GoslingMode::VARIANTS.join(", ")
+        );
     }
 
     if let Err(error) = config.get_param::<u32>("GOSLING_MAX_TURNS") {
@@ -2048,7 +2053,7 @@ async fn handle_interactive_session(
         );
     }
 
-    let gosling_mode = Config::global().get_gosling_mode().unwrap_or_default();
+    let gosling_mode = Config::global().effective_gosling_mode();
     let mut session_id = get_or_create_session_id(identifier, resume, false, gosling_mode).await?;
 
     if edit || fork {
@@ -2263,7 +2268,7 @@ async fn handle_run_command(
         }
     }
 
-    let gosling_mode = Config::global().get_gosling_mode().unwrap_or_default();
+    let gosling_mode = Config::global().effective_gosling_mode();
     let session_id = get_or_create_session_id(
         identifier,
         run_behavior.resume,
@@ -2385,7 +2390,7 @@ async fn handle_default_session() -> Result<()> {
         return handle_configure().await;
     }
 
-    let gosling_mode = Config::global().get_gosling_mode().unwrap_or_default();
+    let gosling_mode = Config::global().effective_gosling_mode();
     let session_id = get_or_create_session_id(None, false, false, gosling_mode).await?;
 
     let mut session = build_session(SessionBuilderConfig {

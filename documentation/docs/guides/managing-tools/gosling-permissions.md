@@ -38,6 +38,10 @@ host-enforced planning boundary can still deny a request or require review.
 `Autonomous Mode` is the default for new gosling sessions. It is not a promise
 that every request will execute: the stricter checks described above remain in
 force.
+
+If `GOSLING_MODE` is set to a value gosling does not recognize (for example a
+typo such as `aprove`), new sessions start in Manual Approval instead, and the
+CLI prints a warning naming the invalid value, until the setting is corrected.
 :::
 
 :::caution

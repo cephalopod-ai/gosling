@@ -659,7 +659,7 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
         let agent_config = AgentConfig::new(
             session_manager,
             PermissionManager::instance(),
-            config.get_gosling_mode().unwrap_or_default(),
+            config.effective_gosling_mode(),
             true,
             GoslingPlatform::GoslingCli,
         )

@@ -16,7 +16,7 @@ pub mod tls;
 pub use crate::agents::ExtensionConfig;
 pub use base::{
     merge_config_values, CodeExecutionRuntime, Config, ConfigError, ConfigResolutionScope,
-    GOSLING_CODE_EXECUTION_RUNTIME_KEY,
+    GOSLING_CODE_EXECUTION_RUNTIME_KEY, INVALID_GOSLING_MODE_FALLBACK,
 };
 pub use declarative_providers::DeclarativeProviderConfig;
 pub use domain_adapters::{
