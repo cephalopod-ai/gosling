@@ -429,6 +429,32 @@ async fn handle_resumed_session_workdir(
         return;
     }
 
+    // The working directory of a session restricted to it (every imported
+    // session) is the trust boundary its tools are held to, chosen when it
+    // was created; resuming from somewhere else must not move that boundary.
+    if session.restrict_tools_to_working_dirs {
+        match std::env::set_current_dir(&session.working_dir) {
+            Ok(()) => eprintln!(
+                "{}",
+                style(format!(
+                    "This session is restricted to its working directory; switching to {}.",
+                    session.working_dir.display()
+                ))
+                .yellow()
+            ),
+            Err(e) => eprintln!(
+                "{}",
+                style(format!(
+                    "Warning: This session is restricted to its working directory {}, which \
+                     cannot be entered ({e}); its tools stay limited to it.",
+                    session.working_dir.display()
+                ))
+                .yellow()
+            ),
+        }
+        return;
+    }
+
     if interactive {
         let change_workdir = match cliclack::confirm(format!(
             "{} The original working directory of this session was set to {}. \
@@ -467,9 +493,10 @@ async fn handle_resumed_session_workdir(
             "{}",
             style(format!(
                 "Warning: Working directory differs from session (current: {}, session: {}). \
-                 Staying in current directory.",
+                 Staying in current directory; the session's working directory is now {}.",
                 current_workdir.display(),
-                session.working_dir.display()
+                session.working_dir.display(),
+                current_workdir.display()
             ))
             .yellow()
         );

@@ -317,8 +317,66 @@ fn resuming_from_another_directory_moves_the_session_to_it() {
     assert_eq!(env.export(&id)["working_dir"], dir_a.to_str().unwrap());
 
     let moved = env.run_ok(&dir_b, &["run", "-r", "-n", "wd", "-t", "other dir"]);
-    assert!(String::from_utf8_lossy(&moved.stderr).contains("Staying in current directory"));
+    let warning = String::from_utf8_lossy(&moved.stderr);
+    assert!(warning.contains("Staying in current directory"));
+    assert!(warning.contains(&format!(
+        "the session's working directory is now {}",
+        dir_b.display()
+    )));
     assert_eq!(env.export(&id)["working_dir"], dir_b.to_str().unwrap());
+}
+
+#[test]
+fn resuming_a_restricted_session_elsewhere_keeps_its_working_directory() {
+    let env = Env::new();
+    let trusted = env.root.path().join("trusted");
+    let elsewhere = env.root.path().join("elsewhere");
+    std::fs::create_dir_all(&trusted).unwrap();
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    let trusted = trusted.canonicalize().unwrap();
+    let elsewhere = elsewhere.canonicalize().unwrap();
+
+    let source = env.run_ok(&trusted, &["run", "-n", "source", "-t", "hi"]);
+    let export_path = env.root.path().join("source.json");
+    env.run_ok(
+        env.root.path(),
+        &[
+            "session",
+            "export",
+            "--session-id",
+            &banner_session_id(&source),
+            "--format",
+            "json",
+            "-o",
+            export_path.to_str().unwrap(),
+        ],
+    );
+    let imported = env.run_ok(
+        &elsewhere,
+        &[
+            "session",
+            "import",
+            export_path.to_str().unwrap(),
+            "--working-dir",
+            trusted.to_str().unwrap(),
+        ],
+    );
+    let imported_id = banner_session_id(&imported);
+    assert_eq!(
+        env.export(&imported_id)["working_dir"],
+        trusted.to_str().unwrap()
+    );
+
+    let resumed = env.run_ok(
+        &elsewhere,
+        &["run", "-r", "--session-id", &imported_id, "-t", "again"],
+    );
+
+    assert!(String::from_utf8_lossy(&resumed.stderr)
+        .contains("restricted to its working directory; switching to"));
+    let after = env.export(&imported_id);
+    assert_eq!(after["working_dir"], trusted.to_str().unwrap());
+    assert_eq!(after["restrict_tools_to_working_dirs"], true);
 }
 
 #[test]

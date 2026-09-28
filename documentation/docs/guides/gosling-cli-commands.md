@@ -387,7 +387,8 @@ Code, Codex, or Pi `.jsonl` transcript, or a `gosling://sessions/nostr` share li
 Import is history transfer, not authority transfer. Imported messages are marked as untrusted
 history, the new session starts in Approve mode with tools restricted to its working directory, and
 provider, model, workspace, credential profile, and folder grants stay at safe new-session defaults
-until you select them locally.
+until you select them locally. Resuming the imported session from another directory does not move its
+working directory; gosling switches to that directory instead.
 
 **Usage:**
 ```bash

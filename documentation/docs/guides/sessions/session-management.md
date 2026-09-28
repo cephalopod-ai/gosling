@@ -296,6 +296,8 @@ Search allows you to find specific content within sessions or find specific sess
         ```
         gosling session -r --name react-migration
         ```
+
+        If you resume a session from a different directory, `gosling session --resume` asks whether to switch back to the session's original directory; if you stay, the session moves to your current directory. `gosling run --resume` stays in the current directory and moves the session there. Sessions whose tools are restricted to their working directory, such as imported sessions, always keep their working directory: gosling switches to it instead.
     </TabItem>
 </Tabs>
 
