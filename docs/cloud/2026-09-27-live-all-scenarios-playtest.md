@@ -167,15 +167,15 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | High | E02 | A tool call that failed (or was declined) once is denied forever in that session, even after the cause is fixed | fixed (R3) |
 | High | E03 | Manual-approval mode: one `delegate` approval lets the subagent run `shell`/`write` with no further approval (docs say subagents are disabled in manual mode) | fixed (R6) |
 | High | E04 | "Restrict tools to working directories" is escaped with `cd ..` (reads and writes outside scope without approval) | fixed (R6) |
-| High | G101 | Opening "Create workspace" starts a ChatGPT Codex OAuth flow and a live authenticated model-catalog call for an unconfigured provider | open — queued R13a |
+| High | G101 | Opening "Create workspace" starts a ChatGPT Codex OAuth flow and a live authenticated model-catalog call for an unconfigured provider | fixed (R13a) |
 | High | G130 | An invalid GOSLING_MODE silently falls back to Autonomous (fails open, no warning) | fixed (R6) |
 | High | S19 | `.goslingignore` is documented as a Developer-tool access control but is not enforced | docs fixed; enforcement deferred (product decision) (R6) |
 | Medium | A01 | Failed CLI start leaves an empty "CLI Session" ghost row, which then hijacks `gosling session -r` | fixed (R4) |
 | Medium | A03 | Docs-advertised root-level `GOSLING_MODEL`/`GOSLING_PROVIDER` hand edits are silently ignored; `info -v` shows the derived value instead of the file's | fixed (reported + documented) (R5) |
 | Medium | A08 | Lease revocation does not stop an in-flight provider call; fenced interactive turn keeps "working" until the provider answers, then the whole CLI exits | open — queued R1b |
-| Medium | A16 | `run` startup failures print human text on stdout (stderr empty), even with `--output-format json`/`stream-json` | open — queued R8a |
-| Medium | A17 | `run -q` ("printing only the model response to stdout") prints tool-call chrome, raw tool output and error text on stdout | open — queued R8a |
-| Medium | A22 | Session subcommands without a selector fail off-TTY with "Error: not connected" and exit 0 | open — queued R8a |
+| Medium | A16 | `run` startup failures print human text on stdout (stderr empty), even with `--output-format json`/`stream-json` | fixed (R8a) |
+| Medium | A17 | `run -q` ("printing only the model response to stdout") prints tool-call chrome, raw tool output and error text on stdout | fixed (R8a) |
+| Medium | A22 | Session subcommands without a selector fail off-TTY with "Error: not connected" and exit 0 | fixed (R8a) |
 | Medium | B01 | Aborted `gosling configure` persists the new host/API key while reporting "the active provider was not changed" | open — queued R9 |
 | Medium | B02 | Re-running `configure` preselects the first listed model, not the saved one; Enter silently replaces the saved model | open — queued R9 |
 | Medium | B03 | `configure` cannot complete when the model list cannot be fetched; no manual model entry is offered | open — queued R9 |
@@ -185,7 +185,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Medium | B09 | Compaction shrink ladder bottoms out at payload/8, so large histories never reach small chunks | fixed (R2) |
 | Medium | B10 | Compaction completion notice under-reports the resulting context (system prompt and tool schemas excluded) | fixed (R2) |
 | Medium | B11 | Malformed-stream errors echo raw provider lines unredacted (incl. bearer/API-key-like strings) into the error, session history and log | fixed (R5) |
-| Medium | B18 | CLI cost line shows only the last request's cost without saying so; `--stats` silently ignored with json/stream-json | open — queued R8a |
+| Medium | B18 | CLI cost line shows only the last request's cost without saying so; `--stats` silently ignored with json/stream-json | fixed (R8a) |
 | Medium | B21 | Rejected Copilot token refresh surfaces as "failed to get api info after 3 attempts" + "Please retry"; no re-auth request | open — queued R9 |
 | Medium | C01 | ACP client `mcpServers` replace all of gosling's configured extensions | open — queued R10 |
 | Medium | C02 | A hanging MCP extension blocks session start for 300 s with no feedback (run/ACP) | open — queued R11 |
@@ -200,29 +200,29 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Medium | D05 | Diagnostics bundle leaks credentials that are not regex-shaped (including the configured provider key) | fixed (R5) |
 | Medium | D07 | `session list -w` leaks sibling directories (case-insensitive substring) and misses paths with a trailing slash | open — queued R8b |
 | Medium | D08 | Terminal control sequences in session names are printed raw; imported transcripts can inject them | open — queued R8b |
-| Medium | E05 | CLI text mode never shows a permission refusal; the operator sees a tool card as if the call ran | open — queued R8a |
+| Medium | E05 | CLI text mode never shows a permission refusal; the operator sees a tool card as if the call ran | fixed (R8a) |
 | Medium | E06 | `GOSLING_PATH_ROOT` does not isolate skills/agents; operator's personal skill catalog is sent to the disposable root's provider (suspicion) | open — queued R7 |
 | Medium | E07 | Nested (subdirectory) context files are injected as a plain `user` message without the "untrusted project hints" framing | open — queued R7 |
 | Medium | F01 | `--max-tool-repetitions` denies the repeated call but lets the turn loop to the 1000-turn default | fixed (R3) |
 | Medium | F14 | Interrupted turns stay `in_progress` forever (EOF, disconnect, SIGTERM, SIGKILL); nothing reconciles them | fixed (R1a) |
 | Medium | F15 | SIGTERM "graceful" shutdown keeps running turns alive for 5 s, then drops every client without a terminal event | open — queued R1b |
-| Medium | G102 | Credential picker/profile manager marks 14 alias profiles "configured", including providers the app reports as unconfigured | open — queued R13a |
-| Medium | G104 | Workspace save/duplicate errors show only "Invalid params" (reason dropped) and the editor error renders out of view | open — queued R13a |
+| Medium | G102 | Credential picker/profile manager marks 14 alias profiles "configured", including providers the app reports as unconfigured | fixed (R13a) |
+| Medium | G104 | Workspace save/duplicate errors show only "Invalid params" (reason dropped) and the editor error renders out of view | fixed (R13a) |
 | Medium | G105 | A chat's workspace label is a creation-time snapshot; after rename + name reuse it names a different workspace | open — queued R13b |
-| Medium | G108 | Historical session with a moved working folder fails with "Invalid params: invalid directory path" and cannot be recovered by relinking | open — queued R13a |
-| Medium | G122 | Quitting while a tool approval is pending leaves the tool "pending" forever; the next message silently re-submits the old request | backend fixed; UI queued (R1a/R13a) |
+| Medium | G108 | Historical session with a moved working folder fails with "Invalid params: invalid directory path" and cannot be recovered by relinking | partial (named error + restore works; re-home of pinned chats needs product decision) (R13a) |
+| Medium | G122 | Quitting while a tool approval is pending leaves the tool "pending" forever; the next message silently re-submits the old request | fixed (R1a+R13a) |
 | Medium | G128 | Keyboard-only users cannot open existing chats, lose focus after dialogs, and get no focus ring on primary navigation | open — queued R13b |
-| Medium | G129 | A reply interrupted by window close/quit is shown after relaunch as a normal complete message; the session stays "in_progress" | backend fixed; UI queued (R1a/R13a) |
+| Medium | G129 | A reply interrupted by window close/quit is shown after relaunch as a normal complete message; the session stays "in_progress" | fixed (R1a+R13a) |
 | Medium | G131 | Invalid config values are invisible in Desktop; Configuration Editor shows "[object Object]" for providers | open — queued R13b |
-| Medium | G132 | Onboarding "OpenAI" API-key field shows the secret in clear text (and offers no host/base-path for "OpenAI compatible" endpoints) | open — queued R13a |
+| Medium | G132 | Onboarding "OpenAI" API-key field shows the secret in clear text (and offers no host/base-path for "OpenAI compatible" endpoints) | fixed (R13a) |
 | Medium | G201 | Opening a large Markdown output freezes the whole Desktop window for 15–20 s | open — queued R13b |
 | Medium | G207 | "Open in new window" on a session in a non-active typed workspace replaces the current window with a fatal error screen | open — queued R13b |
 | Medium | G211 | Archiving does not reach other windows: the archived chat stays open there and keeps accepting turns while staying archived | open — queued R13b |
-| Medium | G212 | External-backend secret is put in the ACP WebSocket URL (`?token=<secret>`) and printed in the renderer console on every failed connect | open — queued R13a |
-| Medium | G221 | Downloads started right after switching chats are saved into the previous chat's workspace | open — queued R13a |
+| Medium | G212 | External-backend secret is put in the ACP WebSocket URL (`?token=<secret>`) and printed in the renderer console on every failed connect | fixed (R13a) |
+| Medium | G221 | Downloads started right after switching chats are saved into the previous chat's workspace | fixed (R13a) |
 | Medium | H01 | Repeated identical failing tool calls are denied but the turn never ends before 1000 turns | fixed (R3) |
 | Medium | H02 | Delegate launch failures are not remembered: alternate `source` retries all execute and the next valid shape launches | deferred (product decision) (R3) |
-| Medium | H03 | CLI shows nothing for failed (`isError`) tool results; failures look like successes | open — queued R8a |
+| Medium | H03 | CLI shows nothing for failed (`isError`) tool results; failures look like successes | fixed (R8a) |
 | Medium | H04 | External-tool ACP delegate in Chat mode: a self-executed tool is reported as "Tool call was denied." and the agent's answer is dropped | open — queued R11 |
 | Medium | H05 | ACP cancel is not honoured while the prompt waits on storage; latency equals the remaining lock hold | open — queued R1b |
 | Medium | S03 | `--max-tool-repetitions` denies repeats but never ends the turn (1000 provider calls) | fixed (R3) |
@@ -242,15 +242,15 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | A13 | `/model` switch injects a ~3 KB "Gosling session checkpoint" into the next prompt (even for an empty session) and the session title is generated from it | open — queued R9 |
 | Low | A14 | Documented slash commands without their argument are reported as "Unknown command" | open — queued R8b |
 | Low | A15 | Version/help text gaps: `--version` prints " 1.3.0" with no program name; undocumented `session diagnostics` and `shell-validate` options | open — queued R8b |
-| Low | A18 | Tool output and the following assistant text are printed with no separator (text and quiet modes) | open — queued R8a |
+| Low | A18 | Tool output and the following assistant text are printed with no separator (text and quiet modes) | fixed (R8a) |
 | Low | A19 | Hidden internal subcommands leak into shell completion and typo suggestions | open — queued R8b |
 | Low | A20 | (exploratory) `gosling secret` reports the wrong storage location and "removes" servers that don't exist | fixed (R5) |
 | Low | A21 | (exploratory) `shell-validate` has side effects and accepts unknown builtins | open — queued R7 |
 | Low | B07 | CLI stdout keeps the retracted partial attempt (text/-q/stream-json) | open — queued R1b |
 | Low | B12 | Auth failures end with "Please retry if you think this is a transient or recoverable error" | open — queued R9 |
 | Low | B13 | Empty or space-containing `--model` / `GOSLING_MODEL` accepted and sent verbatim | open — queued R9 |
-| Low | B14 | CLI output hygiene (cosmetic) | open — queued R8a |
-| Low | B15 | stream-json on provider failure has no terminal `error`/`complete` event | open — queued R8a |
+| Low | B14 | CLI output hygiene (cosmetic) | fixed (typed-input echo deferred: needs design) (R8a) |
+| Low | B15 | stream-json on provider failure has no terminal `error`/`complete` event | fixed (R8a) |
 | Low | B19 | Reduction validation differs between CLI and ACP; out-of-range CLI warning does not state the fallback | fixed (R2) |
 | Low | C04 | Hidden host-policy `planning` extension is offered in `configure`/`mcp list`; enabling it warns on every session | open — queued R11 |
 | Low | C07 | Duplicate plugin skill names are silently shadowed; precedence set by directory order | open — queued R11 |
@@ -272,7 +272,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | D06 | Session exports write raw secrets from tool output (diagnostics redacts, export does not) | fixed (R5) |
 | Low | D09 | Session pickers are shuffled on every run; diagnostics/context-history picker says "Select a session to export:" | open — queued R8b |
 | Low | D10 | Ctrl-C in the `session remove` picker kills the process by SIGINT and leaves the cursor hidden | open — queued R8b |
-| Low | D11 | `session export\|diagnostics\|context-history list` without an identifier outside a TTY: "Error: not connected", exit 0 | open — queued R8a |
+| Low | D11 | `session export\|diagnostics\|context-history list` without an identifier outside a TTY: "Error: not connected", exit 0 | fixed (R8a) |
 | Low | D12 | `session remove -r` matches IDs only, but the CLI guide's example implies names | open — queued R8b |
 | Low | D13 | Failed imports print "Imported session working directory: …" first; errors lack file/format context | open — queued R8b |
 | Low | D14 | `gosling project` stops (exit 0) when the newest project is gone and hides child failures | open — queued R8b |
@@ -287,12 +287,12 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | E08 | Nested hints are re-appended on every resume / `session/load` + access (unbounded duplication) | open — queued R7 |
 | Low | E09 | Unreadable or invalid-UTF-8 `AGENTS.md`/`.goslinghints` are dropped silently (warning only in the log file) | open — queued R7 |
 | Low | E10 | `run -i` reports every read failure as "Instruction file not found" | open — queued R8b |
-| Low | E11 | Code-execution gate blames `GOSLING_CODE_EXECUTION_RUNTIME=disabled` when the variable is unset or invalid | open — queued R8a |
-| Low | E12 | `run --no-session` banner still announces "● new session" with an ID that cannot be resumed | open — queued R8a |
+| Low | E11 | Code-execution gate blames `GOSLING_CODE_EXECUTION_RUNTIME=disabled` when the variable is unset or invalid | fixed (R8a) |
+| Low | E12 | `run --no-session` banner still announces "● new session" with an ID that cannot be resumed | fixed (R8a) |
 | Low | E13 | Every CLI invocation, including `--help` and `--version`, creates a new log file in the state directory | open — queued R7 |
-| Low | E14 | Session-start errors go to stdout (rc 1), unlike other CLI errors | open — queued R8a |
+| Low | E14 | Session-start errors go to stdout (rc 1), unlike other CLI errors | fixed (R8a) |
 | Low | E15 | Context-file documentation disagrees with runtime (default order, fallback text) | open — queued R7 |
-| Low | F02 | `run --output-format json\|stream-json`: startup failures are printed as human text on stdout | open — queued R8a |
+| Low | F02 | `run --output-format json\|stream-json`: startup failures are printed as human text on stdout | fixed (R8a) |
 | Low | F03 | `gosling serve` is silent on the console and its log misreports failed starts | open — queued R10 |
 | Low | F04 | WebSocket closes never carry a server close frame (client always sees 1006) | upstream crate (agent-client-protocol-http) |
 | Low | F05 | `--allowed-origin` accepts values that can never match and gives no diagnostics for rejections | open — queued R10 |
