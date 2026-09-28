@@ -29,7 +29,9 @@ pub(super) enum TurnClosureTrigger {
     Reopen,
     /// A new turn that already holds the session's turn lease.
     NextTurn,
-    /// The caller's own cancelled turn, closed while it still holds the lease.
+    /// The caller's own cancelled turn, closed just after its stream (and with
+    /// it the turn lease) was dropped. Left alone once a turn in another
+    /// process owns the session.
     Cancel,
 }
 
@@ -102,9 +104,17 @@ impl SessionStorage {
         let pool = self.pool().await?;
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
 
-        if trigger == TurnClosureTrigger::Reopen
-            && self.live_turn_owner(&mut tx, session_id).await?.is_some()
-        {
+        let owned_elsewhere = match trigger {
+            TurnClosureTrigger::Reopen => {
+                self.live_turn_owner(&mut tx, session_id).await?.is_some()
+            }
+            TurnClosureTrigger::Cancel => self
+                .live_turn_owner(&mut tx, session_id)
+                .await?
+                .is_some_and(|owner_id| owner_id != self.owner_id),
+            TurnClosureTrigger::NextTurn => false,
+        };
+        if owned_elsewhere {
             tx.rollback().await?;
             return Ok(false);
         }
@@ -355,6 +365,25 @@ mod tests {
             Some(CANCELLED_TURN_NOTICE)
         );
         assert!(!sm.close_cancelled_turn(&id).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn a_cancelled_turn_is_left_to_a_process_that_took_the_session_over() {
+        let (temp, sm, id) = session_with(vec![Message::user().with_text("run it")]).await;
+        let other_process = SessionManager::new(temp.path().to_path_buf());
+        let takeover = other_process
+            .acquire_session_turn_lease(&id, None)
+            .await
+            .unwrap();
+
+        assert!(!sm.close_cancelled_turn(&id).await.unwrap());
+        assert_eq!(texts(&sm, &id).await, vec!["run it"]);
+
+        takeover.release().await.unwrap();
+        let own = sm.acquire_session_turn_lease(&id, None).await.unwrap();
+        assert!(sm.close_cancelled_turn(&id).await.unwrap());
+        assert_eq!(texts(&sm, &id).await, vec!["run it", CANCELLED_TURN_NOTICE]);
+        own.release().await.unwrap();
     }
 
     #[tokio::test]

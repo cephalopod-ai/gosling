@@ -1092,8 +1092,8 @@ impl SessionManager {
             .await
     }
 
-    /// Closes the caller's cancelled turn with the cancellation notice. The
-    /// caller still holds the session's turn lease.
+    /// Closes the caller's cancelled turn with the cancellation notice, unless
+    /// a turn in another process has taken the session over since.
     pub(crate) async fn close_cancelled_turn(&self, session_id: &str) -> Result<bool> {
         self.storage
             .close_unfinished_turn(session_id, turn_closure::TurnClosureTrigger::Cancel)

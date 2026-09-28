@@ -14,6 +14,10 @@ const RESEARCH_PERMISSION_DENIED_REASON: &str = "deep_research_permission_denied
 /// Prefix `Agent::handle_denied_tools` puts on the result of a tool call the
 /// permission policy refused.
 const POLICY_DENIED_TOOL_RESULT_PREFIX: &str = "Tool denied by policy:";
+/// How long a cancelled prompt waits for its closing writes before it answers
+/// anyway. Clients expect a cancel to end the prompt within seconds, even while
+/// another writer holds the session store.
+const CANCELLED_TURN_BOOKKEEPING_LIMIT: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// Tool calls this turn that the permission policy refused. A research turn
 /// that wrote nothing after such a refusal is blocked on a permission, not on
@@ -268,6 +272,35 @@ impl GoslingAcpAgent {
             })
     }
 
+    /// Closes a cancelled turn and records how it ended, giving up after
+    /// [`CANCELLED_TURN_BOOKKEEPING_LIMIT`]. A turn left open that way is
+    /// closed on the session's next load or prompt.
+    async fn record_cancelled_turn(
+        &self,
+        session_id: &str,
+        state: AcpPromptRunState,
+    ) -> Result<(), agent_client_protocol::Error> {
+        let bookkeeping = async {
+            // Without a closed turn the cancelled prompt merges into the next
+            // one and the model re-executes it as live instruction.
+            self.session_manager
+                .close_cancelled_turn(session_id)
+                .await
+                .internal_err_ctx("Failed to record the cancelled turn")?;
+            self.record_acp_prompt_state(session_id, state).await
+        };
+        match tokio::time::timeout(CANCELLED_TURN_BOOKKEEPING_LIMIT, bookkeeping).await {
+            Ok(recorded) => recorded,
+            Err(_) => {
+                warn!(
+                    session_id,
+                    "session store stayed busy; the cancelled turn is closed on its next load or prompt"
+                );
+                Ok(())
+            }
+        }
+    }
+
     pub(super) async fn on_prompt(
         &self,
         cx: &ConnectionTo<Client>,
@@ -303,13 +336,27 @@ impl GoslingAcpAgent {
             return Err(error);
         }
 
-        if let Err(error) = self
-            .record_acp_prompt_state(&session_id, AcpPromptRunState::InProgress)
-            .await
-        {
-            let _ = self.clear_active_run(&session_id, &run_id).await;
-            let _ = Self::send_active_run_update(cx, &args.session_id, None);
-            return Err(error);
+        let in_progress = tokio::select! {
+            biased;
+            _ = cancel_token.cancelled() => None,
+            recorded = self.record_acp_prompt_state(&session_id, AcpPromptRunState::InProgress) => {
+                Some(recorded)
+            }
+        };
+        match in_progress {
+            // Cancelled while waiting on the session store: nothing of this
+            // turn has been written, so there is nothing to close.
+            None => {
+                let _ = self.clear_active_run(&session_id, &run_id).await;
+                Self::send_active_run_update(cx, &args.session_id, None)?;
+                return Ok(PromptResponse::new(StopReason::Cancelled));
+            }
+            Some(Err(error)) => {
+                let _ = self.clear_active_run(&session_id, &run_id).await;
+                let _ = Self::send_active_run_update(cx, &args.session_id, None);
+                return Err(error);
+            }
+            Some(Ok(())) => {}
         }
 
         let user_message = Self::convert_acp_prompt_to_message(&args.prompt);
@@ -328,10 +375,14 @@ impl GoslingAcpAgent {
             tail_limit: Some(tail_limit),
         };
 
-        let mut stream = match agent
-            .reply(user_message, session_config, Some(cancel_token.clone()))
-            .await
-        {
+        // Starting the turn waits on the session store; a cancel then ends it
+        // like any other cancelled turn, closing whatever it already wrote.
+        let reply = tokio::select! {
+            biased;
+            _ = cancel_token.cancelled() => Ok(stream::empty().boxed()),
+            reply = agent.reply(user_message, session_config, Some(cancel_token.clone())) => reply,
+        };
+        let mut stream = match reply {
             Ok(stream) => stream,
             Err(error) => {
                 let persisted = self
@@ -522,6 +573,10 @@ impl GoslingAcpAgent {
                 }
             }
         }
+        // A stream left mid-poll by a cancel can hold the session store's
+        // write gate or an open transaction; the writes below would wait on it
+        // forever.
+        drop(stream);
 
         {
             let mut sessions = self.sessions.lock().await;
@@ -537,12 +592,13 @@ impl GoslingAcpAgent {
         Self::send_active_run_update(cx, &args.session_id, None)?;
         was_cancelled |= cancel_token.is_cancelled();
         if was_cancelled {
-            // Without a closed turn the cancelled prompt merges into the next
-            // one and the model re-executes it as live instruction.
-            self.session_manager
-                .close_cancelled_turn(&session_id)
-                .await
-                .internal_err_ctx("Failed to record the cancelled turn")?;
+            let terminal_state = if stream_error.is_some() {
+                AcpPromptRunState::Failed
+            } else {
+                AcpPromptRunState::Cancelled
+            };
+            self.record_cancelled_turn(&session_id, terminal_state)
+                .await?;
         }
         if stream_error.is_none() && !was_cancelled {
             match research_completion::verify_deep_research_completion(
@@ -617,15 +673,15 @@ impl GoslingAcpAgent {
                 }
             }
         }
-        let terminal_state = if stream_error.is_some() {
-            AcpPromptRunState::Failed
-        } else if was_cancelled {
-            AcpPromptRunState::Cancelled
-        } else {
-            AcpPromptRunState::Completed
-        };
-        self.record_acp_prompt_state(&session_id, terminal_state)
-            .await?;
+        if !was_cancelled {
+            let terminal_state = if stream_error.is_some() {
+                AcpPromptRunState::Failed
+            } else {
+                AcpPromptRunState::Completed
+            };
+            self.record_acp_prompt_state(&session_id, terminal_state)
+                .await?;
+        }
         if let Some(error) = stream_error {
             return Err(error);
         }
