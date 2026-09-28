@@ -639,6 +639,20 @@ impl Config {
         self.write_path().to_string_lossy().to_string()
     }
 
+    /// Where secrets are stored, for messages shown to the user. Secrets never
+    /// go to the file `path()` names.
+    pub fn secret_storage_location(&self) -> String {
+        match &self.secrets {
+            #[cfg(feature = "system-keyring")]
+            SecretStorage::Keyring { .. } if !KEYRING_RUNTIME_DISABLED.load(Ordering::Relaxed) => {
+                "the system keyring".to_string()
+            }
+            #[cfg(feature = "system-keyring")]
+            SecretStorage::Keyring { .. } => Self::secrets_file_path().display().to_string(),
+            SecretStorage::File { path } => path.display().to_string(),
+        }
+    }
+
     /// Reads skip a config file that fails to parse, so a caller about to act on
     /// the stored configuration (and its secrets) must check it first rather
     /// than proceed against defaults.

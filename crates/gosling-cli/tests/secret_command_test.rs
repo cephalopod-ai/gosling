@@ -44,3 +44,58 @@ fn list_shows_servers_but_not_extension_secrets() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert_eq!(stdout.lines().collect::<Vec<_>>(), ["MYVPS: PASSWORD"]);
 }
+
+/// GSL-PT-20260927-C24 / A20: `secret set` named config.yaml although the
+/// values went to the secret store.
+#[test]
+fn set_names_the_secret_store_it_wrote() {
+    let root = TempDir::new().unwrap();
+    let output = gosling(
+        &root,
+        &[
+            "secret",
+            "set",
+            "ptbox",
+            "--password",
+            "ptbox-password-7713",
+        ],
+    );
+    assert_success(&output);
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let secrets_file = root.path().join("config").join("secrets.yaml");
+    assert!(
+        stdout.contains(&format!(
+            "Stored 1 field(s) for server 'PTBOX' in {}",
+            secrets_file.display()
+        )),
+        "{stdout}"
+    );
+    assert!(!stdout.contains("config.yaml"), "{stdout}");
+    assert!(std::fs::read_to_string(&secrets_file)
+        .unwrap()
+        .contains("ptbox-password-7713"));
+}
+
+/// GSL-PT-20260927-A20: removing a server with nothing stored reported success.
+#[test]
+fn remove_fails_for_an_unknown_server_and_succeeds_for_a_stored_one() {
+    let root = TempDir::new().unwrap();
+    let unknown = gosling(&root, &["secret", "remove", "nosuch"]);
+    assert!(!unknown.status.success());
+    assert!(String::from_utf8_lossy(&unknown.stderr)
+        .contains("no stored credentials found for server 'NOSUCH'"));
+
+    assert_success(&gosling(
+        &root,
+        &[
+            "secret", "set", "myvps", "--login", "admin", "--port", "2222",
+        ],
+    ));
+    let removed = gosling(&root, &["secret", "remove", "myvps"]);
+    assert_success(&removed);
+    assert!(
+        String::from_utf8_lossy(&removed.stdout).contains("Removed credentials for server 'MYVPS'")
+    );
+    assert!(!gosling(&root, &["secret", "get", "myvps"]).status.success());
+}

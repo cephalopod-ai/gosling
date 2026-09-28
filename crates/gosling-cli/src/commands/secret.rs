@@ -54,7 +54,7 @@ pub fn handle_set(args: SetArgs) -> Result<()> {
         "Stored {} field(s) for server '{}' in {}",
         updates.len(),
         name,
-        config.path()
+        config.secret_storage_location()
     );
     Ok(())
 }
@@ -88,12 +88,25 @@ pub fn handle_remove(name: &str) -> Result<()> {
     let name = normalize_name(name);
     let config = Config::global();
 
-    let keys: Vec<String> = FIELDS.iter().map(|field| field_key(&name, field)).collect();
+    let secrets = config
+        .all_secrets()
+        .context("failed to read stored secrets")?;
+    let keys: Vec<String> = FIELDS
+        .iter()
+        .map(|field| field_key(&name, field))
+        .filter(|key| secrets.contains_key(key))
+        .collect();
+    if keys.is_empty() {
+        bail!("no stored credentials found for server '{name}'");
+    }
     config
         .delete_secret_values(&keys)
         .context("failed to remove server credentials")?;
 
-    println!("Removed credentials for server '{name}'");
+    println!(
+        "Removed credentials for server '{name}' from {}",
+        config.secret_storage_location()
+    );
     Ok(())
 }
 

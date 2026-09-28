@@ -739,8 +739,10 @@ enum SkillsCommand {
 
 #[derive(Subcommand)]
 enum SecretCommand {
-    /// Store login credentials for a named server (e.g. a VPS) in the system keyring
-    #[command(about = "Store login credentials for a named server in the system keyring")]
+    /// Store login credentials for a named server (e.g. a VPS) in gosling's secret store
+    #[command(
+        about = "Store login credentials for a named server in gosling's secret store (the system keyring, or secrets.yaml when the keyring is disabled)"
+    )]
     Set {
         /// Server name, used as the credential key prefix (e.g. "racknerd" -> RACKNERD_PASSWORD)
         name: String,
