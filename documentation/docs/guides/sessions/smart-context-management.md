@@ -53,7 +53,11 @@ export GOSLING_AUTO_COMPACT_REDUCTION=0.0
 
 A manual `/compact` (below) always fully collapses the conversation regardless of this setting.
 
-Gosling preferentially keeps the most recent turns verbatim — by default the last 10 real turns (a turn starts with a genuine user prompt). This is a best-effort fidelity preference, not permission to ignore the reduction budget: if a short session or one large tool loop contains the required reduction inside that region, gosling advances through complete messages and completed tool request/response pairs until the budget is met. The latest text prompt is restored literally if the cutoff must cross it. Adjust the preferred tail with `GOSLING_COMPACT_PROTECT_LAST_N_TURNS`:
+Gosling preferentially keeps the most recent turns verbatim — by default the last 10 real turns (a turn starts with a genuine user prompt). This is a best-effort fidelity preference, not permission to ignore the reduction budget: if a short session or an earlier large tool loop contains the required reduction inside that region, gosling advances through complete messages and completed tool request/response pairs until the budget is met. The latest text prompt is restored literally if the cutoff must cross it.
+
+The reply that is still in progress is never folded into the summary. When auto-compaction or context-limit recovery runs in the middle of a tool loop, only history before the current request is summarized; the request and the tool calls already completed for it stay verbatim after the summary, so the model does not repeat them. If the current turn alone no longer fits the context window, the run stops with a message instead, and a follow-up message continues from a compacted context.
+
+Adjust the preferred tail with `GOSLING_COMPACT_PROTECT_LAST_N_TURNS`:
 
 ```
 # Keep the last 20 turns verbatim instead of the default 10

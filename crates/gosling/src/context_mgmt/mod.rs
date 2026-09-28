@@ -136,6 +136,38 @@ pub(crate) fn is_turn_start(msg: &Message) -> bool {
             .any(|c| matches!(c, MessageContent::ToolResponse(_)))
 }
 
+fn is_final_answer(msg: &Message) -> bool {
+    msg.is_agent_visible()
+        && matches!(msg.role, Role::Assistant)
+        && !msg.content.iter().any(|content| {
+            matches!(
+                content,
+                MessageContent::ToolRequest(_) | MessageContent::FrontendToolRequest(_)
+            )
+        })
+}
+
+/// Index of the prompt whose reply is still in progress: the newest prompt a
+/// person sent (mid-turn steers stay part of the turn they steer), or a host
+/// prompt such as a goal kickoff or nudge sent after the model had answered.
+/// `None` once that prompt has been answered.
+fn in_flight_turn_start(messages: &[Message]) -> Option<usize> {
+    let mut start = None;
+    let mut previous_visible: Option<&Message> = None;
+    for (index, message) in messages.iter().enumerate() {
+        if !message.is_agent_visible() {
+            continue;
+        }
+        let starts_reply = (message.is_user_visible() && !message.metadata.steer)
+            || previous_visible.is_none_or(is_final_answer);
+        if is_turn_start(message) && starts_reply {
+            start = Some(index);
+        }
+        previous_visible = Some(message);
+    }
+    start.filter(|&start| !messages[start + 1..].iter().any(is_final_answer))
+}
+
 #[derive(Debug)]
 struct CompactionBand {
     start_idx: usize,
@@ -259,7 +291,7 @@ Just continue the conversation naturally based on the summarized context.";
 pub(crate) struct CompactionMetricsError(pub anyhow::Error);
 
 #[derive(Debug, thiserror::Error)]
-#[error("only the newest request is eligible, and it is kept verbatim, so summarizing cannot reduce the active context")]
+#[error("only the current request and its completed tool calls remain, and they are kept verbatim, so summarizing cannot reduce the active context")]
 pub(crate) struct CompactionNoReductionError;
 
 pub(crate) fn auto_compaction_skipped_message() -> String {
@@ -272,6 +304,17 @@ pub(crate) struct ContextWindowExceededError {
     model: String,
     estimated_tokens: usize,
     context_limit: usize,
+}
+
+impl ContextWindowExceededError {
+    /// The request was already sent and may have run tools; only the turn's
+    /// accumulated work no longer fits.
+    pub(crate) fn mid_turn_message(&self) -> String {
+        format!(
+            "This turn no longer fits {}'s context window (≈{} of {} tokens), so the run stopped. Completed tool calls are kept rather than summarized mid-turn so they are not repeated. Send a follow-up message to continue from a compacted context.",
+            self.model, self.estimated_tokens, self.context_limit
+        )
+    }
 }
 
 /// The local estimate omits the system prompt and tool schemas, so a request
@@ -366,7 +409,9 @@ fn canonical_messages_hash(messages: &[Message]) -> Result<String> {
 ///   exchanges remain atomic and anything newer stays untouched. `None`
 ///   collapses the whole eligible region as before — always the case for
 ///   `manual_compact`, and used by hard-overflow recovery rather than a soft
-///   trim. See `auto_compaction_check`.
+///   trim. See `auto_compaction_check`. In both automatic modes a reply that
+///   is still in progress keeps its prompt and completed tool calls verbatim;
+///   only history before that prompt can be folded.
 ///
 /// # Returns
 /// A structured result containing the compacted conversation, provider usage,
@@ -474,10 +519,34 @@ pub async fn compact_messages(
         _ => protected_start,
     };
 
+    // A summary always precedes the messages kept after it, so folding tool
+    // work done for the reply in progress would place it before the request
+    // that caused it; the model then reads that request as unanswered and
+    // repeats the calls. Mid-turn, only history before the request is folded.
+    let in_flight_start = if manual_compact {
+        None
+    } else {
+        in_flight_turn_start(messages).filter(|&start| {
+            compact_end.is_none_or(|end| end > start)
+                && messages[start + 1..].iter().any(Message::is_agent_visible)
+        })
+    };
+    let compact_end = in_flight_start.or(compact_end);
+
     let messages_to_compact = match compact_end {
         Some(split) => &messages[..split],
         None => messages.as_slice(),
     };
+
+    // History that only a previous compaction produced cannot shrink by being
+    // summarized again.
+    if in_flight_start.is_some()
+        && !messages_to_compact
+            .iter()
+            .any(|message| message.is_agent_visible() && message.is_user_visible())
+    {
+        return Err(CompactionNoReductionError.into());
+    }
 
     if tokens_to_remove.is_some_and(|budget| budget > 0) && !manual_compact {
         let preserved_idx = preserved_user_message.as_ref().map(|(idx, _)| *idx);
@@ -593,7 +662,7 @@ pub async fn compact_messages(
 
     let continuation_text = if manual_compact {
         MANUAL_COMPACT_CONTINUATION_TEXT
-    } else if protected_start.is_some() {
+    } else if protected_start.is_some() || in_flight_start.is_some() {
         if tail_is_fresh_user_message {
             CONVERSATION_CONTINUATION_TEXT
         } else {
@@ -1788,6 +1857,8 @@ mod tests {
         let response_message = Message::assistant().with_text("<mock summary>");
         let provider = MockProvider::new(response_message, 10_000);
         let basic_conversation = vec![
+            Message::user().with_text("earlier request"),
+            Message::assistant().with_text("earlier answer"),
             Message::user().with_text("read hello.txt"),
             Message::assistant()
                 .with_tool_request("tool_0", Ok(CallToolRequestParams::new("read_file"))),
@@ -1814,6 +1885,10 @@ mod tests {
         .conversation;
 
         let agent_conversation = compacted_conversation.agent_visible_messages();
+        assert!(agent_conversation.iter().any(|message| message
+            .content
+            .iter()
+            .any(|content| matches!(content, MessageContent::ToolResponse(_)))));
 
         let _ = Conversation::new(agent_conversation)
             .expect("compaction should produce a valid conversation");
@@ -2884,5 +2959,214 @@ mod tests {
         let after_reset = accumulator.update(&conversation).await.unwrap();
         let expected = full_recount_plus_primer(&messages).await;
         assert_eq!(after_reset, expected);
+    }
+
+    const IN_FLIGHT_REQUEST: &str = "append the release note";
+
+    fn in_flight_tool_turn() -> Vec<Message> {
+        let mut messages = turns(2);
+        messages.push(Message::user().with_text(IN_FLIGHT_REQUEST));
+        messages.extend(create_tool_pair(
+            "call_append",
+            "response_append",
+            "append_file",
+            &"appended line ".repeat(400),
+        ));
+        messages
+    }
+
+    async fn all_tokens(messages: &[Message]) -> usize {
+        crate::token_counter::shared_token_counter()
+            .await
+            .unwrap()
+            .count_chat_tokens("", messages, &[])
+    }
+
+    // GSL-PT-20260927-B08: mid-turn compaction folded the completed tool pair
+    // into the summary and re-appended the request after it, so the model
+    // answered the "unanswered" request by running the same tool again.
+    #[tokio::test]
+    async fn mid_turn_compaction_keeps_the_request_and_its_completed_tool_calls() {
+        let messages = in_flight_tool_turn();
+        let budget = all_tokens(&messages).await;
+        for tokens_to_remove in [Some(budget), None] {
+            let provider =
+                MockProvider::new(Message::assistant().with_text("<mock summary>"), 10_000);
+            let compacted = compact_messages(
+                &provider,
+                &provider.config,
+                "test-session-id",
+                &Conversation::new_unvalidated(messages.clone()),
+                false,
+                tokens_to_remove,
+            )
+            .await
+            .unwrap()
+            .conversation;
+
+            let visible = compacted.agent_visible_messages();
+            let layout: Vec<(Role, String, Option<&str>)> = visible
+                .iter()
+                .map(|message| {
+                    (
+                        message.role.clone(),
+                        message.as_concat_text(),
+                        message.id.as_deref(),
+                    )
+                })
+                .collect();
+            assert_eq!(visible.len(), 5, "{tokens_to_remove:?}: {layout:?}");
+            assert!(visible[0].as_concat_text().contains("<mock summary>"));
+            assert_eq!(visible[1].as_concat_text(), TOOL_LOOP_CONTINUATION_TEXT);
+            assert_eq!(visible[2].as_concat_text(), IN_FLIGHT_REQUEST);
+            assert_eq!(visible[3].id.as_deref(), Some("call_append"));
+            assert_eq!(visible[4].id.as_deref(), Some("response_append"));
+            assert!(Conversation::new(visible.clone()).is_ok());
+            assert_eq!(
+                compacted
+                    .messages()
+                    .iter()
+                    .filter(|message| message.as_concat_text() == IN_FLIGHT_REQUEST)
+                    .count(),
+                1,
+                "the request is kept in place, not copied"
+            );
+            assert!(compacted
+                .messages()
+                .iter()
+                .filter(|message| message.as_concat_text().contains("turn1 request"))
+                .all(|message| !message.is_agent_visible() && message.is_user_visible()));
+        }
+    }
+
+    #[tokio::test]
+    async fn mid_turn_compaction_does_not_resummarize_only_an_earlier_summary() {
+        let mut messages = vec![
+            Message::user()
+                .with_text("turn1 request")
+                .with_visibility(true, false),
+            Message::assistant()
+                .with_text("turn1 response")
+                .with_visibility(true, false),
+            Message::user().with_text("<earlier summary>").agent_only(),
+            Message::assistant()
+                .with_text(TOOL_LOOP_CONTINUATION_TEXT)
+                .agent_only(),
+        ];
+        messages.extend(in_flight_tool_turn().split_off(4));
+        let budget = all_tokens(&messages).await;
+        for tokens_to_remove in [Some(budget), None] {
+            let provider =
+                MockProvider::new(Message::assistant().with_text("<mock summary>"), 10_000);
+            let result = compact_messages(
+                &provider,
+                &provider.config,
+                "test-session-id",
+                &Conversation::new_unvalidated(messages.clone()),
+                false,
+                tokens_to_remove,
+            )
+            .await;
+
+            assert!(result
+                .expect_err("only the in-flight turn and an earlier summary remain")
+                .is::<CompactionNoReductionError>());
+            assert!(provider.input_sizes.lock().unwrap().is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn pre_turn_compaction_still_restores_the_new_request_after_the_summary() {
+        let mut messages = turns(2);
+        messages.push(Message::user().with_text("a new request"));
+        let provider = MockProvider::new(Message::assistant().with_text("<mock summary>"), 10_000);
+        let budget = all_tokens(&messages).await;
+
+        let compacted = compact_messages(
+            &provider,
+            &provider.config,
+            "test-session-id",
+            &Conversation::new_unvalidated(messages),
+            false,
+            Some(budget),
+        )
+        .await
+        .unwrap()
+        .conversation;
+
+        let visible: Vec<String> = compacted
+            .agent_visible_messages()
+            .iter()
+            .map(Message::as_concat_text)
+            .collect();
+        assert_eq!(
+            visible,
+            vec![
+                "<mock summary>".to_string(),
+                CONVERSATION_CONTINUATION_TEXT.to_string(),
+                "a new request".to_string(),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn manual_compaction_still_folds_the_whole_conversation() {
+        let provider = MockProvider::new(Message::assistant().with_text("<mock summary>"), 10_000);
+
+        let compacted = compact_messages(
+            &provider,
+            &provider.config,
+            "test-session-id",
+            &Conversation::new_unvalidated(in_flight_tool_turn()),
+            true,
+            None,
+        )
+        .await
+        .unwrap()
+        .conversation;
+
+        let visible: Vec<String> = compacted
+            .agent_visible_messages()
+            .iter()
+            .map(Message::as_concat_text)
+            .collect();
+        assert_eq!(
+            visible,
+            vec![
+                "<mock summary>".to_string(),
+                MANUAL_COMPACT_CONTINUATION_TEXT.to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn in_flight_turn_start_follows_the_reply_in_progress() {
+        let request = |text: &str| Message::user().with_text(text);
+        let answer = Message::assistant().with_text("answer");
+        let pair = create_tool_pair("call", "response", "read_file", "output");
+        let mut steer = request("also check the tests");
+        steer.metadata.steer = true;
+
+        assert_eq!(
+            in_flight_turn_start(&[request("done"), answer.clone()]),
+            None
+        );
+
+        let mut tool_loop = vec![request("earlier"), answer.clone(), request("current")];
+        tool_loop.extend(pair.clone());
+        tool_loop.push(request("subdirectory hints").agent_only());
+        tool_loop.extend(pair.clone());
+        tool_loop.push(steer);
+        assert_eq!(in_flight_turn_start(&tool_loop), Some(2));
+
+        let mut goal_round = vec![request("current"), answer.clone()];
+        goal_round.push(request("goal nudge").agent_only());
+        goal_round.extend(pair.clone());
+        assert_eq!(in_flight_turn_start(&goal_round), Some(2));
+
+        let mut after_interruption = vec![request("interrupted")];
+        after_interruption.extend(pair);
+        after_interruption.push(request("next request"));
+        assert_eq!(in_flight_turn_start(&after_interruption), Some(3));
     }
 }

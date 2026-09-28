@@ -8,6 +8,9 @@ use super::*;
 const OVERSIZED_TURN_NOTICE: &str =
     "Run ended before completion: the request did not fit the context window and was not sent.";
 
+const OVERSIZED_MID_TURN_NOTICE: &str =
+    "Run ended before completion: the turn outgrew the context window. The tool calls above already ran.";
+
 impl Agent {
     /// Get a reference count clone to the provider
     pub async fn provider(&self) -> Result<Arc<dyn Provider>, anyhow::Error> {
@@ -610,7 +613,11 @@ impl Agent {
                     .await?;
             }
         }
-        let reason = exceeded.to_string();
+        let (reason, notice) = if withdraw_newest_prompt {
+            (exceeded.to_string(), OVERSIZED_TURN_NOTICE)
+        } else {
+            (exceeded.mid_turn_message(), OVERSIZED_MID_TURN_NOTICE)
+        };
         let failure_message = Message::assistant()
             .with_text(&reason)
             .with_terminal_error(reason);
@@ -621,7 +628,7 @@ impl Agent {
             .add_message(
                 session_id,
                 &Message::assistant()
-                    .with_text(OVERSIZED_TURN_NOTICE)
+                    .with_text(notice)
                     .with_generated_id()
                     .agent_only(),
             )
