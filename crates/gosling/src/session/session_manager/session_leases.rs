@@ -235,7 +235,8 @@ impl SessionStorage {
             .bind(now)
             .bind(now)
             .execute(&mut *tx)
-            .await?;
+            .await
+            .map_err(super::missing_session_as_not_found)?;
             tx.commit().await?;
             drop(write_guard);
             break lease_id;

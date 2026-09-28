@@ -106,6 +106,18 @@ pub enum SessionImportOutcome {
 #[error("Session not found")]
 pub struct SessionNotFound;
 
+/// Writes keyed by a session id fail on the `sessions(id)` foreign key once
+/// that session is gone (for example removed from another window); report
+/// that as the stale id it is instead of a raw constraint error.
+fn missing_session_as_not_found(error: sqlx::Error) -> anyhow::Error {
+    match &error {
+        sqlx::Error::Database(database) if database.is_foreign_key_violation() => {
+            SessionNotFound.into()
+        }
+        _ => error.into(),
+    }
+}
+
 fn validate_session_name(name: &str) -> Result<()> {
     anyhow::ensure!(!name.trim().is_empty(), "Session name must not be empty");
     Ok(())
@@ -6168,6 +6180,63 @@ mod tests {
             .release()
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn turn_writes_for_a_session_removed_elsewhere_fail_as_not_found() {
+        let temp_dir = TempDir::new().unwrap();
+        let open_window = SessionManager::new(temp_dir.path().to_path_buf());
+        let removed = open_window
+            .create_session(
+                temp_dir.path().join("workspace"),
+                "Removed elsewhere".to_string(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        let kept = open_window
+            .create_session(
+                temp_dir.path().join("workspace"),
+                "Kept".to_string(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        SessionManager::new(temp_dir.path().to_path_buf())
+            .delete_session(&removed.id)
+            .await
+            .unwrap();
+
+        let lease_error = open_window
+            .acquire_session_turn_lease(&removed.id, None)
+            .await
+            .err()
+            .unwrap();
+        assert!(lease_error.downcast_ref::<SessionNotFound>().is_some());
+        let prompt = Message::user().with_text("typed after removal");
+        for write_error in [
+            open_window
+                .add_message(&removed.id, &prompt)
+                .await
+                .unwrap_err(),
+            open_window
+                .upsert_message(&removed.id, &prompt)
+                .await
+                .unwrap_err(),
+        ] {
+            assert!(write_error.downcast_ref::<SessionNotFound>().is_some());
+        }
+
+        open_window
+            .acquire_session_turn_lease(&kept.id, None)
+            .await
+            .unwrap()
+            .release()
+            .await
+            .unwrap();
+        open_window.add_message(&kept.id, &prompt).await.unwrap();
     }
 
     /// REL-GSL-006: a `started` row whose owner process is alive but whose

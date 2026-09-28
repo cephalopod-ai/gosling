@@ -542,7 +542,8 @@ impl SessionStorage {
         .bind(message.created)
         .bind(metadata_json)
         .execute(&mut *tx)
-        .await?;
+        .await
+        .map_err(super::missing_session_as_not_found)?;
 
         sqlx::query("UPDATE sessions SET updated_at = datetime('now') WHERE id = ?")
             .bind(session_id)
@@ -632,7 +633,8 @@ impl SessionStorage {
             .bind(message.created)
             .bind(metadata_json)
             .execute(&mut **tx)
-            .await?;
+            .await
+            .map_err(super::missing_session_as_not_found)?;
         }
 
         sqlx::query("UPDATE sessions SET updated_at = datetime('now') WHERE id = ?")

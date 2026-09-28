@@ -10,7 +10,7 @@ mod thinking;
 
 use gosling::conversation::Conversation;
 use gosling::session::{
-    InteractionPolicy, NewPlanFeedback, PlanExpectation, PlanSnapshot, PlanStatus,
+    InteractionPolicy, NewPlanFeedback, PlanExpectation, PlanSnapshot, PlanStatus, SessionNotFound,
 };
 use std::env;
 use std::str::FromStr;
@@ -1173,7 +1173,9 @@ impl CliSession {
             .process_agent_response(true, CancellationToken::default())
             .await;
         output::hide_thinking();
-        result?;
+        if let Err(error) = result {
+            return Err(self.explain_turn_failure(error, content).await);
+        }
 
         let elapsed_str = format_elapsed_time(start_time.elapsed());
         println!("{}", console::style(format!("  ⏱ {}", elapsed_str)).dim());
@@ -1190,6 +1192,29 @@ impl CliSession {
             output::render_plan_review_commands();
         }
         Ok(())
+    }
+
+    /// A session removed from another window or process fails the next turn
+    /// on its first write. Say so and repeat what the user typed, which
+    /// would otherwise be lost with the process.
+    async fn explain_turn_failure(&self, error: anyhow::Error, typed: &str) -> anyhow::Error {
+        let session_is_gone = matches!(
+            self.agent
+                .config
+                .session_manager
+                .get_session_without_message_stats(&self.session_id)
+                .await,
+            Err(lookup) if lookup.downcast_ref::<SessionNotFound>().is_some()
+        );
+        if !session_is_gone {
+            return error;
+        }
+        anyhow::anyhow!(
+            "Session {} no longer exists; it was removed from another window or process. \
+             Your message was not saved:\n\n{typed}\n\n\
+             Start a new session with `gosling session` to continue.",
+            self.session_id
+        )
     }
 
     fn render_plan_command_error(&self, error: &anyhow::Error) {
@@ -3266,6 +3291,40 @@ mod tests {
             .messages()
             .iter()
             .any(|message| message.as_concat_text() == "Conversation cleared"));
+    }
+
+    #[tokio::test]
+    async fn a_turn_on_a_session_removed_elsewhere_reports_it_and_keeps_the_typed_text() {
+        let temp = tempfile::tempdir().unwrap();
+        let (mut cli, manager, session_id) = cli_session_with_messages(&temp, &[]).await;
+        manager.delete_session(&session_id).await.unwrap();
+        let typed = "please keep this long prompt";
+        cli.messages.push(Message::user().with_text(typed));
+
+        let turn_error = cli
+            .process_agent_response(false, CancellationToken::new())
+            .await
+            .expect_err("a removed session cannot take a turn");
+        let reported = cli
+            .explain_turn_failure(turn_error, typed)
+            .await
+            .to_string();
+
+        assert!(!reported.contains("FOREIGN KEY"), "{reported}");
+        assert!(reported.contains(&format!("Session {session_id} no longer exists")));
+        assert!(reported.contains(typed));
+    }
+
+    #[tokio::test]
+    async fn a_turn_failure_on_a_live_session_is_reported_unchanged() {
+        let temp = tempfile::tempdir().unwrap();
+        let (cli, _manager, _session_id) = cli_session_with_messages(&temp, &[]).await;
+
+        let reported = cli
+            .explain_turn_failure(anyhow::anyhow!("Request failed: connection refused"), "hi")
+            .await;
+
+        assert_eq!(reported.to_string(), "Request failed: connection refused");
     }
 
     #[test]
