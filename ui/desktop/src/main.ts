@@ -1078,7 +1078,7 @@ const createChat = async (
       const leaseCertificateTrust = externalCertificateTrust;
       externalCertificateTrust = null;
       goslingServeLease = goslingServeLeases.createExternal(
-        acpWebSocketUrlFromHttpBase(externalBaseUrl, serverSecret),
+        acpWebSocketUrlFromHttpBase(externalBaseUrl),
         serverSecret,
         leaseCertificateTrust ? async () => leaseCertificateTrust.release() : undefined
       );

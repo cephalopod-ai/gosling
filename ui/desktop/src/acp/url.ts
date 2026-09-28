@@ -69,19 +69,16 @@ export function statusHttpUrlFromHttpBase(rawBaseUrl: string): string {
   return httpEndpointUrlFromHttpBase(rawBaseUrl, 'status');
 }
 
-export function acpHttpUrlFromHttpBase(rawBaseUrl: string, token?: string): string {
-  const url = new URL(httpEndpointUrlFromHttpBase(rawBaseUrl, 'acp'));
-  if (token) {
-    url.searchParams.set('token', token);
-  }
-  return url.toString();
+export function acpHttpUrlFromHttpBase(rawBaseUrl: string): string {
+  return httpEndpointUrlFromHttpBase(rawBaseUrl, 'acp');
 }
 
-export function acpWebSocketUrlFromHttpBase(rawBaseUrl: string, token: string): string {
+// Carries no credential: the secret travels in the WebSocket subprotocol (SEC-GOS-001),
+// and Chromium prints the full URL of every failed connection to the console.
+export function acpWebSocketUrlFromHttpBase(rawBaseUrl: string): string {
   const baseUrl = normalizeAcpHttpBaseUrl(rawBaseUrl);
   const url = new URL(baseUrl);
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
   url.pathname = `${url.pathname.replace(/\/+$/, '')}/acp`;
-  url.searchParams.set('token', token);
   return url.toString();
 }

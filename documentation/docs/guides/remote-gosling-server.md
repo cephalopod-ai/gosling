@@ -104,7 +104,8 @@ omitted still points to port `3000`, while `gosling serve` now defaults to `3284
 ## Troubleshooting
 
 - **Unauthorized or unreachable:** confirm the base URL, protocol, port, and shared secret. Desktop
-  sends the secret to `/status` and uses it as the ACP connection token.
+  sends the secret to `/status` in the `X-Secret-Key` header and offers it as the ACP connection
+  token through the `gosling.token.<secret>` WebSocket subprotocol. It never puts the secret in a URL.
 - **Certificate error:** configure the startup fingerprint, or remove an obsolete fingerprint and
   allow a new trust-on-first-use registration. Fingerprints require an `https://` base URL.
 - **Existing windows use the old backend:** open a new chat window or restart Desktop.
