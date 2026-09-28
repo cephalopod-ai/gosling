@@ -2,7 +2,7 @@ use anyhow::Result;
 use std::path::Path;
 
 use crate::commands::configure::unparsable_config_problem;
-use gosling::config::{Config, PermissionManager};
+use gosling::config::{ignored_legacy_provider_settings, Config, PermissionManager};
 use gosling::providers::get_from_registry;
 use gosling::providers::provider_test::test_provider_configuration;
 use gosling::session::{config_path, SystemInfo};
@@ -32,6 +32,9 @@ pub async fn handle_doctor() -> Result<()> {
         report.push_str(&format!("\n{policy_problem}"));
     }
     println!("{report}");
+    for note in ignored_legacy_provider_settings(config) {
+        println!("Note: {note}");
+    }
     problem
         .or(policy_problem)
         .map_or(Ok(()), |problem| Err(anyhow::anyhow!(problem)))

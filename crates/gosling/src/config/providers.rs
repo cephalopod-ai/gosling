@@ -86,6 +86,45 @@ pub fn get_active_model(config: &Config) -> Option<String> {
     config.get_param::<String>("GOSLING_MODEL").ok()
 }
 
+/// A root-level `GOSLING_PROVIDER` config key shadowed by the `active_provider`
+/// key `gosling configure` writes, described for the user. Hand edits of the
+/// documented root keys used to be silently ignored. (GSL-PT-20260927-A03)
+pub fn ignored_legacy_provider(config: &Config) -> Option<String> {
+    if env::var("GOSLING_PROVIDER").is_ok() {
+        return None;
+    }
+    let active = config.get_param::<String>(ACTIVE_PROVIDER_KEY).ok()?;
+    let legacy = config.get_param::<String>("GOSLING_PROVIDER").ok()?;
+    (active != legacy).then(|| {
+        format!(
+            "GOSLING_PROVIDER: {legacy} in the config is ignored because {ACTIVE_PROVIDER_KEY}: {active} takes precedence. Edit {ACTIVE_PROVIDER_KEY} or run 'gosling configure'."
+        )
+    })
+}
+
+/// The `GOSLING_MODEL` counterpart of [`ignored_legacy_provider`], shadowed by
+/// `providers.<active provider>.model`.
+pub fn ignored_legacy_model(config: &Config) -> Option<String> {
+    if env::var("GOSLING_MODEL").is_ok() {
+        return None;
+    }
+    let provider = get_active_provider(config)?;
+    let legacy = config.get_param::<String>("GOSLING_MODEL").ok()?;
+    let model = get_provider_entry(config, &provider)?.model;
+    (!model.is_empty() && model != legacy).then(|| {
+        format!(
+            "GOSLING_MODEL: {legacy} in the config is ignored because {PROVIDERS_CONFIG_KEY}.{provider}.model: {model} takes precedence. Edit {PROVIDERS_CONFIG_KEY}.{provider}.model or run 'gosling configure'."
+        )
+    })
+}
+
+pub fn ignored_legacy_provider_settings(config: &Config) -> Vec<String> {
+    ignored_legacy_provider(config)
+        .into_iter()
+        .chain(ignored_legacy_model(config))
+        .collect()
+}
+
 pub fn set_active_provider(config: &Config, name: &str, model: &str) -> Result<(), ConfigError> {
     config.set_param(ACTIVE_PROVIDER_KEY, name)?;
     let entry = ProviderEntry {
@@ -170,6 +209,59 @@ mod tests {
 
         assert!(get_active_provider(&config).is_none());
         assert!(get_active_model(&config).is_none());
+    }
+
+    fn hand_edit(config: &Config, lines: &str) {
+        let existing = std::fs::read_to_string(config.path()).unwrap_or_default();
+        std::fs::write(config.path(), format!("{existing}{lines}")).unwrap();
+    }
+
+    /// GSL-PT-20260927-A03
+    #[test]
+    fn hand_edited_root_keys_shadowed_by_structured_keys_are_reported() {
+        let _guard = env_lock::lock_env([
+            ("GOSLING_PROVIDER", None::<&str>),
+            ("GOSLING_MODEL", None::<&str>),
+        ]);
+        let config = new_test_config();
+        set_active_provider(&config, "openai", "gpt-4o").unwrap();
+        assert!(ignored_legacy_provider_settings(&config).is_empty());
+
+        hand_edit(
+            &config,
+            "GOSLING_MODEL: playtest-model-b\nGOSLING_PROVIDER: nonsense-prov\n",
+        );
+        let ignored = ignored_legacy_provider_settings(&config);
+        assert_eq!(ignored.len(), 2, "{ignored:?}");
+        assert!(ignored[0].starts_with("GOSLING_PROVIDER: nonsense-prov"));
+        assert!(ignored[0].contains("active_provider: openai"));
+        assert!(ignored[1].starts_with("GOSLING_MODEL: playtest-model-b"));
+        assert!(ignored[1].contains("providers.openai.model: gpt-4o"));
+        assert_eq!(get_active_provider(&config), Some("openai".to_string()));
+        assert_eq!(get_active_model(&config), Some("gpt-4o".to_string()));
+    }
+
+    #[test]
+    fn root_keys_that_are_in_effect_or_agree_are_not_reported() {
+        let _guard = env_lock::lock_env([
+            ("GOSLING_PROVIDER", None::<&str>),
+            ("GOSLING_MODEL", None::<&str>),
+        ]);
+        let legacy_only = new_test_config();
+        hand_edit(
+            &legacy_only,
+            "GOSLING_PROVIDER: anthropic\nGOSLING_MODEL: claude\n",
+        );
+        assert!(ignored_legacy_provider_settings(&legacy_only).is_empty());
+        assert_eq!(get_active_model(&legacy_only), Some("claude".to_string()));
+
+        let agreeing = new_test_config();
+        set_active_provider(&agreeing, "openai", "gpt-4o").unwrap();
+        hand_edit(
+            &agreeing,
+            "GOSLING_PROVIDER: openai\nGOSLING_MODEL: gpt-4o\n",
+        );
+        assert!(ignored_legacy_provider_settings(&agreeing).is_empty());
     }
 
     #[test]

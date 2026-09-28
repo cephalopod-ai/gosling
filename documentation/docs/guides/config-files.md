@@ -32,8 +32,8 @@ The following settings can be configured at the root level of your config.yaml f
 
 | Setting | Purpose | Values | Default | Required |
 |---------|---------|---------|---------|-----------|
-| `GOSLING_PROVIDER` | Primary [LLM provider](/docs/getting-started/providers) | "anthropic", "openai", etc. | None | Yes |
-| `GOSLING_MODEL` | Default model to use | Model name (e.g., "claude-3.5-sonnet", "gpt-4") | None | Yes |
+| `active_provider` | Primary [LLM provider](/docs/getting-started/providers) (see [Provider and Model](#provider-and-model)) | "anthropic", "openai", etc. | None | Yes |
+| `providers.<name>.model` | Default model for that provider | Model name (e.g., "claude-3.5-sonnet", "gpt-4") | None | Yes |
 | `GOSLING_FAILOVER_PROVIDER` | Optional fallback for transient outages or an unavailable selected model on Gosling-managed API turns | "ollama", "openrouter", etc. | Disabled | No |
 | `GOSLING_FAILOVER_MODEL` | Model paired with `GOSLING_FAILOVER_PROVIDER` | Provider model name | Disabled | No |
 | `GOSLING_TEMPERATURE` | Model response randomness | Float between 0.0 and 1.0 | Model-specific | No |
@@ -64,14 +64,32 @@ The following settings can be configured at the root level of your config.yaml f
 
 Additional [environment variables](/docs/guides/environment-variables) may also be supported in config.yaml.
 
+### Provider and Model
+
+`gosling configure` and gosling Desktop store the active provider in `active_provider` and each
+provider's model under `providers:`, as in the example below. Older configurations use root-level
+`GOSLING_PROVIDER` and `GOSLING_MODEL` keys instead. gosling still reads those keys when
+`active_provider` or the provider's `model` is not set, and moves them into the `providers:` block
+the next time it saves settings.
+
+Once `active_provider` and a model under `providers:` exist, root-level `GOSLING_PROVIDER` or
+`GOSLING_MODEL` values that differ from them have no effect: new sessions, `gosling doctor`, and
+`gosling info -v` report them as ignored, and gosling removes them the next time it saves settings.
+Edit `active_provider` or `providers.<name>.model` instead, or run `gosling configure`. The
+`GOSLING_PROVIDER` and `GOSLING_MODEL` environment variables still override the file.
+
 ## Example Configuration
 
 Here's a basic example of a config.yaml file:
 
 ```yaml
 # Model Configuration
-GOSLING_PROVIDER: "anthropic"
-GOSLING_MODEL: "claude-4.5-sonnet"
+active_provider: "anthropic"
+providers:
+  anthropic:
+    enabled: true
+    configured: true
+    model: "claude-4.5-sonnet"
 GOSLING_FAILOVER_PROVIDER: "ollama"
 GOSLING_FAILOVER_MODEL: "qwen3-coder:latest"
 GOSLING_TEMPERATURE: 0.7
@@ -299,7 +317,8 @@ Direct edits to config files usually require restarting gosling to take effect f
 gosling info -v
 ```
 
-This will show all active settings and their current values.
+This shows the values in your config files, the provider and model gosling will actually use, and
+any root-level `GOSLING_PROVIDER` / `GOSLING_MODEL` values that are being ignored.
 
 ## See Also
 

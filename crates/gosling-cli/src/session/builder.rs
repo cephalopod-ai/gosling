@@ -6,9 +6,12 @@ use console::style;
 use gosling::agents::{Agent, AgentConfig, Container, ExtensionError, GoslingPlatform};
 use gosling::config::extensions::name_to_key;
 use gosling::config::{
+    ignored_legacy_model, ignored_legacy_provider, Config, ExtensionConfig, GoslingMode,
+    PermissionManager,
+};
+use gosling::config::{
     resolve_extensions_for_new_session, resolve_extensions_for_new_session_for_cwd,
 };
-use gosling::config::{Config, ExtensionConfig, GoslingMode, PermissionManager};
 use gosling::model_config::model_config_from_user_config;
 use gosling::providers::create;
 use gosling::session::session_manager::SessionType;
@@ -254,6 +257,18 @@ fn resolve_provider_and_model(
     saved_provider: Option<String>,
     saved_model_config: Option<gosling_providers::model::ModelConfig>,
 ) -> Result<ResolvedProviderConfig, String> {
+    let ignored_settings = [
+        (session_config.provider.is_none() && saved_provider.is_none())
+            .then(|| ignored_legacy_provider(config))
+            .flatten(),
+        (session_config.model.is_none() && saved_model_config.is_none())
+            .then(|| ignored_legacy_model(config))
+            .flatten(),
+    ];
+    for note in ignored_settings.into_iter().flatten() {
+        eprintln!("{}", style(format!("Warning: {note}")).yellow());
+    }
+
     let provider_name = session_config
         .provider
         .clone()

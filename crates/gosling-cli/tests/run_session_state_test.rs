@@ -741,3 +741,34 @@ fn session_exports_redact_secrets_unless_asked_not_to() {
     ]);
     assert!(!shared_raw.status.success());
 }
+
+/// GSL-PT-20260927-A03: after `gosling configure` wrote `active_provider` and
+/// `providers.<name>.model`, a hand edit of the documented root-level
+/// `GOSLING_MODEL` was silently ignored and `info -v` showed the derived value
+/// under that key.
+#[test]
+fn ignored_root_level_model_edits_are_reported() {
+    let env = Env::new();
+    let legacy_only = env.run_ok(env.root.path(), &["run", "--no-session", "-t", "hi"]);
+    assert!(!String::from_utf8_lossy(&legacy_only.stderr).contains("is ignored"));
+
+    std::fs::write(
+        env.root.path().join("config").join("config.yaml"),
+        "active_provider: openai\nproviders:\n  openai:\n    enabled: true\n    model: gpt-4o\n    configured: true\nGOSLING_MODEL: hand-edited-model\n",
+    )
+    .unwrap();
+    let expected = "GOSLING_MODEL: hand-edited-model in the config is ignored because providers.openai.model: gpt-4o takes precedence";
+
+    let run = env.run_ok(env.root.path(), &["run", "--no-session", "-t", "hi"]);
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(stderr.contains(&format!("Warning: {expected}")), "{stderr}");
+
+    let info = env.run_ok(env.root.path(), &["info", "-v"]);
+    let stdout = String::from_utf8_lossy(&info.stdout);
+    assert!(
+        stdout.contains("GOSLING_MODEL: hand-edited-model"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("Effective Provider:"), "{stdout}");
+    assert!(stdout.contains(expected), "{stdout}");
+}

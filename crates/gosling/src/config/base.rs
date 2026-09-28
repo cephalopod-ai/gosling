@@ -758,13 +758,20 @@ impl Config {
         Ok(merged)
     }
 
-    pub fn all_values(&self) -> Result<HashMap<String, Value>, ConfigError> {
+    /// The merged config files' values, without the derived provider and model.
+    pub fn file_values(&self) -> Result<HashMap<String, Value>, ConfigError> {
         let config_values = self.load()?;
-        let mut map = HashMap::from_iter(config_values.iter().filter_map(|(k, v)| {
-            k.as_str()
-                .map(|k| k.to_string())
-                .zip(serde_json::to_value(v).ok())
-        }));
+        Ok(HashMap::from_iter(config_values.iter().filter_map(
+            |(k, v)| {
+                k.as_str()
+                    .map(|k| k.to_string())
+                    .zip(serde_json::to_value(v).ok())
+            },
+        )))
+    }
+
+    pub fn all_values(&self) -> Result<HashMap<String, Value>, ConfigError> {
+        let mut map = self.file_values()?;
 
         if let Ok(provider) = self.get_gosling_provider() {
             map.insert("GOSLING_PROVIDER".to_string(), Value::String(provider));
