@@ -125,6 +125,7 @@ export class RendererAccessController {
     config: ArtifactRoutingConfig
   ): Promise<ArtifactRoutingConfig | null> {
     if (
+      (config.sessionId !== undefined && typeof config.sessionId !== 'string') ||
       (config.workspaceId !== undefined && typeof config.workspaceId !== 'string') ||
       (config.workspaceName !== undefined && typeof config.workspaceName !== 'string') ||
       (config.workspaceId === undefined) !== (config.workspaceName === undefined) ||

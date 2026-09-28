@@ -227,7 +227,7 @@ export default function BaseChat({
 
   useEffect(() => {
     if (!isActiveSession) return;
-    setVisibleSessionWorkspaceId(session?.workspace_id ?? null);
+    setVisibleSessionWorkspaceId(session?.workspace_id ?? null, sessionId);
     setVisibleArtifactSession(sessionId, acpSessionSnapshot?.artifacts ?? []);
     setVisibleSessionArtifacts(acpSessionSnapshot?.artifacts ?? []);
     return () => {

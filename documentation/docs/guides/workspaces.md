@@ -262,7 +262,9 @@ another workspace. Missing outputs show a relink error, or—when **Allow explic
 missing** is enabled—ask before creating the directory. If a native download cannot be routed,
 gosling shows a warning instead of silently claiming it used the workspace. Rapid workspace
 switches are ordered so a slower validation of an older selection cannot restore its download
-destination.
+destination. A download's destination belongs to the chat it was set up for: one that starts while
+you are switching to another chat, before that chat's destination is ready, is treated as unrouted
+instead of landing in the previous chat's workspace.
 
 The router never moves an already-generated file. **Save a copy** copies the complete source file,
 not a truncated preview. Direct absolute-path writes performed inside an independent third-party

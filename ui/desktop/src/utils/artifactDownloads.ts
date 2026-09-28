@@ -39,6 +39,23 @@ export function routedDownloadPath(
   return output ? availableDownloadPath(output.path, fileName, exists) : null;
 }
 
+function visibleChatSessionId(windowUrl: string): string | null {
+  try {
+    const route = new URL(windowUrl).hash;
+    const query = route.includes('?') ? route.slice(route.indexOf('?') + 1) : '';
+    return new URLSearchParams(query).get('resumeSessionId');
+  } catch {
+    return null;
+  }
+}
+
+/// The renderer republishes the route only after it has rendered the chat it switched to, so
+/// right after a switch the stored route still belongs to the previous chat. It applies only
+/// while the window still shows the chat it was published for.
+export function routesVisibleChat(config: ArtifactRoutingConfig, windowUrl: string): boolean {
+  return (config.sessionId ?? null) === visibleChatSessionId(windowUrl);
+}
+
 export function installArtifactDownloadRouter(
   electronSession: Session,
   configForWebContents: (webContentsId: number) => ArtifactRoutingConfig | undefined,
@@ -49,7 +66,7 @@ export function installArtifactDownloadRouter(
   const reservedPaths = new Set<string>();
   electronSession.on('will-download', (_event, item, webContents) => {
     const config = configForWebContents(webContents.id);
-    if (!config) {
+    if (!config || !routesVisibleChat(config, webContents.getURL())) {
       onUnrouted(webContents.id, item.getFilename());
       return;
     }
