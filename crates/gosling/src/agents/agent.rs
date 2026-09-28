@@ -23,7 +23,8 @@ use super::frontend_tool_result_router::{
 use super::mcp_client::GoslingMcpHostInfo;
 use super::tool_confirmation_router::ToolConfirmationRouter;
 use super::tool_execution::{
-    ToolCallResult, CHAT_MODE_TOOL_SKIPPED_RESPONSE, SUBAGENT_APPROVAL_UNAVAILABLE_RESPONSE,
+    ToolCallResult, CHAT_MODE_TOOL_SKIPPED_RESPONSE, PERMISSION_DENIED_RESPONSE,
+    POLICY_DENIED_RESPONSE_PREFIX, SUBAGENT_APPROVAL_UNAVAILABLE_RESPONSE,
 };
 use crate::action_required_manager::ElicitationOutcome;
 use crate::agents::extension::{ExtensionConfig, ExtensionResult, ToolInfo};

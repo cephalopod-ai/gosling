@@ -29,6 +29,6 @@ pub use extension_manager::ExtensionManager;
 pub use prompt_manager::PromptManager;
 pub use subagent_handler::SUBAGENT_TOOL_REQUEST_TYPE;
 pub use subagent_task_config::TaskConfig;
-pub use tool_execution::ToolCallContext;
 pub(crate) use tool_execution::DECLINED_RESPONSE;
+pub use tool_execution::{ToolCallContext, ToolCallRefusal};
 pub use types::{FrontendTool, SessionConfig};

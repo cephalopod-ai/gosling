@@ -1,6 +1,7 @@
 use anstream::println;
 use bat::WrappingMode;
 use console::{measure_text_width, style, Color, Term};
+use gosling::agents::ToolCallRefusal;
 use gosling::config::Config;
 use gosling::conversation::message::{
     ActionRequiredData, Message, MessageContent, SystemNotificationContent, SystemNotificationType,
@@ -12,7 +13,7 @@ use gosling::subprocess::SubprocessExt;
 use gosling::utils::safe_truncate;
 use gosling_providers::conversation::token_usage::Usage;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use rmcp::model::{CallToolRequestParams, JsonObject, PromptArgument};
+use rmcp::model::{CallToolRequestParams, CallToolResult, JsonObject, PromptArgument};
 use serde_json::Value;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -586,7 +587,13 @@ fn render_tool_response(resp: &ToolResponse, debug: bool) {
 
     match &resp.tool_result {
         Ok(result) => {
+            // A refusal's text is an instruction to the model; the failure note states it.
+            let refused = ToolCallRefusal::of(result).is_some() && !debug;
+            let mut output_shown = false;
             for content in &result.content {
+                if refused {
+                    break;
+                }
                 if let Some(audience) = content.audience() {
                     if !audience.contains(&rmcp::model::Role::User) {
                         continue;
@@ -608,14 +615,107 @@ fn render_tool_response(resp: &ToolResponse, debug: bool) {
 
                 if debug {
                     println!("{:#?}", content);
+                    output_shown = true;
                 } else if let Some(text) = content.as_text() {
                     print_tool_output(&text.text);
+                    output_shown |= !text.text.is_empty();
                 }
             }
+            if let Some(note) = tool_failure_note(result, output_shown) {
+                render_tool_failure(&note);
+            }
         }
-        Err(e) => {
-            println!("    {}", style(e.to_string()).red().dim());
-        }
+        Err(e) => render_tool_failure(&ToolFailureNote {
+            label: "failed",
+            reason: Some(e.to_string()),
+        }),
+    }
+}
+
+/// How the transcript marks a tool call that did not succeed. Error results are otherwise
+/// indistinguishable from successes: refusals and most extension errors carry no display
+/// priority, so their text is never printed.
+#[derive(Debug, PartialEq, Eq)]
+struct ToolFailureNote {
+    label: &'static str,
+    reason: Option<String>,
+}
+
+fn tool_failure_note(result: &CallToolResult, output_shown: bool) -> Option<ToolFailureNote> {
+    if result.is_error != Some(true) {
+        return None;
+    }
+    Some(match ToolCallRefusal::of(result) {
+        Some(refusal) => refusal_note(refusal),
+        None => ToolFailureNote {
+            label: "failed",
+            reason: (!output_shown).then(|| user_visible_text(result)).flatten(),
+        },
+    })
+}
+
+fn refusal_note(refusal: ToolCallRefusal<'_>) -> ToolFailureNote {
+    let (label, reason) = match refusal {
+        ToolCallRefusal::Denied {
+            reason: Some(reason),
+        } => ("denied by policy", Some(reason.to_string())),
+        ToolCallRefusal::Denied { reason: None } => ("denied by the permission policy", None),
+        ToolCallRefusal::DeclinedByUser => ("declined by user", None),
+        ToolCallRefusal::ApprovalUnavailableInSubagent => (
+            "blocked",
+            Some("it needs an approval that a delegated subagent cannot ask for".to_string()),
+        ),
+        ToolCallRefusal::SkippedInChatMode => ("skipped in chat mode", None),
+    };
+    ToolFailureNote { label, reason }
+}
+
+fn user_visible_text(result: &CallToolResult) -> Option<String> {
+    let text = result
+        .content
+        .iter()
+        .filter(|content| {
+            content
+                .audience()
+                .is_none_or(|audience| audience.contains(&rmcp::model::Role::User))
+        })
+        .filter_map(|content| content.as_text().map(|text| text.text.as_str()))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let text = text.trim();
+    (!text.is_empty()).then(|| text.to_string())
+}
+
+const TOOL_FAILURE_EXTRA_LINES: usize = 2;
+const TOOL_FAILURE_LINE_MAX_CHARS: usize = 240;
+
+fn render_tool_failure(note: &ToolFailureNote) {
+    let lines: Vec<&str> = note
+        .reason
+        .as_deref()
+        .unwrap_or_default()
+        .lines()
+        .map(str::trim_end)
+        .filter(|line| !line.trim().is_empty())
+        .collect();
+    let Some((first, rest)) = lines.split_first() else {
+        println!("    {}", style(format!("✗ {}", note.label)).red());
+        return;
+    };
+    println!(
+        "    {} {}",
+        style(format!("✗ {}:", note.label)).red(),
+        safe_truncate(first, TOOL_FAILURE_LINE_MAX_CHARS)
+    );
+    let shown = rest.len().min(TOOL_FAILURE_EXTRA_LINES);
+    for line in &rest[..shown] {
+        println!("      {}", safe_truncate(line, TOOL_FAILURE_LINE_MAX_CHARS));
+    }
+    if rest.len() > shown {
+        println!(
+            "      {}",
+            style(format!("… {} more lines", rest.len() - shown)).dim()
+        );
     }
 }
 
@@ -625,6 +725,9 @@ fn print_tool_output(text: &str) {
     }
     if !std::io::stdout().is_terminal() {
         print!("{}", text);
+        if !text.ends_with('\n') {
+            println!();
+        }
         return;
     }
     let max_lines = if get_show_full_tool_output() {
@@ -1770,5 +1873,73 @@ mod tests {
             json!({"top_up_url": "https://router.tetrate.ai/billing"}),
         );
         assert_eq!(get_credits_top_up_url(&message), None);
+    }
+
+    fn note(label: &'static str, reason: Option<&str>) -> Option<ToolFailureNote> {
+        Some(ToolFailureNote {
+            label,
+            reason: reason.map(str::to_string),
+        })
+    }
+
+    #[test]
+    fn a_successful_tool_result_gets_no_failure_note() {
+        let success = CallToolResult::success(vec![rmcp::model::Content::text("ok")]);
+        assert_eq!(tool_failure_note(&success, false), None);
+        assert_eq!(tool_failure_note(&success, true), None);
+    }
+
+    #[test]
+    fn a_denied_call_names_the_policy_reason() {
+        let denied = CallToolResult::error(vec![rmcp::model::Content::text(
+            "Tool denied by policy: Tool 'shell' already failed with identical arguments",
+        )]);
+        assert_eq!(
+            tool_failure_note(&denied, false),
+            note(
+                "denied by policy",
+                Some("Tool 'shell' already failed with identical arguments")
+            )
+        );
+    }
+
+    #[test]
+    fn each_refusal_gets_its_own_label() {
+        assert_eq!(
+            Some(refusal_note(ToolCallRefusal::Denied { reason: None })),
+            note("denied by the permission policy", None)
+        );
+        assert_eq!(
+            Some(refusal_note(ToolCallRefusal::DeclinedByUser)),
+            note("declined by user", None)
+        );
+        assert_eq!(
+            Some(refusal_note(ToolCallRefusal::SkippedInChatMode)),
+            note("skipped in chat mode", None)
+        );
+        assert_eq!(
+            refusal_note(ToolCallRefusal::ApprovalUnavailableInSubagent).label,
+            "blocked"
+        );
+    }
+
+    #[test]
+    fn a_tool_error_repeats_its_text_only_when_nothing_else_showed_it() {
+        let unannotated = CallToolResult::error(vec![rmcp::model::Content::text(
+            "FAIL[FX] deliberate tool failure",
+        )]);
+        assert_eq!(
+            tool_failure_note(&unannotated, false),
+            note("failed", Some("FAIL[FX] deliberate tool failure"))
+        );
+        assert_eq!(tool_failure_note(&unannotated, true), note("failed", None));
+
+        let for_the_model_only =
+            CallToolResult::error(vec![rmcp::model::Content::text("internal detail")
+                .with_audience(vec![rmcp::model::Role::Assistant])]);
+        assert_eq!(
+            tool_failure_note(&for_the_model_only, false),
+            note("failed", None)
+        );
     }
 }
