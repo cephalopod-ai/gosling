@@ -1633,14 +1633,19 @@ impl CliSession {
                             self.messages = updated_conversation;
                         }
                         Some(Err(e)) => {
-                            handle_agent_error(&e, is_json_mode, is_stream_json_mode);
+                            let lease_lost = is_turn_lease_lost(&e);
+                            // A lost lease ends the session, and the error it returns is
+                            // printed on exit; printing it here as well showed it twice.
+                            if !lease_lost || is_stream_json_mode {
+                                handle_agent_error(&e, is_json_mode, is_stream_json_mode);
+                            }
                             error_event_emitted = is_stream_json_mode;
                             terminal_error = Some(e.to_string());
                             cancel_token_clone.cancel();
                             drop(stream);
                             // Another owner holds the session now: its history is not ours to
                             // truncate, and the error already tells the user to reload.
-                            if is_turn_lease_lost(&e) {
+                            if lease_lost {
                                 break;
                             }
                             if let Err(e) = self

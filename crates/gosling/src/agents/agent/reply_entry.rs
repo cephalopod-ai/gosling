@@ -564,11 +564,38 @@ impl Agent {
                     interaction_policy,
                 })
                 .await?;
-            while let Some(event) = reply_stream.next().await {
+            loop {
+                let event = tokio::select! {
+                    biased;
+                    _ = Self::turn_revoked(&cancel_token, &caller_cancel_token) => break,
+                    event = reply_stream.next() => event,
+                };
+                let Some(event) = event else {
+                    break;
+                };
                 yield event?;
             }
+            // A revoked turn stops here, not when the provider or a tool next
+            // returns: whatever they were still doing is abandoned with it.
+            drop(reply_stream);
             Self::ensure_turn_not_revoked(&cancel_token, &caller_cancel_token)?;
         }))
+    }
+
+    /// Resolves once the turn's lease has been revoked (another process took
+    /// the session over): the turn's token is cancelled but the caller's is
+    /// not. A cancel by the caller never resolves it; the caller stops reading.
+    pub(super) async fn turn_revoked(
+        turn_cancel_token: &Option<CancellationToken>,
+        caller_cancel_token: &Option<CancellationToken>,
+    ) {
+        match turn_cancel_token {
+            Some(token) => token.cancelled().await,
+            None => std::future::pending().await,
+        }
+        if is_token_cancelled(caller_cancel_token) {
+            std::future::pending::<()>().await;
+        }
     }
 
     pub(super) fn ensure_turn_not_revoked(

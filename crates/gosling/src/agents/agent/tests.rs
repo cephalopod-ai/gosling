@@ -2353,6 +2353,39 @@ fn turn_completion_distinguishes_lease_revocation_from_user_cancellation() {
 }
 
 #[tokio::test]
+async fn only_a_revoked_lease_stops_the_turn_from_inside_the_reply() {
+    let wait = |turn: &CancellationToken, caller: Option<&CancellationToken>| {
+        let turn = Some(turn.clone());
+        let caller = caller.cloned();
+        async move {
+            tokio::time::timeout(
+                std::time::Duration::from_millis(50),
+                Agent::turn_revoked(&turn, &caller),
+            )
+            .await
+            .is_ok()
+        }
+    };
+
+    let caller = CancellationToken::new();
+    let turn = caller.child_token();
+    assert!(!wait(&turn, Some(&caller)).await, "a running turn");
+    caller.cancel();
+    assert!(
+        !wait(&turn, Some(&caller)).await,
+        "a user cancel is left to the caller"
+    );
+
+    let caller = CancellationToken::new();
+    let turn = caller.child_token();
+    turn.cancel();
+    assert!(wait(&turn, Some(&caller)).await, "the lease was revoked");
+    let turn_without_caller = CancellationToken::new();
+    turn_without_caller.cancel();
+    assert!(wait(&turn_without_caller, None).await);
+}
+
+#[tokio::test]
 async fn planning_direct_dispatch_is_denied_before_ledger_and_pre_tool_hooks() -> Result<()> {
     let env = PreToolHookTestEnv::new(
         "echo invoked >> \"$PLUGIN_ROOT/hook.log\"\necho denied >&2\nexit 2\n",
