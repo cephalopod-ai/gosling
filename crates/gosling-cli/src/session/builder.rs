@@ -235,6 +235,13 @@ async fn load_extensions(
     agent_ptr
 }
 
+fn missing_setting_error(config: &Config, setting: &str) -> String {
+    match crate::commands::configure::unparsable_config_problem(config) {
+        Some(problem) => format!("Cannot start a session: {problem}, then try again."),
+        None => format!("No {setting} configured. Run 'gosling configure' first."),
+    }
+}
+
 struct ResolvedProviderConfig {
     provider_name: String,
     model_name: String,
@@ -252,14 +259,14 @@ fn resolve_provider_and_model(
         .clone()
         .or(saved_provider)
         .or_else(|| config.get_gosling_provider().ok())
-        .ok_or("No provider configured. Run 'gosling configure' first.")?;
+        .ok_or_else(|| missing_setting_error(config, "provider"))?;
 
     let model_name = session_config
         .model
         .clone()
         .or_else(|| saved_model_config.as_ref().map(|mc| mc.model_name.clone()))
         .or_else(|| config.get_gosling_model().ok())
-        .ok_or("No model configured. Run 'gosling configure' first.")?;
+        .ok_or_else(|| missing_setting_error(config, "model"))?;
 
     let model_config = if session_config.resume
         && saved_model_config
@@ -747,17 +754,13 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
                     Ok(fallback_provider) => fallback_provider,
                     Err(_) => {
                         startup
-                            .fail("No provider configured. Run 'gosling configure' first.")
+                            .fail(&missing_setting_error(config, "provider"))
                             .await
                     }
                 };
                 let fallback_model = match config.get_gosling_model() {
                     Ok(fallback_model) => fallback_model,
-                    Err(_) => {
-                        startup
-                            .fail("No model configured. Run 'gosling configure' first.")
-                            .await
-                    }
+                    Err(_) => startup.fail(&missing_setting_error(config, "model")).await,
                 };
                 eprintln!(
                     "{}",

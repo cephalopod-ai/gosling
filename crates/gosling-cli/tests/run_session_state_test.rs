@@ -652,3 +652,34 @@ fn import_reports_the_imported_sessions_mode() {
         "stdout: {stdout}"
     );
 }
+
+/// GSL-PT-20260927-A05 / S12: with a config file that fails to parse, `run`
+/// blamed a missing provider and sent the operator to `gosling configure`,
+/// which refuses to run on that file.
+#[test]
+fn run_names_an_unparsable_config_instead_of_a_missing_provider() {
+    let env = Env::new();
+    let config_file = env.root.path().join("config").join("config.yaml");
+    std::fs::write(
+        &config_file,
+        "GOSLING_PROVIDER: openai\nGOSLING_MODEL: gpt-4o\nGOSLING_CLI_SHOW_COST: [unclosed\n  - : :\n",
+    )
+    .unwrap();
+
+    let broken = env.gosling(env.root.path(), &["run", "--no-session", "-t", "hi"]);
+    let stdout = String::from_utf8_lossy(&broken.stdout);
+    assert!(!broken.status.success());
+    assert!(stdout.contains("could not be parsed"), "{stdout}");
+    assert!(stdout.contains(config_file.to_str().unwrap()), "{stdout}");
+    assert!(!stdout.contains("gosling configure"), "{stdout}");
+
+    std::fs::write(&config_file, "GOSLING_MODE: auto\n").unwrap();
+    let unconfigured = env.gosling(env.root.path(), &["run", "--no-session", "-t", "hi"]);
+    let stdout = String::from_utf8_lossy(&unconfigured.stdout);
+    assert!(!unconfigured.status.success());
+    assert!(
+        stdout.contains("No provider configured. Run 'gosling configure' first."),
+        "{stdout}"
+    );
+    assert_eq!(env.mock.chat_requests.load(Ordering::SeqCst), 0);
+}

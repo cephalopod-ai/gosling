@@ -95,6 +95,27 @@ fn doctor_fails_for_unknown_provider() {
     );
 }
 
+/// GSL-PT-20260927-A05 / S12
+#[test]
+fn doctor_names_an_unparsable_config_file() {
+    let root = TempDir::new().unwrap();
+    let output = doctor(
+        &root,
+        Some("GOSLING_PROVIDER: openai\nGOSLING_MODEL: gpt-4o\n  GOSLING_MODE: [auto\n"),
+        &[],
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success());
+    assert!(
+        stdout.contains("Status: config file could not be parsed"),
+        "{stdout}"
+    );
+    assert!(stderr.contains("could not be parsed"), "{stderr}");
+    assert!(!stderr.contains("gosling configure"), "{stderr}");
+}
+
 #[test]
 fn doctor_fails_when_the_configured_provider_is_unreachable() {
     let root = TempDir::new().unwrap();

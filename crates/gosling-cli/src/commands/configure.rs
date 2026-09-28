@@ -34,13 +34,23 @@ use std::io::IsTerminal;
 // cursor-selected and cursor-unselected items.
 const MULTISELECT_VISIBILITY_HINT: &str = "<";
 
+/// Reads skip a config file that fails to parse, so a missing provider or model
+/// is usually this file's fault. Commands that would otherwise say "not
+/// configured, run 'gosling configure'" name the file instead, since configure
+/// refuses to run on it. (GSL-PT-20260927-A05, GSL-PT-20260927-S12)
+pub fn unparsable_config_problem(config: &Config) -> Option<String> {
+    config.check_write_config_parses().err().map(|e| {
+        format!(
+            "{} could not be parsed ({e}). Fix or move the file",
+            config.path()
+        )
+    })
+}
+
 pub async fn handle_configure() -> anyhow::Result<()> {
     let config = Config::global();
-    if let Err(e) = config.check_write_config_parses() {
-        anyhow::bail!(
-            "Cannot configure: {} could not be parsed ({e}). Fix or move the file, then run 'gosling configure' again.",
-            config.path()
-        );
+    if let Some(problem) = unparsable_config_problem(config) {
+        anyhow::bail!("Cannot configure: {problem}, then run 'gosling configure' again.");
     }
 
     if !std::io::stdin().is_terminal() {

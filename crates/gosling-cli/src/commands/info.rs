@@ -1,3 +1,4 @@
+use crate::commands::configure::unparsable_config_problem;
 use anyhow::{anyhow, Result};
 use console::style;
 use gosling::config::paths::Paths;
@@ -185,11 +186,11 @@ pub async fn handle_info(verbose: bool, check: bool) -> Result<()> {
                     &format!("{} {}", style("not configured:").red(), error),
                     label_padding,
                 );
-                print_aligned(
-                    "Hint:",
-                    &format!("Run '{}'", style("gosling configure").cyan()),
-                    label_padding,
-                );
+                let hint = match unparsable_config_problem(config) {
+                    Some(problem) => format!("{problem}, then try again."),
+                    None => format!("Run '{}'", style("gosling configure").cyan()),
+                };
+                print_aligned("Hint:", &hint, label_padding);
             }
             Err(ProviderCheckError::InvalidModel(error)) => {
                 print_aligned(
