@@ -266,7 +266,8 @@ export default function DefaultProviderSetupForm({
             {parameter.required && <span className="text-red-500 ml-1">*</span>}
           </label>
           <Input
-            type="text"
+            type={parameter.secret ? 'password' : 'text'}
+            autoComplete={parameter.secret ? 'off' : undefined}
             value={getRenderValue(parameter)}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
               setConfigValues((prev) => {
