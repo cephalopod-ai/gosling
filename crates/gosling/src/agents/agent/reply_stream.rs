@@ -60,6 +60,10 @@ impl Agent {
             model_config,
             interaction_policy,
         } = context;
+        self.subdirectory_hint_tracker
+            .lock()
+            .await
+            .remember_injected_hints(conversation.messages());
         // Kept separately (rather than only the merged `system_prompt`) so the
         // Context Manager can account for system vs. project-instructions
         // tokens as distinct slots instead of double-counting the addendum.

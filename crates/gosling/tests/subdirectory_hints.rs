@@ -25,15 +25,21 @@ const SENTINEL: &str = "SENTINEL_SUBDIR_HINT_CONTENT";
 /// tool name is irrelevant: `record_tool_arguments` runs at the top of
 /// `dispatch_tool_call`, before tool resolution, so an unresolved tool still
 /// records the directory (and returns an error result quickly). Records how
-/// many of its incoming requests already carried the injected hint.
+/// many of its incoming requests already carried the injected hint. Tool call
+/// ids are unique per provider, as a real model's are: a repeated id in the
+/// same session replays the stored tool result instead of dispatching.
 struct ToolCallingProvider {
+    id: usize,
     call_count: AtomicUsize,
     requests_with_hint: AtomicUsize,
 }
 
+static NEXT_PROVIDER_ID: AtomicUsize = AtomicUsize::new(0);
+
 impl ToolCallingProvider {
     fn new() -> Self {
         Self {
+            id: NEXT_PROVIDER_ID.fetch_add(1, Ordering::SeqCst),
             call_count: AtomicUsize::new(0),
             requests_with_hint: AtomicUsize::new(0),
         }
@@ -68,7 +74,7 @@ impl Provider for ToolCallingProvider {
         let message = if call < 2 {
             let path = if call == 0 { "sub/a.txt" } else { "sub/b.txt" };
             Message::assistant().with_tool_request(
-                format!("call_{call}"),
+                format!("call_{}_{call}", self.id),
                 Ok(CallToolRequestParams::new("inspect").with_arguments(object!({ "path": path }))),
             )
         } else {
@@ -213,6 +219,86 @@ async fn subdirectory_hints_injected_once_agent_only() -> Result<()> {
         provider.requests_with_hint.load(Ordering::SeqCst) >= 1,
         "the injected hint must reach the live conversation (a later provider call must see it), \
          not just be written to the session store"
+    );
+
+    Ok(())
+}
+
+async fn reply_with_new_agent(
+    session_manager: &Arc<SessionManager>,
+    session_id: &str,
+) -> Result<Arc<ToolCallingProvider>> {
+    let agent = Agent::with_config(AgentConfig::new(
+        session_manager.clone(),
+        PermissionManager::instance(),
+        GoslingMode::Auto,
+        true,
+        GoslingPlatform::GoslingCli,
+    ));
+    let provider = Arc::new(ToolCallingProvider::new());
+    agent
+        .update_provider(provider.clone(), ModelConfig::new("mock-model"), session_id)
+        .await?;
+    let reply_stream = agent
+        .reply(
+            Message::user().with_text("Look at the files under sub/"),
+            SessionConfig {
+                id: session_id.to_string(),
+                max_turns: Some(5),
+                compacted_context: false,
+                tail_limit: None,
+            },
+            None,
+        )
+        .await?;
+    tokio::pin!(reply_stream);
+    while let Some(event) = reply_stream.next().await {
+        event?;
+    }
+    Ok(provider)
+}
+
+/// Resuming a session creates a new `Agent` (a new CLI process for `--resume`,
+/// or an ACP `session/load`). Hints the stored conversation already carries
+/// must not be appended again when a later turn touches the same directory.
+#[tokio::test]
+async fn subdirectory_hints_are_not_reinjected_after_resume() -> Result<()> {
+    let workdir = TempDir::new()?;
+    let sub = workdir.path().join("sub");
+    std::fs::create_dir_all(&sub)?;
+    std::fs::write(sub.join(".goslinghints"), SENTINEL)?;
+
+    let data_dir = TempDir::new()?;
+    let session_manager = Arc::new(SessionManager::new(data_dir.path().to_path_buf()));
+    let session = session_manager
+        .create_session(
+            workdir.path().to_path_buf(),
+            "subdir-hints-resume".to_string(),
+            SessionType::Hidden,
+            GoslingMode::Auto,
+        )
+        .await?;
+
+    reply_with_new_agent(&session_manager, &session.id).await?;
+    let resumed_provider = reply_with_new_agent(&session_manager, &session.id).await?;
+
+    let conversation = session_manager
+        .get_session(&session.id, true)
+        .await?
+        .conversation
+        .expect("session has a conversation");
+    let hint_messages = conversation
+        .messages()
+        .iter()
+        .filter(|m| m.as_concat_text().contains(SENTINEL))
+        .count();
+    assert_eq!(
+        hint_messages, 1,
+        "a resumed session must not append hints its conversation already carries"
+    );
+    assert!(
+        resumed_provider.requests_with_hint.load(Ordering::SeqCst) >= 1,
+        "the resumed turn still sees the hint from the stored conversation"
     );
 
     Ok(())

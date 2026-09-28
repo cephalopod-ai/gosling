@@ -198,7 +198,7 @@ If you start gosling in `my-project/`, the root-level hints are loaded immediate
    </details>
 
 :::note
-After nested hints are loaded for a directory, they remain active for the rest of the session. If you update a hint file and want gosling to pick up the new content reliably, restart the session.
+After nested hints are loaded for a directory, they remain active for the rest of the session, including when you resume it later: gosling does not add a directory's hints a second time while the conversation still holds them. If you update a hint file and want gosling to pick up the new content reliably, start a new session.
 :::
 
 ## Common Use Cases
