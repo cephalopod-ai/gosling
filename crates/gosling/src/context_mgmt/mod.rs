@@ -71,7 +71,6 @@ pub struct AutoCompactionCheck {
 const TOOLCALL_SUMMARIZATION_BATCH_SIZE: usize = 10;
 const COMPACTION_MAX_INPUT_BYTES: usize = 192 * 1024;
 const COMPACTION_MIN_INPUT_BYTES: usize = 2 * 1024;
-const COMPACTION_BYTE_BUDGET_STEPS: usize = 4;
 const COMPACTION_MAX_INPUT_TOKENS: usize = 60_000;
 const COMPACTION_SUMMARY_TARGET_CHARACTERS: usize = 12_000;
 const HANDOFF_SUMMARY_TARGET_CHARACTERS: usize = 6_000;
@@ -1274,21 +1273,24 @@ struct CompactionRequestContext<'a> {
 }
 
 /// Byte budgets tried per tool-pair filtering level. They halve from the
-/// smaller of the global cap and the actual payload, so a history below the
-/// old fixed 24 KiB floor still gets genuinely smaller chunks instead of the
-/// same request repeated at every budget.
+/// smaller of the global cap and the actual payload down to the
+/// `COMPACTION_MIN_INPUT_BYTES` floor, so a provider whose real request limit
+/// is far below the payload still gets small enough chunks before compaction
+/// gives up.
 fn compaction_input_byte_budgets(units: &[String]) -> Vec<usize> {
     let payload_bytes: usize = units.iter().map(|unit| unit.len() + 2).sum();
-    let mut budgets = Vec::with_capacity(COMPACTION_BYTE_BUDGET_STEPS);
+    let mut budgets = Vec::new();
     let mut budget = COMPACTION_MAX_INPUT_BYTES.min(payload_bytes);
-    for _ in 0..COMPACTION_BYTE_BUDGET_STEPS {
+    loop {
         let clamped = budget.max(COMPACTION_MIN_INPUT_BYTES);
         if budgets.last() != Some(&clamped) {
             budgets.push(clamped);
         }
+        if clamped == COMPACTION_MIN_INPUT_BYTES {
+            return budgets;
+        }
         budget /= 2;
     }
-    budgets
 }
 
 fn compaction_chunks_fingerprint(chunks: &[String]) -> u64 {
@@ -2316,6 +2318,8 @@ mod tests {
         assert!(input_sizes.len() < 20, "requests: {input_sizes:?}");
     }
 
+    // GSL-PT-20260927-B09: the ladder stopped after four halvings (payload/8),
+    // so a provider limit below that was never reached.
     #[test]
     fn test_compaction_byte_budgets_keep_large_history_steps() {
         let large = vec!["x".repeat(COMPACTION_MAX_INPUT_BYTES * 2)];
@@ -2326,12 +2330,52 @@ mod tests {
                 COMPACTION_MAX_INPUT_BYTES / 2,
                 COMPACTION_MAX_INPUT_BYTES / 4,
                 COMPACTION_MAX_INPUT_BYTES / 8,
+                COMPACTION_MAX_INPUT_BYTES / 16,
+                COMPACTION_MAX_INPUT_BYTES / 32,
+                COMPACTION_MAX_INPUT_BYTES / 64,
+                COMPACTION_MIN_INPUT_BYTES,
             ]
         );
         assert_eq!(
             compaction_input_byte_budgets(&["tiny".to_string()]),
             vec![COMPACTION_MIN_INPUT_BYTES]
         );
+    }
+
+    #[tokio::test]
+    async fn test_compaction_shrinks_large_histories_below_an_eighth_of_the_payload() {
+        let response_message = Message::assistant().with_text("<mock summary>");
+        // A 30k window caps chunks at 10k tokens, so the first byte budgets
+        // produce identical chunks; the provider accepts at most 6 KB.
+        let provider = MockProvider::new(response_message, 30_000).with_max_input_bytes(6_000);
+        let messages: Vec<Message> = (0..3)
+            .map(|index| {
+                Message::user().with_text(format!(
+                    "turn{index} {}",
+                    "lorem ipsum dolor sit amet ".repeat(1_100)
+                ))
+            })
+            .collect();
+        let conversation = Conversation::new_unvalidated(messages);
+
+        let result = compact_messages(
+            &provider,
+            &provider.config,
+            "test-session-id",
+            &conversation,
+            true,
+            None,
+        )
+        .await;
+
+        assert!(
+            result.is_ok(),
+            "chunks below payload/8 fit the provider: {:?}",
+            result.err()
+        );
+        let input_sizes = provider.input_sizes.lock().unwrap();
+        assert!(input_sizes.iter().any(|size| *size > 6_000));
+        assert!(input_sizes.iter().any(|size| *size <= 6_000));
     }
 
     #[tokio::test]
