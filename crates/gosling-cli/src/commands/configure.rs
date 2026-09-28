@@ -448,9 +448,23 @@ fn interactive_model_search(
     }
 }
 
+/// The models to offer, with the saved model first when the provider does not
+/// list it, so the picker can start on it: Enter then keeps the saved model
+/// instead of silently replacing it with the first listed one.
+/// (GSL-PT-20260927-B02)
+fn offered_models(listed: Vec<String>, current_model: Option<&str>) -> Vec<String> {
+    match current_model {
+        Some(current) if !listed.iter().any(|model| model == current) => {
+            std::iter::once(current.to_string()).chain(listed).collect()
+        }
+        _ => listed,
+    }
+}
+
 fn select_model_from_list(
     models: &[String],
     provider_meta: &gosling::providers::base::ProviderMetadata,
+    current_model: Option<&str>,
 ) -> anyhow::Result<String> {
     const MAX_MODELS: usize = 10;
 
@@ -458,7 +472,10 @@ fn select_model_from_list(
     // If we have more than MAX_MODELS models, show the recommended models with additional search option.
     // Otherwise, show all models without search.
     if models.len() > MAX_MODELS {
-        let mut recommended_models: Vec<String> = models.iter().take(MAX_MODELS).cloned().collect();
+        let mut recommended_models = offered_models(
+            models.iter().take(MAX_MODELS).cloned().collect(),
+            current_model,
+        );
         for known_model in provider_meta
             .known_models
             .iter()
@@ -494,9 +511,7 @@ fn select_model_from_list(
                 "",
             ));
 
-            let selection = cliclack::select("Select a model:")
-                .items(&model_items)
-                .interact()?;
+            let selection = model_select(&model_items, current_model).interact()?;
 
             if selection == "search_all" {
                 interactive_model_search(models, provider_meta)
@@ -510,7 +525,10 @@ fn select_model_from_list(
         }
     } else {
         let mut model_items: Vec<(String, String, &str)> =
-            models.iter().map(|m| (m.clone(), m.clone(), "")).collect();
+            offered_models(models.to_vec(), current_model)
+                .into_iter()
+                .map(|m| (m.clone(), m, ""))
+                .collect();
 
         model_items.push((
             UNLISTED_MODEL_KEY.to_string(),
@@ -518,15 +536,24 @@ fn select_model_from_list(
             "",
         ));
 
-        let selection = cliclack::select("Select a model:")
-            .items(&model_items)
-            .interact()?;
+        let selection = model_select(&model_items, current_model).interact()?;
 
         if selection == UNLISTED_MODEL_KEY {
             prompt_unlisted_model(provider_meta)
         } else {
             Ok(selection)
         }
+    }
+}
+
+fn model_select(
+    items: &[(String, String, &str)],
+    current_model: Option<&str>,
+) -> cliclack::Select<String> {
+    let select = cliclack::select("Select a model:").items(items);
+    match current_model {
+        Some(current) => select.initial_value(current.to_string()),
+        None => select,
     }
 }
 
@@ -800,6 +827,15 @@ pub async fn configure_provider_dialog() -> anyhow::Result<bool> {
         .await;
     spin.stop(style("Model fetch complete").green());
 
+    let current_model =
+        if config.get_gosling_provider().ok().as_deref() == Some(provider_name.as_str()) {
+            config.get_gosling_model().ok()
+        } else {
+            gosling::config::get_provider_entry(config, provider_name)
+                .map(|entry| entry.model)
+                .filter(|model| !model.is_empty())
+        };
+
     // Select a model: on fetch error show styled error and abort; if models available, show list; otherwise free-text input
     let model: String = match models_res {
         Err(e) => {
@@ -807,10 +843,13 @@ pub async fn configure_provider_dialog() -> anyhow::Result<bool> {
             cliclack::outro(style(e.to_string()).on_red().white())?;
             return Ok(false);
         }
-        Ok(models) if !models.is_empty() => select_model_from_list(&models, provider_meta)?,
+        Ok(models) if !models.is_empty() => {
+            select_model_from_list(&models, provider_meta, current_model.as_deref())?
+        }
         Ok(_) => {
-            let default_model =
-                std::env::var("GOSLING_MODEL").unwrap_or(provider_meta.default_model.clone());
+            let default_model = current_model
+                .or_else(|| std::env::var("GOSLING_MODEL").ok())
+                .unwrap_or(provider_meta.default_model.clone());
             cliclack::input("Enter a model from that provider:")
                 .default_input(&default_model)
                 .interact()?
@@ -2365,6 +2404,21 @@ mod tests {
             config.get_secret::<String>("SETUP_TEST_API_KEY").unwrap(),
             "saved-key"
         );
+    }
+
+    #[test]
+    fn the_saved_model_is_offered_first_when_the_provider_does_not_list_it() {
+        let listed = vec!["playtest-model".to_string(), "playtest-model-b".to_string()];
+
+        assert_eq!(
+            offered_models(listed.clone(), Some("fixture/custom-v1")),
+            vec!["fixture/custom-v1", "playtest-model", "playtest-model-b"]
+        );
+        assert_eq!(
+            offered_models(listed.clone(), Some("playtest-model-b")),
+            listed
+        );
+        assert_eq!(offered_models(listed.clone(), None), listed);
     }
 
     #[test]
