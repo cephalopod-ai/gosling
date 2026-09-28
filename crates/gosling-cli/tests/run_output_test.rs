@@ -1,6 +1,6 @@
-//! What `gosling run` prints, and where: tool cards and their outcomes, output
-//! modes, and exit codes, observed through the real binary and a scripted
-//! OpenAI-compatible provider.
+//! What the CLI prints, and where: tool cards and their outcomes, `run` output
+//! modes, error streams and exit codes, observed through the real binary and a
+//! scripted OpenAI-compatible provider.
 
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -378,4 +378,35 @@ fn resuming_a_session_that_does_not_exist_fails_on_stderr() {
         "{}",
         stderr(&output)
     );
+}
+
+/// GSL-PT-20260927-A22 / D11: without a selector and without a terminal for
+/// the picker, these commands printed "Error: not connected" and exited 0, so
+/// `gosling session export > backup.md` wrote an empty backup.
+#[test]
+fn session_commands_without_a_selector_or_terminal_fail_with_a_hint() {
+    let env = Env::new();
+    let run = env.gosling(&["run", "-t", "hi"]);
+    assert!(run.status.success(), "stderr: {}", stderr(&run));
+
+    for command in [
+        vec!["session", "export"],
+        vec!["session", "diagnostics"],
+        vec!["session", "context-history", "list"],
+        vec!["session", "remove"],
+    ] {
+        let output = env.gosling(&command);
+
+        assert!(!output.status.success(), "{command:?}");
+        assert_eq!(stdout(&output), "", "{command:?}");
+        let stderr = stderr(&output);
+        assert!(
+            stderr.contains("no interactive terminal for the session picker"),
+            "{command:?}: {stderr}"
+        );
+        assert!(
+            stderr.contains("--session-id <ID>"),
+            "{command:?}: {stderr}"
+        );
+    }
 }

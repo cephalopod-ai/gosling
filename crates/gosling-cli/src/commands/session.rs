@@ -155,6 +155,7 @@ pub async fn handle_session_remove(
         if visible_sessions.is_empty() {
             return Err(anyhow::anyhow!("No sessions found."));
         }
+        ensure_session_picker_terminal("--session-id <ID>, --name <NAME> or --regex <PATTERN>")?;
         matched_sessions = prompt_interactive_session_removal(&visible_sessions)?;
     }
 
@@ -1033,6 +1034,17 @@ fn export_session_to_markdown(
     }
 
     markdown_output
+}
+
+/// Session pickers draw on stderr and read keys from the terminal; without one they fail with a
+/// bare I/O error ("not connected") that does not say how to pick a session instead.
+pub fn ensure_session_picker_terminal(selectors: &str) -> Result<()> {
+    if io::stdin().is_terminal() && io::stderr().is_terminal() {
+        return Ok(());
+    }
+    anyhow::bail!(
+        "No session was specified and there is no interactive terminal for the session picker. Pass {selectors}."
+    )
 }
 
 /// Prompt the user to interactively select a session

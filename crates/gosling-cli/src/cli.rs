@@ -456,14 +456,18 @@ async fn get_or_create_session_id(
 }
 
 /// Resolve `identifier` to a session ID, or prompt the user to pick one
-/// interactively when no identifier was given. Returns `Ok(None)` when the
-/// interactive prompt fails, having already reported the error — callers
-/// should treat that as "already handled" and return without further action.
+/// interactively when no identifier was given. Fails without a terminal for
+/// the picker. Returns `Ok(None)` when the interactive prompt fails, having
+/// already reported the error — callers should treat that as "already
+/// handled" and return without further action.
 async fn resolve_or_prompt_session_id(
     session_manager: &SessionManager,
     identifier: Option<Identifier>,
 ) -> Result<Option<String>> {
     let Some(id) = identifier else {
+        crate::commands::session::ensure_session_picker_terminal(
+            "--session-id <ID> or --name <NAME>",
+        )?;
         return match crate::commands::session::prompt_interactive_session_selection(session_manager)
             .await
         {
