@@ -596,6 +596,14 @@ value and use the repeatable `--secret KEY` option; only the key name is written
 to the extension entry. `--secret KEY=VALUE` is also supported, but can expose
 the value through shell history or process listings.
 
+A `--secret` value is stored for this extension only: installing another
+extension with the same variable name, or naming a provider key such as
+`OPENAI_API_KEY`, never replaces another extension's or the provider's
+credential, and `gosling mcp remove` deletes the values stored for the removed
+extension. Credentials gosling keeps for its own use (provider keys, website-login
+passwords, OAuth tokens) are not passed to an extension that only names them; see
+[Extension Secrets](/docs/guides/config-files#extension-secrets).
+
 `--from-goose` imports extension configuration, but it does not copy values
 from Goose's keyring. If the imported entry references `env_keys` that are not
 already available in gosling's environment or secret store, the command lists

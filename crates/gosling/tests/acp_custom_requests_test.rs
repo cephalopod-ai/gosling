@@ -1002,12 +1002,18 @@ fn test_custom_get_extensions() {
             "gosling-acp-test",
         )
         .expect("ACP test config should load");
+        let inline_token_key =
+            gosling::config::extensions::extension_secret_key(config_key, "INLINE_TOKEN");
         let stored_inline_token = config
-            .get_secret::<String>("INLINE_TOKEN")
-            .expect("inline env should be saved as a secret");
+            .get_secret::<String>(&inline_token_key)
+            .expect("inline env should be saved as this extension's secret");
         assert!(
             stored_inline_token == "inline-secret",
             "inline env secret was not saved correctly"
+        );
+        assert!(
+            config.get_secret::<String>("INLINE_TOKEN").is_err(),
+            "inline env must not be stored under the bare variable name"
         );
 
         let list_extension = || async {
@@ -1089,6 +1095,11 @@ fn test_custom_get_extensions() {
         assert!(
             list_extension().await.is_none(),
             "removed extension should not be listed"
+        );
+        config.invalidate_secrets_cache();
+        assert!(
+            config.get_secret::<String>(&inline_token_key).is_err(),
+            "removing the extension deletes its stored secrets"
         );
     });
 }

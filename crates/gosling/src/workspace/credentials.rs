@@ -624,8 +624,14 @@ fn profile_order(left: &CredentialProfile, right: &CredentialProfile) -> std::cm
         .then_with(|| left.id.cmp(&right.id))
 }
 
+const PROFILE_SECRET_KEY_PREFIX: &str = "workspace-credential::";
+
 fn profile_secret_key(profile_id: &str, field: &str) -> String {
-    format!("workspace-credential::{profile_id}::{field}")
+    format!("{PROFILE_SECRET_KEY_PREFIX}{profile_id}::{field}")
+}
+
+pub(crate) fn is_profile_secret_key(key: &str) -> bool {
+    key.starts_with(PROFILE_SECRET_KEY_PREFIX)
 }
 
 async fn declared_provider_keys(provider: &str) -> Result<Vec<crate::providers::base::ConfigKey>> {

@@ -73,6 +73,7 @@ mod discovery;
 mod environment;
 mod lifecycle;
 
+pub use environment::extension_secret_available;
 use environment::resolve_static_oauth_client;
 pub(crate) use environment::{merge_environments, substitute_env_vars};
 
@@ -426,8 +427,10 @@ impl ExtensionManager {
                     client_secret_key.as_deref(),
                     scopes,
                     &all_envs,
+                    &sanitized_name,
                     config,
-                )?;
+                )
+                .await?;
                 create_streamable_http_client(
                     &resolved_uri,
                     *timeout,

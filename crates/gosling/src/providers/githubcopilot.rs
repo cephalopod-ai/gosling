@@ -108,6 +108,10 @@ fn token_secret_key(host: &str) -> String {
     }
 }
 
+pub(crate) fn is_token_secret_key(key: &str) -> bool {
+    key == "GITHUB_COPILOT_TOKEN" || key.starts_with("GITHUB_COPILOT_TOKEN__")
+}
+
 /// Whether a token is stored under the key the *currently configured*
 /// `GITHUB_COPILOT_HOST` would use. The static `GITHUB_COPILOT_TOKEN`
 /// `ConfigKey` this provider declares in `metadata()` can't itself be

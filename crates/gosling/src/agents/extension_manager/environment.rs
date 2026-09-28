@@ -3,6 +3,8 @@
 // The extension_manager compatibility facade re-exports crate-visible helpers.
 
 use super::*;
+use crate::config::extensions::extension_secret_key;
+use crate::config::ConfigError;
 
 static RE_ENV_REFERENCE: Lazy<regex::Regex> = Lazy::new(|| {
     regex::Regex::new(r"\$(?:\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}|([A-Za-z_][A-Za-z0-9_]*))")
@@ -154,6 +156,134 @@ fn resolve_declared_secret(
     resolve_declared_secret_with(read_keychain_secret, config, key, ext_name)
 }
 
+/// Secret-store entries gosling keeps for its own use. Any MCP server config (a
+/// recipe, an ACP client, a hand edit) can list any name in `env_keys`, so an
+/// extension must never receive one of these just by naming it: provider and
+/// dictation credentials, website-login passwords, MCP OAuth tokens, workspace
+/// credential profiles and other extensions' stored secrets. Any new namespace
+/// in the shared secret store must be added here. (GSL-PT-20260927-C20)
+struct GoslingOwnedSecrets {
+    names: HashSet<String>,
+}
+
+impl GoslingOwnedSecrets {
+    async fn load() -> Self {
+        let mut names = crate::providers::provider_secret_key_names().await;
+        names.extend(
+            crate::dictation::providers::PROVIDERS
+                .iter()
+                .map(|def| def.config_key.to_string()),
+        );
+        Self { names }
+    }
+
+    fn contains(&self, key: &str) -> bool {
+        self.names.contains(key)
+            || crate::website_logins::is_password_secret_key(key)
+            || crate::oauth::GoslingCredentialStore::is_secret_key(key)
+            || crate::workspace::is_profile_secret_key(key)
+            || crate::providers::githubcopilot::is_token_secret_key(key)
+            || crate::config::extensions::is_extension_secret_key(key)
+    }
+}
+
+fn stored_for_extension(
+    config: &Config,
+    ext_name: &str,
+    key: &str,
+) -> Result<Option<String>, ConfigError> {
+    let stored_key = extension_secret_key(&name_to_key(ext_name), key);
+    Ok(config
+        .all_secrets()?
+        .get(&stored_key)
+        .and_then(|value| value.as_str())
+        .map(str::to_string))
+}
+
+/// Resolve one name an extension asks for. A value stored for this extension
+/// wins, except that a process environment variable keeps its documented
+/// precedence for names gosling does not own. A name gosling owns is satisfied
+/// only by a value stored for this extension or a declared keychain source.
+/// `Ok(None)` means the key is skipped.
+#[allow(clippy::result_large_err)]
+fn resolve_extension_secret(
+    config: &Config,
+    ext_name: &str,
+    owned: &GoslingOwnedSecrets,
+    key: &str,
+) -> Result<Option<String>, ExtensionError> {
+    let gosling_owned = owned.contains(key);
+    if gosling_owned || std::env::var(key.to_uppercase()).is_err() {
+        match stored_for_extension(config, ext_name, key) {
+            Ok(Some(value)) => return Ok(Some(value)),
+            Ok(None) => {}
+            Err(e) if gosling_owned => {
+                return Err(ExtensionError::ConfigError(format!(
+                    "Failed to fetch secret '{}' from config: {}",
+                    key, e
+                )));
+            }
+            // The shared lookup below reports the same storage failure.
+            Err(_) => {}
+        }
+    }
+
+    if gosling_owned {
+        if let Some(secret) = resolve_declared_secret(config, key, ext_name)? {
+            return Ok(Some(secret));
+        }
+        return Err(ExtensionError::ConfigError(format!(
+            "Secret '{key}' is a credential gosling keeps for its own use and is not passed to extension '{ext_name}' by name. Store a value for this extension instead, e.g. `gosling mcp install {ext_name} --cmd <command> --secret {key}`"
+        )));
+    }
+
+    match config.get(key, true) {
+        Ok(value) => {
+            if value.is_null() {
+                if let Some(secret) = resolve_declared_secret(config, key, ext_name)? {
+                    return Ok(Some(secret));
+                }
+                warn!(
+                    key = %key,
+                    ext_name = %ext_name,
+                    "Secret key not found in config (returned null)."
+                );
+                return Ok(None);
+            }
+
+            if let Some(str_val) = value.as_str() {
+                Ok(Some(str_val.to_string()))
+            } else {
+                warn!(
+                    key = %key,
+                    ext_name = %ext_name,
+                    value_type = %value.get("type").and_then(|t| t.as_str()).unwrap_or("unknown"),
+                    "Secret value is not a string; skipping."
+                );
+                Ok(None)
+            }
+        }
+        Err(e) => {
+            // A key absent from gosling's own store is exactly the case a
+            // declared external source exists to answer, so consult it
+            // before reporting the credential missing.
+            if let Some(secret) = resolve_declared_secret(config, key, ext_name)? {
+                return Ok(Some(secret));
+            }
+            error!(
+                key = %key,
+                ext_name = %ext_name,
+                error = %e,
+                "Failed to fetch secret from config."
+            );
+            Err(ExtensionError::ConfigError(format!(
+                "Failed to fetch secret '{}' from config: {}",
+                key, e
+            )))
+        }
+    }
+}
+
 pub(crate) async fn merge_environments(
     envs: &Envs,
     env_keys: &[String],
@@ -161,61 +291,31 @@ pub(crate) async fn merge_environments(
     config: &Config,
 ) -> Result<HashMap<String, String>, ExtensionError> {
     let mut all_envs = envs.get_env();
+    if env_keys.iter().all(|key| all_envs.contains_key(key)) {
+        return Ok(Envs::new(all_envs).get_env());
+    }
 
+    let owned = GoslingOwnedSecrets::load().await;
     for key in env_keys {
         if all_envs.contains_key(key) {
             continue;
         }
-
-        match config.get(key, true) {
-            Ok(value) => {
-                if value.is_null() {
-                    if let Some(secret) = resolve_declared_secret(config, key, ext_name)? {
-                        all_envs.insert(key.clone(), secret);
-                        continue;
-                    }
-                    warn!(
-                        key = %key,
-                        ext_name = %ext_name,
-                        "Secret key not found in config (returned null)."
-                    );
-                    continue;
-                }
-
-                if let Some(str_val) = value.as_str() {
-                    all_envs.insert(key.clone(), str_val.to_string());
-                } else {
-                    warn!(
-                        key = %key,
-                        ext_name = %ext_name,
-                        value_type = %value.get("type").and_then(|t| t.as_str()).unwrap_or("unknown"),
-                        "Secret value is not a string; skipping."
-                    );
-                }
-            }
-            Err(e) => {
-                // A key absent from gosling's own store is exactly the case a
-                // declared external source exists to answer, so consult it
-                // before reporting the credential missing.
-                if let Some(secret) = resolve_declared_secret(config, key, ext_name)? {
-                    all_envs.insert(key.clone(), secret);
-                    continue;
-                }
-                error!(
-                    key = %key,
-                    ext_name = %ext_name,
-                    error = %e,
-                    "Failed to fetch secret from config."
-                );
-                return Err(ExtensionError::ConfigError(format!(
-                    "Failed to fetch secret '{}' from config: {}",
-                    key, e
-                )));
-            }
+        if let Some(value) = resolve_extension_secret(config, ext_name, &owned, key)? {
+            all_envs.insert(key.clone(), value);
         }
     }
 
     Ok(Envs::new(all_envs).get_env())
+}
+
+/// Whether `key` would resolve for the extension right now, under the same
+/// rules `merge_environments` applies when it starts.
+pub async fn extension_secret_available(config: &Config, ext_name: &str, key: &str) -> bool {
+    let owned = GoslingOwnedSecrets::load().await;
+    matches!(
+        resolve_extension_secret(config, ext_name, &owned, key),
+        Ok(Some(_))
+    )
 }
 
 /// Substitute environment variables in a string. Supports both ${VAR} and $VAR syntax.
@@ -231,12 +331,12 @@ pub(crate) fn substitute_env_vars(value: &str, env_map: &HashMap<String, String>
         .into_owned()
 }
 
-#[allow(clippy::result_large_err)]
-pub(super) fn resolve_static_oauth_client(
+pub(super) async fn resolve_static_oauth_client(
     client_id: Option<&str>,
     client_secret_key: Option<&str>,
     scopes: &[String],
     envs: &HashMap<String, String>,
+    ext_name: &str,
     config: &Config,
 ) -> ExtensionResult<Option<StaticOAuthClientConfig>> {
     let Some(client_id) = client_id else {
@@ -259,10 +359,16 @@ pub(super) fn resolve_static_oauth_client(
     let client_secret = match client_secret_key {
         Some(key) => match envs.get(key) {
             Some(value) => Some(value.clone()),
-            None => config
-                .get_secret::<String>(key)
-                .ok()
-                .filter(|value| !value.is_empty()),
+            None => {
+                let owned = GoslingOwnedSecrets::load().await;
+                let resolved = resolve_extension_secret(config, ext_name, &owned, key);
+                if owned.contains(key) {
+                    resolved?
+                } else {
+                    resolved.ok().flatten()
+                }
+                .filter(|value| !value.is_empty())
+            }
         },
         None => None,
     };
@@ -495,5 +601,144 @@ secret_sources:
             merged.get("MUNINN_MCP_BEARER_TOKEN").map(String::as_str),
             Some("from-the-environment")
         );
+    }
+
+    async fn merge_for(
+        config: &Config,
+        ext_name: &str,
+        keys: &[&str],
+    ) -> Result<HashMap<String, String>, ExtensionError> {
+        let keys: Vec<String> = keys.iter().map(|key| key.to_string()).collect();
+        merge_environments(&Envs::new(HashMap::new()), &keys, ext_name, config).await
+    }
+
+    fn denied_message(result: Result<HashMap<String, String>, ExtensionError>) -> String {
+        let Err(ExtensionError::ConfigError(message)) = result else {
+            panic!("expected the lookup to be refused, got {result:?}");
+        };
+        assert!(message.contains("keeps for its own use"), "{message}");
+        message
+    }
+
+    /// GSL-PT-20260927-C20: naming the provider key in `env_keys` handed the
+    /// extension gosling's own credential, from the store or the environment.
+    #[tokio::test]
+    async fn an_extension_never_receives_the_provider_key_by_name() {
+        let (_dir, config) = config_with("{}\n");
+        config
+            .set_secret("OPENAI_API_KEY", &"provider-key")
+            .expect("store provider key");
+
+        {
+            let _guard = env_lock::lock_env([("OPENAI_API_KEY", None::<&str>)]);
+            denied_message(merge_for(&config, "keyreader", &["OPENAI_API_KEY"]).await);
+        }
+        let _guard = env_lock::lock_env([("OPENAI_API_KEY", Some("exported-provider-key"))]);
+        let message = denied_message(merge_for(&config, "keyreader", &["OPENAI_API_KEY"]).await);
+        assert!(!message.contains("provider-key"), "{message}");
+    }
+
+    #[tokio::test]
+    async fn an_extension_never_receives_a_website_login_password_by_name() {
+        let (_dir, config) = config_with("{}\n");
+        let key = "GOSLING_WEBSITE_LOGIN_PASSWORD_0123abcd";
+        config.set_secret(key, &"site-password").expect("store");
+
+        denied_message(merge_for(&config, "pwreader", &[key]).await);
+    }
+
+    #[tokio::test]
+    async fn an_extension_never_reads_another_extensions_stored_secret() {
+        let (_dir, config) = config_with("{}\n");
+        config
+            .set_secret(&extension_secret_key("ext-x", "TOKEN"), &"token-for-x")
+            .expect("store");
+
+        denied_message(
+            merge_for(
+                &config,
+                "ext-y",
+                &[extension_secret_key("ext-x", "TOKEN").as_str()],
+            )
+            .await,
+        );
+        let _guard = env_lock::lock_env([("TOKEN", None::<&str>)]);
+        let Err(ExtensionError::ConfigError(message)) =
+            merge_for(&config, "ext-y", &["TOKEN"]).await
+        else {
+            panic!("ext-y has no TOKEN of its own");
+        };
+        assert!(
+            message.starts_with("Failed to fetch secret 'TOKEN' from config:"),
+            "{message}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_value_stored_for_the_extension_is_its_own() {
+        let _guard = env_lock::lock_env([
+            ("SHARED_TOKEN", None::<&str>),
+            ("OPENAI_API_KEY", None::<&str>),
+        ]);
+        let (_dir, config) = config_with("{}\n");
+        config
+            .set_secret_values(&[
+                ("OPENAI_API_KEY".to_string(), "provider-key".into()),
+                ("SHARED_TOKEN".to_string(), "legacy-shared".into()),
+                (
+                    extension_secret_key("ext-x", "SHARED_TOKEN"),
+                    "token-for-x".into(),
+                ),
+                (
+                    extension_secret_key("ext-y", "SHARED_TOKEN"),
+                    "token-for-y".into(),
+                ),
+                (
+                    extension_secret_key("embedder", "OPENAI_API_KEY"),
+                    "embedder-key".into(),
+                ),
+            ])
+            .expect("store");
+
+        for (ext_name, expected) in [("ext-x", "token-for-x"), ("EXT-Y", "token-for-y")] {
+            let merged = merge_for(&config, ext_name, &["SHARED_TOKEN"])
+                .await
+                .unwrap();
+            assert_eq!(merged["SHARED_TOKEN"], expected, "{ext_name}");
+        }
+        let merged = merge_for(&config, "embedder", &["OPENAI_API_KEY"])
+            .await
+            .unwrap();
+        assert_eq!(merged["OPENAI_API_KEY"], "embedder-key");
+    }
+
+    /// Secrets saved under the bare name before per-extension storage keep
+    /// working for the extensions that declare them.
+    #[tokio::test]
+    async fn a_legacy_secret_stored_under_the_bare_name_still_resolves() {
+        let _guard = env_lock::lock_env([("LEGACY_TOKEN", None::<&str>)]);
+        let (_dir, config) = config_with("{}\n");
+        config
+            .set_secret("LEGACY_TOKEN", &"legacy-value")
+            .expect("store");
+
+        let merged = merge_for(&config, "legacy-ext", &["LEGACY_TOKEN"])
+            .await
+            .unwrap();
+        assert_eq!(merged["LEGACY_TOKEN"], "legacy-value");
+    }
+
+    #[tokio::test]
+    async fn the_process_environment_keeps_precedence_for_names_gosling_does_not_own() {
+        let (_dir, config) = config_with("{}\n");
+        config
+            .set_secret(&extension_secret_key("ext-x", "SHARED_TOKEN"), &"stored")
+            .expect("store");
+
+        let _guard = env_lock::lock_env([("SHARED_TOKEN", Some("from-env"))]);
+        let merged = merge_for(&config, "ext-x", &["SHARED_TOKEN"])
+            .await
+            .unwrap();
+        assert_eq!(merged["SHARED_TOKEN"], "from-env");
     }
 }

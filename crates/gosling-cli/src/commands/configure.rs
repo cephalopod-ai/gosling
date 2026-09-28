@@ -10,6 +10,7 @@ use gosling::config::declarative_providers::{
 use gosling::config::extensions::{
     get_all_extension_names, get_all_extensions, get_enabled_extensions, get_extension_by_name,
     name_to_key, remove_extension_and_permissions, set_extension, set_extension_enabled,
+    set_extension_with_secrets,
 };
 use gosling::config::paths::Paths;
 use gosling::config::permission::PermissionLevel;
@@ -927,13 +928,14 @@ fn prompt_extension_name(placeholder: &str) -> anyhow::Result<String> {
     )
 }
 
-fn collect_env_vars() -> anyhow::Result<(HashMap<String, String>, Vec<String>)> {
-    let envs = HashMap::new();
-    let mut env_keys = Vec::new();
-    let config = Config::global();
+/// Values are stored with the extension (see `set_extension_with_secrets`), so a
+/// name like `OPENAI_API_KEY` never replaces the provider's or another
+/// extension's credential. (GSL-PT-20260927-C20)
+fn collect_env_vars() -> anyhow::Result<Vec<(String, Value)>> {
+    let mut secrets = Vec::new();
 
     if !cliclack::confirm("Would you like to add environment variables?").interact()? {
-        return Ok((envs, env_keys));
+        return Ok(secrets);
     }
 
     loop {
@@ -945,17 +947,14 @@ fn collect_env_vars() -> anyhow::Result<(HashMap<String, String>, Vec<String>)> 
             .mask('▪')
             .interact()?;
 
-        if !try_store_secret(config, &key, value)? {
-            return Err(anyhow::anyhow!("Failed to store secret"));
-        }
-        env_keys.push(key);
+        secrets.push((key, Value::String(value)));
 
         if !cliclack::confirm("Add another environment variable?").interact()? {
             break;
         }
     }
 
-    Ok((envs, env_keys))
+    Ok(secrets)
 }
 
 fn collect_headers() -> anyhow::Result<HashMap<String, String>> {
@@ -1069,7 +1068,8 @@ async fn configure_stdio_extension() -> anyhow::Result<()> {
     let args = parts;
 
     let description = prompt_extension_description()?;
-    let (envs, env_keys) = collect_env_vars()?;
+    let secrets = collect_env_vars()?;
+    let env_keys = secrets.iter().map(|(key, _)| key.clone()).collect();
 
     let entry = ExtensionEntry {
         enabled: true,
@@ -1078,7 +1078,7 @@ async fn configure_stdio_extension() -> anyhow::Result<()> {
             name: name.clone(),
             cmd,
             args,
-            envs: Envs::new(envs),
+            envs: Envs::default(),
             env_keys,
             description,
             timeout: Some(timeout),
@@ -1088,7 +1088,7 @@ async fn configure_stdio_extension() -> anyhow::Result<()> {
         },
     };
     gosling::config::extension_allowlist::enforce_extension(&entry.config).await?;
-    set_extension(entry)?;
+    set_extension_with_secrets(entry, &secrets)?;
 
     cliclack::outro(format!("Added {} extension", style(name).green()))?;
     Ok(())

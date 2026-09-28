@@ -1,4 +1,5 @@
 use anyhow::{bail, Context, Result};
+use gosling::config::extensions::is_extension_secret_key;
 use gosling::config::Config;
 use serde_json::Value;
 
@@ -104,6 +105,7 @@ pub fn handle_list() -> Result<()> {
 
     let mut names: Vec<&str> = secrets
         .keys()
+        .filter(|key| !is_extension_secret_key(key))
         .filter_map(|key| {
             FIELDS.iter().find_map(|field| {
                 let suffix = format!("_{field}");

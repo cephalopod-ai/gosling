@@ -57,6 +57,10 @@ fn password_key(id: &str) -> String {
     format!("{PASSWORD_KEY_PREFIX}{id}")
 }
 
+pub(crate) fn is_password_secret_key(key: &str) -> bool {
+    key.starts_with(PASSWORD_KEY_PREFIX)
+}
+
 pub fn list() -> Result<Vec<WebsiteLogin>> {
     match Config::global().get_param::<Vec<WebsiteLogin>>(LOGINS_PARAM) {
         Ok(logins) => Ok(logins),

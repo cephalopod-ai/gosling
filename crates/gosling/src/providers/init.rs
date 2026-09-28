@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
@@ -174,6 +175,20 @@ pub async fn providers() -> Vec<(ProviderMetadata, ProviderType)> {
         .read()
         .unwrap()
         .all_metadata_with_types()
+}
+
+/// Names of every secret config key a registered provider declares.
+pub async fn provider_secret_key_names() -> HashSet<String> {
+    get_registry()
+        .await
+        .read()
+        .unwrap()
+        .entries
+        .values()
+        .flat_map(|entry| entry.metadata().config_keys.iter())
+        .filter(|key| key.secret)
+        .map(|key| key.name.clone())
+        .collect()
 }
 
 pub async fn refresh_custom_providers() -> Result<()> {

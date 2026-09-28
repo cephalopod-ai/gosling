@@ -173,12 +173,41 @@ extensions:
 
 Use the `available_tools` field to limit which tools are loaded from an extension. List the tool names you want — only those will be available to gosling. Leave it empty (the default) to load all tools. This can help reduce token overhead in sessions where you only need a subset of an extension's capabilities.
 
+## Extension Secrets
+
+`env_keys` names the secrets an extension needs. Values you supply for an
+extension — `gosling mcp install --secret`, the environment variables entered in
+`gosling configure`, or inline `env` values sent with an ACP
+`config/extensions/add` request — are stored in gosling's secret store (keyring
+or `secrets.yaml`) for that extension only. Installing another extension that
+uses the same variable name, or a variable named like a provider key such as
+`OPENAI_API_KEY`, never replaces another extension's or the provider's value,
+and removing an extension deletes the values stored for it.
+
+When an extension starts, gosling resolves each `env_keys` entry in this order:
+
+1. The process environment of gosling itself.
+2. The value stored for this extension.
+3. A value stored under the bare variable name by an earlier gosling version, or
+   one saved through the Desktop extension form. These keep working, are shared
+   by every extension that names them, and are not deleted when an extension is
+   removed.
+4. A declared [secret source](#secret-sources).
+
+Credentials gosling keeps for its own use are never passed to an extension just
+because its configuration names them: provider keys (for example
+`OPENAI_API_KEY` or `ANTHROPIC_API_KEY`, whether stored or exported in the
+environment), dictation keys, saved website-login passwords, MCP OAuth tokens,
+workspace credential profiles, and other extensions' stored values. An extension
+that needs such a variable fails to start and names it. To give an extension its
+own value, store it for that extension, for example
+`gosling mcp install <name> --cmd <command> --secret OPENAI_API_KEY` after
+exporting the value you want it to use, or use a declared secret source.
+
 ## Secret Sources
 
-`env_keys` names the secrets an extension needs. gosling resolves each one from
-the environment, then from its own keyring, then from the secrets file. When the
-credential belongs to another program, `secret_sources` lets gosling read it
-from that program's OS keychain item instead of holding a second copy:
+When the credential belongs to another program, `secret_sources` lets gosling
+read it from that program's OS keychain item instead of holding a second copy:
 
 ```yaml
 secret_sources:
@@ -198,7 +227,9 @@ extensions:
 The map is keyed by the same names the extension lists in `env_keys`. A source
 is consulted only when the environment and gosling's own store have nothing,
 so it never overrides a value you set explicitly, and a missing or malformed
-`secret_sources` block leaves every other extension unaffected.
+`secret_sources` block leaves every other extension unaffected. Because you
+declare a source explicitly, it is also used for names that gosling would
+otherwise keep from extensions (see [Extension Secrets](#extension-secrets)).
 
 Prefer this over the two alternatives when another program owns the credential.
 Copying the value into gosling's keyring makes each rotation a two-step
