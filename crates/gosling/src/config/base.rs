@@ -316,21 +316,9 @@ impl Default for Config {
         config_paths.extend(additional_config_paths_from_env());
         config_paths.push(user_config_path.clone());
 
-        let no_secrets_config = Self {
-            config_paths: config_paths.clone(),
-            secrets: SecretStorage::File {
-                path: Default::default(),
-            },
-            guard: Mutex::new(()),
-            secrets_cache: Arc::new(Mutex::new(None)),
-            param_cache: Mutex::new(None),
-        };
-
         let keyring_disabled = cfg!(test)
             || env::var("GOSLING_DISABLE_KEYRING").is_ok()
-            || no_secrets_config
-                .get_param::<serde_yaml::Value>("GOSLING_DISABLE_KEYRING")
-                .is_ok_and(|v| keyring_disabled_value(&v));
+            || keyring_disabled_in_config(&config_paths);
         let secrets = secret_storage(&config_dir, keyring_disabled, default_keyring_service());
         Self {
             config_paths,
@@ -482,17 +470,37 @@ fn merge_nested_entries(base: &mut Mapping, overlay: &Mapping) {
     }
 }
 
-/// Read the GOSLING_DISABLE_KEYRING flag from the config file.
+const DISABLE_KEYRING_KEY: &str = "GOSLING_DISABLE_KEYRING";
+
+/// Read the GOSLING_DISABLE_KEYRING flag the way the merged config would: the
+/// last layer that sets it wins.
 ///
-/// Called before Config is fully initialised, so we do a minimal raw read
-/// rather than going through `get_param`.  All errors are treated as `false`
-/// (keyring stays enabled) so a missing/malformed file is never fatal here.
-fn keyring_disabled_in_config(config_path: &Path) -> bool {
-    std::fs::read_to_string(config_path)
-        .ok()
-        .and_then(|s| parse_yaml_content(&s).ok())
-        .and_then(|m| m.get("GOSLING_DISABLE_KEYRING").map(keyring_disabled_value))
-        .unwrap_or(false)
+/// Reads skip a layer that fails to parse, so a syntax error anywhere in
+/// config.yaml used to drop a `GOSLING_DISABLE_KEYRING: true` it contained and
+/// silently switch secret storage to the OS keychain. For such a layer the flag
+/// is taken from its own top-level line instead. (GSL-PT-20260927-S13)
+fn keyring_disabled_in_config(config_paths: &[PathBuf]) -> bool {
+    let mut disabled = false;
+    for path in config_paths {
+        let Ok(content) = std::fs::read_to_string(path) else {
+            continue;
+        };
+        let value = match parse_yaml_content(&content) {
+            Ok(values) => values.get(DISABLE_KEYRING_KEY).cloned(),
+            Err(_) => top_level_value_in_unparsable_yaml(&content, DISABLE_KEYRING_KEY),
+        };
+        if let Some(value) = value {
+            disabled = keyring_disabled_value(&value);
+        }
+    }
+    disabled
+}
+
+fn top_level_value_in_unparsable_yaml(content: &str, key: &str) -> Option<serde_yaml::Value> {
+    content.lines().rev().find_map(|line| {
+        let value = line.strip_prefix(key)?.trim_start().strip_prefix(':')?;
+        serde_yaml::from_str(value).ok()
+    })
 }
 
 #[cfg(feature = "system-keyring")]
@@ -564,7 +572,7 @@ impl Config {
         let config_path = config_path.as_ref().to_path_buf();
         let keyring_disabled = cfg!(test)
             || env::var("GOSLING_DISABLE_KEYRING").is_ok()
-            || keyring_disabled_in_config(&config_path);
+            || keyring_disabled_in_config(std::slice::from_ref(&config_path));
         let config_dir = config_path
             .parent()
             .map(Path::to_path_buf)
@@ -1677,6 +1685,73 @@ mod tests {
             Config::new(directory.path().join("config.yaml"), "gosling-unit-test").unwrap();
 
         assert!(matches!(config.secrets, SecretStorage::File { .. }));
+    }
+
+    fn config_layer(directory: &TempDir, name: &str, content: &str) -> PathBuf {
+        let path = directory.path().join(name);
+        std::fs::write(&path, content).unwrap();
+        path
+    }
+
+    /// GSL-PT-20260927-S13 / A06: a typo elsewhere in config.yaml made reads
+    /// skip the whole file, dropping `GOSLING_DISABLE_KEYRING: true` and
+    /// switching secret storage to the OS keychain.
+    #[test]
+    fn a_config_that_fails_to_parse_keeps_the_keyring_disabled() {
+        let directory = TempDir::new().unwrap();
+        for broken in [
+            "GOSLING_DISABLE_KEYRING: true\nGOSLING_PROVIDER: openai\nGOSLING_CLI_SHOW_COST: [unclosed\n  - : :\n",
+            "GOSLING_CLI_SHOW_COST: true\n  GOSLING_CLI_NEWLINE_KEY: n\nGOSLING_DISABLE_KEYRING: \"true\" # file secrets\n",
+        ] {
+            let path = config_layer(&directory, "config.yaml", broken);
+            assert!(
+                parse_yaml_content(broken).is_err(),
+                "fixture must not parse: {broken}"
+            );
+
+            let disabled = keyring_disabled_in_config(std::slice::from_ref(&path));
+            assert!(disabled, "{broken}");
+            assert!(matches!(
+                secret_storage(directory.path(), disabled, "gosling-unit-test"),
+                SecretStorage::File { .. }
+            ));
+        }
+    }
+
+    #[test]
+    fn keyring_flag_reads_are_unchanged_for_parsable_and_flagless_layers() {
+        let directory = TempDir::new().unwrap();
+        let disabled_by_system =
+            config_layer(&directory, "system.yaml", "GOSLING_DISABLE_KEYRING: true\n");
+        let user_off = config_layer(&directory, "off.yaml", "GOSLING_DISABLE_KEYRING: false\n");
+        let user_flagless = config_layer(&directory, "flagless.yaml", "GOSLING_MODE: auto\n");
+        let broken_flagless = config_layer(
+            &directory,
+            "broken-flagless.yaml",
+            "GOSLING_MODE: [auto\n# GOSLING_DISABLE_KEYRING: true\nnested:\n  GOSLING_DISABLE_KEYRING: true\n",
+        );
+        let missing = directory.path().join("missing.yaml");
+
+        assert!(!keyring_disabled_in_config(std::slice::from_ref(&missing)));
+        assert!(!keyring_disabled_in_config(std::slice::from_ref(
+            &user_flagless
+        )));
+        assert!(!keyring_disabled_in_config(std::slice::from_ref(
+            &broken_flagless
+        )));
+        assert!(!keyring_disabled_in_config(&[
+            disabled_by_system.clone(),
+            user_off
+        ]));
+        assert!(keyring_disabled_in_config(&[
+            disabled_by_system.clone(),
+            user_flagless,
+            missing
+        ]));
+        assert!(keyring_disabled_in_config(&[
+            disabled_by_system,
+            broken_flagless
+        ]));
     }
 
     #[test]
