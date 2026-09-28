@@ -11,6 +11,7 @@ pub mod library;
 pub mod nostr_share;
 pub mod output_revisions;
 pub mod plans;
+mod redaction;
 pub mod research;
 pub mod session_manager;
 mod session_naming;
@@ -41,6 +42,9 @@ pub use plans::{
     OpenPlanDisposition, PlanError, PlanExpectation, PlanResult, PlanRevisionIdentity, PlanService,
     PlanSnapshot, PlanStatus, PlanUpdate, SessionPlan, SessionPlanEvent, SessionPlanFeedback,
     SessionPlanRevision,
+};
+pub use redaction::{
+    installation_secret_redactor, redact_exported_session_json, redact_session_export,
 };
 pub use session_manager::{
     CompactionHistoryError, CompactionHistoryPolicyV1, CompactionRevision, CompactionRevisionDraft,

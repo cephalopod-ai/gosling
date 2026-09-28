@@ -348,11 +348,20 @@ Export sessions in different formats for backup, sharing, migration, or document
 - **`--format <format>`**: Output format: `markdown`, `json`, `yaml`. Default is `markdown`
 - **`--nostr`**: Publish the JSON export as an encrypted Nostr event and print a `gosling://` share link
 - **`--relay <url>`**: Nostr relay to publish to; repeat the flag to use several relays
+- **`--no-redact`**: Keep secrets as they are instead of replacing them with `[REDACTED]` (for local backups; not allowed with `--nostr`)
 
 **Export Formats:**
 - **`json`**: Complete session backup preserving all data including conversation history, metadata, and settings
 - **`yaml`**: Complete session backup in YAML format
 - **`markdown`**: Default format that creates a formatted, readable version of the conversation for documentation and sharing
+
+Exports and share links are redacted the same way as [diagnostics reports](#session-diagnostics-options):
+every value in gosling's secret store, provider keys set in the environment, and credential-shaped text
+(API keys, bearer tokens, `password=`-style assignments) are replaced with `[REDACTED]`, and so are the
+values of extension environment variables recorded in the session (for example a token passed with
+`--with-extension "TOKEN=... command"`). Redaction is pattern-based and can miss a secret with no
+recognizable shape, so review an export before sharing it. Use `--no-redact` when you need a faithful
+local backup.
 
 **Usage:**
 ```bash
@@ -483,7 +492,7 @@ gosling session diagnostics
 ```
 
 :::warning Privacy Notice
-Diagnostics reports contain your session messages and system information. If your session includes sensitive data (API keys, personal information, proprietary code), review the contents before sharing publicly.
+Diagnostics reports contain your session messages and system information. Values in gosling's secret store, provider keys set in the environment, and credential-shaped text are replaced with `[REDACTED]`, but redaction cannot recognize every secret or personal detail. Review the contents before sharing publicly.
 :::
 
 :::tip

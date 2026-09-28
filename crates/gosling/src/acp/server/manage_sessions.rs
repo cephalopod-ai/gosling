@@ -377,6 +377,9 @@ impl GoslingAcpAgent {
             .export_session(&req.session_id)
             .await
             .internal_err()?;
+        let data = crate::session::redact_exported_session_json(&data)
+            .await
+            .internal_err()?;
         Ok(ExportSessionResponse { data })
     }
 
@@ -441,6 +444,9 @@ impl GoslingAcpAgent {
         let data = self
             .session_manager
             .export_session(&req.session_id)
+            .await
+            .internal_err()?;
+        let data = crate::session::redact_exported_session_json(&data)
             .await
             .internal_err()?;
 

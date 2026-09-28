@@ -683,3 +683,61 @@ fn run_names_an_unparsable_config_instead_of_a_missing_provider() {
     );
     assert_eq!(env.mock.chat_requests.load(Ordering::SeqCst), 0);
 }
+
+/// GSL-PT-20260927-D06: exports carried raw secrets from the conversation that
+/// `session diagnostics` redacts; the configured provider key (from the
+/// environment here) has no shape the patterns know.
+#[test]
+fn session_exports_redact_secrets_unless_asked_not_to() {
+    const PROVIDER_KEY: &str = "FAKESECRET-EXPORT-KEY-0042";
+    const PASTED: &str = "sk-proj-FAKESE02abcdef1234567890XYZ";
+    let env = Env::new();
+    let gosling = |args: &[&str]| {
+        env.command(env.root.path(), args)
+            .env("OPENAI_API_KEY", PROVIDER_KEY)
+            .output()
+            .unwrap()
+    };
+    let prompt = format!("pasted {PROVIDER_KEY} and {PASTED} here");
+    let run = gosling(&["run", "-t", &prompt]);
+    assert!(
+        run.status.success(),
+        "{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    let id = banner_session_id(&run);
+
+    for format in ["json", "yaml", "markdown"] {
+        let export = gosling(&["session", "export", "--session-id", &id, "--format", format]);
+        let stdout = String::from_utf8_lossy(&export.stdout);
+        assert!(export.status.success(), "{format}: {stdout}");
+        assert!(
+            stdout.contains("pasted [REDACTED] and [REDACTED] here"),
+            "{format}: {stdout}"
+        );
+        assert!(!stdout.contains(PROVIDER_KEY), "{format}: {stdout}");
+        assert!(!stdout.contains(PASTED), "{format}: {stdout}");
+    }
+
+    let raw = gosling(&[
+        "session",
+        "export",
+        "--session-id",
+        &id,
+        "--format",
+        "json",
+        "--no-redact",
+    ]);
+    assert!(raw.status.success());
+    assert!(String::from_utf8_lossy(&raw.stdout).contains(&prompt));
+
+    let shared_raw = gosling(&[
+        "session",
+        "export",
+        "--session-id",
+        &id,
+        "--nostr",
+        "--no-redact",
+    ]);
+    assert!(!shared_raw.status.success());
+}

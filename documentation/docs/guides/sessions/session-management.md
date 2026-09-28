@@ -425,7 +425,7 @@ An imported session starts in Manual Approval (`approve`) mode with tools restri
 
 <Tabs groupId="interface">
     <TabItem value="ui" label="gosling Desktop" default>
-        Export complete sessions as JSON files for backup, sharing, migration, or archival. Exported files preserve all session data including conversation history, metadata, and settings.
+        Export complete sessions as JSON files for backup, sharing, migration, or archival. Exported files preserve all session data including conversation history, metadata, and settings, except that secrets known to gosling and credential-shaped text are replaced with `[REDACTED]`.
 
         1. Click <History className="inline" size={16} /> `Session History` in the sidebar
         2. Find the session you want to export
@@ -435,7 +435,7 @@ An imported session starts in Manual Approval (`approve`) mode with tools restri
 
     </TabItem>
     <TabItem value="cli" label="gosling CLI">
-        Export sessions for backup, sharing, migration, or documentation purposes. You can export as JSON files to preserve complete session data including conversation history, metadata, and settings, or as Markdown files to get a formatted, readable version of the conversation.
+        Export sessions for backup, sharing, migration, or documentation purposes. You can export as JSON files to preserve complete session data including conversation history, metadata, and settings, or as Markdown files to get a formatted, readable version of the conversation. Secrets are replaced with `[REDACTED]` unless you pass `--no-redact`.
 
         From your terminal, run the [`session export`](/docs/guides/gosling-cli-commands#session-export-options) subcommand:
         

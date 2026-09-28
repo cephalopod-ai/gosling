@@ -580,6 +580,13 @@ enum SessionCommand {
             action = clap::ArgAction::Append
         )]
         relays: Vec<String>,
+
+        #[arg(
+            long = "no-redact",
+            conflicts_with = "nostr",
+            help = "Keep stored secrets and credential-shaped text instead of replacing them with [REDACTED] (for local backups)"
+        )]
+        no_redact: bool,
     },
     #[command(
         about = "Import a session from JSON, a Claude Code / Codex / Pi .jsonl, or an encrypted Nostr share link"
@@ -1866,6 +1873,7 @@ async fn handle_session_subcommand(command: SessionCommand) -> Result<()> {
             format,
             nostr,
             relays,
+            no_redact,
         } => {
             let session_manager = SessionManager::instance();
             let Some(session_identifier) =
@@ -1879,6 +1887,7 @@ async fn handle_session_subcommand(command: SessionCommand) -> Result<()> {
                 format,
                 nostr,
                 relays,
+                !no_redact,
             )
             .await?;
         }
