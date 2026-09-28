@@ -400,6 +400,10 @@ gosling resolves context limits with the following precedence (highest to lowest
 3. Model-specific default based on name pattern matching
 4. Global default (128,000 tokens)
 
+A session saves the limit it resolved. When you resume a session from the CLI with
+`GOSLING_CONTEXT_LIMIT` set, that value replaces the saved one; without it, the session keeps the
+limit it was last run with.
+
 Host-enforced planning uses this same active-session limit. The CLI treats
 `GOSLING_PLANNER_CONTEXT_LIMIT` only as a legacy compatibility assertion: if set, it must be at
 least 4,096 and exactly equal the resolved active limit. It does not create a separate planning

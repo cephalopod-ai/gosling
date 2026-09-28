@@ -270,9 +270,17 @@ fn resolve_provider_and_model(
             .as_ref()
             .is_some_and(|mc| mc.model_name == model_name)
     {
-        let mut config = saved_model_config.unwrap();
-        config.normalize_effort_suffix();
-        config
+        // The saved limit may itself have come from an earlier run's
+        // GOSLING_CONTEXT_LIMIT, so a limit configured for this run replaces it.
+        let context_limit = config.get_gosling_context_limit().unwrap_or_else(|e| {
+            output::render_error(&format!("Failed to create model configuration: {}", e));
+            process::exit(1);
+        });
+        let mut saved = saved_model_config
+            .unwrap()
+            .with_context_limit(context_limit);
+        saved.normalize_effort_suffix();
+        saved
     } else {
         gosling::model_config::model_config_from_user_config(&provider_name, &model_name)
             .unwrap_or_else(|e| {
@@ -877,6 +885,41 @@ mod tests {
         assert!(!config.interactive);
         assert!(!config.quiet);
         assert!(!config.fork);
+    }
+
+    // GSL-PT-20260927-S04: the first GOSLING_CONTEXT_LIMIT used with a resumed
+    // session was saved with it and every later value was ignored.
+    #[test]
+    fn resumed_session_uses_the_context_limit_configured_for_this_run() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("config.yaml");
+        std::fs::write(
+            &config_path,
+            "GOSLING_PROVIDER: openai\nGOSLING_MODEL: playtest-model\n",
+        )
+        .unwrap();
+        let config =
+            Config::new_with_file_secrets(&config_path, dir.path().join("secrets.yaml")).unwrap();
+        let resume = SessionBuilderConfig {
+            resume: true,
+            ..SessionBuilderConfig::default()
+        };
+        let saved = gosling_providers::model::ModelConfig::new("playtest-model")
+            .with_context_limit(Some(10_000));
+        let resolved_limit = |limit: Option<&str>| {
+            let _env = env_lock::lock_env([("GOSLING_CONTEXT_LIMIT", limit)]);
+            resolve_provider_and_model(
+                &resume,
+                &config,
+                Some("openai".to_string()),
+                Some(saved.clone()),
+            )
+            .model_config
+            .context_limit
+        };
+
+        assert_eq!(resolved_limit(Some("50000")), Some(50_000));
+        assert_eq!(resolved_limit(None), Some(10_000));
     }
 
     #[test]
