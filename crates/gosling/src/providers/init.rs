@@ -338,9 +338,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_custom_provider_context_limit_is_applied_from_file() {
-        let _guard = env_lock::lock_env([("GOSLING_PATH_ROOT", None::<&str>)]);
         let temp_dir = tempfile::tempdir().expect("tempdir should be created");
-        std::env::set_var("GOSLING_PATH_ROOT", temp_dir.path());
+        let _guard = env_lock::lock_env([(
+            "GOSLING_PATH_ROOT",
+            Some(temp_dir.path().to_str().expect("tempdir path is UTF-8")),
+        )]);
 
         let custom_dir = Paths::config_dir().join("custom_providers");
         fs::create_dir_all(&custom_dir).expect("custom providers dir should be created");
@@ -400,7 +402,5 @@ mod tests {
             )
             .expect("custom_zero model config should normalize");
         assert_eq!(zero_config.context_limit, None);
-
-        std::env::remove_var("GOSLING_PATH_ROOT");
     }
 }

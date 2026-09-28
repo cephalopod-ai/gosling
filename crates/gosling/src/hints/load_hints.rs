@@ -421,11 +421,15 @@ mod tests {
         assert!(hints.contains("Test hint content"));
     }
 
+    fn lock_path_root(root: &TempDir) -> env_lock::EnvGuard<'static> {
+        env_lock::lock_env([("GOSLING_PATH_ROOT", Some(root.path().to_str().unwrap()))])
+    }
+
     #[test]
     #[serial_test::serial]
     fn test_global_agents_md_in_agents_home() {
         let root = TempDir::new().unwrap();
-        std::env::set_var("GOSLING_PATH_ROOT", root.path());
+        let _root_guard = lock_path_root(&root);
 
         let agents_home = root.path().join(".agents");
         fs::create_dir_all(&agents_home).unwrap();
@@ -446,8 +450,6 @@ mod tests {
             &gitignore,
         );
 
-        std::env::remove_var("GOSLING_PATH_ROOT");
-
         assert!(hints.contains("Global Hints"));
         assert!(hints.contains("Global agents home instructions"));
     }
@@ -456,7 +458,7 @@ mod tests {
     #[serial_test::serial]
     fn project_hint_loader_excludes_global_agents_home() {
         let root = TempDir::new().unwrap();
-        std::env::set_var("GOSLING_PATH_ROOT", root.path());
+        let _root_guard = lock_path_root(&root);
 
         let agents_home = root.path().join(".agents");
         fs::create_dir_all(&agents_home).unwrap();
@@ -479,8 +481,6 @@ mod tests {
             &gitignore,
         );
 
-        std::env::remove_var("GOSLING_PATH_ROOT");
-
         assert!(!hints.contains("Global agents home instructions"));
         assert!(hints.contains("Project agents instructions"));
     }
@@ -489,7 +489,7 @@ mod tests {
     #[serial_test::serial]
     fn test_global_agents_md_imports_not_filtered_by_project_gitignore() {
         let root = TempDir::new().unwrap();
-        std::env::set_var("GOSLING_PATH_ROOT", root.path());
+        let _root_guard = lock_path_root(&root);
 
         let agents_home = root.path().join(".agents");
         fs::create_dir_all(&agents_home).unwrap();
@@ -514,8 +514,6 @@ mod tests {
             &gitignore,
         );
 
-        std::env::remove_var("GOSLING_PATH_ROOT");
-
         assert!(hints.contains("Imported policy content"));
     }
 
@@ -523,7 +521,7 @@ mod tests {
     #[serial_test::serial]
     fn test_global_agents_md_skipped_when_not_in_context_file_names() {
         let root = TempDir::new().unwrap();
-        std::env::set_var("GOSLING_PATH_ROOT", root.path());
+        let _root_guard = lock_path_root(&root);
 
         let agents_home = root.path().join(".agents");
         fs::create_dir_all(&agents_home).unwrap();
@@ -540,8 +538,6 @@ mod tests {
             &[GOSLING_HINTS_FILENAME.to_string()],
             &gitignore,
         );
-
-        std::env::remove_var("GOSLING_PATH_ROOT");
 
         assert!(!hints.contains("Global agents home instructions"));
     }

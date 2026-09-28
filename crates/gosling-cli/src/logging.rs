@@ -46,15 +46,15 @@ mod tests {
 
     #[test]
     fn test_log_directory_creation() {
-        let _temp_dir = setup_temp_home();
+        let root = TempDir::new().unwrap();
+        let _guard =
+            env_lock::lock_env([("GOSLING_PATH_ROOT", Some(root.path().to_str().unwrap()))]);
         let log_dir = gosling::logging::prepare_log_directory("cli", true).unwrap();
-        assert!(log_dir.exists());
         assert!(log_dir.is_dir());
-
-        let path_components: Vec<_> = log_dir.components().collect();
-        assert!(path_components.iter().any(|c| c.as_os_str() == "gosling"));
-        assert!(path_components.iter().any(|c| c.as_os_str() == "logs"));
-        assert!(path_components.iter().any(|c| c.as_os_str() == "cli"));
+        assert_eq!(
+            log_dir.parent(),
+            Some(root.path().join("state").join("logs").join("cli").as_path())
+        );
     }
 
     #[tokio::test]
