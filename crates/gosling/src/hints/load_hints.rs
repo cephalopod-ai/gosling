@@ -232,12 +232,13 @@ fn join_within_limit(sections: &[String], limit: usize) -> String {
         }
     }
 
+    let total = joined.len();
+    let mut shown = joined;
+    shown.truncate(cut);
     format!(
-        "{}\n\n[Subdirectory hints truncated: {} of {} bytes left out to stay within the {} KiB limit \
-         for one update. The rest is in the hint files of the directories just touched.]",
-        &joined[..cut],
-        joined.len() - cut,
-        joined.len(),
+        "{shown}\n\n[Subdirectory hints truncated: {} of {total} bytes left out to stay within the {} KiB \
+         limit for one update. The rest is in the hint files of the directories just touched.]",
+        total - cut,
         limit / 1024
     )
 }
