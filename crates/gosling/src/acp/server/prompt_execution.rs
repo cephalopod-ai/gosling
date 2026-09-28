@@ -306,6 +306,50 @@ impl GoslingAcpAgent {
         }
     }
 
+    /// Messages this prompt already showed the client that are no longer in
+    /// the session's history, like a reply attempt that broke off and was
+    /// retried. Some shown messages are stored without being part of the
+    /// agent's working conversation (an elicitation request), so the stored
+    /// history decides.
+    async fn retracted_message_ids(
+        &self,
+        session_id: &str,
+        conversation: &crate::conversation::Conversation,
+        shown_message_ids: &[String],
+    ) -> Result<Vec<String>, agent_client_protocol::Error> {
+        let kept: HashSet<&str> = conversation
+            .messages()
+            .iter()
+            .filter_map(|message| message.id.as_deref())
+            .collect();
+        let missing: Vec<&String> = shown_message_ids
+            .iter()
+            .filter(|id| !kept.contains(id.as_str()))
+            .collect();
+        if missing.is_empty() {
+            return Ok(Vec::new());
+        }
+        let stored: HashSet<String> = self
+            .session_manager
+            .get_session(session_id, true)
+            .await
+            .internal_err_ctx("Failed to load the session history")?
+            .conversation
+            .map(|history| {
+                history
+                    .messages()
+                    .iter()
+                    .filter_map(|message| message.id.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok(missing
+            .into_iter()
+            .filter(|id| !stored.contains(*id))
+            .cloned()
+            .collect())
+    }
+
     pub(super) async fn on_prompt(
         &self,
         cx: &ConnectionTo<Client>,
@@ -423,6 +467,7 @@ impl GoslingAcpAgent {
         let mut provider_usage_after_context = false;
         let mut policy_denied_tools = PolicyDeniedTools::default();
         let mut turn_limit_reached = false;
+        let mut shown_message_ids: Vec<String> = Vec::new();
 
         loop {
             let event = tokio::select! {
@@ -452,6 +497,11 @@ impl GoslingAcpAgent {
                     // Agent persists messages via session_manager.add_message() internally.
                     let stored_message_id = message.id.clone();
                     turn_limit_reached |= message.metadata.turn_limit.is_some();
+                    if let Some(message_id) = stored_message_id.as_ref() {
+                        if !shown_message_ids.contains(message_id) {
+                            shown_message_ids.push(message_id.clone());
+                        }
+                    }
 
                     if message.role == Role::Assistant {
                         if let Some(message_id) = stored_message_id.as_ref() {
@@ -569,7 +619,18 @@ impl GoslingAcpAgent {
                         ))?;
                     }
                 }
-                Ok(_) => {}
+                Ok(crate::agents::AgentEvent::HistoryReplaced(conversation)) => {
+                    let retracted = self
+                        .retracted_message_ids(&session_id, &conversation, &shown_message_ids)
+                        .await?;
+                    if !retracted.is_empty() {
+                        shown_message_ids.retain(|id| !retracted.contains(id));
+                        cx.send_notification(retracted_messages_update(
+                            &args.session_id,
+                            &retracted,
+                        ))?;
+                    }
+                }
                 Err(e) => {
                     stream_error = Some(
                         agent_client_protocol::Error::internal_error()

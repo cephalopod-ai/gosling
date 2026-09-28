@@ -26,6 +26,10 @@ The client manages the gosling lifecycle automatically, including:
 ACP sessions are saved to gosling's session history where you can access and manage them using gosling. Access to session history in ACP clients might vary.
 :::
 
+:::note Retried replies
+When a model's reply breaks off mid-stream, gosling discards the partial reply and asks again. Each streamed message carries its id in `_meta.gosling.messageId`; for a discarded attempt gosling sends a `session_info_update` whose `_meta.gosling.retractedMessageIds` lists the ids to remove, so the conversation shown matches what `session/load` replays.
+:::
+
 :::tip Reference Implementation
 The [gosling for VS Code](/docs/experimental/vs-code-extension) extension uses ACP to communicate with gosling. See the [vscode-gosling](https://github.com/repo-makeover/vscode-gosling) repository for implementation details.
 :::
