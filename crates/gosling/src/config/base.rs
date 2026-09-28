@@ -128,6 +128,7 @@ pub struct ConfigResolutionScope {
     scoped_keys: HashSet<String>,
     secret_keys: HashMap<String, String>,
     parameter_values: HashMap<String, Value>,
+    secret_values: HashMap<String, Value>,
 }
 
 impl ConfigResolutionScope {
@@ -140,6 +141,25 @@ impl ConfigResolutionScope {
             scoped_keys: scoped_keys.into_iter().collect(),
             secret_keys,
             parameter_values,
+            secret_values: HashMap::new(),
+        }
+    }
+
+    /// Resolves these parameters and secrets to values that are not saved yet,
+    /// so settings can be checked before they are written anywhere.
+    pub fn unsaved(
+        parameter_values: HashMap<String, Value>,
+        secret_values: HashMap<String, Value>,
+    ) -> Self {
+        Self {
+            scoped_keys: parameter_values
+                .keys()
+                .chain(secret_values.keys())
+                .cloned()
+                .collect(),
+            secret_keys: HashMap::new(),
+            parameter_values,
+            secret_values,
         }
     }
 
@@ -1171,6 +1191,14 @@ impl Config {
     /// - The value cannot be deserialized into the requested type
     /// - There is an error accessing the keyring
     pub fn get_secret<T: for<'de> Deserialize<'de>>(&self, key: &str) -> Result<T, ConfigError> {
+        if let Some(value) = CONFIG_RESOLUTION_SCOPE
+            .try_with(|scope| scope.secret_values.get(key).cloned())
+            .ok()
+            .flatten()
+        {
+            return Ok(serde_json::from_value(value)?);
+        }
+
         if let Some(stored_key) = CONFIG_RESOLUTION_SCOPE
             .try_with(|scope| {
                 scope
@@ -3476,6 +3504,50 @@ extensions:
         .await;
 
         assert!(matches!(result, Err(ConfigError::NotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn unsaved_values_resolve_inside_the_scope_without_being_stored() {
+        let temp = TempDir::new().unwrap();
+        let config = Config::new_with_file_secrets(
+            temp.path().join("config.yaml"),
+            temp.path().join("secrets.yaml"),
+        )
+        .unwrap();
+        config.set_param("UNSAVED_HOST", "saved-host").unwrap();
+        config.set_secret("UNSAVED_KEY", &"saved-key").unwrap();
+        config.set_param("OTHER_PARAM", "other").unwrap();
+        let scope = ConfigResolutionScope::unsaved(
+            HashMap::from([(
+                "UNSAVED_HOST".to_string(),
+                Value::String("new-host".to_string()),
+            )]),
+            HashMap::from([(
+                "UNSAVED_KEY".to_string(),
+                Value::String("new-key".to_string()),
+            )]),
+        );
+
+        let (host, key, other) = Config::with_resolution_scope(scope, async {
+            (
+                config.get_param::<String>("UNSAVED_HOST"),
+                config.get_secret::<String>("UNSAVED_KEY"),
+                config.get_param::<String>("OTHER_PARAM"),
+            )
+        })
+        .await;
+
+        assert_eq!(host.unwrap(), "new-host");
+        assert_eq!(key.unwrap(), "new-key");
+        assert_eq!(other.unwrap(), "other");
+        assert_eq!(
+            config.get_param::<String>("UNSAVED_HOST").unwrap(),
+            "saved-host"
+        );
+        assert_eq!(
+            config.get_secret::<String>("UNSAVED_KEY").unwrap(),
+            "saved-key"
+        );
     }
 
     #[test]
