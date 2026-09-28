@@ -26,6 +26,7 @@ export interface GoslingMessageMeta {
   messageId?: string;
   created?: number;
   importedUntrusted?: boolean;
+  incomplete?: boolean;
   steer?: boolean;
 }
 
@@ -77,6 +78,7 @@ export function getGoslingMessageMeta(update: { _meta?: unknown }): GoslingMessa
     created: typeof gosling.created === 'number' ? gosling.created : undefined,
     messageId: typeof gosling.messageId === 'string' ? gosling.messageId : undefined,
     importedUntrusted: gosling.importedUntrusted === true ? true : undefined,
+    incomplete: gosling.incomplete === true ? true : undefined,
     steer: gosling.steer === true ? true : undefined,
   };
 }

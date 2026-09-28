@@ -1457,6 +1457,9 @@
   "gitBranchIndicator.searchBranches": {
     "defaultMessage": "Search branches…"
   },
+  "goslingMessage.replyInterrupted": {
+    "defaultMessage": "Interrupted — this reply was cut off before it finished."
+  },
   "goslinghintsModal.close": {
     "defaultMessage": "Close"
   },
@@ -3898,6 +3901,9 @@
   },
   "toolCallWithResponse.toolDetails": {
     "defaultMessage": "Tool Details"
+  },
+  "toolCallWithResponse.toolNotRun": {
+    "defaultMessage": "Not run — the run ended before this tool started"
   },
   "toolCallWithResponse.toolResultAlt": {
     "defaultMessage": "Tool result"

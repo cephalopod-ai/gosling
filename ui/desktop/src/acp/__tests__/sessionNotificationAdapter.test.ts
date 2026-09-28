@@ -202,6 +202,39 @@ describe('createAcpSessionNotificationAdapter', () => {
         expect(messages[0].metadata.importedUntrusted).toBe(true);
       });
 
+      it('marks a reply that was replayed as cut off mid-stream', () => {
+        const adapter = createAcpSessionNotificationAdapter();
+        const cutOff = { gosling: { messageId: 'partial-1', incomplete: true } };
+        adapter.apply(
+          acpUpdate({
+            sessionUpdate: 'agent_thought_chunk',
+            content: { type: 'text', text: 'thinking' },
+            _meta: cutOff,
+          } as SessionNotification['update'])
+        );
+        adapter.apply(
+          acpUpdate({
+            sessionUpdate: 'agent_message_chunk',
+            content: { type: 'text', text: 'lorem ip' },
+            _meta: cutOff,
+          } as SessionNotification['update'])
+        );
+        const messages = expectOnlyMessagesChange(
+          adapter,
+          adapter.apply(
+            acpUpdate({
+              sessionUpdate: 'agent_message_chunk',
+              content: { type: 'text', text: 'Run interrupted before completion.' },
+              _meta: { gosling: { messageId: 'notice-1' } },
+            } as SessionNotification['update'])
+          )
+        );
+
+        expect(messages).toHaveLength(2);
+        expect(messages[0].metadata.incomplete).toBe(true);
+        expect(messages[1].metadata.incomplete).toBeUndefined();
+      });
+
       it('reconciles locally rendered steer text with server chunks', () => {
         const adapter = createAcpSessionNotificationAdapter([
           {

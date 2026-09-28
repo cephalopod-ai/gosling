@@ -22,6 +22,7 @@ import McpAppRenderer from './McpApps/McpAppRenderer';
 import ToolApprovalButtons from './ToolApprovalButtons';
 import { defineMessages, useIntl } from '../i18n';
 import { useArtifactWorkbench } from '../contexts/ArtifactWorkbenchContext';
+import { isToolNotRunError } from '../utils/turnClosure';
 import {
   artifactTitleFromPath,
   localFilePathFromUri,
@@ -68,6 +69,10 @@ const i18n = defineMessages({
   openDeliverable: {
     id: 'toolCallWithResponse.openDeliverable',
     defaultMessage: 'Open {name} in Outputs',
+  },
+  toolNotRun: {
+    id: 'toolCallWithResponse.toolNotRun',
+    defaultMessage: 'Not run — the run ended before this tool started',
   },
 });
 
@@ -591,6 +596,7 @@ function ToolCallView({
   // so the operator saw a failed call with no reason. (WFG-GOS-003)
   const toolErrorMessage =
     loadingStatus === 'error' ? getToolResultError(toolResponse?.toolResult) : undefined;
+  const toolNotRun = isToolNotRunError(toolErrorMessage);
 
   const logs = notifications
     ?.filter((notification) => {
@@ -828,7 +834,7 @@ function ToolCallView({
     }
   };
 
-  const toolCallStatus = getToolCallStatus(loadingStatus);
+  const toolCallStatus = toolNotRun ? 'not_run' : getToolCallStatus(loadingStatus);
   const structuredContent = (toolResponse?.toolResult as ToolResultWithMeta | undefined)?.value
     ?.structuredContent;
   const viewableFilePaths = [
@@ -912,7 +918,13 @@ function ToolCallView({
       {/* Tool Output */}
       {!isCancelledMessage && toolErrorMessage && (
         <div className="border-t border-border-primary px-3 py-2">
-          <div className="text-xs font-medium text-text-danger">Tool failed</div>
+          {toolNotRun ? (
+            <div className="text-xs font-medium text-amber-700 dark:text-amber-400">
+              {intl.formatMessage(i18n.toolNotRun)}
+            </div>
+          ) : (
+            <div className="text-xs font-medium text-text-danger">Tool failed</div>
+          )}
           <pre className="mt-1 whitespace-pre-wrap break-words font-mono text-xs text-text-secondary">
             {toolErrorMessage}
           </pre>

@@ -26,6 +26,9 @@ import {
   CreditsExhaustedNotification,
   getCreditsExhaustedNotification,
 } from './context_management/CreditsExhaustedNotification';
+import { TurnClosureNotice } from './context_management/TurnClosureNotice';
+import { getToolResultError } from './ToolCallWithResponse';
+import { getTurnClosureNotice, isToolNotRunError } from '../utils/turnClosure';
 import {
   getAnyToolConfirmationData,
   getPendingToolConfirmationIds,
@@ -423,14 +426,17 @@ export default function ProgressiveMessageList({
       suppressTopMargin = false
     ) => {
       const notification = getSystemNotification(message);
-      if (notification) {
+      const turnClosureNotice = getTurnClosureNotice(message);
+      if (notification || turnClosureNotice) {
         return (
           <div
             key={`notification-${message.id ?? `msg-${index}-${message.created}`}`}
             className={`relative ${index === 0 ? 'mt-0' : 'mt-4'} assistant`}
             data-testid="message-container"
           >
-            {renderSystemNotification(notification)}
+            {notification
+              ? renderSystemNotification(notification)
+              : turnClosureNotice && <TurnClosureNotice text={turnClosureNotice} />}
           </div>
         );
       }
@@ -537,22 +543,25 @@ export default function ProgressiveMessageList({
           const activityRequests = activityGroup.flatMap((messageIndex) =>
             getToolRequests(messages[messageIndex])
           );
-          const hasError = activityRequests.some((request) => {
+          const activityErrors = activityRequests.flatMap((request) => {
             const response = messageRenderIndex.toolResponseByRequestId.get(request.id);
-            return (
-              (response?.toolResult as Record<string, unknown> | undefined)?.status === 'error'
-            );
+            const error = getToolResultError(response?.toolResult);
+            return error === undefined ? [] : [error];
           });
+          const hasError = activityErrors.some((error) => !isToolNotRunError(error));
+          const hasNotRun = activityErrors.length > 0 && !hasError;
           const hasMissingResponse = activityRequests.some(
             (request) => !messageRenderIndex.toolResponseByRequestId.has(request.id)
           );
           const activityStatus = hasError
             ? 'error'
-            : isStreamingActivity && hasMissingResponse
-              ? 'loading'
-              : hasMissingResponse
-                ? 'pending'
-                : 'success';
+            : hasNotRun
+              ? 'not_run'
+              : isStreamingActivity && hasMissingResponse
+                ? 'loading'
+                : hasMissingResponse
+                  ? 'pending'
+                  : 'success';
 
           return (
             <Fragment key={`activity-${message.id ?? index}`}>

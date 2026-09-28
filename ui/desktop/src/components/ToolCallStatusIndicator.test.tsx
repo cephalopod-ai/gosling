@@ -19,4 +19,12 @@ describe('ToolCallStatusIndicator', () => {
       expect(indicator.querySelector(`.lucide-${icon}`)).toBeInTheDocument();
     }
   );
+
+  it('renders a distinct non-color cue for a tool call that never ran', () => {
+    render(<ToolCallStatusIndicator status="not_run" />, { wrapper: IntlTestWrapper });
+
+    const indicator = screen.getByLabelText('Tool status: not run');
+    expect(indicator).toHaveAttribute('data-status', 'not_run');
+    expect(indicator.querySelector('.lucide-ban')).toBeInTheDocument();
+  });
 });

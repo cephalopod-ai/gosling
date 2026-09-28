@@ -1,6 +1,16 @@
-import { describe, it, expect } from 'vitest';
-import { deriveLoadingStatus, getToolResultError } from './ToolCallWithResponse';
-import type { ToolResponseMessageContent } from '../types/message';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { describe, it, expect, vi } from 'vitest';
+import { IntlTestWrapper } from '../i18n/test-utils';
+import ToolCallWithResponse, {
+  deriveLoadingStatus,
+  getToolResultError,
+} from './ToolCallWithResponse';
+import type { ToolRequestMessageContent, ToolResponseMessageContent } from '../types/message';
+
+vi.mock('../contexts/ArtifactWorkbenchContext', () => ({
+  useArtifactWorkbench: () => ({ openFile: vi.fn() }),
+}));
 
 function toolResponse(status?: string): ToolResponseMessageContent {
   return {
@@ -53,5 +63,59 @@ describe('getToolResultError', () => {
     expect(getToolResultError({ status: 'success', value: { content: [] } })).toBeUndefined();
     expect(getToolResultError(undefined)).toBeUndefined();
     expect(getToolResultError(null)).toBeUndefined();
+  });
+});
+
+// A turn stopped while a tool call waited (quit during an approval, a killed
+// process) is closed by the backend with this result on the next load, so the
+// card must say the call never ran instead of staying pending or "failed".
+describe('a replayed tool call', () => {
+  const request = {
+    type: 'toolRequest',
+    id: 'call-1',
+    toolCall: { status: 'success', value: { name: 'developer__shell', arguments: {} } },
+  } as unknown as ToolRequestMessageContent;
+
+  function failed(error: string): ToolResponseMessageContent {
+    return {
+      type: 'toolResponse',
+      id: 'call-1',
+      toolResult: { status: 'error', error },
+    } as unknown as ToolResponseMessageContent;
+  }
+
+  async function renderExpanded(toolResponse: ToolResponseMessageContent) {
+    render(
+      <ToolCallWithResponse
+        isCancelledMessage={false}
+        toolRequest={request}
+        toolResponse={toolResponse}
+        isPendingApproval={false}
+      />,
+      { wrapper: IntlTestWrapper }
+    );
+    await userEvent.click(screen.getByRole('button'));
+  }
+
+  it('shows a call the closed turn never ran as not run', async () => {
+    await renderExpanded(
+      failed(
+        '-32600: Tool execution was cancelled before it started because the prior turn ended. It will not be retried automatically.'
+      )
+    );
+
+    expect(screen.getByLabelText('Tool status: not run')).toBeInTheDocument();
+    expect(
+      screen.getByText('Not run — the run ended before this tool started')
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Tool failed')).not.toBeInTheDocument();
+  });
+
+  it('still shows a real failure as failed', async () => {
+    await renderExpanded(failed('ENOENT: missing file'));
+
+    expect(screen.getByLabelText('Tool status: error')).toBeInTheDocument();
+    expect(screen.getByText('Tool failed')).toBeInTheDocument();
+    expect(screen.getByText('ENOENT: missing file')).toBeInTheDocument();
   });
 });
