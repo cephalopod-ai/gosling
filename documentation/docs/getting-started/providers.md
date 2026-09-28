@@ -238,6 +238,9 @@ To configure your chosen provider, see available options, or select a model, vis
        - Select the model from a list
        - Search for the model by name
        - Enter the model name directly
+
+       When you run `gosling configure` again, the list starts on the model you saved. If the provider's model
+       list can't be fetched, gosling shows why and asks for the model name instead.
        
        ```
        │
@@ -255,7 +258,9 @@ To configure your chosen provider, see available options, or select a model, vis
        This change takes effect the next time you start a session.
 
   :::note
-  `gosling configure` doesn't support entering custom model names. To use a model not in the provider's list, use gosling Desktop or edit the `GOSLING_MODEL` variable in your [`config.yaml`](/docs/guides/config-files) directly.
+  To use a model that is not in the provider's list, choose `Enter a model not listed...`. `gosling configure` saves
+  what you entered only after the configuration check at the end succeeds; if the check fails or you stop early, your
+  previous settings stay as they were.
   :::
 
   :::tip

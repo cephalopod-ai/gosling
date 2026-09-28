@@ -836,17 +836,20 @@ pub async fn configure_provider_dialog() -> anyhow::Result<bool> {
                 .filter(|model| !model.is_empty())
         };
 
-    // Select a model: on fetch error show styled error and abort; if models available, show list; otherwise free-text input
+    // Pick from the provider's list when it has one; otherwise type the model in.
+    // A listing that fails (some OpenAI-compatible servers have no working
+    // /models) does not end the setup: the check below verifies a typed model.
+    // (GSL-PT-20260927-B03)
     let model: String = match models_res {
-        Err(e) => {
-            // Provider hook error
-            cliclack::outro(style(e.to_string()).on_red().white())?;
-            return Ok(false);
-        }
         Ok(models) if !models.is_empty() => {
             select_model_from_list(&models, provider_meta, current_model.as_deref())?
         }
-        Ok(_) => {
+        listing => {
+            if let Err(e) = listing {
+                let _ = cliclack::log::warning(format!(
+                    "Could not list this provider's models: {e}\nEnter the model name instead; the configuration check verifies it."
+                ));
+            }
             let default_model = current_model
                 .or_else(|| std::env::var("GOSLING_MODEL").ok())
                 .unwrap_or(provider_meta.default_model.clone());
