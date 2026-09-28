@@ -2437,7 +2437,12 @@ async fn handle_default_session() -> Result<()> {
 pub async fn cli() -> anyhow::Result<()> {
     register_builtin_extensions(gosling_mcp::BUILTIN_EXTENSIONS.clone());
 
+    // Parse first: `--help`, `--version` and usage errors exit inside
+    // `Cli::parse()`, so they never create a log file in the state directory.
     let cli = Cli::parse();
+    if let Err(e) = crate::logging::setup_logging(None) {
+        eprintln!("Warning: Failed to initialize logging: {}", e);
+    }
     if let Some(Command::SessionHistoryMcp {
         session_id,
         data_dir,
