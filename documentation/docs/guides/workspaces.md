@@ -107,6 +107,11 @@ gosling uses its existing owner-protected `secrets.yaml` fallback. Workspace met
 profile UUID and configured-field metadata, using internal secure identifiers shaped like
 `workspace-credential::<profile UUID>::<field>`.
 
+Each provider you have set up on the Providers screen also appears as a read-only
+`Current <provider> configuration` profile that references the saved values instead of copying
+them. Only providers with values you actually saved (and that the provider list reports as
+configured) appear; if such a provider is no longer set up, its profile is listed as missing.
+
 Deleting a referenced profile requires confirmation and leaves affected workspaces in a visible
 relink-required state. gosling does not silently substitute another credential. Global-migration
 aliases and distribution-managed profiles are read-only in the workspace profile manager; create a

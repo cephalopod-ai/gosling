@@ -181,7 +181,8 @@ impl GoslingAcpAgent {
         }
         let profiles = self
             .workspace_service
-            .credential_profiles()
+            .listed_credential_profiles()
+            .await
             .internal_err_ctx("Failed to list credential profiles")?;
         Ok(CredentialProfileListResponse { profiles })
     }
@@ -259,7 +260,8 @@ impl GoslingAcpAgent {
     ) -> Result<CredentialProfileTestResponse, agent_client_protocol::Error> {
         let profile = self
             .workspace_service
-            .credential_profiles()
+            .listed_credential_profiles()
+            .await
             .internal_err_ctx("Failed to read credential profile")?
             .into_iter()
             .find(|profile| profile.id == request.profile_id)
