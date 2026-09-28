@@ -35,5 +35,7 @@ manager, and use Manual Approval for sessions that handle sensitive material.
 - The Developer extension's `tree` tool leaves git-ignored and hidden entries out of its listing.
 - Files referenced with `@` inside context files such as `AGENTS.md` or `.goslinghints` are not
   imported when git ignores them.
+- Context files in directories that git ignores are not loaded as nested hints when a tool touches
+  those directories.
 
 Neither behavior stops a tool call from reading or changing an ignored file.

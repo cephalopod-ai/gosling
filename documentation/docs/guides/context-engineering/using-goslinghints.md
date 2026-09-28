@@ -119,6 +119,8 @@ This is especially useful in monorepos or large projects where different parts o
 
 By default, gosling looks for both `AGENTS.md` and `.goslinghints` at each level. If you're using [custom context files](#custom-context-files), gosling applies the same nested loading behavior to those filenames too.
 
+Nested hints only come from directories inside the working directory, and gosling skips directories that git ignores (through `.gitignore` files from the repository root down to that directory), such as `node_modules/` or a vendored tree. One update adds at most 16 KiB of nested hints; anything beyond that is left out, and the model is told so.
+
 As a best practice, `.goslinghints` at each level should only include hints relevant to that scope:
 - **Root level**: Include project-wide standards, build processes, and general guidelines
 - **Module/feature level**: Add specific requirements for that area of the codebase
