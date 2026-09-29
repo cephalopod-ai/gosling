@@ -189,7 +189,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Medium | B21 | Rejected Copilot token refresh surfaces as "failed to get api info after 3 attempts" + "Please retry"; no re-auth request | fixed (R9) |
 | Medium | C01 | ACP client `mcpServers` replace all of gosling's configured extensions | fixed (R10) |
 | Medium | C02 | A hanging MCP extension blocks session start for 300 s with no feedback (run/ACP) | fixed (30 s startup cap + GOSLING_EXTENSION_STARTUP_TIMEOUT) (R11) |
-| Medium | C03 | Removed MCP extensions come back when an older session is resumed/loaded | open — queued (operator: record extension origin) (R11) |
+| Medium | C03 | Removed MCP extensions come back when an older session is resumed/loaded | fixed (CLI/ACP; Desktop _meta sessions need a configKey protocol field — follow-up) (R11) |
 | Medium | C05 | Skill discovery ignores `GOSLING_PATH_ROOT` and reads/writes HOME-based skill dirs | fixed (R7) |
 | Medium | C06 | `disabledPlugins` does not disable an installed plugin's skills | fixed (R11) |
 | Medium | C08 | ACP: parallel subagents' tool activity is attributed to the first delegate call | fixed (R11) |
@@ -296,7 +296,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | F03 | `gosling serve` is silent on the console and its log misreports failed starts | fixed (R10) |
 | Low | F04 | WebSocket closes never carry a server close frame (client always sees 1006) | upstream crate (agent-client-protocol-http) |
 | Low | F05 | `--allowed-origin` accepts values that can never match and gives no diagnostics for rejections | fixed (R10) |
-| Low | F06 | TLS startup validation/messaging gaps | open — queued R10 |
+| Low | F06 | TLS startup validation/messaging gaps | fixed (R10) |
 | Low | F07 | Structurally invalid requests get -32700 Parse error with id:null | upstream crate (agent-client-protocol) |
 | Low | F08 | `session/prompt` with an empty prompt array sends the model a fabricated "Hello" | fixed (R10) |
 | Low | F09 | Streamable-HTTP connections that never open a stream or DELETE are never reaped (suspicion) | open — queued R10 |
