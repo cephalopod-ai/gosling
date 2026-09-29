@@ -4,7 +4,7 @@
  * @vitest-environment jsdom
  */
 import React from 'react';
-import { screen, render, waitFor } from '@testing-library/react';
+import { act, screen, render, waitFor } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { AppInner } from './App';
 import { IntlTestWrapper } from './i18n/test-utils';
@@ -101,8 +101,11 @@ vi.mock('./components/ui/ConfirmationModal', () => ({
   ConfirmationModal: () => null,
 }));
 
+const mockToastError = vi.hoisted(() => vi.fn());
+
 vi.mock('react-toastify', () => ({
   ToastContainer: () => null,
+  toast: { error: mockToastError },
 }));
 
 vi.mock('./components/GoslinghintsModal', () => ({
@@ -326,5 +329,31 @@ describe('App Component - Brand New State', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/', {
       state: { initialMessage: { msg: 'Inspect this workspace', images: [] } },
     });
+  });
+
+  it('shows a refused new chat window as a toast, not the fatal error screen', async () => {
+    mockElectron.getConfig.mockReturnValue({
+      GOSLING_DEFAULT_PROVIDER: 'openai',
+      GOSLING_DEFAULT_MODEL: 'gpt-4',
+      GOSLING_ALLOWLIST_WARNING: false,
+    });
+
+    render(<AppInner />, { wrapper: AppInnerTestWrapper });
+
+    await waitFor(() => {
+      expect(mockElectron.reactReady).toHaveBeenCalled();
+    });
+
+    const refusedHandler = mockElectron.on.mock.calls.find(
+      ([channel]) => channel === 'create-chat-window-refused'
+    )?.[1];
+    expect(refusedHandler).toBeDefined();
+
+    act(() => refusedHandler?.({} as any, 'unavailable-directory', '/work/beta'));
+
+    expect(mockToastError).toHaveBeenCalledWith(
+      'The folder “/work/beta” is missing or can’t be read, so the chat can’t open.'
+    );
+    expect(screen.queryByText(/^Error:/)).not.toBeInTheDocument();
   });
 });

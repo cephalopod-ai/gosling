@@ -23,6 +23,15 @@
   "announcementModal.gotIt": {
     "defaultMessage": "Got it!"
   },
+  "app.newWindowFailed": {
+    "defaultMessage": "Couldn’t open a new window: {error}"
+  },
+  "app.newWindowFolderNotApproved": {
+    "defaultMessage": "Choose the folder “{dir}” again before starting a chat in it."
+  },
+  "app.newWindowFolderUnavailable": {
+    "defaultMessage": "The folder “{dir}” is missing or can’t be read, so the chat can’t open."
+  },
   "appLayout.collapseNavigation": {
     "defaultMessage": "Collapse navigation"
   },

@@ -53,6 +53,8 @@ export interface CreateChatWindowOptions {
   viewType?: string;
 }
 
+export type CreateChatWindowRefusal = 'unavailable-directory' | 'unapproved-directory' | 'failed';
+
 export const desktopCommandChannels = {
   directoryChooser: 'directory-chooser',
   sessionDirectoryChooser: 'session-directory-chooser',
@@ -317,6 +319,7 @@ export interface DesktopCommandPayloads {
 export const rendererEventChannels = {
   addExtension: 'add-extension',
   artifactDownloadUnrouted: 'artifact-download-unrouted',
+  createChatWindowRefused: 'create-chat-window-refused',
   fatalError: 'fatal-error',
   findCommand: 'find-command',
   findNext: 'find-next',
@@ -341,6 +344,10 @@ export type RendererEventChannel =
 export interface RendererEventPayloads {
   [rendererEventChannels.addExtension]: [url: string];
   [rendererEventChannels.artifactDownloadUnrouted]: [fileName: string];
+  [rendererEventChannels.createChatWindowRefused]: [
+    refusal: CreateChatWindowRefusal,
+    detail: string,
+  ];
   [rendererEventChannels.fatalError]: [message: string];
   [rendererEventChannels.findCommand]: [];
   [rendererEventChannels.findNext]: [];
