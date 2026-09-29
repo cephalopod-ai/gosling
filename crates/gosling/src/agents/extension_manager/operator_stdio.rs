@@ -89,9 +89,11 @@ pub async fn connect_operator_stdio_client(
         BoundedLineReader::new(stdout, registration.max_message_bytes),
         stdin,
     );
+    let timeouts = ExtensionTimeouts::resolve(registration.timeout);
+    let started = std::time::Instant::now();
     let client_result = McpClient::connect(
         transport,
-        Duration::from_secs(resolve_timeout(registration.timeout)),
+        timeouts.mcp_client(),
         provider,
         "gosling-domain-adapter".to_string(),
         GoslingMcpClientCapabilities {
@@ -114,6 +116,7 @@ pub async fn connect_operator_stdio_client(
             })
         }
         Err(error) => {
+            let timed_out = timeouts.startup_expired(started);
             let exit_status = child.try_wait().ok().flatten();
             let _ = child.start_kill();
             let _ = tokio::time::timeout(Duration::from_secs(1), child.wait()).await;
@@ -128,6 +131,9 @@ pub async fn connect_operator_stdio_client(
                         String::new()
                     }
                 };
+            if timed_out {
+                return Err(timeouts.startup_timeout_error(stderr_content));
+            }
             Err(ProcessExit::new(stderr_content, exit_status, error).into())
         }
     }

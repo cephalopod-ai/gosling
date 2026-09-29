@@ -97,7 +97,7 @@ const GOSLING_USER_AGENT: reqwest::header::HeaderValue =
 pub(super) async fn connect_with_auth(
     auth_manager: rmcp::transport::AuthorizationManager,
     uri: &str,
-    timeout: Duration,
+    timeouts: ExtensionTimeouts,
     headers: &HashMap<String, String>,
     provider: SharedProvider,
     client_name: String,
@@ -119,7 +119,7 @@ pub(super) async fn connect_with_auth(
     let mut auth_client_builder = reqwest::Client::builder().default_headers(auth_headers);
     #[cfg(target_os = "linux")]
     {
-        auth_client_builder = auth_client_builder.tcp_user_timeout(Some(timeout));
+        auth_client_builder = auth_client_builder.tcp_user_timeout(Some(timeouts.request));
     }
     let auth_http_client = auth_client_builder
         .build()
@@ -129,23 +129,26 @@ pub(super) async fn connect_with_auth(
         auth_client,
         StreamableHttpClientTransportConfig::with_uri(uri),
     );
-    Ok(Box::new(
-        McpClient::connect(
-            transport,
-            timeout,
-            provider,
-            client_name,
-            capabilities,
-            roots_dir.to_path_buf(),
-        )
-        .await?,
-    ))
+    let started = std::time::Instant::now();
+    let client = McpClient::connect(
+        transport,
+        timeouts.mcp_client(),
+        provider,
+        client_name,
+        capabilities,
+        roots_dir.to_path_buf(),
+    )
+    .await;
+    if client.is_err() && timeouts.startup_expired(started) {
+        return Err(timeouts.startup_timeout_error(String::new()));
+    }
+    Ok(Box::new(client?))
 }
 
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn create_streamable_http_client(
     uri: &str,
-    timeout: Option<u64>,
+    timeouts: ExtensionTimeouts,
     headers: &HashMap<String, String>,
     name: &str,
     socket: Option<&str>,
@@ -160,7 +163,7 @@ pub(super) async fn create_streamable_http_client(
     if let Some(socket_path) = socket {
         return create_unix_socket_http_client(
             uri,
-            timeout,
+            timeouts,
             headers,
             name,
             socket_path,
@@ -192,9 +195,7 @@ pub(super) async fn create_streamable_http_client(
         );
     }
 
-    let timeout_duration = Duration::from_secs(resolve_timeout(timeout));
-
-    let http_client = build_streamable_http_client(default_headers, timeout_duration)
+    let http_client = build_streamable_http_client(default_headers, timeouts.request)
         .map_err(|_| ExtensionError::ConfigError("could not construct http client".to_string()))?;
 
     let transport = StreamableHttpClientTransport::with_client(
@@ -216,7 +217,7 @@ pub(super) async fn create_streamable_http_client(
                 let auth_result = connect_with_auth(
                     auth_manager,
                     uri,
-                    timeout_duration,
+                    timeouts,
                     headers,
                     provider.clone(),
                     client_name.clone(),
@@ -253,15 +254,19 @@ pub(super) async fn create_streamable_http_client(
         }
     }
 
+    let started = std::time::Instant::now();
     let client_res = McpClient::connect(
         transport,
-        timeout_duration,
+        timeouts.mcp_client(),
         provider.clone(),
         client_name.clone(),
         capabilities.clone(),
         roots_dir.to_path_buf(),
     )
     .await;
+    if client_res.is_err() && timeouts.startup_expired(started) {
+        return Err(timeouts.startup_timeout_error(String::new()));
+    }
 
     if should_attempt_oauth_fallback(&client_res) {
         if has_static_authorization_header(headers) {
@@ -278,7 +283,7 @@ pub(super) async fn create_streamable_http_client(
                 connect_with_auth(
                     auth_manager,
                     uri,
-                    timeout_duration,
+                    timeouts,
                     headers,
                     provider,
                     client_name,
@@ -318,7 +323,7 @@ pub(super) fn build_streamable_http_client(
 #[allow(clippy::too_many_arguments)]
 async fn create_unix_socket_http_client(
     uri: &str,
-    timeout: Option<u64>,
+    timeouts: ExtensionTimeouts,
     headers: &HashMap<String, String>,
     name: &str,
     socket_path: &str,
@@ -354,17 +359,19 @@ async fn create_unix_socket_http_client(
     let config = StreamableHttpClientTransportConfig::with_uri(uri).custom_headers(custom_headers);
     let transport = StreamableHttpClientTransport::with_client(unix_client, config);
 
-    let timeout_duration = Duration::from_secs(resolve_timeout(timeout));
-
+    let started = std::time::Instant::now();
     let client_res = McpClient::connect(
         transport,
-        timeout_duration,
+        timeouts.mcp_client(),
         provider.clone(),
         client_name.clone(),
         capabilities.clone(),
         roots_dir.to_path_buf(),
     )
     .await;
+    if client_res.is_err() && timeouts.startup_expired(started) {
+        return Err(timeouts.startup_timeout_error(String::new()));
+    }
 
     if should_attempt_oauth_fallback(&client_res) {
         tracing::warn!(

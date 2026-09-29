@@ -55,6 +55,15 @@ impl std::fmt::Display for ProcessExit {
     }
 }
 
+fn describe_stderr(stderr: &str) -> String {
+    let stderr = stderr.trim_end();
+    if stderr.is_empty() {
+        String::new()
+    } else {
+        format!(": stderr = {stderr}")
+    }
+}
+
 /// rmcp renders transport failures with the transport's Rust type name and keeps
 /// the HTTP client's error out of the `source()` chain, which hides causes such
 /// as "connection refused"; describe the failed step and its root cause instead.
@@ -120,8 +129,15 @@ pub enum ExtensionError {
     InitializeError(#[from] ClientInitializeError),
     #[error("{0}")]
     ProcessExit(#[from] ProcessExit),
-    #[error("process did not finish initializing within {seconds}s: stderr = {stderr}")]
-    InitializeTimeout { seconds: u64, stderr: String },
+    #[error(
+        "did not finish starting within {seconds}s ({limited_by}){}",
+        describe_stderr(.stderr)
+    )]
+    InitializeTimeout {
+        seconds: u64,
+        limited_by: &'static str,
+        stderr: String,
+    },
 }
 
 pub type ExtensionResult<T> = Result<T, ExtensionError>;

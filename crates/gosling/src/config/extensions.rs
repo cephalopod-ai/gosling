@@ -12,6 +12,7 @@ use utoipa::ToSchema;
 
 pub const DEFAULT_EXTENSION: &str = "developer";
 pub const DEFAULT_EXTENSION_TIMEOUT: u64 = 300;
+pub const DEFAULT_EXTENSION_STARTUP_TIMEOUT: u64 = 30;
 pub const DEFAULT_EXTENSION_DESCRIPTION: &str = "";
 pub const DEFAULT_DISPLAY_NAME: &str = "Developer";
 const EXTENSIONS_CONFIG_KEY: &str = "extensions";

@@ -827,7 +827,7 @@ enum McpSubcommand {
         #[arg(long = "secret", value_name = "KEY[=VALUE]")]
         secrets: Vec<String>,
 
-        /// Startup timeout in seconds
+        /// Tool-call timeout in seconds; startup is bounded by GOSLING_EXTENSION_STARTUP_TIMEOUT (default 30) or this value if smaller
         #[arg(long, value_name = "SECS")]
         timeout: Option<u64>,
 

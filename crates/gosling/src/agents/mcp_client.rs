@@ -594,6 +594,14 @@ pub struct GoslingMcpClientCapabilities {
     pub host_info: Option<GoslingMcpHostInfo>,
 }
 
+/// `startup` bounds the initialize handshake; `request` bounds every request
+/// made after it, such as tool calls.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct McpClientTimeouts {
+    pub startup: std::time::Duration,
+    pub request: std::time::Duration,
+}
+
 /// The MCP client is the interface for MCP operations.
 pub struct McpClient {
     client: Mutex<RunningService<RoleClient, GoslingClient>>,
@@ -606,7 +614,7 @@ pub struct McpClient {
 impl McpClient {
     pub async fn connect<T, E, A>(
         transport: T,
-        timeout: std::time::Duration,
+        timeouts: McpClientTimeouts,
         provider: SharedProvider,
         client_name: String,
         capabilities: GoslingMcpClientCapabilities,
@@ -618,7 +626,7 @@ impl McpClient {
     {
         Self::connect_with_container(
             transport,
-            timeout,
+            timeouts,
             provider,
             None,
             client_name,
@@ -630,7 +638,7 @@ impl McpClient {
 
     pub async fn connect_with_container<T, E, A>(
         transport: T,
-        timeout: std::time::Duration,
+        timeouts: McpClientTimeouts,
         provider: SharedProvider,
         docker_container: Option<String>,
         client_name: String,
@@ -656,11 +664,12 @@ impl McpClient {
         // would otherwise block this await forever (REL-GOS-001), including
         // every other caller waiting on this session's creation lock.
         let client: rmcp::service::RunningService<rmcp::RoleClient, GoslingClient> =
-            match tokio::time::timeout(timeout, client.serve(transport)).await {
+            match tokio::time::timeout(timeouts.startup, client.serve(transport)).await {
                 Ok(result) => result?,
                 Err(_) => {
                     return Err(ClientInitializeError::ConnectionClosed(format!(
-                        "initialize handshake timed out after {timeout:?}"
+                        "initialize handshake timed out after {:?}",
+                        timeouts.startup
                     )));
                 }
             };
@@ -670,7 +679,7 @@ impl McpClient {
             client: Mutex::new(client),
             notification_subscribers,
             server_info,
-            timeout,
+            timeout: timeouts.request,
             docker_container,
         })
     }
@@ -1639,7 +1648,10 @@ mod tests {
 
         let client = McpClient::connect(
             client_transport,
-            std::time::Duration::from_secs(5),
+            McpClientTimeouts {
+                startup: std::time::Duration::from_secs(5),
+                request: std::time::Duration::from_secs(5),
+            },
             Arc::new(Mutex::new(None)),
             "test-client".to_string(),
             GoslingMcpClientCapabilities {
@@ -1659,5 +1671,34 @@ mod tests {
         tokio::time::timeout(std::time::Duration::from_secs(2), client.close())
             .await
             .expect("a second close() call must also complete without hanging");
+    }
+
+    #[tokio::test]
+    async fn requests_use_the_request_timeout_not_the_startup_timeout() {
+        let (server_transport, client_transport) = tokio::io::duplex(4096);
+        tokio::spawn(async move {
+            let server = NoopServer.serve(server_transport).await?;
+            server.waiting().await?;
+            anyhow::Ok(())
+        });
+
+        let client = McpClient::connect(
+            client_transport,
+            McpClientTimeouts {
+                startup: std::time::Duration::from_secs(1),
+                request: std::time::Duration::from_secs(300),
+            },
+            Arc::new(Mutex::new(None)),
+            "test-client".to_string(),
+            GoslingMcpClientCapabilities {
+                mcpui: false,
+                host_info: None,
+            },
+            std::env::current_dir().unwrap_or_default(),
+        )
+        .await
+        .expect("connect should succeed against a no-op server");
+
+        assert_eq!(client.timeout, std::time::Duration::from_secs(300));
     }
 }
