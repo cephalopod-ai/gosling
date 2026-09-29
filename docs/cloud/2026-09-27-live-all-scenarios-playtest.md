@@ -336,7 +336,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | G218 | After a turn with more than 200 outputs, the live Outputs list and count silently stop at 200 | open — queued R13b |
 | Low | G219 | Escape inside an open provider/model dropdown closes the entire model-switch dialog | open — queued R13b |
 | Low | H06 | After a normal exit all session data lives only in `sessions.db-wal`; `sessions.db` is an empty 4 KB file | fixed (R4) |
-| Low | H07 | Delegate activity title echoes the raw `source` argument (`null`, blanks, normalized sentinel) | open — queued R11 |
+| Low | H07 | Delegate activity title echoes the raw `source` argument (`null`, blanks, normalized sentinel) | fixed (R11) |
 | Low | S01 | Stale turn-lease rows left by concurrent `gosling run` processes | fixed (R4) |
 | Low | S02 | Interactive type-ahead under load: Enter becomes a newline, a later `/exit` is sent to the model | open — queued R8b |
 | Low | S05 | `session -r --history` renders at ~32 ms per message (6.7 s for 206 messages) | open — queued R8b |
