@@ -312,7 +312,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | G110 | Symlinked output/primary folders that resolve outside the declared tree pass validation silently; the grant is on the resolved outside path while the UI shows the link path (suspicion) | fixed (validation warning; grant unchanged) (R13b) |
 | Low | G111 | Hub uses stale workspace validation; failure only surfaces on submit with "Invalid params:" prefix | fixed (R13b) |
 | Low | G112 | With the Inputs/Outputs pane open at 940px, the New Chat hub is crushed (workspace selector 18 px wide) | fixed (structure tested; pixels not verified in the app) (R13b) |
-| Low | G113 | Renderer IPC listener leak warning after several chats (suspicion) | open — queued R13b |
+| Low | G113 | Renderer IPC listener leak warning after several chats (suspicion) | fixed (root cause found by code reading; not reproduced in Electron) (R13b) |
 | Low | G114 | Chat header says "No credential" while the app-default global key is in use | fixed (R13b) |
 | Low | G116 | Shortcut recorder: Escape is recorded as a key instead of cancelling; no per-binding reset | fixed (R13b) |
 | Low | G117 | Settings controls lack accessible names | fixed (R13b) |
@@ -322,18 +322,18 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | G124 | At the minimum window (480x400) with navigation open, the Chats list has zero height | fixed (structure tested; pixels not verified in the app) (R13b) |
 | Low | G125 | Renderer CSP lists invalid IPv6 sources (console error on every page load) | fixed (R13b) |
 | Low | G126 | Concurrent-turn rejection is shown as "Internal error / Task failed" with an unrelated recovery action, and the rejected text is lost | fixed (R13b) |
-| Low | G133 | A failing extension is reported only as "Failed to add extension" and is not flagged in the Extensions list | open — queued R11 |
+| Low | G133 | A failing extension is reported only as "Failed to add extension" and is not flagged in the Extensions list | fixed (R11) |
 | Low | G202 | HTML artifact preview never runs its scripts: the app page's CSP blocks the inline scripts the preview sandbox is designed to allow | fixed (scripts disabled with notice; running them needs a sandboxed preview scheme — follow-up) (R13b) |
 | Low | G203 | Malformed, empty and missing previewable outputs are not reported with a clear, bounded message | fixed (R13b) |
 | Low | G204 | Markdown preview shows gosling's own output-history marker as a visible code block | fixed (R13b) |
 | Low | G205 | Output rows show the absolute path truncated at the end, hiding the file name | fixed (R13b) |
 | Low | G208 | An assistant reference to an in-workspace symlink grants the renderer read access to the outside-root target | fixed (R13b) |
-| Low | G209 | Two windows overwrite each other's persisted artifact tabs; tabs closed in one window come back after relaunch | open — queued R13b |
+| Low | G209 | Two windows overwrite each other's persisted artifact tabs; tabs closed in one window come back after relaunch | fixed (R13b) |
 | Low | G213 | External backend faults are indistinguishable and undetected while idle | open — queued R13b |
 | Low | G214 | An invalid external-backend URL is saved when the Secret field loses focus | fixed (R13b) |
 | Low | G215 | Desktop per-session state is keyed by session id only, so sessions of different backends share UI state | open — queued R13b |
 | Low | G217 | Copy/IPC failure toasts show Electron's internal "Error invoking remote method '…': Error:" prefix | fixed (R13b) |
-| Low | G218 | After a turn with more than 200 outputs, the live Outputs list and count silently stop at 200 | open — queued R13b |
+| Low | G218 | After a turn with more than 200 outputs, the live Outputs list and count silently stop at 200 | fixed (R13b) |
 | Low | G219 | Escape inside an open provider/model dropdown closes the entire model-switch dialog | fixed (R13b) |
 | Low | H06 | After a normal exit all session data lives only in `sessions.db-wal`; `sessions.db` is an empty 4 KB file | fixed (R4) |
 | Low | H07 | Delegate activity title echoes the raw `source` argument (`null`, blanks, normalized sentinel) | fixed (R11) |
