@@ -303,7 +303,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | F11 | Losing the turn lease does not stop the in-flight provider call; the revoked turn lingers until the provider returns | fixed (R1b) |
 | Low | F12 | Two connections can drive one session; the owner gets no updates and a misleading refusal | open — queued R10 |
 | Low | F13 | ACP reports provider/config problems as generic -32603 "Internal error" | open — queued R10 |
-| Low | F16 | The protocol-version gate is advisory on stdio and WebSocket | open — queued R10 |
+| Low | F16 | The protocol-version gate is advisory on stdio and WebSocket | fixed (R10) |
 | Low | F17 | Advertised capabilities do not match what is callable | open — queued R10 |
 | Low | G103 | Chat header labels overlap at the default 940px window (and all narrower widths) | open — queued R13b |
 | Low | G106 | Unicode-equivalent workspace names are both accepted (NFC vs NFD) | open — queued R13b |
