@@ -128,7 +128,7 @@ impl From<ServePlatform> for GoslingPlatform {
 }
 
 #[derive(Parser)]
-#[command(name = "gosling", author, version, display_name = "", about, long_about = None)]
+#[command(name = "gosling", author, version, about, long_about = None)]
 pub struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
@@ -616,12 +616,20 @@ enum SessionCommand {
         )]
         working_dir: Option<PathBuf>,
     },
-    #[command(name = "diagnostics")]
+    #[command(
+        name = "diagnostics",
+        about = "Write a JSON diagnostics report for a session. Prompts for the session if none is given."
+    )]
     Diagnostics {
         #[command(flatten)]
         identifier: Option<Identifier>,
 
-        #[arg(short = 'o', long)]
+        #[arg(
+            short = 'o',
+            long,
+            value_name = "FILE",
+            help = "Where to write the report (default: diagnostics_<session_id>.json in the current directory)"
+        )]
         output: Option<PathBuf>,
     },
     #[command(
@@ -934,21 +942,46 @@ enum Command {
     },
 
     /// Validate a shell provisioning document against main Gosling settings
-    #[command(about = "Validate a shell provisioning document")]
+    #[command(
+        about = "Validate a shell provisioning document",
+        long_about = "Validate a shell provisioning document against this installation's Gosling settings without starting a server. Prints a JSON report and exits non-zero when the document is invalid."
+    )]
     ShellValidate {
-        #[arg(long = "shell-id", value_name = "ID")]
+        #[arg(
+            long = "shell-id",
+            value_name = "ID",
+            help = "Shell identity to validate as (1-64 lowercase letters, digits, '-' or '_')"
+        )]
         shell_id: String,
 
-        #[arg(long = "shell-display-name", value_name = "NAME")]
+        #[arg(
+            long = "shell-display-name",
+            value_name = "NAME",
+            help = "Display name for the shell identity"
+        )]
         shell_display_name: String,
 
-        #[arg(long = "shell-version", default_value = "1")]
+        #[arg(
+            long = "shell-version",
+            value_name = "VERSION",
+            default_value = "1",
+            help = "Version string for the shell identity"
+        )]
         shell_version: String,
 
-        #[arg(long = "shell-provisioning", value_name = "PATH")]
+        #[arg(
+            long = "shell-provisioning",
+            value_name = "PATH",
+            help = "Shell provisioning document (JSON) to validate"
+        )]
         shell_provisioning: PathBuf,
 
-        #[arg(long = "with-builtin", value_name = "NAME", value_delimiter = ',')]
+        #[arg(
+            long = "with-builtin",
+            value_name = "NAME",
+            value_delimiter = ',',
+            help = "Builtin extensions the shell server would run with, as for `gosling serve --with-builtin` (comma-separated); unknown names are reported"
+        )]
         builtins: Vec<String>,
     },
 

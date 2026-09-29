@@ -77,7 +77,8 @@ gosling doctor
 ---
 
 #### version
-Check the current gosling version you have installed.
+Check the current gosling version you have installed. Prints the program name and version, for
+example `gosling 1.3.0`. `-V` is a short form.
 
 **Usage:**
 ```bash
@@ -474,7 +475,9 @@ Generate a comprehensive diagnostics JSON report for troubleshooting issues with
 - **`--session-id <session_id>`**: Generate diagnostics for a specific session by ID
 - **`-n, --name <name>`**: Generate diagnostics for a specific session by name
 - **`--path <path>`**: Generate diagnostics for a specific session by file path (legacy)
-- **`-o, --output <file>`**: Save diagnostics report to a specific file path (default: `diagnostics_{session_id}.json`)
+- **`-o, --output <file>`**: Save diagnostics report to a specific file path (default: `diagnostics_{session_id}.json` in the current directory)
+
+Without `--session-id`, `--name` or `--path`, gosling prompts you to choose a session.
 
 **What's included:**
 - **System Information**: App version, operating system, architecture, and timestamp
@@ -642,6 +645,30 @@ gosling acp
 :::info
 This command is automatically invoked by ACP-compatible clients and is not typically run directly by users. The client manages the lifecycle of the `gosling acp` process. See [Using gosling in ACP Clients](/docs/guides/acp-clients) for details.
 :::
+
+---
+
+#### shell-validate [options]
+Check a shell provisioning document against this installation's settings (workspaces, credential
+profiles, providers, extensions, skills) without starting a server. gosling prints a JSON report
+(`valid`, `issues`, `resolution`) and exits non-zero when the document is invalid. It does not create
+a `Default` workspace.
+
+**Options:**
+- **`--shell-id <ID>`**: Shell identity to validate as: 1-64 lowercase letters, digits, `-` or `_` (required)
+- **`--shell-display-name <NAME>`**: Display name for the shell identity (required)
+- **`--shell-version <VERSION>`**: Version string for the shell identity. Default is `1`
+- **`--shell-provisioning <PATH>`**: The provisioning document (JSON) to validate (required)
+- **`--with-builtin <NAME>`**: Builtin extensions the shell server would run with, as for `gosling serve --with-builtin`; comma-separated or repeated. Unknown names are reported as issues
+
+The document must contain an `identity` object, but the identity passed on the command line replaces
+it for validation.
+
+**Usage:**
+```bash
+gosling shell-validate --shell-id my_shell --shell-display-name "My Shell" \
+  --shell-provisioning ./shell.json --with-builtin developer
+```
 
 ---
 
