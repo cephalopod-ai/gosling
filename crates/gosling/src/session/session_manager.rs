@@ -806,6 +806,19 @@ impl SessionManager {
         self.storage.list_session_artifacts(id, cursor, limit).await
     }
 
+    /// Artifacts recorded or re-seen at or after `since` (second resolution),
+    /// most recently seen first, at most `limit`.
+    pub async fn list_session_artifacts_seen_since(
+        &self,
+        id: &str,
+        since: DateTime<Utc>,
+        limit: usize,
+    ) -> Result<Vec<SessionArtifact>> {
+        self.storage
+            .list_session_artifacts_seen_since(id, since, limit)
+            .await
+    }
+
     pub async fn upsert_session_artifacts(
         &self,
         session_id: &str,
@@ -6127,6 +6140,78 @@ mod tests {
             .unwrap();
         assert_eq!(second.artifacts.len(), 5);
         assert!(second.next_cursor.is_none());
+    }
+
+    #[tokio::test]
+    async fn artifacts_seen_since_a_turn_start_include_every_output_past_two_hundred() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = SessionManager::new(temp_dir.path().to_path_buf());
+        let working_dir = temp_dir.path().join("workspace");
+        let session = manager
+            .create_session(
+                working_dir.clone(),
+                "Many outputs".to_string(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        let referenced = |path: &str| {
+            DiscoveredArtifact::from_path(
+                path,
+                &working_dir,
+                None,
+                Some("text/markdown".to_string()),
+                crate::session::SessionArtifactRelation::Referenced,
+                SessionArtifactProvenance::AssistantMessage,
+                None,
+            )
+            .unwrap()
+        };
+        manager
+            .upsert_session_artifacts(
+                &session.id,
+                &[
+                    referenced("output/earlier.md"),
+                    referenced("output/reseen.md"),
+                ],
+            )
+            .await
+            .unwrap();
+        sqlx::query("UPDATE session_artifacts SET last_seen_at = '2020-01-01 00:00:00'")
+            .execute(manager.storage.pool().await.unwrap())
+            .await
+            .unwrap();
+
+        let turn_started_at = Utc::now();
+        let mut turn_outputs = (1..=250)
+            .map(|index| referenced(&format!("output/dt14-{index:03}.md")))
+            .collect::<Vec<_>>();
+        turn_outputs.push(referenced("output/reseen.md"));
+        manager
+            .upsert_session_artifacts(&session.id, &turn_outputs)
+            .await
+            .unwrap();
+
+        let announced = manager
+            .list_session_artifacts_seen_since(&session.id, turn_started_at, 2000)
+            .await
+            .unwrap();
+        let paths = announced
+            .iter()
+            .map(|artifact| artifact.display_path.as_str())
+            .collect::<HashSet<_>>();
+        assert_eq!(announced.len(), 251);
+        assert!(paths.contains("output/dt14-001.md"));
+        assert!(paths.contains("output/dt14-250.md"));
+        assert!(paths.contains("output/reseen.md"));
+        assert!(!paths.contains("output/earlier.md"));
+
+        let capped = manager
+            .list_session_artifacts_seen_since(&session.id, turn_started_at, 210)
+            .await
+            .unwrap();
+        assert_eq!(capped.len(), 210);
     }
 
     #[tokio::test]

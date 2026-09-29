@@ -336,6 +336,31 @@ impl SessionStorage {
             total_count,
         })
     }
+
+    pub(super) async fn list_session_artifacts_seen_since(
+        &self,
+        session_id: &str,
+        since: DateTime<Utc>,
+        limit: usize,
+    ) -> Result<Vec<SessionArtifact>> {
+        // `last_seen_at` is written by SQLite's CURRENT_TIMESTAMP (whole
+        // seconds); datetime() also normalizes rows copied in other formats.
+        let rows = sqlx::query_as::<_, SessionArtifactRow>(
+            r#"
+            SELECT session_id, display_path, resolved_path, base_working_dir, workspace_id,
+                   mime_type, relation, provenance, source_id, first_seen_at, last_seen_at
+            FROM session_artifacts
+            WHERE session_id = ? AND datetime(last_seen_at) >= datetime(?)
+            ORDER BY last_seen_at DESC, id DESC LIMIT ?
+            "#,
+        )
+        .bind(session_id)
+        .bind(since.format("%Y-%m-%d %H:%M:%S").to_string())
+        .bind(limit as i64)
+        .fetch_all(self.pool().await?)
+        .await?;
+        rows.into_iter().map(session_artifact_from_row).collect()
+    }
 }
 
 type SessionArtifactRow = (

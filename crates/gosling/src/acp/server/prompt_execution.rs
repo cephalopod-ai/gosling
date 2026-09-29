@@ -19,6 +19,11 @@ const POLICY_DENIED_TOOL_RESULT_PREFIX: &str = "Tool denied by policy:";
 /// anyway. Clients expect a cancel to end the prompt within seconds, even while
 /// another writer holds the session store.
 const CANCELLED_TURN_BOOKKEEPING_LIMIT: std::time::Duration = std::time::Duration::from_secs(5);
+/// Artifacts announced after a turn: every one the turn recorded or re-saw.
+/// Re-announcing the newest 200-row page instead left a turn with more outputs
+/// showing only 200 of them until a reload, and re-sent unchanged rows every
+/// turn. The cap matches the desktop's `ARTIFACT_TOTAL_LIMIT`.
+const ARTIFACT_UPDATE_LIMIT: usize = 2000;
 
 /// Tool calls this turn that the permission policy refused. A research turn
 /// that wrote nothing after such a refusal is blocked on a permission, not on
@@ -350,7 +355,8 @@ impl GoslingAcpAgent {
         self.reject_archived_session(&session_id).await?;
         let sid = sid_short(&session_id);
         let t_start = std::time::Instant::now();
-        let research_run_started_at = chrono::Utc::now() - chrono::Duration::seconds(1);
+        let turn_started_at = chrono::Utc::now();
+        let research_run_started_at = turn_started_at - chrono::Duration::seconds(1);
 
         let run_id = format!("run_{}", Uuid::new_v4());
         let cancel_token = self.prompt_run_shutdown.run_token();
@@ -781,12 +787,16 @@ impl GoslingAcpAgent {
             ))?;
         }
         if self.supports_gosling_custom_notifications() {
-            let page = self
+            let artifacts = self
                 .session_manager
-                .list_session_artifacts(&session_id, None, 200)
+                .list_session_artifacts_seen_since(
+                    &session_id,
+                    turn_started_at,
+                    ARTIFACT_UPDATE_LIMIT,
+                )
                 .await
                 .internal_err_ctx("Failed to load session artifacts")?;
-            for artifact in page.artifacts {
+            for artifact in artifacts {
                 cx.send_notification(GoslingSessionNotification {
                     session_id: session_id.clone(),
                     update: GoslingSessionUpdate::ArtifactUpdate(ArtifactUpdate {
