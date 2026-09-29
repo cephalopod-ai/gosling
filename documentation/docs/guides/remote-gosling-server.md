@@ -47,6 +47,12 @@ accepting connections and waits up to 5 seconds for open ones to close before it
 was killed outright (`SIGKILL`, a crash) cannot do this; the next `gosling serve` or `gosling acp` on the
 same data directory records its unfinished turns as interrupted when it starts.
 
+Several connections can load the same session, but a session runs one prompt at a time. A
+`session/prompt` for a session whose prompt is running on another connection is refused with
+`-32600 Invalid request` (`session <id> already has a prompt running on another connection to this
+server`) and changes nothing. Updates from a prompt stream only to the connection that sent it; other
+connections see the new messages when they load the session again.
+
 ### Optional TLS
 
 For a self-signed local certificate:

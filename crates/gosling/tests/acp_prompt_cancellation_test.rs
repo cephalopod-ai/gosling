@@ -6,7 +6,7 @@ use agent_client_protocol::schema::v1::{
     CancelNotification, ContentBlock, PromptRequest, PromptResponse, SessionId, SessionUpdate,
     StopReason, TextContent,
 };
-use agent_client_protocol::{Agent, ConnectionTo};
+use agent_client_protocol::{Agent, ConnectionTo, ErrorCode};
 use common_tests::fixtures::server::{AcpServerConnection, AcpServerSession};
 use common_tests::fixtures::{
     run_test, Connection, OpenAiFixture, PermissionDecision, Session, SessionData,
@@ -263,5 +263,170 @@ fn a_cancel_while_the_reply_waits_on_the_session_store_still_closes_the_turn() {
             stored_run_state(data_root.path(), &session_id).await,
             Some(AcpPromptRunState::Cancelled)
         );
+    });
+}
+
+async fn connect(
+    data_root: &Path,
+    session_manager: Option<Arc<SessionManager>>,
+) -> AcpServerConnection {
+    let openai = OpenAiFixture::new(
+        vec![],
+        <AcpServerConnection as Connection>::expected_session_id(),
+    )
+    .await;
+    <AcpServerConnection as Connection>::new(
+        TestConnectionConfig {
+            data_root: data_root.to_path_buf(),
+            session_manager,
+            ..Default::default()
+        },
+        openai,
+    )
+    .await
+}
+
+/// A cancelled turn releases its lease after it has answered.
+async fn wait_for_turn_lease_release(data_root: &Path, session_id: &SessionId) {
+    let mut connection = SqliteConnectOptions::new()
+        .filename(data_root.join("sessions").join("sessions.db"))
+        .connect()
+        .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let leases: i64 =
+                sqlx::query_scalar("SELECT COUNT(*) FROM session_turn_leases WHERE session_id = ?")
+                    .bind(session_id.0.as_ref())
+                    .fetch_one(&mut connection)
+                    .await
+                    .unwrap();
+            if leases == 0 {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the cancelled turn released its lease");
+}
+
+async fn cancel_and_wait(
+    cx: &ConnectionTo<Agent>,
+    session_id: &SessionId,
+    prompt: tokio::task::JoinHandle<Result<PromptResponse, agent_client_protocol::Error>>,
+) {
+    cx.send_notification(CancelNotification::new(session_id.clone()))
+        .unwrap();
+    let response = tokio::time::timeout(Duration::from_secs(5), prompt)
+        .await
+        .expect("the cancelled prompt answered")
+        .unwrap()
+        .unwrap();
+    assert_eq!(response.stop_reason, StopReason::Cancelled);
+}
+
+// F12: the connections of one server share its session store. A prompt from a
+// second connection while the session's turn runs on another one is refused
+// before it starts, says why, and leaves the running turn alone.
+#[test]
+fn a_prompt_on_a_session_busy_on_another_connection_is_refused_before_it_starts() {
+    run_test(async {
+        let data_root = tempfile::tempdir().unwrap();
+        let store = Arc::new(SessionManager::new(data_root.path().to_path_buf()));
+        let mut owner = connect(data_root.path(), Some(Arc::clone(&store))).await;
+        let mut other = connect(data_root.path(), Some(Arc::clone(&store))).await;
+        let staged = staged_openai_endpoint(Arc::new(Notify::new())).await;
+        point_openai_host_at(data_root.path(), &staged);
+        let SessionData {
+            session: owner_session,
+            ..
+        } = owner.new_session().await.unwrap();
+        let session_id = owner_session.session_id().clone();
+        let SessionData {
+            session: other_session,
+            ..
+        } = other.load_session(&session_id.0, vec![]).await.unwrap();
+
+        let running = spawn_prompt(other.cx(), &session_id, "a long turn");
+        wait_for_agent_text(&other_session).await;
+
+        let error = tokio::time::timeout(
+            Duration::from_secs(5),
+            spawn_prompt(owner.cx(), &session_id, "SECOND-PROMPT"),
+        )
+        .await
+        .expect("the second prompt is answered without waiting for the running turn")
+        .unwrap()
+        .expect_err("the second prompt is refused");
+        assert_eq!(error.code, ErrorCode::InvalidRequest, "{error:?}");
+        assert_eq!(
+            error.data,
+            Some(serde_json::json!(format!(
+                "session {} already has a prompt running on another connection to this server",
+                session_id.0
+            )))
+        );
+        assert_eq!(
+            stored_run_state(data_root.path(), &session_id).await,
+            Some(AcpPromptRunState::InProgress),
+            "the refused prompt must not record anything for the running turn"
+        );
+        assert!(!stored_texts(data_root.path(), &session_id)
+            .await
+            .iter()
+            .any(|text| text.contains("SECOND-PROMPT")));
+
+        cancel_and_wait(other.cx(), &session_id, running).await;
+        wait_for_turn_lease_release(data_root.path(), &session_id).await;
+
+        let idle = spawn_prompt(owner.cx(), &session_id, "the owner's turn");
+        wait_for_agent_text(&owner_session).await;
+        cancel_and_wait(owner.cx(), &session_id, idle).await;
+    });
+}
+
+// Connections that do not share a store are separate owners, like another
+// Gosling process or window: the turn lease still refuses the second prompt,
+// with its own message.
+#[test]
+fn a_prompt_on_a_session_running_on_another_store_keeps_the_turn_lease_refusal() {
+    run_test(async {
+        let data_root = tempfile::tempdir().unwrap();
+        let mut owner = connect(data_root.path(), None).await;
+        let mut other = connect(data_root.path(), None).await;
+        let staged = staged_openai_endpoint(Arc::new(Notify::new())).await;
+        point_openai_host_at(data_root.path(), &staged);
+        let SessionData {
+            session: owner_session,
+            ..
+        } = owner.new_session().await.unwrap();
+        let session_id = owner_session.session_id().clone();
+        let SessionData {
+            session: other_session,
+            ..
+        } = other.load_session(&session_id.0, vec![]).await.unwrap();
+
+        let running = spawn_prompt(other.cx(), &session_id, "a long turn");
+        wait_for_agent_text(&other_session).await;
+
+        let error = tokio::time::timeout(
+            Duration::from_secs(5),
+            spawn_prompt(owner.cx(), &session_id, "SECOND-PROMPT"),
+        )
+        .await
+        .expect("the second prompt is answered without waiting for the running turn")
+        .unwrap()
+        .expect_err("the second prompt is refused");
+        assert_eq!(error.code, ErrorCode::InternalError, "{error:?}");
+        assert_eq!(
+            error.data,
+            Some(serde_json::json!(format!(
+                "Error getting agent reply: session {} already has an active turn in another Gosling process or window",
+                session_id.0
+            )))
+        );
+
+        cancel_and_wait(other.cx(), &session_id, running).await;
     });
 }

@@ -327,7 +327,8 @@ impl GoslingAcpAgent {
         let run_id = format!("run_{}", Uuid::new_v4());
         let cancel_token = self.prompt_run_shutdown.run_token();
         let _in_flight = self.prompt_run_shutdown.track();
-        self.start_active_run(&session_id, run_id.clone(), cancel_token.clone())
+        let _turn_claim = self
+            .start_active_run(&session_id, run_id.clone(), cancel_token.clone())
             .await?;
 
         let agent = match self.get_session_agent(&session_id).await {

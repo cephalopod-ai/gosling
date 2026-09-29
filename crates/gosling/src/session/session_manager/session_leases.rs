@@ -109,6 +109,24 @@ impl Drop for SessionTurnLease {
     }
 }
 
+/// One turn on a session among everything in this process that shares its
+/// store, such as the connections of one ACP server. The turn lease cannot
+/// tell those apart: they are all one owner. Released on drop.
+pub(crate) struct LocalTurnClaim {
+    storage: Arc<SessionStorage>,
+    session_id: String,
+}
+
+impl Drop for LocalTurnClaim {
+    fn drop(&mut self) {
+        self.storage
+            .local_turn_claims
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(&self.session_id);
+    }
+}
+
 /// Counts a lease release that is still running, so a graceful shutdown can
 /// wait for it: a process that exits first aborts the release and leaves a
 /// stale lease row (GSL-PT-20260927-S01).
@@ -179,6 +197,18 @@ fn unix_timestamp() -> i64 {
 }
 
 impl SessionStorage {
+    pub(super) fn claim_local_turn(self: Arc<Self>, session_id: &str) -> Option<LocalTurnClaim> {
+        let claimed = self
+            .local_turn_claims
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(session_id.to_string());
+        claimed.then(|| LocalTurnClaim {
+            storage: self,
+            session_id: session_id.to_string(),
+        })
+    }
+
     pub(super) async fn acquire_session_turn_lease(
         self: Arc<Self>,
         session_id: &str,

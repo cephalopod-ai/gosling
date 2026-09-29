@@ -23,6 +23,7 @@ use summary_storage::summary_covers_history_before;
 
 pub(crate) use plan_storage::NATIVE_PLAN_HISTORY_KEY;
 use plan_storage::{NativePlanHistoryV1, PlanHistorySelection};
+pub(crate) use session_leases::LocalTurnClaim;
 pub(crate) use skill_admission_storage::SkillScopeGate;
 pub(crate) use tool_operations::ToolOperationStart;
 
@@ -669,6 +670,12 @@ impl SessionManager {
     /// Call once before a graceful process exit; see `SessionStorage::shutdown`.
     pub async fn shutdown(&self) {
         self.storage.shutdown().await
+    }
+
+    /// `None` while another caller sharing this store holds a turn on
+    /// `session_id`. Other processes are kept out by the turn lease instead.
+    pub(crate) fn claim_local_turn(&self, session_id: &str) -> Option<LocalTurnClaim> {
+        self.storage.clone().claim_local_turn(session_id)
     }
 
     pub(crate) async fn acquire_session_turn_lease(
@@ -1582,6 +1589,7 @@ pub struct SessionStorage {
     session_dir: PathBuf,
     owner_id: String,
     active_tool_operations: std::sync::Mutex<HashSet<String>>,
+    local_turn_claims: std::sync::Mutex<HashSet<String>>,
     plan_updates: tokio::sync::broadcast::Sender<crate::session::plans::PlanUpdate>,
     plan_source_hash_cache: std::sync::Mutex<PlanSourceHashCache>,
     /// Turn-lease releases still running; a graceful shutdown waits for them.
