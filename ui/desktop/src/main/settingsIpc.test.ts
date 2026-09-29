@@ -5,7 +5,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { describe, expect, it, vi } from 'vitest';
-import { ensureGitignoredIfInRepo, registerSettingsIpcHandlers, SETTINGS_IPC_CHANNELS } from './settingsIpc';
+import {
+  ensureGitignoredIfInRepo,
+  registerSettingsIpcHandlers,
+  SETTINGS_IPC_CHANNELS,
+} from './settingsIpc';
+import { desktopCommandChannels } from '../ipc/channels';
+import { defaultSettings } from '../utils/settings';
 
 vi.mock('electron', () => ({ dialog: { showOpenDialog: vi.fn() } }));
 
@@ -27,6 +33,39 @@ describe('settings IPC registration', () => {
       }
     );
     expect(handle.mock.calls.map(([channel]) => channel)).toEqual(SETTINGS_IPC_CHANNELS);
+  });
+
+  it('keeps the default research library inside an isolated Gosling path root', async () => {
+    const pathRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'gosling-isolated-root-'));
+    const handlers = new Map<string, (...args: never[]) => unknown>();
+    const grantSelectedPath = vi.fn();
+
+    registerSettingsIpcHandlers(
+      {
+        handle: vi.fn((channel, handler) => {
+          handlers.set(channel, handler as (...args: never[]) => unknown);
+        }),
+      },
+      {
+        app: { getPath: vi.fn(() => '/Users/operator/Documents') } as never,
+        goslingPathRoot: pathRoot,
+        getSettings: () => ({ ...defaultSettings }),
+        updateSettings: vi.fn(),
+        getExternalBackendSecret: vi.fn(() => ''),
+        setExternalBackendSecret: vi.fn(),
+        updateConfiguredLocale: vi.fn(),
+        registerGlobalShortcuts: vi.fn(),
+        setAutoDownloadDisabled: vi.fn(),
+        rendererDirectoryGrants: { grantSelectedPath } as never,
+      }
+    );
+
+    const getResearchLibraryPath = handlers.get(desktopCommandChannels.getResearchLibraryPath);
+    const libraryPath = await getResearchLibraryPath?.({ sender: { id: 17 } } as never);
+
+    expect(libraryPath).toBe(path.join(pathRoot, 'Gosling Research Library'));
+    expect(grantSelectedPath).toHaveBeenCalledWith(17, libraryPath);
+    await expect(fs.stat(libraryPath as string)).resolves.toMatchObject({});
   });
 });
 
