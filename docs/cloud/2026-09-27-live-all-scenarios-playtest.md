@@ -198,7 +198,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Medium | D03 | Failed `--fork --edit` leaves an orphan fork with the source's name that then hijacks `--resume` | fixed (R4) |
 | Medium | D04 | `--edit` with invalid YAML discards the user's edits without naming or keeping the temp file; wrong "failed to launch" wording | open — queued R8b |
 | Medium | D05 | Diagnostics bundle leaks credentials that are not regex-shaped (including the configured provider key) | fixed (R5) |
-| Medium | D07 | `session list -w` leaks sibling directories (case-insensitive substring) and misses paths with a trailing slash | open — queued R8b |
+| Medium | D07 | `session list -w` leaks sibling directories (case-insensitive substring) and misses paths with a trailing slash | fixed (R8b) |
 | Medium | D08 | Terminal control sequences in session names are printed raw; imported transcripts can inject them | fixed (R8b) |
 | Medium | E05 | CLI text mode never shows a permission refusal; the operator sees a tool card as if the call ran | fixed (R8a) |
 | Medium | E06 | `GOSLING_PATH_ROOT` does not isolate skills/agents; operator's personal skill catalog is sent to the disposable root's provider (suspicion) | fixed (R7) |
