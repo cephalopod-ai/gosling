@@ -728,6 +728,19 @@ async fn serialize_session_export(
     }
 }
 
+/// Format detection falls back to the native gosling format, so a bare JSON
+/// error means no importer recognised the file; foreign importers attach their
+/// own format name to parse errors.
+fn import_file_error(input: &str, error: anyhow::Error) -> anyhow::Error {
+    if error.chain().count() == 1 && error.is::<serde_json::Error>() {
+        anyhow::anyhow!(
+            "Could not import {input}: not a gosling, Claude Code, Codex or Pi session file ({error})"
+        )
+    } else {
+        anyhow::anyhow!("Could not import {input}: {error:#}")
+    }
+}
+
 pub async fn handle_session_import(
     input: String,
     nostr: bool,
@@ -748,11 +761,6 @@ pub async fn handle_session_import(
     let working_dir = working_dir.unwrap_or(std::env::current_dir()?);
     let working_dir = gosling::session::import_formats::validate_import_working_dir(&working_dir)?;
 
-    println!(
-        "Imported session working directory: {}",
-        working_dir.display()
-    );
-
     let session_manager = SessionManager::instance();
     let result = if is_nostr {
         let format = gosling::session::import_formats::detect_format(&json);
@@ -768,10 +776,15 @@ pub async fn handle_session_import(
     } else {
         session_manager
             .import_session_file(Path::new(&input), Some(SessionType::User), working_dir)
-            .await?
+            .await
+            .map_err(|error| import_file_error(&input, error))?
     };
     match result {
         gosling::session::session_manager::SessionImportOutcome::Imported(session) => {
+            println!(
+                "Imported session working directory: {}",
+                session.working_dir.display()
+            );
             println!("Session imported:");
             println!("{} - {}", session.id, terminal_safe(&session.name));
             println!(
