@@ -203,6 +203,8 @@ gosling supports these plugin formats:
 
 For Open Plugins, imported skill names are namespaced with the plugin name, such as `my-plugin:review`. Use that full name when explicitly loading a plugin-provided skill. Gemini extension skills keep the skill name from `SKILL.md`; gosling does not prefix them with the extension name.
 
+If two plugins provide a skill with the same name, the plugin whose name sorts first wins. Project and user skills always win over plugin skills. The install command warns when an imported skill name is already in use, or appears more than once in the plugin, and says which skill is loaded. See [Skills from Plugins](/docs/guides/context-engineering/using-skills#skills-from-plugins) for the full order.
+
 Open Plugins can use `plugin.json` at the plugin root, `.plugin/plugin.json`, or `.gosling-plugin/plugin.json`. Hook-only Open Plugins can be discovered from `hooks/hooks.json`; if no manifest is present, gosling infers the plugin name from the source or directory name.
 
 ## When to Use Plugins, Skills, or Hooks

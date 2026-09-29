@@ -97,6 +97,16 @@ When reviewing code, check each of these areas:
 
 Skills can also come from installed [plugins](/docs/guides/context-engineering/plugins). Plugin-provided skills are discovered at session startup and work like other skills. For Open Plugins, skill names are namespaced with the plugin name, such as `my-plugin:review`. Use that full name when explicitly loading a plugin-provided skill.
 
+When more than one skill has the same name, gosling loads only one of them:
+
+1. Project skills win over configured catalog skills, which win over user skills.
+2. User skills win over plugin skills.
+3. Between plugins, the plugin whose name sorts first wins.
+4. Plugin skills win over built-in skills.
+5. Within a single skills directory, the skill whose directory path sorts first wins.
+
+`gosling plugin install` and `gosling plugin update` print a warning when an imported skill name is already in use, and say which skill is loaded.
+
 ## Supporting Files
 
 Skills can include supporting files like scripts, templates, or configuration files. Place them in the skill directory:

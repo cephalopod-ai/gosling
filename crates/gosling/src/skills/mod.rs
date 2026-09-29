@@ -461,6 +461,9 @@ fn scan_skills_from_dir(dir: &Path, global: bool, seen: &mut HashSet<String>) ->
             }
         },
     );
+    // Only the first skill found for a name is kept, so the winner must not
+    // depend on filesystem enumeration order.
+    skill_files.sort_by(|a, b| a.parent().cmp(&b.parent()));
 
     let mut sources = Vec::new();
     for skill_file in skill_files {
@@ -698,6 +701,25 @@ mod tests {
                 json!(["component", "from", "to"]),
             )]),
         }
+    }
+
+    #[test]
+    fn duplicate_names_in_one_directory_resolve_to_the_first_skill_directory_by_path() {
+        let root = tempfile::tempdir().unwrap();
+        for dir in ["h", "c", "f", "a", "g", "b", "e", "d"] {
+            let skill_dir = root.path().join(dir);
+            std::fs::create_dir_all(&skill_dir).unwrap();
+            std::fs::write(
+                skill_dir.join("SKILL.md"),
+                format!("---\nname: same\ndescription: {dir}\n---\nBody."),
+            )
+            .unwrap();
+        }
+
+        let found = scan_skills_from_dir(root.path(), true, &mut HashSet::new());
+
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].description, "a");
     }
 
     #[test]
