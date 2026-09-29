@@ -306,11 +306,11 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | F16 | The protocol-version gate is advisory on stdio and WebSocket | fixed (R10) |
 | Low | F17 | Advertised capabilities do not match what is callable | fixed (R10) |
 | Low | G103 | Chat header labels overlap at the default 940px window (and all narrower widths) | fixed (structure tested; pixels not verified in the app) (R13b) |
-| Low | G106 | Unicode-equivalent workspace names are both accepted (NFC vs NFD) | open — queued R13b |
-| Low | G107 | Duplicate fails for a max-length (100-char) workspace name; over-length input silently truncated | open — queued R13b |
-| Low | G109 | Workspace warnings never name the folder they refer to | open — queued R13b |
+| Low | G106 | Unicode-equivalent workspace names are both accepted (NFC vs NFD) | fixed (R13b) |
+| Low | G107 | Duplicate fails for a max-length (100-char) workspace name; over-length input silently truncated | fixed (R13b) |
+| Low | G109 | Workspace warnings never name the folder they refer to | fixed (R13b) |
 | Low | G110 | Symlinked output/primary folders that resolve outside the declared tree pass validation silently; the grant is on the resolved outside path while the UI shows the link path (suspicion) | fixed (validation warning; grant unchanged) (R13b) |
-| Low | G111 | Hub uses stale workspace validation; failure only surfaces on submit with "Invalid params:" prefix | open — queued R13b |
+| Low | G111 | Hub uses stale workspace validation; failure only surfaces on submit with "Invalid params:" prefix | fixed (R13b) |
 | Low | G112 | With the Inputs/Outputs pane open at 940px, the New Chat hub is crushed (workspace selector 18 px wide) | fixed (structure tested; pixels not verified in the app) (R13b) |
 | Low | G113 | Renderer IPC listener leak warning after several chats (suspicion) | open — queued R13b |
 | Low | G114 | Chat header says "No credential" while the app-default global key is in use | open — queued R13b |
