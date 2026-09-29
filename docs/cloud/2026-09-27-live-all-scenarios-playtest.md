@@ -248,7 +248,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | A21 | (exploratory) `shell-validate` has side effects and accepts unknown builtins | fixed (R7) |
 | Low | B07 | CLI stdout keeps the retracted partial attempt (text/-q/stream-json) | fixed (R1b) |
 | Low | B12 | Auth failures end with "Please retry if you think this is a transient or recoverable error" | fixed (R9) |
-| Low | B13 | Empty or space-containing `--model` / `GOSLING_MODEL` accepted and sent verbatim | open — queued R9 |
+| Low | B13 | Empty or space-containing `--model` / `GOSLING_MODEL` accepted and sent verbatim | fixed (R9) |
 | Low | B14 | CLI output hygiene (cosmetic) | fixed (typed-input echo deferred: needs design) (R8a) |
 | Low | B15 | stream-json on provider failure has no terminal `error`/`complete` event | fixed (R8a) |
 | Low | B19 | Reduction validation differs between CLI and ACP; out-of-range CLI warning does not state the fallback | fixed (R2) |
