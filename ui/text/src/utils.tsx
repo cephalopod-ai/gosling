@@ -19,6 +19,19 @@ export function formatError(e: unknown): string {
   return String(e);
 }
 
+// Ink needs raw mode on stdin; without a TTY it renders a frame and then
+// crashes with a stack trace, so interactive mode must refuse up front.
+export function interactiveTerminalError(
+  textMode: boolean,
+  stdinIsTTY: boolean,
+): string | null {
+  if (textMode || stdinIsTTY) return null;
+  return (
+    "gosling tui needs an interactive terminal (stdin is not a TTY). " +
+    'For non-interactive use, run `gosling tui --text "<prompt>"` or `gosling run`.'
+  );
+}
+
 export function truncateTerminalText(value: string, maxCells: number): string {
   const normalized = value.replace(/\s+/gu, " ").trim();
   const budget = Math.max(0, Math.floor(maxCells));

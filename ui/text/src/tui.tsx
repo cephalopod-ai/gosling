@@ -43,7 +43,11 @@ import { PermissionPrompt } from "./components/PermissionPrompt.js";
 import { Rule } from "./components/Rule.js";
 import { ToolCallExpanded } from "./components/ToolCallExpanded.js";
 import type { ToolCallInfo } from "./toolcall.js";
-import { isErrorStatus, formatError } from "./utils.js";
+import {
+  isErrorStatus,
+  formatError,
+  interactiveTerminalError,
+} from "./utils.js";
 import {
   CRANBERRY,
   TEAL,
@@ -1541,6 +1545,15 @@ async function runTextMode(
 }
 
 async function main() {
+  const terminalError = interactiveTerminalError(
+    Boolean(cli.flags.text),
+    Boolean(process.stdin.isTTY),
+  );
+  if (terminalError) {
+    console.error(terminalError);
+    process.exit(1);
+  }
+
   let serverConnection: Stream | string;
 
   if (cli.flags.server) {
