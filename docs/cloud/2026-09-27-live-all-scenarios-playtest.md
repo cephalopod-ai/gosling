@@ -188,10 +188,10 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Medium | B18 | CLI cost line shows only the last request's cost without saying so; `--stats` silently ignored with json/stream-json | fixed (R8a) |
 | Medium | B21 | Rejected Copilot token refresh surfaces as "failed to get api info after 3 attempts" + "Please retry"; no re-auth request | fixed (R9) |
 | Medium | C01 | ACP client `mcpServers` replace all of gosling's configured extensions | open — queued R10 |
-| Medium | C02 | A hanging MCP extension blocks session start for 300 s with no feedback (run/ACP) | open — queued R11 |
-| Medium | C03 | Removed MCP extensions come back when an older session is resumed/loaded | open — queued R11 |
+| Medium | C02 | A hanging MCP extension blocks session start for 300 s with no feedback (run/ACP) | deferred (product decision: startup vs tool-call timeout) (R11) |
+| Medium | C03 | Removed MCP extensions come back when an older session is resumed/loaded | deferred (product decision: record extension origin in session state) (R11) |
 | Medium | C05 | Skill discovery ignores `GOSLING_PATH_ROOT` and reads/writes HOME-based skill dirs | fixed (R7) |
-| Medium | C06 | `disabledPlugins` does not disable an installed plugin's skills | open — queued R11 |
+| Medium | C06 | `disabledPlugins` does not disable an installed plugin's skills | fixed (R11) |
 | Medium | C08 | ACP: parallel subagents' tool activity is attributed to the first delegate call | open — queued R11 |
 | Medium | C10 | A stalled provider stream inside a synchronous subagent blocks the parent indefinitely | fixed (docs: real 30-min sync delegate limit; timeout path tested) (R11) |
 | Medium | C14 | No guard against opening a store written by a newer schema (downgrade not blocked) | fixed (R4) |
