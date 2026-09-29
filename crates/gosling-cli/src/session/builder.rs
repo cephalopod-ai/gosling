@@ -13,7 +13,7 @@ use gosling::config::{
     resolve_extensions_for_new_session, resolve_extensions_for_new_session_for_cwd,
 };
 use gosling::model_config::model_config_from_user_config;
-use gosling::providers::create;
+use gosling::providers::{create, get_from_registry};
 use gosling::session::session_manager::SessionType;
 use gosling::session::{removed_from_config_message, EnabledExtensionsState, SessionNotFound};
 use rustyline::EditMode;
@@ -236,6 +236,29 @@ async fn load_extensions(
     }
 
     agent_ptr
+}
+
+/// Model lookup is keyed by provider name, so an unrecognised provider fails
+/// resolution as a missing model; name the provider instead.
+async fn unknown_provider_error(
+    session_config: &SessionBuilderConfig,
+    config: &Config,
+    saved_provider: Option<String>,
+) -> Option<String> {
+    let (provider, source) = if let Some(provider) = session_config.provider.clone() {
+        (provider, None)
+    } else if let Some(provider) = saved_provider {
+        (provider, Some("the resumed session"))
+    } else if let Ok(provider) = std::env::var("GOSLING_PROVIDER") {
+        (provider, Some("GOSLING_PROVIDER"))
+    } else {
+        (config.get_gosling_provider().ok()?, Some("the config file"))
+    };
+    get_from_registry(&provider).await.err()?;
+    Some(match source {
+        Some(source) => format!("Unknown provider '{provider}' (from {source})."),
+        None => format!("Unknown provider '{provider}'."),
+    })
 }
 
 fn missing_setting_error(config: &Config, setting: &str) -> String {
@@ -782,11 +805,16 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
     let resolved = match resolve_provider_and_model(
         &session_config,
         config,
-        saved_provider,
+        saved_provider.clone(),
         saved_model_config,
     ) {
         Ok(resolved) => resolved,
-        Err(message) => startup.fail(&message).await,
+        Err(message) => {
+            let message = unknown_provider_error(&session_config, config, saved_provider)
+                .await
+                .unwrap_or(message);
+            startup.fail(&message).await
+        }
     };
 
     let session_id =
