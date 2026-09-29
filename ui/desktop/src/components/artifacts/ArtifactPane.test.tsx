@@ -292,6 +292,58 @@ describe('ArtifactPane', () => {
     expect(screen.queryByRole('button', { name: 'Show as plain text' })).toBeNull();
   });
 
+  it('hides the output-history markers in the rendered Markdown preview', async () => {
+    const content =
+      '# Report\n\nBody text.\n\n<!-- gosling:output-history:start -->\n## Output contribution history\n\n| Revision | Agent |\n| --- | --- |\n| v1 | gosling |\n<!-- gosling:output-history:end -->\n';
+    readArtifactFile.mockResolvedValue({
+      content,
+      encoding: 'utf8',
+      error: null,
+      found: true,
+      filePath: '/outputs/report.md',
+      truncated: false,
+    });
+    render(
+      <IntlTestWrapper>
+        <ArtifactWorkbenchProvider>
+          <Harness />
+        </ArtifactWorkbenchProvider>
+      </IntlTestWrapper>
+    );
+    fireEvent.click(screen.getAllByRole('button', { name: 'Open file' })[0]);
+
+    await screen.findByRole('heading', { name: 'Output contribution history' });
+    const formatted = document.querySelector('.prose');
+    expect(formatted?.textContent).not.toContain('gosling:output-history');
+    expect(formatted?.querySelector('pre, code')).toBeNull();
+    expect(screen.getByRole('cell', { name: 'v1' })).toBeInTheDocument();
+  });
+
+  it('keeps output-history marker text that appears inside a fenced code block', async () => {
+    readArtifactFile.mockResolvedValue({
+      content:
+        '# Format notes\n\n```text\n<!-- gosling:output-history:start -->\n```\n\nFINAL-PARAGRAPH-MARKER\n',
+      encoding: 'utf8',
+      error: null,
+      found: true,
+      filePath: '/outputs/report.md',
+      truncated: false,
+    });
+    render(
+      <IntlTestWrapper>
+        <ArtifactWorkbenchProvider>
+          <Harness />
+        </ArtifactWorkbenchProvider>
+      </IntlTestWrapper>
+    );
+    fireEvent.click(screen.getAllByRole('button', { name: 'Open file' })[0]);
+
+    await screen.findByText('FINAL-PARAGRAPH-MARKER');
+    expect(document.querySelector('.prose')?.textContent).toContain(
+      '<!-- gosling:output-history:start -->'
+    );
+  });
+
   it('copies transient text with its original Markdown and Unicode', async () => {
     render(
       <IntlTestWrapper>

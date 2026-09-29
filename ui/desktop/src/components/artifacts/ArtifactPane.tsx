@@ -30,6 +30,7 @@ import {
   hasDisplayedFileExtension,
   isArtifactPreviewable,
   parseCsv,
+  stripOutputHistoryMarkers,
 } from './artifactUtils';
 import type { ArtifactTab } from './types';
 import { useArtifactRouter } from '../../contexts/ArtifactRouterContext';
@@ -345,7 +346,9 @@ function Preview({
       }
       return (
         <div className="p-5">
-          <MarkdownContent content={markdownRenderPrefix(data.content)} />
+          <MarkdownContent
+            content={stripOutputHistoryMarkers(markdownRenderPrefix(data.content))}
+          />
         </div>
       );
     case 'csv':

@@ -309,6 +309,22 @@ export function parseCsv(content: string, maxRows = 200, maxColumns = 50): strin
   return rows;
 }
 
+const OUTPUT_HISTORY_MARKER_LINE = /^[ \t]*<!-- gosling:output-history:(?:start|end) -->[ \t]*\r?$/;
+
+// The backend brackets its contribution-history footer with HTML comments so it can find and
+// replace it later; they are bookkeeping, not content, and the Markdown renderer would otherwise
+// show them as code blocks.
+export function stripOutputHistoryMarkers(markdown: string): string {
+  let insideFence = false;
+  return markdown
+    .split('\n')
+    .filter((line) => {
+      if (/^\s*(```|~~~)/.test(line)) insideFence = !insideFence;
+      return insideFence || !OUTPUT_HISTORY_MARKER_LINE.test(line);
+    })
+    .join('\n');
+}
+
 export function addSandboxCsp(html: string): string {
   const policy =
     "default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; script-src 'unsafe-inline' blob:; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
