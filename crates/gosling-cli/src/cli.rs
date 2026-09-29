@@ -504,13 +504,17 @@ async fn lookup_session_id(identifier: Identifier) -> Result<String> {
             .map(|s| s.id)
             .ok_or_else(|| anyhow::anyhow!("No session found with name '{}'", name))
     } else if let Some(path) = identifier.path {
-        path.file_stem()
-            .and_then(|s| s.to_str())
-            .map(|s| s.to_string())
-            .ok_or_else(|| anyhow::anyhow!("Could not extract session ID from path: {:?}", path))
+        session_id_from_legacy_path(&path)
     } else {
         Err(anyhow::anyhow!("No identifier provided"))
     }
+}
+
+fn session_id_from_legacy_path(path: &std::path::Path) -> Result<String> {
+    path.file_stem()
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_string())
+        .ok_or_else(|| anyhow::anyhow!("Could not extract session ID from path: {:?}", path))
 }
 
 #[derive(Subcommand)]
@@ -2138,10 +2142,12 @@ async fn handle_session_subcommand(command: SessionCommand) -> Result<()> {
             regex,
             yes,
         } => {
-            let (session_id, name) = if let Some(id) = identifier {
-                (id.session_id, id.name)
-            } else {
-                (None, None)
+            let (session_id, name) = match identifier {
+                Some(Identifier {
+                    path: Some(path), ..
+                }) => (Some(session_id_from_legacy_path(&path)?), None),
+                Some(id) => (id.session_id, id.name),
+                None => (None, None),
             };
             crate::signal::cancellable_prompts(handle_session_remove(session_id, name, regex, yes))
                 .await?;

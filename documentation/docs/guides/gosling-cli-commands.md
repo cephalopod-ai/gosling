@@ -311,7 +311,7 @@ Remove one or more saved sessions.
 - **`--session-id <session_id>`**: Remove a specific session by its session ID
 - **`-n, --name <name>`**: Remove a specific session by its name
 - **`-r, --regex <pattern>`**: Remove every session whose session ID (for example `20251108_3`) matches the regex. Session names are not matched; use `--name` to remove a session by name. The pattern is not anchored, so add `^` and `$` to match whole IDs
-- **`--path <path>`**: Remove a specific session by its file path (legacy)
+- **`--path <path>`**: Remove a specific session by its legacy file path; the session ID is taken from the file name (for example `/path/to/20251108_3.jsonl` removes `20251108_3`)
 - **`-y, --yes`**: Skip the confirmation prompt; required for non-interactive removal
 
 **Usage:**
