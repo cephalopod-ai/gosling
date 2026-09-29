@@ -71,7 +71,7 @@ When gosling delegates work to a subagent, you can see the subagent's tool calls
 </Tabs>
 
 :::info
-If a subagent fails or times out (5-minute default), you will receive no output from that subagent. For parallel execution, if any subagent fails, you get results only from the successful ones.
+If a subagent fails or times out, you receive an error for that subagent instead of its output, and the main session continues. A subagent that runs in the foreground is cancelled after 30 minutes by default (see [Default Settings](#default-settings)). For parallel execution, if any subagent fails, you get results only from the successful ones.
 :::
 
 ## Internal Subagents
@@ -203,9 +203,11 @@ Subagents use the following pre-configured settings, but you can override any de
 | Parameter | Default | How to Customize |
 |-----------|---------|------------------|
 | **Max Turns** | 25 | Use natural language or set `GOSLING_SUBAGENT_MAX_TURNS` |
-| **Timeout** | 5 minutes | Request longer timeout in your prompt |
+| **Timeout** | 30 minutes for a foreground subagent | Set `GOSLING_SYNC_DELEGATE_TIMEOUT_SECS` (`0` removes the limit); a prompt cannot change it |
 | **Extensions** | Inherited from parent | Specify which extensions to use in your prompt |
 | **Return Mode** | All subagent information provided in main session | Specify how much detail you want in your prompt |
+
+When a foreground subagent reaches the timeout, gosling cancels it and returns an error to the main session that names the subagent's session, so you can read what it finished. The task is not retried automatically. Background subagents (`async: true`) have no overall timeout: each `load` call waits up to 5 minutes for a running task, then reports that it is still running so you can wait again or cancel it.
 
 :::tip Advanced Customization
 You can also customize subagent behavior by editing the `subagent_system.md` [prompt template](/docs/guides/context-engineering/prompt-templates).
@@ -221,10 +223,10 @@ You can override any default by including the setting in your natural language r
 ```
 
 ```
-"Use a research subagent with 30 turns and 20-minute timeout to investigate quantum computing trends"
+"Use a research subagent with 30 turns to investigate quantum computing trends"
 ```
 
-**Environment variable:** Set `GOSLING_SUBAGENT_MAX_TURNS` to change the default max turns for all subagents.
+**Environment variables:** Set `GOSLING_SUBAGENT_MAX_TURNS` to change the default max turns for all subagents, and `GOSLING_SYNC_DELEGATE_TIMEOUT_SECS` to change the foreground timeout.
 
 ### Extension Control
 

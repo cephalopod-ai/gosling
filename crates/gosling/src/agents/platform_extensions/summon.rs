@@ -850,6 +850,147 @@ You review code."#;
         }
     }
 
+    async fn autonomous_openai_session(client: &SummonClient, working_dir: &Path) -> String {
+        let manager = &client.context.session_manager;
+        let session = manager
+            .create_session(
+                working_dir.to_path_buf(),
+                "sync-delegate-budget".to_string(),
+                SessionType::User,
+                GoslingMode::Auto,
+            )
+            .await
+            .unwrap();
+        manager
+            .update(&session.id)
+            .provider_name("openai")
+            .model_config(gosling_providers::model::ModelConfig::new("gpt-4o"))
+            .apply()
+            .await
+            .unwrap();
+        session.id
+    }
+
+    fn openai_delegate_env(host: &str, budget_secs: &str) -> impl Drop {
+        env_lock::lock_env([
+            ("OPENAI_HOST", Some(host)),
+            ("OPENAI_API_KEY", Some("test-key")),
+            ("OPENAI_BASE_PATH", None),
+            ("GOSLING_SYNC_DELEGATE_TIMEOUT_SECS", Some(budget_secs)),
+            ("GOSLING_SUBAGENT_PROVIDER", None),
+            ("GOSLING_SUBAGENT_MODEL", None),
+            ("GOSLING_SUBAGENT_MAX_TURNS", None),
+        ])
+    }
+
+    /// GSL-PT-20260927-C10: a provider that accepts the delegate's request and
+    /// never answers must not hold the parent's tool call past the sync budget,
+    /// and the delegate's in-flight request must be torn down, not leaked.
+    #[tokio::test]
+    #[serial]
+    async fn sync_delegate_with_a_stalled_provider_times_out_and_is_cancelled() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let host = format!("http://{}", listener.local_addr().unwrap());
+        let (closed_tx, closed_rx) = tokio::sync::oneshot::channel();
+        tokio::spawn(async move {
+            use tokio::io::AsyncReadExt;
+            let (mut connection, _) = listener.accept().await.unwrap();
+            let mut request = [0u8; 4096];
+            while matches!(connection.read(&mut request).await, Ok(n) if n > 0) {}
+            let _ = closed_tx.send(());
+        });
+        let _env = openai_delegate_env(&host, "1");
+        let client = SummonClient::new(create_test_context()).unwrap();
+        let working_dir = TempDir::new().unwrap();
+        let session_id = autonomous_openai_session(&client, working_dir.path()).await;
+        let args = serde_json::json!({"instructions": "wait on the provider", "extensions": []});
+
+        let result = tokio::time::timeout(
+            Duration::from_secs(30),
+            client.handle_delegate(
+                &session_id,
+                args.as_object().cloned(),
+                CancellationToken::new(),
+            ),
+        )
+        .await
+        .expect("the sync delegate budget must reclaim the parent's tool call")
+        .unwrap();
+
+        assert_eq!(result.is_error, Some(true));
+        let text = extract_text(&result.content[0]);
+        assert!(
+            text.contains("Delegation timed out after 1s and was cancelled"),
+            "{text}"
+        );
+        assert_eq!(
+            result.meta.as_ref().unwrap().0["delegate_status"],
+            "timed_out"
+        );
+        tokio::time::timeout(Duration::from_secs(10), closed_rx)
+            .await
+            .expect("the timed-out delegate must drop its provider request")
+            .unwrap();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn sync_delegate_that_finishes_within_its_budget_returns_its_answer() {
+        let server = wiremock::MockServer::start().await;
+        let sse = format!(
+            "data: {}\n\ndata: {}\n\ndata: [DONE]\n\n",
+            serde_json::json!({
+                "id": "chatcmpl-test",
+                "model": "gpt-4o",
+                "created": 1755133833,
+                "choices": [{
+                    "index": 0,
+                    "delta": {"role": "assistant", "content": "DELEGATE-DONE"},
+                    "finish_reason": "stop"
+                }]
+            }),
+            serde_json::json!({
+                "choices": [],
+                "usage": {"prompt_tokens": 8, "completion_tokens": 2, "total_tokens": 10}
+            })
+        );
+        wiremock::Mock::given(wiremock::matchers::method("POST"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_string(sse),
+            )
+            .mount(&server)
+            .await;
+        let _env = openai_delegate_env(&server.uri(), "5");
+        let client = SummonClient::new(create_test_context()).unwrap();
+        let working_dir = TempDir::new().unwrap();
+        let session_id = autonomous_openai_session(&client, working_dir.path()).await;
+        let args = serde_json::json!({"instructions": "answer at once", "extensions": []});
+
+        let result = tokio::time::timeout(
+            Duration::from_secs(30),
+            client.handle_delegate(
+                &session_id,
+                args.as_object().cloned(),
+                CancellationToken::new(),
+            ),
+        )
+        .await
+        .expect("a delegate that answers must finish well inside its budget")
+        .unwrap();
+
+        let text = extract_text(&result.content[0]);
+        assert_ne!(result.is_error, Some(true), "{text}");
+        assert!(text.contains("DELEGATE-DONE"), "{text}");
+        assert!(!result
+            .meta
+            .as_ref()
+            .unwrap()
+            .0
+            .contains_key("delegate_status"));
+    }
+
     #[tokio::test]
     async fn test_delegate_schema_constrains_source_and_documents_adhoc_shape() {
         let client = SummonClient::new(create_test_context()).unwrap();
