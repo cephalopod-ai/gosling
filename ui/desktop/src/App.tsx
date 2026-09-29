@@ -610,10 +610,11 @@ export function AppInner() {
         toastClassName={() =>
           `relative min-h-16 mb-4 p-2 rounded-lg
                flex justify-between overflow-hidden cursor-pointer
+               max-w-full min-w-0 [overflow-wrap:anywhere]
                text-text-inverse bg-background-inverse
               `
         }
-        style={{ width: '450px' }}
+        style={{ width: '450px', maxWidth: 'calc(100vw - 2 * var(--toastify-toast-offset, 16px))' }}
         className="mt-6"
         position="top-right"
         autoClose={3000}

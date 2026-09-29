@@ -102,9 +102,10 @@ vi.mock('./components/ui/ConfirmationModal', () => ({
 }));
 
 const mockToastError = vi.hoisted(() => vi.fn());
+const mockToastContainer = vi.hoisted(() => vi.fn((_props: Record<string, unknown>) => null));
 
 vi.mock('react-toastify', () => ({
-  ToastContainer: () => null,
+  ToastContainer: mockToastContainer,
   toast: { error: mockToastError },
 }));
 
@@ -355,5 +356,21 @@ describe('App Component - Brand New State', () => {
       'The folder “/work/beta” is missing or can’t be read, so the chat can’t open.'
     );
     expect(screen.queryByText(/^Error:/)).not.toBeInTheDocument();
+  });
+
+  it('keeps toasts inside the window and wraps long messages', async () => {
+    render(<AppInner />, { wrapper: AppInnerTestWrapper });
+    await waitFor(() => expect(mockToastContainer).toHaveBeenCalled());
+
+    const props = mockToastContainer.mock.lastCall?.[0] as {
+      style: { width: string; maxWidth?: string };
+      toastClassName: () => string;
+    };
+    expect(props.style.width).toBe('450px');
+    expect(props.style.maxWidth).toBe('calc(100vw - 2 * var(--toastify-toast-offset, 16px))');
+    const toastClasses = props.toastClassName().split(/\s+/);
+    expect(toastClasses).toEqual(
+      expect.arrayContaining(['max-w-full', 'min-w-0', '[overflow-wrap:anywhere]'])
+    );
   });
 });
