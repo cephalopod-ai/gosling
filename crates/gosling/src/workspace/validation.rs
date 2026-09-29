@@ -256,6 +256,20 @@ fn validate_path(
                 Some(normalized.clone()),
             ));
         } else if let Ok(canonical) = path.canonicalize() {
+            if let Some(link_folder) = symlink_leaving_its_folder(path) {
+                issues.push(issue(
+                    WorkspaceIssueCode::FolderResolvesOutside,
+                    WorkspaceIssueSeverity::Warning,
+                    &format!(
+                        "folder {} resolves to {} outside {}; access applies to the resolved folder",
+                        normalized,
+                        canonical.display(),
+                        link_folder.display()
+                    ),
+                    target_id.map(str::to_string),
+                    Some(normalized.clone()),
+                ));
+            }
             return Some(canonical.to_string_lossy().to_string());
         }
     } else {
@@ -272,6 +286,25 @@ fn validate_path(
         ));
     }
     Some(normalized)
+}
+
+/// Finds a symlink along `path` whose target leaves the folder that holds the link, e.g.
+/// `ws/out -> /elsewhere`. Such a folder looks like part of `ws` in the workspace, but
+/// sessions are granted the resolved location. Links that stay inside their folder, and
+/// system links such as macOS `/var -> /private/var`, are not reported.
+fn symlink_leaving_its_folder(path: &Path) -> Option<PathBuf> {
+    path.ancestors().find_map(|link| {
+        let is_symlink = std::fs::symlink_metadata(link)
+            .map(|metadata| metadata.file_type().is_symlink())
+            .unwrap_or(false);
+        if !is_symlink {
+            return None;
+        }
+        let folder = link.parent()?;
+        let canonical_folder = folder.canonicalize().ok()?;
+        let target = link.canonicalize().ok()?;
+        (!target.starts_with(&canonical_folder)).then(|| folder.to_path_buf())
+    })
 }
 
 fn validate_unique_path(

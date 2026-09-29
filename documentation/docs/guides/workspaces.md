@@ -71,6 +71,11 @@ reference or output folder produces a warning instead of disabling the entire ap
 marked **Allow explicit creation if missing**, edit the saved workspace and choose **Create now**;
 gosling asks for confirmation before creating it.
 
+A folder whose path goes through a symbolic link that points outside the folder holding the link
+(for example an output `project/out` linked to `/elsewhere`) produces a warning such as "folder
+…/project/out resolves to /elsewhere outside …/project". The workspace stays usable, but sessions
+are granted the resolved location, not the path you typed.
+
 Removing a folder from a workspace removes only the reference. It never deletes, moves, or rewrites
 the physical folder.
 

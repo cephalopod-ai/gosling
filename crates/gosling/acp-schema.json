@@ -9570,7 +9570,8 @@
         "invalid_output_configuration",
         "unsupported_schema_version",
         "secret_field_rejected",
-        "unknown_extension"
+        "unknown_extension",
+        "folder_resolves_outside"
       ]
     },
     "WorkspaceIssueSeverity": {
