@@ -216,7 +216,7 @@ Start or resume interactive chat sessions.
 **Basic Options:**
 - **`--session-id <session_id>`**: Specify a session by its ID (e.g., '20251108_1')
 - **`-n, --name <name>`**: Give the session a name
-- **`--path <path>`**: Legacy parameter for specifying session by file path
+- **`--path <path>`**: Legacy parameter that takes the session ID from the file name (`20250325_200615.jsonl` → `20250325_200615`). It does not read the file; to resume an exported session, [import it](#session-import-options) first
 - **`-r, --resume`**: Resume a previous session
 - **`--edit`**: Open the session's conversation in your editor (`$VISUAL` / `$EDITOR` / `vi`) as YAML. Edit, trim, or rewrite messages, then save and close to continue the session with the edited conversation. Must be used with `--resume`. Can be combined with `--fork` to create a new session from the edited result; the editor runs first, so if it fails or the YAML is invalid, no fork is created.
 - **`--fork`**: Create a new duplicate session with copied history, named `branch: <original name>` like a Desktop branch. Must be used with `--resume` and an interactive terminal. Provide `--name` or `--session-id` to fork a specific session. Otherwise, forks the most recent session. Non-interactive invocation exits before copying the source session.
@@ -239,8 +239,11 @@ gosling session -n my-project
 # Resume a previous session
 gosling session --resume -n my-project
 gosling session --resume --session-id 20251108_2
-gosling session --resume --path ./session.json    # exported session
-gosling session --resume --path ./session.jsonl   # legacy session storage
+gosling session --resume --path ./20251108_2.jsonl   # legacy: ID taken from the file name
+
+# Resume an exported session: import it, then resume the ID that import prints
+gosling session import ./session.json
+gosling session --resume --session-id <id printed by import>
 
 # Fork a specific session by name
 gosling session --resume --fork --name my-project
@@ -403,6 +406,9 @@ working directory; gosling switches to that directory instead.
 ```bash
 # Import a gosling JSON export into the current directory's context
 gosling session import session-backup.json
+
+# Continue the imported session, using the ID that import printed
+gosling session --resume --session-id 20251108_7
 
 # Import a foreign transcript and pin the session to a specific directory
 gosling session import ~/transcripts/claude-code-run.jsonl --working-dir ~/projects/api
