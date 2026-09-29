@@ -298,7 +298,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | F05 | `--allowed-origin` accepts values that can never match and gives no diagnostics for rejections | open — queued R10 |
 | Low | F06 | TLS startup validation/messaging gaps | open — queued R10 |
 | Low | F07 | Structurally invalid requests get -32700 Parse error with id:null | upstream crate (agent-client-protocol) |
-| Low | F08 | `session/prompt` with an empty prompt array sends the model a fabricated "Hello" | open — queued R10 |
+| Low | F08 | `session/prompt` with an empty prompt array sends the model a fabricated "Hello" | fixed (R10) |
 | Low | F09 | Streamable-HTTP connections that never open a stream or DELETE are never reaped (suspicion) | open — queued R10 |
 | Low | F11 | Losing the turn lease does not stop the in-flight provider call; the revoked turn lingers until the provider returns | fixed (R1b) |
 | Low | F12 | Two connections can drive one session; the owner gets no updates and a misleading refusal | open — queued R10 |
