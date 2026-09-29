@@ -593,6 +593,7 @@ When set, gosling creates `config/`, `data/`, and `state/` subdirectories under 
 | `~/.agents/agents/`, `~/.gosling/agents/`, `~/.claude/agents/` | `<root>/.agents/agents/`, `<root>/.gosling/agents/`, `<root>/.claude/agents/` |
 | `~/.agents/plugins/`, `~/.agents/AGENTS.md`, `~/.config/gosling/settings.json` | `<root>/.agents/plugins/`, `<root>/.agents/AGENTS.md`, `<root>/.config/gosling/settings.json` |
 | `~/.config/gosling/checks/`, `~/.config/agents/checks/` (`gosling review`) | `<root>/.config/gosling/checks/`, `<root>/.config/agents/checks/` |
+| Onboarding import sources: `~/.config/gosling/config.yaml` and the Claude Desktop config (`~/Library/Application Support/Claude/`, `~/.config/Claude/`, `~/AppData/Roaming/Claude/`) | The same locations under `<root>` |
 
 Useful for isolating test environments, running multiple configurations, or CI/CD pipelines.
 
@@ -600,7 +601,7 @@ Some things stay shared with the rest of your machine:
 - **System keyring.** Secrets in the OS keyring use the service name `gosling` for every root, so roots with the keyring enabled read and write the same keychain items. Set `GOSLING_DISABLE_KEYRING` (or `GOSLING_DISABLE_KEYRING: true` in the root's `config/config.yaml`) to keep that root's secrets in `<root>/config/secrets.yaml` instead.
 - **Your project.** Project files such as `AGENTS.md`, `.goslinghints`, `.agents/skills/`, `.agents/agents/`, and `.agents/checks/` come from the working directory.
 - **Paths you give gosling.** `~` in tool arguments, configured skill catalog paths, and trusted directories still means your real home directory.
-- **Other programs.** Extensions and command-line providers run with your normal environment and use their own configuration. The onboarding import request reads the default gosling config and the Claude Desktop config when a client asks for it.
+- **Other programs.** Extensions and command-line providers run with your normal environment and use their own configuration.
 
 **Examples**
 

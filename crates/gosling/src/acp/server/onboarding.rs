@@ -171,7 +171,7 @@ fn import_failure_warning(
 
 fn gosling_config_candidate_paths(config_dir: &Path) -> Vec<PathBuf> {
     let mut paths = vec![config_dir.join(CONFIG_YAML_NAME)];
-    if let Some(home) = dirs::home_dir() {
+    if let Some(home) = Paths::home_dir() {
         paths.push(home.join(".config").join("gosling").join(CONFIG_YAML_NAME));
     }
     dedupe_paths(paths)
@@ -179,10 +179,10 @@ fn gosling_config_candidate_paths(config_dir: &Path) -> Vec<PathBuf> {
 
 fn claude_desktop_candidate_paths() -> Vec<PathBuf> {
     let mut paths = Vec::new();
-    if let Some(config_dir) = dirs::config_dir() {
+    if let Some(config_dir) = user_config_dir() {
         paths.push(config_dir.join("Claude").join("claude_desktop_config.json"));
     }
-    if let Some(home) = dirs::home_dir() {
+    if let Some(home) = Paths::home_dir() {
         paths.push(
             home.join("Library")
                 .join("Application Support")
@@ -197,6 +197,16 @@ fn claude_desktop_candidate_paths() -> Vec<PathBuf> {
         );
     }
     dedupe_paths(paths)
+}
+
+/// The platform config dir (`~/.config`, `~/Library/Application Support`, ...),
+/// kept inside the root under `GOSLING_PATH_ROOT` so an isolated root is never
+/// offered the operator's real Claude Desktop config.
+fn user_config_dir() -> Option<PathBuf> {
+    match std::env::var_os("GOSLING_PATH_ROOT") {
+        Some(root) => Some(PathBuf::from(root).join(".config")),
+        None => dirs::config_dir(),
+    }
 }
 
 fn dedupe_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
@@ -572,6 +582,32 @@ fn read_claude_servers(
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    #[test]
+    #[serial_test::serial]
+    fn import_candidates_stay_inside_path_root() {
+        let root = TempDir::new().unwrap();
+        let config_dir = root.path().join("config");
+        let previous = std::env::var_os("GOSLING_PATH_ROOT");
+        unsafe { std::env::set_var("GOSLING_PATH_ROOT", root.path()) };
+        let candidates: Vec<PathBuf> = gosling_config_candidate_paths(&config_dir)
+            .into_iter()
+            .chain(claude_desktop_candidate_paths())
+            .collect();
+        match previous {
+            Some(value) => unsafe { std::env::set_var("GOSLING_PATH_ROOT", value) },
+            None => unsafe { std::env::remove_var("GOSLING_PATH_ROOT") },
+        }
+
+        assert!(!candidates.is_empty());
+        for path in &candidates {
+            assert!(
+                path.starts_with(root.path()),
+                "{} is outside the path root",
+                path.display()
+            );
+        }
+    }
 
     #[test]
     fn scan_claude_desktop_counts_valid_servers() {

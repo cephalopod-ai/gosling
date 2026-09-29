@@ -75,7 +75,7 @@ filter, timestamps and cross-surface consistency after chaos.
 
 ## Card ledger
 
-| File | Pass | Partial | Fail | Blocked | Pending |
+| File | Pass | Partial | Fail | Blocked | Not executed |
 |---|---|---|---|---|---|
 | 01 lifecycle | LC-01, LC-02, LC-03 | — | LC-04 | — | — |
 | 02 chat | CH-01, CH-02, CH-03, CH-05, CH-06 | — | CH-04 | — | — |
@@ -172,16 +172,16 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | High | S19 | `.goslingignore` is documented as a Developer-tool access control but is not enforced | docs fixed; enforcement deferred (product decision) (R6) |
 | Medium | A01 | Failed CLI start leaves an empty "CLI Session" ghost row, which then hijacks `gosling session -r` | fixed (R4) |
 | Medium | A03 | Docs-advertised root-level `GOSLING_MODEL`/`GOSLING_PROVIDER` hand edits are silently ignored; `info -v` shows the derived value instead of the file's | fixed (reported + documented) (R5) |
-| Medium | A08 | Lease revocation does not stop an in-flight provider call; fenced interactive turn keeps "working" until the provider answers, then the whole CLI exits | open — queued R1b |
+| Medium | A08 | Lease revocation does not stop an in-flight provider call; fenced interactive turn keeps "working" until the provider answers, then the whole CLI exits | fixed (R1b) |
 | Medium | A16 | `run` startup failures print human text on stdout (stderr empty), even with `--output-format json`/`stream-json` | fixed (R8a) |
 | Medium | A17 | `run -q` ("printing only the model response to stdout") prints tool-call chrome, raw tool output and error text on stdout | fixed (R8a) |
 | Medium | A22 | Session subcommands without a selector fail off-TTY with "Error: not connected" and exit 0 | fixed (R8a) |
-| Medium | B01 | Aborted `gosling configure` persists the new host/API key while reporting "the active provider was not changed" | open — queued R9 |
-| Medium | B02 | Re-running `configure` preselects the first listed model, not the saved one; Enter silently replaces the saved model | open — queued R9 |
-| Medium | B03 | `configure` cannot complete when the model list cannot be fetched; no manual model entry is offered | open — queued R9 |
+| Medium | B01 | Aborted `gosling configure` persists the new host/API key while reporting "the active provider was not changed" | fixed (R9) |
+| Medium | B02 | Re-running `configure` preselects the first listed model, not the saved one; Enter silently replaces the saved model | fixed (R9) |
+| Medium | B03 | `configure` cannot complete when the model list cannot be fetched; no manual model entry is offered | fixed (R9) |
 | Medium | B04 | Rate-limit backoff is invisible: Retry-After waits show only a generic spinner (CLI) and nothing (ACP) | open — queued R9 |
 | Medium | B05 | `OPENAI_TIMEOUT` is per attempt; a stalled provider errors only after ≈4× the timeout plus backoff, with no feedback | open — queued R9 |
-| Medium | B06 | ACP streams text from retracted (interrupted) attempts with no retraction signal; live transcript differs from persisted/replayed history | open — queued R1b |
+| Medium | B06 | ACP streams text from retracted (interrupted) attempts with no retraction signal; live transcript differs from persisted/replayed history | fixed (R1b) |
 | Medium | B09 | Compaction shrink ladder bottoms out at payload/8, so large histories never reach small chunks | fixed (R2) |
 | Medium | B10 | Compaction completion notice under-reports the resulting context (system prompt and tool schemas excluded) | fixed (R2) |
 | Medium | B11 | Malformed-stream errors echo raw provider lines unredacted (incl. bearer/API-key-like strings) into the error, session history and log | fixed (R5) |
@@ -205,7 +205,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Medium | E07 | Nested (subdirectory) context files are injected as a plain `user` message without the "untrusted project hints" framing | fixed (R7) |
 | Medium | F01 | `--max-tool-repetitions` denies the repeated call but lets the turn loop to the 1000-turn default | fixed (R3) |
 | Medium | F14 | Interrupted turns stay `in_progress` forever (EOF, disconnect, SIGTERM, SIGKILL); nothing reconciles them | fixed (R1a) |
-| Medium | F15 | SIGTERM "graceful" shutdown keeps running turns alive for 5 s, then drops every client without a terminal event | open — queued R1b |
+| Medium | F15 | SIGTERM "graceful" shutdown keeps running turns alive for 5 s, then drops every client without a terminal event | fixed (R1b) |
 | Medium | G102 | Credential picker/profile manager marks 14 alias profiles "configured", including providers the app reports as unconfigured | fixed (R13a) |
 | Medium | G104 | Workspace save/duplicate errors show only "Invalid params" (reason dropped) and the editor error renders out of view | fixed (R13a) |
 | Medium | G105 | A chat's workspace label is a creation-time snapshot; after rename + name reuse it names a different workspace | open — queued R13b |
@@ -224,10 +224,10 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Medium | H02 | Delegate launch failures are not remembered: alternate `source` retries all execute and the next valid shape launches | deferred (product decision) (R3) |
 | Medium | H03 | CLI shows nothing for failed (`isError`) tool results; failures look like successes | fixed (R8a) |
 | Medium | H04 | External-tool ACP delegate in Chat mode: a self-executed tool is reported as "Tool call was denied." and the agent's answer is dropped | open — queued R11 |
-| Medium | H05 | ACP cancel is not honoured while the prompt waits on storage; latency equals the remaining lock hold | open — queued R1b |
+| Medium | H05 | ACP cancel is not honoured while the prompt waits on storage; latency equals the remaining lock hold | fixed (R1b) |
 | Medium | S03 | `--max-tool-repetitions` denies repeats but never ends the turn (1000 provider calls) | fixed (R3) |
 | Medium | S04 | A one-off `GOSLING_CONTEXT_LIMIT` is frozen into a resumed session forever | fixed (R2) |
-| Medium | S07 | ACP: selecting the model already in use still runs a full provider transition | open — queued R9 |
+| Medium | S07 | ACP: selecting the model already in use still runs a full provider transition | fixed (R9) |
 | Medium | S11 | Sessions created over `gosling serve`/`gosling acp` are invisible to `gosling session list` | open — queued R8b |
 | Medium | S13 | Corrupt config.yaml silently drops `GOSLING_DISABLE_KEYRING: true` (keyring re-enabled) (suspicion) | fixed (R5) |
 | Medium | S18 | Corrupt permission.yaml: CLI/ACP panic, serve hangs `initialize`, `doctor` stays green, denials mislead | fixed (R6) |
@@ -246,7 +246,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | A19 | Hidden internal subcommands leak into shell completion and typo suggestions | open — queued R8b |
 | Low | A20 | (exploratory) `gosling secret` reports the wrong storage location and "removes" servers that don't exist | fixed (R5) |
 | Low | A21 | (exploratory) `shell-validate` has side effects and accepts unknown builtins | fixed (R7) |
-| Low | B07 | CLI stdout keeps the retracted partial attempt (text/-q/stream-json) | open — queued R1b |
+| Low | B07 | CLI stdout keeps the retracted partial attempt (text/-q/stream-json) | fixed (R1b) |
 | Low | B12 | Auth failures end with "Please retry if you think this is a transient or recoverable error" | open — queued R9 |
 | Low | B13 | Empty or space-containing `--model` / `GOSLING_MODEL` accepted and sent verbatim | open — queued R9 |
 | Low | B14 | CLI output hygiene (cosmetic) | fixed (typed-input echo deferred: needs design) (R8a) |
@@ -300,7 +300,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | F07 | Structurally invalid requests get -32700 Parse error with id:null | upstream crate (agent-client-protocol) |
 | Low | F08 | `session/prompt` with an empty prompt array sends the model a fabricated "Hello" | open — queued R10 |
 | Low | F09 | Streamable-HTTP connections that never open a stream or DELETE are never reaped (suspicion) | open — queued R10 |
-| Low | F11 | Losing the turn lease does not stop the in-flight provider call; the revoked turn lingers until the provider returns | open — queued R1b |
+| Low | F11 | Losing the turn lease does not stop the in-flight provider call; the revoked turn lingers until the provider returns | fixed (R1b) |
 | Low | F12 | Two connections can drive one session; the owner gets no updates and a misleading refusal | open — queued R10 |
 | Low | F13 | ACP reports provider/config problems as generic -32603 "Internal error" | open — queued R10 |
 | Low | F16 | The protocol-version gate is advisory on stdio and WebSocket | open — queued R10 |
@@ -368,4 +368,4 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Note | S06 | Compaction token figures disagree between the CLI cue and context-history | fixed (R2) |
 | Note | S14 | kill -9 during a shell tool: the child keeps running; the operation is honestly marked in_doubt | note (honest in-doubt marker) |
 | Note | S15 | Headless limit message is glued and asks a question nobody can answer | fixed (R3) |
-| Note | S17 | `gosling acp`/`serve` create a Default workspace rooted at the server process's cwd | deferred (product decision; documented) (R7) |
+| Note | S17 | `gosling acp`/`serve` create a Default workspace rooted at the server process's cwd | not a defect (operator confirmed the workspace default; documented) (R7) |
