@@ -141,6 +141,22 @@ describe('NavigationPanel workspaces/chats divider', () => {
     expect(window.localStorage.getItem(WORKSPACES_HEIGHT_KEY)).toBe('224');
   });
 
+  it('gives way to the chats list when the window is too short for both sections', () => {
+    window.localStorage.setItem(WORKSPACES_HEIGHT_KEY, '300');
+    renderPanel();
+
+    const pane = screen.getByTestId('workspaces').parentElement as HTMLElement;
+    expect(pane).not.toHaveClass('shrink-0');
+    expect(pane).toHaveClass('min-h-0', 'shrink');
+
+    const chatsSection = screen.getByRole('button', { name: /chats/i })
+      .parentElement as HTMLElement;
+    expect(chatsSection).toHaveClass('flex-1', 'min-h-18');
+
+    const topInset = (pane.parentElement as HTMLElement).firstElementChild as HTMLElement;
+    expect(topInset).toHaveClass('h-[48px]', 'shrink-0');
+  });
+
   it('restores content sizing on a double-click', () => {
     window.localStorage.setItem(WORKSPACES_HEIGHT_KEY, '300');
     renderPanel();
