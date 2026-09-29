@@ -212,6 +212,23 @@ impl SessionStorage {
         Ok(closed)
     }
 
+    /// Sessions whose latest ACP run is recorded as still in progress.
+    pub(super) async fn sessions_with_acp_run_in_progress(&self) -> Result<Vec<String>> {
+        let run_state_path = format!(
+            "$.\"{}.{}\"",
+            AcpPromptRunState::EXTENSION_NAME,
+            AcpPromptRunState::VERSION
+        );
+        let in_progress = AcpPromptRunState::InProgress.to_value()?;
+        Ok(sqlx::query_scalar::<_, String>(
+            "SELECT id FROM sessions WHERE CASE WHEN json_valid(extension_data) THEN json_extract(extension_data, ?) END = ?",
+        )
+        .bind(run_state_path)
+        .bind(in_progress.as_str())
+        .fetch_all(self.pool().await?)
+        .await?)
+    }
+
     /// The stored messages from the last agent-visible turn start to the end,
     /// oldest first, read newest first so long histories are not loaded.
     async fn trailing_turn_in_tx(
@@ -272,6 +289,25 @@ mod tests {
         (temp_dir, sm, session.id)
     }
 
+    async fn add_session(sm: &SessionManager, prompt: &str) -> String {
+        let session = sm
+            .create_session(
+                PathBuf::from("/tmp/test"),
+                prompt.to_string(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        sm.add_message(
+            &session.id,
+            &Message::user().with_text(prompt).with_generated_id(),
+        )
+        .await
+        .unwrap();
+        session.id
+    }
+
     async fn set_run_state(sm: &SessionManager, session_id: &str, state: AcpPromptRunState) {
         sm.merge_extension_state(session_id, "acp_prompt_run.v1", state.to_value().unwrap())
             .await
@@ -324,6 +360,40 @@ mod tests {
             run_state(&sm, &id).await,
             Some(AcpPromptRunState::Interrupted)
         );
+    }
+
+    #[tokio::test]
+    async fn a_server_start_closes_only_runs_whose_turn_is_no_longer_live() {
+        let (temp, sm, stale) = session_with(vec![Message::user().with_text("stale")]).await;
+        set_run_state(&sm, &stale, AcpPromptRunState::InProgress).await;
+        let live = add_session(&sm, "live").await;
+        set_run_state(&sm, &live, AcpPromptRunState::InProgress).await;
+        let lease = sm.acquire_session_turn_lease(&live, None).await.unwrap();
+        let finished = add_session(&sm, "finished").await;
+        set_run_state(&sm, &finished, AcpPromptRunState::Completed).await;
+
+        let restarted = SessionManager::new(temp.path().to_path_buf());
+        restarted.close_interrupted_turns().await.unwrap();
+
+        assert_eq!(
+            run_state(&sm, &stale).await,
+            Some(AcpPromptRunState::Interrupted)
+        );
+        assert_eq!(
+            texts(&sm, &stale).await,
+            vec!["stale", INTERRUPTED_TURN_NOTICE]
+        );
+        assert_eq!(
+            run_state(&sm, &live).await,
+            Some(AcpPromptRunState::InProgress)
+        );
+        assert_eq!(texts(&sm, &live).await, vec!["live"]);
+        assert_eq!(
+            run_state(&sm, &finished).await,
+            Some(AcpPromptRunState::Completed)
+        );
+        assert_eq!(texts(&sm, &finished).await, vec!["finished"]);
+        lease.release().await.unwrap();
     }
 
     #[tokio::test]

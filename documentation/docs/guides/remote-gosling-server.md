@@ -43,7 +43,9 @@ development only and cannot bind to a non-loopback address.
 On `SIGTERM` or `Ctrl+C` the server first stops every prompt that is still running: each client gets
 its `session/prompt` answer with `stopReason: cancelled`, and the turn is recorded as interrupted
 (`Run interrupted before completion.`), the same as a turn cut short by a crash. The server then stops
-accepting connections and waits up to 5 seconds for open ones to close before it exits.
+accepting connections and waits up to 5 seconds for open ones to close before it exits. A server that
+was killed outright (`SIGKILL`, a crash) cannot do this; the next `gosling serve` or `gosling acp` on the
+same data directory records its unfinished turns as interrupted when it starts.
 
 ### Optional TLS
 

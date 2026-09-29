@@ -2,7 +2,7 @@ use crate::agents::ExtensionLoadResult;
 use crate::config::{Config, GoslingMode};
 use crate::providers::inventory::{ProviderInventoryEntry, ProviderInventoryService};
 use crate::session::import_formats::SessionImportProvenance;
-use crate::session::{ExtensionState, Session};
+use crate::session::{AcpPromptRunState, ExtensionState, Session};
 use crate::slash_commands::types::{SlashCommandEntry, SlashCommandSource};
 use agent_client_protocol::schema::v1::{
     AvailableCommand, AvailableCommandInput, AvailableCommandsUpdate, SessionConfigOption,
@@ -68,6 +68,10 @@ struct SessionMeta<'a> {
     /// create in this window (resume from history, restart, another device).
     #[serde(skip_serializing_if = "Option::is_none")]
     research_library_path: Option<String>,
+    /// The last ACP prompt stopped without an outcome (its process or client
+    /// went away), so its effects are unknown.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    last_run_interrupted: bool,
 }
 
 impl<'a> From<&'a Session> for SessionMeta<'a> {
@@ -112,6 +116,8 @@ impl<'a> From<&'a Session> for SessionMeta<'a> {
             import_original_working_dir: provenance
                 .and_then(|provenance| provenance.original_working_dir),
             research_library_path: research.map(|state| state.library_path),
+            last_run_interrupted: AcpPromptRunState::from_extension_data(&session.extension_data)
+                == Some(AcpPromptRunState::Interrupted),
         }
     }
 }
@@ -540,6 +546,27 @@ mod tests {
                 .get("researchLibraryPath")
                 .and_then(|value| value.as_str()),
             Some("/library")
+        );
+    }
+
+    #[test_case(None, false ; "no ACP run")]
+    #[test_case(Some(AcpPromptRunState::InProgress), false ; "in progress")]
+    #[test_case(Some(AcpPromptRunState::Completed), false ; "completed")]
+    #[test_case(Some(AcpPromptRunState::Cancelled), false ; "cancelled")]
+    #[test_case(Some(AcpPromptRunState::Interrupted), true ; "interrupted")]
+    fn session_meta_flags_an_interrupted_last_run(
+        state: Option<AcpPromptRunState>,
+        interrupted: bool,
+    ) {
+        let mut session = Session::default();
+        if let Some(state) = state {
+            state
+                .to_extension_data(&mut session.extension_data)
+                .unwrap();
+        }
+        assert_eq!(
+            session_meta(&session).get("lastRunInterrupted"),
+            interrupted.then_some(&serde_json::Value::Bool(true))
         );
     }
 
