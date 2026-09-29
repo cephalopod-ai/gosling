@@ -422,4 +422,14 @@ describe('NavigationPanel keyboard access to chats', () => {
     expect(onSessionClick).not.toHaveBeenCalled();
     expect(await screen.findByRole('menuitem', { name: 'Rename session' })).toBeInTheDocument();
   });
+
+  it.each(['New Chat', 'New Research', 'Session History', 'Settings', 'Session actions'])(
+    'shows the focus ring on the %s button',
+    (name) => {
+      render(<Navigation />, { wrapper: IntlTestWrapper });
+      const button = screen.getByRole('button', { name });
+
+      expect(button).toHaveClass('focus-visible:ring-1', 'focus-visible:ring-border-active');
+    }
+  );
 });

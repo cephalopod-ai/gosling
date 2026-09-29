@@ -166,6 +166,7 @@ const navItemClass = (active: boolean) =>
   cn(
     'flex flex-row items-center gap-3 outline-none no-drag w-full',
     'rounded-full px-3 py-2 text-sm font-medium transition-colors',
+    'focus-visible:ring-1 focus-visible:ring-border-active',
     active
       ? 'bg-background-tertiary text-text-primary'
       : 'text-text-primary hover:bg-background-tertiary/60'
@@ -267,7 +268,7 @@ const SessionRow: React.FC<SessionRowProps> = ({
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              className="rounded-full p-1 text-text-secondary opacity-0 transition-opacity hover:bg-background-secondary hover:text-text-primary focus-visible:opacity-100 focus-visible:outline-none group-hover:opacity-100"
+              className="rounded-full p-1 text-text-secondary opacity-0 transition-opacity hover:bg-background-secondary hover:text-text-primary focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-active group-hover:opacity-100"
               onClick={(event) => event.stopPropagation()}
               aria-label={intl.formatMessage(i18n.moreSessionActions)}
             >
