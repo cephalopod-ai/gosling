@@ -235,7 +235,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | A02 | Unknown provider from `GOSLING_PROVIDER` env is reported as "No model configured" | fixed (R8b) |
 | Low | A04 | Ctrl-C in `gosling configure` leaves the terminal cursor hidden | fixed (R8b) |
 | Low | A05 | Broken config.yaml: session/run say "Run 'gosling configure' first" but configure refuses to run | fixed (R5) |
-| Low | A07 | REPL silently discards input that arrives in the same burst as a submitting Enter | open — queued R8b |
+| Low | A07 | REPL silently discards input that arrives in the same burst as a submitting Enter | deferred (needs rustyline buffer-redux feature or upstream change — operator decision) (R8b) |
 | Low | A09 | Opening a session with `--resume` and exiting without sending re-stamps `updated_at` | fixed (R4) |
 | Low | A10 | Provider picker shows a cryptic "Groq (d)" label | fixed (R9) |
 | Low | A11 | `gosling session export --help` documents resume semantics that don't apply | fixed (R8b) |
@@ -279,7 +279,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | D15 | `term init` aliases break when the gosling binary path contains a space | fixed (R8b) |
 | Low | D16 | CLI guide's `--resume --path ./session.json  # exported session` does not work | fixed (R8b) |
 | Low | D17 | Forks lose their lineage (auto-renamed, banner says "resuming", no forked-from metadata) | fixed (cheap parts) (R4) |
-| Low | D18 | Typeahead during interactive startup is not submitted; later lines (even `/exit`) are merged into one prompt | open — queued R8b |
+| Low | D18 | Typeahead during interactive startup is not submitted; later lines (even `/exit`) are merged into one prompt | fixed (R8b) |
 | Low | D19 | `session list --format xml` silently falls back to text (exit 0) (suspicion) | fixed (R8b) |
 | Low | D24 | Import de-duplication blocks importing new turns of a grown transcript | note (product question) |
 | Low | D25 | `gosling tui` with non-interactive stdin renders a frame, then dumps an Ink/React stack trace | fixed (R8b) |
@@ -338,7 +338,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | H06 | After a normal exit all session data lives only in `sessions.db-wal`; `sessions.db` is an empty 4 KB file | fixed (R4) |
 | Low | H07 | Delegate activity title echoes the raw `source` argument (`null`, blanks, normalized sentinel) | fixed (R11) |
 | Low | S01 | Stale turn-lease rows left by concurrent `gosling run` processes | fixed (R4) |
-| Low | S02 | Interactive type-ahead under load: Enter becomes a newline, a later `/exit` is sent to the model | open — queued R8b |
+| Low | S02 | Interactive type-ahead under load: Enter becomes a newline, a later `/exit` is sent to the model | fixed (R8b) |
 | Low | S05 | `session -r --history` renders at ~32 ms per message (6.7 s for 206 messages) | fixed (R8b) |
 | Low | S08 | `/model` typed during a stream queues, and every switch persists a hidden checkpoint | fixed (R9) |
 | Low | S09 | Markdown export includes hidden internal checkpoint messages | fixed (R9) |
