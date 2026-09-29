@@ -619,6 +619,53 @@ describe('ArtifactPane', () => {
     expect(trashArtifactFiles).not.toHaveBeenCalled();
   });
 
+  it('leads output rows with the file name and keeps the full path in the tooltip', async () => {
+    let setVisibleSession!: ReturnType<typeof useArtifactWorkbench>['setVisibleSession'];
+    function AbsoluteOutputs() {
+      setVisibleSession = useArtifactWorkbench().setVisibleSession;
+      return <ArtifactPane />;
+    }
+    const directory =
+      '/private/tmp/claude-501/-Users-eric-Work-vscode-forked-gosling/dirs/alpha-out';
+    readArtifactTitles.mockResolvedValue({ [`${directory}/dt06-report.md`]: 'Quarterly report' });
+    render(
+      <IntlTestWrapper>
+        <ArtifactWorkbenchProvider>
+          <AbsoluteOutputs />
+        </ArtifactWorkbenchProvider>
+      </IntlTestWrapper>
+    );
+    await act(async () =>
+      setVisibleSession(
+        'absolute-outputs',
+        ['dt06-data.json', 'dt06-report.md'].map((name) => ({
+          sessionId: 'absolute-outputs',
+          displayPath: `${directory}/${name}`,
+          resolvedPath: `${directory}/${name}`,
+          baseWorkingDir: '/workspace',
+          relation: 'created' as const,
+          provenance: 'built_in_tool' as const,
+          firstSeenAt: '2026-01-01T00:00:00Z',
+          lastSeenAt: '2026-01-01T00:00:00Z',
+        }))
+      )
+    );
+
+    const dataRow = screen.getByTitle(`${directory}/dt06-data.json`);
+    const [dataName, dataDetail] = dataRow.querySelectorAll('span > span');
+    expect(dataName.textContent).toBe('dt06-data.json');
+    expect(dataDetail.textContent).toBe(`created · built in tool · ${directory}`);
+    expect(screen.getByRole('checkbox', { name: 'Select dt06-data.json' })).toBeInTheDocument();
+
+    const reportRow = screen.getByTitle(`${directory}/dt06-report.md`);
+    await waitFor(() =>
+      expect(reportRow.querySelector('span > span')?.textContent).toBe('Quarterly report')
+    );
+    expect(reportRow.querySelectorAll('span > span')[1].textContent).toBe(
+      `dt06-report.md · created · ${directory}`
+    );
+  });
+
   it('checks every output in inventories larger than the IPC batch limit', async () => {
     let setVisibleSession!: ReturnType<typeof useArtifactWorkbench>['setVisibleSession'];
     function LargeInventory() {

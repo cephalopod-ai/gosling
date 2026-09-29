@@ -27,6 +27,8 @@ import { Switch } from '../ui/switch';
 import { ARTIFACT_REPOSITORY_BATCH_LIMIT } from '../../utils/artifactRepository';
 import {
   addSandboxCsp,
+  artifactDirectoryFromPath,
+  artifactTitleFromPath,
   hasDisplayedFileExtension,
   isArtifactPreviewable,
   parseCsv,
@@ -1201,13 +1203,23 @@ export function ArtifactPane() {
                 label={intl.formatMessage(i18n.outputs)}
                 items={displayedArtifacts.map((artifact) => {
                   const status = artifactStatus(artifact.displayPath);
+                  const documentTitle = documentTitles[artifact.resolvedPath];
+                  const fileName = artifactTitleFromPath(artifact.displayPath);
+                  const directory = artifactDirectoryFromPath(artifact.displayPath);
+                  // Rows end-truncate, so the file name leads and the directory comes last.
+                  const detail = [
+                    documentTitle ? fileName : null,
+                    artifact.relation,
+                    documentTitle ? null : artifact.provenance.replace(/_/g, ' '),
+                    directory || null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ');
                   return {
                     path: artifact.resolvedPath,
                     timestampRevision: artifact.lastSeenAt,
-                    name: documentTitles[artifact.resolvedPath] || artifact.displayPath,
-                    detail: documentTitles[artifact.resolvedPath]
-                      ? `${artifact.displayPath} · ${artifact.relation}`
-                      : `${artifact.relation} · ${artifact.provenance.replace(/_/g, ' ')}`,
+                    name: documentTitle || fileName,
+                    detail,
                     active:
                       activeTab?.source.type === 'file' &&
                       (activeTab.source.path === artifact.resolvedPath ||

@@ -269,6 +269,12 @@ export function artifactTitleFromPath(path: string): string {
   return parts[parts.length - 1] || path;
 }
 
+export function artifactDirectoryFromPath(path: string): string {
+  const separator = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+  if (separator < 0) return '';
+  return path.slice(0, separator) || path.slice(0, 1);
+}
+
 export function parseCsv(content: string, maxRows = 200, maxColumns = 50): string[][] {
   const rows: string[][] = [];
   let row: string[] = [];
