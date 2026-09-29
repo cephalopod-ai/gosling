@@ -7,6 +7,13 @@ const DEFAULT_CONNECT_SOURCES = [
   'https://objects.githubusercontent.com',
 ];
 
+// CSP host-source grammar has no form for IPv6 literals: Chromium logs "invalid source"
+// for http://[::1]:* and ignores it, so such origins are never emitted. The bundled
+// backend listens on 127.0.0.1.
+function isIpv6Literal(url: URL): boolean {
+  return url.hostname.startsWith('[');
+}
+
 function localAcpConnectSources(acpUrl?: string | null): string[] {
   if (!acpUrl) {
     return [];
@@ -17,7 +24,7 @@ function localAcpConnectSources(acpUrl?: string | null): string[] {
     if (!['ws:', 'wss:'].includes(parsed.protocol)) {
       return [];
     }
-    if (!['127.0.0.1', 'localhost', '::1', '[::1]'].includes(parsed.hostname)) {
+    if (!['127.0.0.1', 'localhost'].includes(parsed.hostname)) {
       return [];
     }
 
@@ -39,9 +46,13 @@ export function buildConnectSrc(
   if (externalGoslingd?.enabled && externalGoslingd.url) {
     try {
       const externalUrl = new URL(externalGoslingd.url);
-      sources.push(externalUrl.origin);
-      externalUrl.protocol = externalUrl.protocol === 'https:' ? 'wss:' : 'ws:';
-      sources.push(externalUrl.origin);
+      if (isIpv6Literal(externalUrl)) {
+        console.warn('External goslingd URL uses an IPv6 literal, which CSP cannot allow');
+      } else {
+        sources.push(externalUrl.origin);
+        externalUrl.protocol = externalUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+        sources.push(externalUrl.origin);
+      }
     } catch {
       console.warn('Invalid external goslingd URL in settings, skipping CSP entry');
     }
