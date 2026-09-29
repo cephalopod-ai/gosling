@@ -188,7 +188,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Medium | B18 | CLI cost line shows only the last request's cost without saying so; `--stats` silently ignored with json/stream-json | fixed (R8a) |
 | Medium | B21 | Rejected Copilot token refresh surfaces as "failed to get api info after 3 attempts" + "Please retry"; no re-auth request | fixed (R9) |
 | Medium | C01 | ACP client `mcpServers` replace all of gosling's configured extensions | fixed (R10) |
-| Medium | C02 | A hanging MCP extension blocks session start for 300 s with no feedback (run/ACP) | open — queued (operator: startup cap + env var) (R11) |
+| Medium | C02 | A hanging MCP extension blocks session start for 300 s with no feedback (run/ACP) | fixed (30 s startup cap + GOSLING_EXTENSION_STARTUP_TIMEOUT) (R11) |
 | Medium | C03 | Removed MCP extensions come back when an older session is resumed/loaded | open — queued (operator: record extension origin) (R11) |
 | Medium | C05 | Skill discovery ignores `GOSLING_PATH_ROOT` and reads/writes HOME-based skill dirs | fixed (R7) |
 | Medium | C06 | `disabledPlugins` does not disable an installed plugin's skills | fixed (R11) |
