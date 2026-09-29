@@ -202,6 +202,35 @@ fn test_prompt_repeating_a_failing_tool_call_stops_with_max_turn_requests() {
     });
 }
 
+// GSL-PT-20260927-F08: an empty prompt reached the provider as a placeholder
+// "Hello" turn instead of being rejected.
+#[test]
+fn test_prompt_without_content_is_rejected_before_the_provider_is_called() {
+    run_test(async {
+        let openai = OpenAiFixture::new(
+            Vec::new(),
+            <AcpServerConnection as Connection>::expected_session_id(),
+        )
+        .await;
+        let mut conn =
+            <AcpServerConnection as Connection>::new(TestConnectionConfig::default(), openai).await;
+        let SessionData { session, .. } = conn.new_session().await.unwrap();
+
+        let error = conn
+            .cx()
+            .send_request(PromptRequest::new(session.session_id().clone(), Vec::new()))
+            .block_task()
+            .await
+            .expect_err("an empty prompt must be rejected");
+
+        assert_eq!(
+            error.code,
+            agent_client_protocol::Error::invalid_params().code,
+            "{error:?}"
+        );
+    });
+}
+
 #[test]
 fn test_config_option_mode_set() {
     run_test(async { run_config_option_mode_set::<AcpServerConnection>().await });
