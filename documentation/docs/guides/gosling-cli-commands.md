@@ -691,7 +691,7 @@ those checks.
 - **`--checks-only`**: Skip the main correctness pass and run only the check subagents
 - **`--summary-only`**: Print only the diff summary
 - **`--severity <level>`**: Minimum severity to display. Default is `medium`; pass `low` to surface every finding
-- **`--dry-run`**: Print the assembled prompt and discovered checks without running the review
+- **`--dry-run`**: Print the prompts the review would send without running it: one main-pass prompt per touched file (none with `--checks-only`) and one prompt per check, each including `--instructions`. With `--no-orchestrate` (and without `--checks-only`) it prints the single assembled prompt
 - **`--no-orchestrate`**: Disable the parallel orchestrator and use the single-prompt delegation path
 - **`-q, --quiet`**: Suppress non-result output from the underlying agent
 
