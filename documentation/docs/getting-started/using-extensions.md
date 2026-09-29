@@ -49,11 +49,13 @@ Platform extensions are built-in extensions that provide global features like co
 
   <TabItem value="cli" label="gosling CLI">
     
-    If you know the exact name of the extension you'd like to add, run:
+    If you know the exact name of the extension you'd like to add (for example, `planning`), enable it for a single session with:
 
     ```sh
-    gosling mcp {name}
+    gosling session --with-builtin {name}
     ```
+
+    Separate several names with commas. (`gosling mcp {name}` does something else: it runs a bundled MCP server on stdio.)
 
     To navigate through available extensions:
 

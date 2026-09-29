@@ -168,6 +168,24 @@ gosling plugin update my-plugin
 
 The update command fetches the plugin from its original git source, replaces the installed copy, and preserves whether auto-update was enabled for that plugin.
 
+## List and Remove Plugins
+
+`gosling plugin` has no `list` or `remove` command. Each user plugin, including its install metadata, lives in its own directory, so you manage plugins through that directory.
+
+To see which user plugins are installed:
+
+```bash
+ls ~/.agents/plugins
+```
+
+To remove a plugin, delete its directory:
+
+```bash
+rm -rf ~/.agents/plugins/my-plugin
+```
+
+After that, gosling no longer discovers the plugin, and `gosling plugin update my-plugin` reports that it is not installed. To stop using a plugin without deleting it, [disable it](#disable-a-plugin) instead.
+
 ## Disable a Plugin
 
 To disable a plugin globally, add its name to `disabledPlugins` in your user gosling settings file:

@@ -575,7 +575,7 @@ enum SessionCommand {
             short,
             long,
             help = "Output file path (default: stdout)",
-            long_help = "Path to save the exported Markdown. If not provided, output will be sent to stdout"
+            long_help = "Path to save the export, written in the format chosen by --format. If not provided, output will be sent to stdout"
         )]
         output: Option<PathBuf>,
 
@@ -3324,6 +3324,24 @@ mod tests {
         let help = String::from_utf8(buffer).expect("utf8");
         assert!(!help.contains("Requires --resume"), "{help}");
         assert!(help.contains("Select a session by ID"), "{help}");
+    }
+
+    // GSL-PT-20260927-C17: `-o` claimed to save "the exported Markdown" even
+    // with --format json or yaml.
+    #[test]
+    fn session_export_output_help_covers_every_format() {
+        let mut cmd = Cli::command();
+        let session = cmd.find_subcommand_mut("session").expect("session command");
+        let export = session
+            .find_subcommand_mut("export")
+            .expect("export command");
+        let mut buffer = Vec::new();
+
+        export.write_long_help(&mut buffer).expect("write help");
+
+        let help = String::from_utf8(buffer).expect("utf8");
+        assert!(!help.contains("exported Markdown"), "{help}");
+        assert!(help.contains("in the format chosen by --format"), "{help}");
     }
 
     // GSL-PT-20260927-F05: `--allowed-origin localhost:5173` was accepted,

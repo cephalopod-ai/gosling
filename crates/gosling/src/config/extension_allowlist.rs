@@ -34,7 +34,11 @@ pub async fn enforce_extension(config: &ExtensionConfig) -> Result<()> {
     };
 
     let allowlist = EXTENSION_ALLOWLIST
-        .get_or_init(|| async { load_allowlist().await.map_err(|error| error.to_string()) })
+        .get_or_init(|| async {
+            load_allowlist()
+                .await
+                .map_err(|error| describe_load_error(&error))
+        })
         .await
         .as_ref()
         .map_err(|error| anyhow!(error.clone()))?;
@@ -71,7 +75,17 @@ async fn load_allowlist() -> Result<ExtensionAllowlist> {
         return Ok(ExtensionAllowlist::Disabled);
     }
 
-    let url = reqwest::Url::parse(&location).context("GOSLING_ALLOWLIST is not a valid URL")?;
+    fetch_allowlist(&location).await
+}
+
+// The load result is cached as a string, so keep the whole cause chain: a
+// bare "failed to fetch GOSLING_ALLOWLIST" hides TLS and connection errors.
+fn describe_load_error(error: &anyhow::Error) -> String {
+    format!("{error:#}")
+}
+
+async fn fetch_allowlist(location: &str) -> Result<ExtensionAllowlist> {
+    let url = reqwest::Url::parse(location).context("GOSLING_ALLOWLIST is not a valid URL")?;
     if url.scheme() != "https" {
         bail!("GOSLING_ALLOWLIST must use https");
     }
@@ -162,5 +176,30 @@ extensions:
     fn invalid_or_empty_commands_fail_the_whole_allowlist_closed() {
         assert!(parse_allowlist(b"extensions:\n  - command: ''\n").is_err());
         assert!(parse_allowlist(b"extensions:\n  - command: '\\\"unterminated'\n").is_err());
+    }
+
+    #[tokio::test]
+    async fn fetch_failure_keeps_the_underlying_cause() {
+        let error = fetch_allowlist("https://127.0.0.1:1/allowlist.yaml")
+            .await
+            .unwrap_err();
+        let message = describe_load_error(&error);
+
+        assert!(
+            message.starts_with("failed to fetch GOSLING_ALLOWLIST: "),
+            "{message}"
+        );
+        assert!(message.contains("127.0.0.1:1"), "{message}");
+    }
+
+    #[tokio::test]
+    async fn non_https_allowlist_urls_are_rejected() {
+        let error = fetch_allowlist("http://127.0.0.1:1/allowlist.yaml")
+            .await
+            .unwrap_err();
+        assert_eq!(
+            describe_load_error(&error),
+            "GOSLING_ALLOWLIST must use https"
+        );
     }
 }
