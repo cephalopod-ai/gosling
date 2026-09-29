@@ -87,6 +87,38 @@ describe('file IPC registration', () => {
     ]);
   });
 
+  it('flags an artifact read that failed because the file no longer exists', async () => {
+    const root = await temporaryDirectory();
+    await fs.writeFile(path.join(root, 'empty.md'), '');
+    const handle = vi.fn();
+    registerFileIpcHandlers(
+      { handle },
+      {
+        assertRendererFileAccess: vi.fn(),
+        assertRendererArtifactFileAccess: vi.fn(
+          async (_senderId: number, requestedPath: string) => requestedPath
+        ),
+        resolveRendererPath: vi.fn((requestedPath: string) => requestedPath),
+        grantRendererDirectory: vi.fn(),
+        grantRendererArtifactFile: vi.fn(),
+        updateArtifactRoutingConfig: vi.fn(),
+        getAllowList: vi.fn(),
+      }
+    );
+    const readArtifactFile = handle.mock.calls.find(
+      ([channel]) => channel === desktopCommandChannels.readArtifactFile
+    )?.[1];
+
+    const missing = await readArtifactFile({ sender: { id: 1 } }, path.join(root, 'gone.md'));
+    expect(missing).toMatchObject({ found: false, missing: true });
+
+    const empty = await readArtifactFile({ sender: { id: 1 } }, path.join(root, 'empty.md'));
+    expect(empty).toMatchObject({ content: '', error: null, missing: false, sizeBytes: 0 });
+
+    const directory = await readArtifactFile({ sender: { id: 1 } }, root);
+    expect(directory).toMatchObject({ found: false, missing: false });
+  });
+
   it('reports a directory symlink as a directory, not a file', async () => {
     const root = await temporaryDirectory();
     await fs.mkdir(path.join(root, 'real_dir'));

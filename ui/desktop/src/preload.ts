@@ -84,6 +84,7 @@ export interface ArtifactFileResponse {
   error: string | null;
   filePath: string;
   found: boolean;
+  missing: boolean;
   sizeBytes: number;
   truncated: boolean;
 }

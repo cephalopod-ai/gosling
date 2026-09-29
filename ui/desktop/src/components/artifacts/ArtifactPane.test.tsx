@@ -440,6 +440,117 @@ describe('ArtifactPane', () => {
     );
   });
 
+  function renderFilePreview(filePath: string) {
+    function OpenPath() {
+      const { openFile } = useArtifactWorkbench();
+      return (
+        <>
+          <button type="button" onClick={() => openFile(filePath, '/outputs', 'workspace-1')}>
+            Open path
+          </button>
+          <ArtifactPane />
+        </>
+      );
+    }
+    render(
+      <IntlTestWrapper>
+        <ArtifactWorkbenchProvider>
+          <OpenPath />
+        </ArtifactWorkbenchProvider>
+      </IntlTestWrapper>
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Open path' }));
+  }
+
+  it('says a previewable file is empty instead of showing a blank preview', async () => {
+    readArtifactFile.mockResolvedValue({
+      content: '',
+      encoding: 'utf8',
+      error: null,
+      filePath: '/outputs/empty.md',
+      found: true,
+      missing: false,
+      sizeBytes: 0,
+      truncated: false,
+    });
+    renderFilePreview('/outputs/empty.md');
+
+    expect(await screen.findByText('File is empty')).toBeInTheDocument();
+  });
+
+  it('says a missing file no longer exists instead of showing the raw errno text', async () => {
+    readArtifactFile.mockResolvedValue({
+      content: '',
+      encoding: 'utf8',
+      error: "ENOENT: no such file or directory, stat '/outputs/gone.md'",
+      filePath: '/outputs/gone.md',
+      found: false,
+      missing: true,
+      sizeBytes: 0,
+      truncated: false,
+    });
+    renderFilePreview('/outputs/gone.md');
+
+    expect(await screen.findByText('File no longer exists')).toBeInTheDocument();
+    expect(screen.getByText('/outputs/gone.md', { selector: 'p' })).toBeInTheDocument();
+    expect(screen.queryByText(/ENOENT/)).toBeNull();
+  });
+
+  it('reports an image that cannot be decoded instead of a broken-image glyph', async () => {
+    readArtifactFile.mockResolvedValue({
+      content: window.btoa('this is not a png'),
+      encoding: 'base64',
+      error: null,
+      filePath: '/outputs/bad.png',
+      found: true,
+      missing: false,
+      sizeBytes: 17,
+      truncated: false,
+    });
+    renderFilePreview('/outputs/bad.png');
+
+    fireEvent.error(await screen.findByRole('img', { name: 'bad.png' }));
+    expect(await screen.findByText('Could not parse this file as an image.')).toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: 'bad.png' })).toBeNull();
+  });
+
+  it('reports malformed JSON while keeping the original text visible', async () => {
+    readArtifactFile.mockResolvedValue({
+      content: '{"broken": ',
+      encoding: 'utf8',
+      error: null,
+      filePath: '/outputs/broken.json',
+      found: true,
+      missing: false,
+      sizeBytes: 11,
+      truncated: false,
+    });
+    renderFilePreview('/outputs/broken.json');
+
+    expect(
+      await screen.findByText('Could not parse this file as JSON. Showing the original text.')
+    ).toBeInTheDocument();
+    expect(screen.getByText('{"broken":')).toBeInTheDocument();
+  });
+
+  it('names the malformed line of a JSON Lines file', async () => {
+    readArtifactFile.mockResolvedValue({
+      content: '{"a":1}\nnot json\n',
+      encoding: 'utf8',
+      error: null,
+      filePath: '/outputs/events.jsonl',
+      found: true,
+      missing: false,
+      sizeBytes: 17,
+      truncated: false,
+    });
+    renderFilePreview('/outputs/events.jsonl');
+
+    expect(
+      await screen.findByText('Could not parse line 2 as JSON. Showing the original text.')
+    ).toBeInTheDocument();
+  });
+
   it('saves a full transient artifact through its originating workspace', async () => {
     render(
       <IntlTestWrapper>

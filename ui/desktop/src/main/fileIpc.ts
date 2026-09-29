@@ -326,16 +326,19 @@ export function registerFileIpcHandlers(
           error: null,
           filePath: resolvedPath,
           found: true,
+          missing: false,
           sizeBytes: stats.size,
           truncated: stats.size > previewLimit,
         };
       } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
         return {
           content: '',
           encoding: 'utf8',
           error: errorMessage(error),
           filePath: resolveRendererPath(filePath),
           found: false,
+          missing: code === 'ENOENT' || code === 'ENOTDIR',
           sizeBytes: 0,
           truncated: false,
         };

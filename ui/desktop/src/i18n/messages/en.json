@@ -134,11 +134,20 @@
   "artifactPane.emptyTitle": {
     "defaultMessage": "View an output or deliverable"
   },
+  "artifactPane.fileEmpty": {
+    "defaultMessage": "File is empty"
+  },
+  "artifactPane.fileMissing": {
+    "defaultMessage": "File no longer exists"
+  },
   "artifactPane.grantAccessToPreview": {
     "defaultMessage": "Select this file to grant access and preview it"
   },
   "artifactPane.hideRepositoryFiles": {
     "defaultMessage": "Hide repository files"
+  },
+  "artifactPane.imageParseFailed": {
+    "defaultMessage": "Could not parse this file as an image."
   },
   "artifactPane.inputEmptyBody": {
     "defaultMessage": "Uploaded files and pasted content added to the session will appear here."
@@ -151,6 +160,12 @@
   },
   "artifactPane.inputs": {
     "defaultMessage": "Inputs"
+  },
+  "artifactPane.jsonParseFailed": {
+    "defaultMessage": "Could not parse this file as JSON. Showing the original text."
+  },
+  "artifactPane.jsonlParseFailed": {
+    "defaultMessage": "Could not parse line {line} as JSON. Showing the original text."
   },
   "artifactPane.library": {
     "defaultMessage": "Library"

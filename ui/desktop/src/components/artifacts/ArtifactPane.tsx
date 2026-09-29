@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   BookOpen,
@@ -93,6 +93,20 @@ const i18n = defineMessages({
     defaultMessage: 'Open a local file, or send a tool result here from the conversation.',
   },
   previewFailed: { id: 'artifactPane.previewFailed', defaultMessage: 'Preview unavailable' },
+  fileMissing: { id: 'artifactPane.fileMissing', defaultMessage: 'File no longer exists' },
+  fileEmpty: { id: 'artifactPane.fileEmpty', defaultMessage: 'File is empty' },
+  imageParseFailed: {
+    id: 'artifactPane.imageParseFailed',
+    defaultMessage: 'Could not parse this file as an image.',
+  },
+  jsonParseFailed: {
+    id: 'artifactPane.jsonParseFailed',
+    defaultMessage: 'Could not parse this file as JSON. Showing the original text.',
+  },
+  jsonlParseFailed: {
+    id: 'artifactPane.jsonlParseFailed',
+    defaultMessage: 'Could not parse line {line} as JSON. Showing the original text.',
+  },
   grantAccessToPreview: {
     id: 'artifactPane.grantAccessToPreview',
     defaultMessage: 'Select this file to grant access and preview it',
@@ -188,6 +202,7 @@ interface PreviewData {
   encoding: 'base64' | 'utf8';
   error: string | null;
   filePath?: string;
+  missing: boolean;
   sizeBytes?: number;
   truncated: boolean;
 }
@@ -230,20 +245,87 @@ function mimeTypeForTab(tab: ArtifactTab): string {
   }
 }
 
-function JsonPreview({ content, jsonl }: { content: string; jsonl: boolean }) {
-  let formatted = content;
-  try {
-    formatted = jsonl
-      ? content
-          .split('\n')
-          .filter(Boolean)
-          .map((line) => JSON.stringify(JSON.parse(line), null, 2))
-          .join('\n')
-      : JSON.stringify(JSON.parse(content), null, 2);
-  } catch {
-    // Keep the original text visible when an incomplete or malformed file is being inspected.
+function PreviewNotice({ children }: { children: ReactNode }) {
+  return (
+    <div
+      role="status"
+      className="m-3 flex items-center gap-2 rounded-md border border-border-primary px-3 py-2 text-xs text-text-secondary"
+    >
+      <AlertTriangle className="h-4 w-4 shrink-0" />
+      <span className="min-w-0 flex-1">{children}</span>
+    </div>
+  );
+}
+
+function formatJson(
+  content: string,
+  jsonl: boolean
+): { formatted: string } | { failedLine: number } {
+  if (!jsonl) {
+    try {
+      return { formatted: JSON.stringify(JSON.parse(content), null, 2) };
+    } catch {
+      return { failedLine: 0 };
+    }
   }
-  return <pre className="whitespace-pre-wrap break-words font-mono text-xs p-4">{formatted}</pre>;
+  const formatted: string[] = [];
+  for (const [index, line] of content.split('\n').entries()) {
+    if (!line.trim()) continue;
+    try {
+      formatted.push(JSON.stringify(JSON.parse(line), null, 2));
+    } catch {
+      return { failedLine: index + 1 };
+    }
+  }
+  return { formatted: formatted.join('\n') };
+}
+
+function JsonPreview({
+  content,
+  jsonl,
+  truncated,
+}: {
+  content: string;
+  jsonl: boolean;
+  truncated: boolean;
+}) {
+  const intl = useIntl();
+  const result = formatJson(content, jsonl);
+  // Keep the original text visible when an incomplete or malformed file is being inspected; a
+  // truncated preview cannot parse, and the truncation notice already explains why.
+  const parseFailed = 'failedLine' in result && !truncated;
+  return (
+    <>
+      {parseFailed && (
+        <PreviewNotice>
+          {result.failedLine > 0
+            ? intl.formatMessage(i18n.jsonlParseFailed, { line: result.failedLine })
+            : intl.formatMessage(i18n.jsonParseFailed)}
+        </PreviewNotice>
+      )}
+      <pre className="whitespace-pre-wrap break-words font-mono text-xs p-4">
+        {'formatted' in result ? result.formatted : content}
+      </pre>
+    </>
+  );
+}
+
+function ImagePreview({ src, alt }: { src: string; alt: string }) {
+  const intl = useIntl();
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  if (failedSrc === src) {
+    return <PreviewNotice>{intl.formatMessage(i18n.imageParseFailed)}</PreviewNotice>;
+  }
+  return (
+    <div className="flex min-h-full items-center justify-center p-4 bg-background-secondary">
+      <img
+        className="max-h-full max-w-full object-contain"
+        src={src}
+        alt={alt}
+        onError={() => setFailedSrc(src)}
+      />
+    </div>
+  );
 }
 
 function CsvPreview({ content }: { content: string }) {
@@ -313,9 +395,11 @@ function Preview({
       <div className="m-4 rounded-lg border border-border-primary p-4 text-sm">
         <div className="flex items-center gap-2 font-medium">
           <AlertTriangle className="h-4 w-4" />
-          {intl.formatMessage(i18n.previewFailed)}
+          {intl.formatMessage(data.missing ? i18n.fileMissing : i18n.previewFailed)}
         </div>
-        <p className="mt-2 text-text-secondary">{data.error}</p>
+        <p className="mt-2 break-words text-text-secondary">
+          {data.missing ? (data.filePath ?? tab.title) : data.error}
+        </p>
         {isRetryableArtifactAccessError(data.error) && (
           <Button className="mt-3" variant="outline" size="sm" onClick={onGrantAccess}>
             <FolderOpen className="mr-2 h-4 w-4" />
@@ -337,6 +421,10 @@ function Preview({
     );
   }
 
+  if (tab.kind !== 'unknown' && data.content.length === 0) {
+    return <PreviewNotice>{intl.formatMessage(i18n.fileEmpty)}</PreviewNotice>;
+  }
+
   switch (tab.kind) {
     case 'markdown':
       if (markdownAsText) {
@@ -356,9 +444,9 @@ function Preview({
     case 'csv':
       return <CsvPreview content={data.content} />;
     case 'json':
-      return <JsonPreview content={data.content} jsonl={false} />;
+      return <JsonPreview content={data.content} jsonl={false} truncated={data.truncated} />;
     case 'jsonl':
-      return <JsonPreview content={data.content} jsonl />;
+      return <JsonPreview content={data.content} jsonl truncated={data.truncated} />;
     case 'html':
       return (
         <iframe
@@ -372,13 +460,7 @@ function Preview({
     case 'image':
     case 'svg':
       return (
-        <div className="flex min-h-full items-center justify-center p-4 bg-background-secondary">
-          <img
-            className="max-h-full max-w-full object-contain"
-            src={`data:${mimeTypeForTab(tab)};base64,${data.content}`}
-            alt={tab.title}
-          />
-        </div>
+        <ImagePreview src={`data:${mimeTypeForTab(tab)};base64,${data.content}`} alt={tab.title} />
       );
     case 'pdf':
       return (
@@ -716,12 +798,13 @@ export function ArtifactPane() {
         content: activeTab.source.content,
         encoding: activeTab.source.encoding,
         error: null,
+        missing: false,
         truncated: false,
       });
       return;
     }
     if (activeTab.kind === 'unknown') {
-      setPreview({ content: '', encoding: 'utf8', error: null, truncated: false });
+      setPreview({ content: '', encoding: 'utf8', error: null, missing: false, truncated: false });
       return;
     }
 
@@ -818,7 +901,7 @@ export function ArtifactPane() {
       return { text: intl.formatMessage(i18n.truncated), blocked: false };
     }
     if (!preview.error) return null;
-    const blocked = !/not found|no such file|missing/i.test(preview.error);
+    const blocked = !preview.missing;
     return { text: intl.formatMessage(blocked ? i18n.blocked : i18n.missing), blocked };
   };
 

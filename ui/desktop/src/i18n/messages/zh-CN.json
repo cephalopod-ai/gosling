@@ -4228,5 +4228,20 @@
   },
   "baseChat.sessionBusyBody": {
     "defaultMessage": "Another window is running a task in this chat, so your message was not sent. It was kept; send it again when that task finishes."
+  },
+  "artifactPane.fileEmpty": {
+    "defaultMessage": "File is empty"
+  },
+  "artifactPane.fileMissing": {
+    "defaultMessage": "File no longer exists"
+  },
+  "artifactPane.imageParseFailed": {
+    "defaultMessage": "Could not parse this file as an image."
+  },
+  "artifactPane.jsonParseFailed": {
+    "defaultMessage": "Could not parse this file as JSON. Showing the original text."
+  },
+  "artifactPane.jsonlParseFailed": {
+    "defaultMessage": "Could not parse line {line} as JSON. Showing the original text."
   }
 }
