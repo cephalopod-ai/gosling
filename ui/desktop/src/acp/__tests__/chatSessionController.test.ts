@@ -398,6 +398,99 @@ describe('acpChatSessionController.submitMessage', () => {
     consoleError.mockRestore();
   });
 
+  it.each([
+    {
+      name: 'another connection to this server',
+      error: {
+        code: -32600,
+        message: 'Invalid request',
+        data: `session ${SESSION_ID} already has a prompt running on another connection to this server`,
+      },
+    },
+    {
+      name: 'the turn lease of another process',
+      error: {
+        code: -32603,
+        message: 'Internal error',
+        data: `Error getting agent reply: session ${SESSION_ID} already has an active turn in another Gosling process or window`,
+      },
+    },
+  ])(
+    'returns the rejected text to the composer when $name is running a turn',
+    async ({ error }) => {
+      const earlier: Message = {
+        id: 'earlier',
+        role: 'assistant',
+        created: 1,
+        content: [{ type: 'text', text: 'Earlier reply' }],
+        metadata: { userVisible: true, agentVisible: true },
+      };
+      vi.mocked(acpChatSessionStore.getSnapshot).mockReturnValue({
+        ...snapshotWithActivePrompt(null),
+        session: loadedSession(),
+        messages: [earlier, userMessage()],
+      });
+      vi.mocked(acpPromptSession).mockRejectedValue(error);
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const onFinish = vi.fn();
+
+      await acpChatSessionController.submitMessage(SESSION_ID, userMessage(), {
+        getCurrentSnapshot: () => snapshotWithActivePrompt(null),
+        onFinish,
+      });
+
+      expect(acpChatSessionActions.setMessages).toHaveBeenCalledWith(SESSION_ID, [earlier]);
+      expect(acpChatSessionActions.finishPromptAttemptIfCurrent).toHaveBeenCalledWith(
+        SESSION_ID,
+        expect.any(String),
+        {
+          message: 'This chat is busy in another window. Your message was kept.',
+          connectionLost: false,
+          recovery: 'busy',
+          draft: 'Hello',
+        }
+      );
+      expect(consoleError).not.toHaveBeenCalled();
+      consoleError.mockRestore();
+    }
+  );
+
+  it('keeps a rejected message with images in the thread instead of dropping them', async () => {
+    const withImage: Message & { id: string } = {
+      ...userMessage(),
+      content: [
+        { type: 'text', text: 'Hello' },
+        { type: 'image', data: 'AAAA', mimeType: 'image/png' },
+      ],
+    };
+    vi.mocked(acpChatSessionStore.getSnapshot).mockReturnValue({
+      ...snapshotWithActivePrompt(null),
+      session: loadedSession(),
+      messages: [withImage],
+    });
+    vi.mocked(acpPromptSession).mockRejectedValue({
+      code: -32600,
+      message: 'Invalid request',
+      data: `session ${SESSION_ID} already has a prompt running on another connection to this server`,
+    });
+
+    await acpChatSessionController.submitMessage(SESSION_ID, withImage, {
+      getCurrentSnapshot: () => snapshotWithActivePrompt(null),
+      onFinish: vi.fn(),
+    });
+
+    expect(acpChatSessionActions.setMessages).not.toHaveBeenCalled();
+    expect(acpChatSessionActions.finishPromptAttemptIfCurrent).toHaveBeenCalledWith(
+      SESSION_ID,
+      expect.any(String),
+      {
+        message: 'This chat is busy in another window. Your message was kept.',
+        connectionLost: false,
+        recovery: 'busy',
+      }
+    );
+  });
+
   it('clears the recovery marker after a terminal prompt result', async () => {
     vi.mocked(acpChatSessionStore.getSnapshot).mockReturnValue({
       ...snapshotWithActivePrompt(null),

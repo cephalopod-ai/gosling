@@ -24,6 +24,7 @@ import {
   type AcpCreditsExhaustedError,
   isAcpAwaitingReplyError,
   isAcpSessionArchivedError,
+  isAcpSessionBusyError,
 } from './errors';
 import { cancelAcpPermissionRequestsForSession } from './permissionRequests';
 import { acpCancelPrompt, acpPromptSession } from './prompt';
@@ -331,6 +332,7 @@ async function submitMessage(
   }
 
   const promptAttemptId = uuidv7();
+  const submittedMessage = userMessage;
   const workingDir = snapshot?.session?.working_dir;
   const selectedInputIds =
     options.includeSelectedSessionInputs !== false &&
@@ -400,9 +402,16 @@ async function submitMessage(
 
     const awaitingReply = isAcpAwaitingReplyError(error);
     const sessionArchived = isAcpSessionArchivedError(error);
-    if (!awaitingReply && !sessionArchived) {
+    const sessionBusy = isAcpSessionBusyError(error);
+    if (!awaitingReply && !sessionArchived && !sessionBusy) {
       console.error('Failed to submit ACP prompt:', error);
     }
+    // The refused message was never stored, so a text-only one moves back to the composer
+    // instead of sitting in the thread until a reload drops it. One with images stays in the
+    // thread because the composer cannot take the images back.
+    const refused = getTextAndImageContent(submittedMessage);
+    const returnDraftToComposer =
+      sessionBusy && refused.imagePaths.length === 0 && refused.textContent.trim().length > 0;
     const submitError = awaitingReply
       ? { message: '', connectionLost: false, awaitingReply: true }
       : sessionArchived
@@ -411,18 +420,31 @@ async function submitMessage(
             connectionLost: false,
             recovery: 'restore' as const,
           }
-        : {
-            message: preparingInputs
-              ? 'Could not attach inputs: ' +
-                (parseAcpLibraryError(error)?.message ?? describeAcpError(error))
-              : 'Submit error: ' + describeAcpError(error),
-            connectionLost: isAcpConnectionClosedError(error),
-            ...(preparingInputs ? { recovery: 'inputs' as const } : {}),
-          };
+        : sessionBusy
+          ? {
+              message: 'This chat is busy in another window. Your message was kept.',
+              connectionLost: false,
+              recovery: 'busy' as const,
+              ...(returnDraftToComposer ? { draft: refused.textContent } : {}),
+            }
+          : {
+              message: preparingInputs
+                ? 'Could not attach inputs: ' +
+                  (parseAcpLibraryError(error)?.message ?? describeAcpError(error))
+                : 'Submit error: ' + describeAcpError(error),
+              connectionLost: isAcpConnectionClosedError(error),
+              ...(preparingInputs ? { recovery: 'inputs' as const } : {}),
+            };
     preserveRecoveryMarker = submitError.connectionLost;
     if (
       acpChatSessionActions.finishPromptAttemptIfCurrent(sessionId, promptAttemptId, submitError)
     ) {
+      if (returnDraftToComposer) {
+        const messages = acpChatSessionStore.getSnapshot(sessionId)?.messages ?? [];
+        if (messages[messages.length - 1]?.id === submittedMessage.id) {
+          acpChatSessionActions.setMessages(sessionId, messages.slice(0, -1));
+        }
+      }
       void options.onFinish(submitError.message);
     }
   } finally {

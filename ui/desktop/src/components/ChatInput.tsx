@@ -177,6 +177,7 @@ interface ChatInputProps {
   queueProcessingBlocked?: boolean;
   commandHistory?: string[];
   initialValue?: string;
+  restoredDraft?: string;
   droppedFiles?: DroppedFile[];
   onFilesProcessed?: () => void;
   setView: (view: View) => void;
@@ -220,6 +221,7 @@ export default function ChatInput({
   queueProcessingBlocked = false,
   commandHistory = [],
   initialValue = '',
+  restoredDraft,
   droppedFiles = [],
   onFilesProcessed,
   setView,
@@ -572,6 +574,14 @@ export default function ChatInput({
     setIsInGlobalHistory(false);
     setHasUserTyped(false);
   }, [initialValue]);
+
+  useEffect(() => {
+    if (!restoredDraft) return;
+    const merge = (current: string) =>
+      current.trim() ? `${restoredDraft}\n${current}` : restoredDraft;
+    setValue(merge);
+    setDisplayValue(merge);
+  }, [restoredDraft]);
 
   // Handle initial prompt updates
   useEffect(() => {

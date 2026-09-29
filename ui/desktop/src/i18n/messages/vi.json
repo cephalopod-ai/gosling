@@ -4222,5 +4222,11 @@
   },
   "chatInput.attachFile": {
     "defaultMessage": "Attach file"
+  },
+  "baseChat.sessionBusy": {
+    "defaultMessage": "This chat is busy in another window"
+  },
+  "baseChat.sessionBusyBody": {
+    "defaultMessage": "Another window is running a task in this chat, so your message was not sent. It was kept; send it again when that task finishes."
   }
 }

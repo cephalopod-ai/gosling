@@ -5,6 +5,7 @@ import {
   isAcpAwaitingReplyError,
   isAcpConnectionClosedError,
   isAcpSessionArchivedError,
+  isAcpSessionBusyError,
   parseAcpCreditsExhaustedError,
   parseAcpPlanError,
   parseAcpLibraryError,
@@ -67,6 +68,44 @@ describe('isAcpSessionArchivedError', () => {
       isAcpSessionArchivedError({ code: -32600, message: 'x', data: 'session_archived' })
     ).toBe(false);
     expect(isAcpSessionArchivedError(new Error('session is archived'))).toBe(false);
+  });
+});
+
+describe('isAcpSessionBusyError', () => {
+  it('recognises a prompt refused because another connection to the server is running a turn', () => {
+    expect(
+      isAcpSessionBusyError({
+        code: -32600,
+        message: 'Invalid request',
+        data: 'session s1 already has a prompt running on another connection to this server',
+      })
+    ).toBe(true);
+  });
+
+  it('recognises a prompt refused by the turn lease of another process or window', () => {
+    expect(
+      isAcpSessionBusyError({
+        error: {
+          code: -32603,
+          message: 'Internal error',
+          data: 'Error getting agent reply: session s1 already has an active turn in another Gosling process or window',
+        },
+      })
+    ).toBe(true);
+  });
+
+  it('does not match archived sessions or unrelated failures', () => {
+    expect(
+      isAcpSessionBusyError({
+        code: -32600,
+        message: 'session s1 is archived; restore it to continue',
+        data: { reason: 'session_archived' },
+      })
+    ).toBe(false);
+    expect(
+      isAcpSessionBusyError({ code: -32603, message: 'Internal error', data: 'provider failed' })
+    ).toBe(false);
+    expect(isAcpSessionBusyError(new Error('ACP connection closed'))).toBe(false);
   });
 });
 

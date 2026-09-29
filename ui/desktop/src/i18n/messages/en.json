@@ -389,6 +389,12 @@
   "baseChat.sessionArchivedBody": {
     "defaultMessage": "It was archived, possibly in another window, so your message was not sent. Restore the chat to send it."
   },
+  "baseChat.sessionBusy": {
+    "defaultMessage": "This chat is busy in another window"
+  },
+  "baseChat.sessionBusyBody": {
+    "defaultMessage": "Another window is running a task in this chat, so your message was not sent. It was kept; send it again when that task finishes."
+  },
   "baseChat.taskFailed": {
     "defaultMessage": "Task failed"
   },

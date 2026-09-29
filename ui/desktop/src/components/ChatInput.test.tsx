@@ -68,3 +68,44 @@ describe('ChatInput attach button', () => {
     expect(screen.getByRole('button', { name: 'Attach file' })).toBeInTheDocument();
   });
 });
+
+describe('ChatInput restored draft', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  beforeEach(() => {
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      }
+    );
+  });
+
+  function renderInput(restoredDraft?: string) {
+    return (
+      <TooltipProvider>
+        <ChatInput
+          sessionId="session-1"
+          handleSubmit={vi.fn()}
+          chatState={ChatState.Idle}
+          setView={vi.fn()}
+          restoredDraft={restoredDraft}
+        />
+      </TooltipProvider>
+    );
+  }
+
+  it('puts a message the backend refused back into the composer and keeps it afterwards', () => {
+    const { rerender } = render(renderInput(), { wrapper: IntlTestWrapper });
+    const textbox = screen.getByRole('textbox') as HTMLTextAreaElement;
+    expect(textbox.value).toBe('');
+
+    rerender(renderInput('TAB-B'));
+    expect(textbox.value).toBe('TAB-B');
+
+    rerender(renderInput(undefined));
+    expect(textbox.value).toBe('TAB-B');
+  });
+});

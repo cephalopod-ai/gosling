@@ -129,6 +129,15 @@ const i18n = defineMessages({
     defaultMessage:
       'It was archived, possibly in another window, so your message was not sent. Restore the chat to send it.',
   },
+  sessionBusy: {
+    id: 'baseChat.sessionBusy',
+    defaultMessage: 'This chat is busy in another window',
+  },
+  sessionBusyBody: {
+    id: 'baseChat.sessionBusyBody',
+    defaultMessage:
+      'Another window is running a task in this chat, so your message was not sent. It was kept; send it again when that task finishes.',
+  },
   restoreArchivedAndSend: {
     id: 'baseChat.restoreArchivedAndSend',
     defaultMessage: 'Restore and send',
@@ -995,9 +1004,11 @@ export default function BaseChat({
                       ? i18n.connectionInterrupted
                       : promptError?.recovery === 'restore'
                         ? i18n.sessionArchived
-                        : promptError
-                          ? i18n.taskFailed
-                          : i18n.taskInterrupted
+                        : promptError?.recovery === 'busy'
+                          ? i18n.sessionBusy
+                          : promptError
+                            ? i18n.taskFailed
+                            : i18n.taskInterrupted
                 )}
               </p>
               <p className="mt-1 text-xs text-text-secondary">
@@ -1007,7 +1018,9 @@ export default function BaseChat({
                     ? intl.formatMessage(i18n.connectionInterruptedBody)
                     : promptError?.recovery === 'restore'
                       ? intl.formatMessage(i18n.sessionArchivedBody)
-                      : promptError?.message || intl.formatMessage(i18n.taskInterruptedBody)}
+                      : promptError?.recovery === 'busy'
+                        ? intl.formatMessage(i18n.sessionBusyBody)
+                        : promptError?.message || intl.formatMessage(i18n.taskInterruptedBody)}
               </p>
             </div>
             {promptError?.connectionLost ? (
@@ -1036,7 +1049,7 @@ export default function BaseChat({
               >
                 {intl.formatMessage(i18n.retryInputs)}
               </button>
-            ) : promptError && !promptError.awaitingReply ? (
+            ) : promptError && !promptError.awaitingReply && promptError.recovery !== 'busy' ? (
               <button
                 type="button"
                 onClick={() => setIsRecoveryModelPickerOpen(true)}
@@ -1082,6 +1095,7 @@ export default function BaseChat({
             queueProcessingBlocked={queueProcessingBlocked}
             commandHistory={commandHistory}
             initialValue={initialPrompt}
+            restoredDraft={promptError?.draft}
             setView={setView}
             totalTokens={tokenState?.totalTokens ?? session?.usage?.total_tokens ?? undefined}
             contextLimit={tokenState?.contextLimit}
