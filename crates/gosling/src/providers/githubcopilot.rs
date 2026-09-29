@@ -396,9 +396,7 @@ impl GithubCopilotProvider {
                 }
                 Err(err) => {
                     if let Some(status) = rejected_sign_in_status(&err) {
-                        return Err(ProviderError::Authentication(format!(
-                            "GitHub Copilot rejected the saved GitHub sign-in ({status}); run `gosling configure` and select GitHub Copilot to sign in again"
-                        )));
+                        return Err(self.forget_rejected_sign_in(status).await);
                     }
                     tracing::warn!("failed to refresh api info: {}", err);
                     continue;
@@ -411,6 +409,21 @@ impl GithubCopilotProvider {
             return Ok((new_state.info.endpoints.api, new_state.info.token));
         }
         Err(anyhow!("failed to get api info after 3 attempts").into())
+    }
+
+    /// A rejected GitHub sign-in cannot recover by itself, so it is removed:
+    /// the next request then starts a fresh GitHub sign-in instead of
+    /// replaying the dead token.
+    async fn forget_rejected_sign_in(&self, status: reqwest::StatusCode) -> ProviderError {
+        if let Err(error) = Config::global().delete_secret(&self.token_secret_key) {
+            tracing::warn!("could not remove the rejected GitHub Copilot sign-in: {error}");
+        }
+        if let Err(error) = self.cache.clear().await {
+            tracing::warn!("could not clear the GitHub Copilot token cache: {error}");
+        }
+        ProviderError::Authentication(format!(
+            "GitHub Copilot rejected the saved GitHub sign-in ({status}), so it was removed; the next request will start GitHub sign-in again, or run `gosling configure` and select GitHub Copilot to sign in now"
+        ))
     }
 
     async fn refresh_api_info(&self, sign_in: SignIn) -> Result<CopilotTokenInfo> {
@@ -1139,8 +1152,14 @@ mod tests {
             assert_eq!(
                 error,
                 ProviderError::Authentication(format!(
-                    "GitHub Copilot rejected the saved GitHub sign-in ({reason}); run `gosling configure` and select GitHub Copilot to sign in again"
+                    "GitHub Copilot rejected the saved GitHub sign-in ({reason}), so it was removed; the next request will start GitHub sign-in again, or run `gosling configure` and select GitHub Copilot to sign in now"
                 ))
+            );
+            assert!(
+                Config::global()
+                    .get_secret::<String>(TEST_TOKEN_SECRET_KEY)
+                    .is_err(),
+                "the rejected sign-in must be removed"
             );
             server.verify().await;
         }
@@ -1161,6 +1180,12 @@ mod tests {
         assert_eq!(
             error,
             ProviderError::ExecutionError("failed to get api info after 3 attempts".to_string())
+        );
+        assert!(
+            Config::global()
+                .get_secret::<String>(TEST_TOKEN_SECRET_KEY)
+                .is_ok(),
+            "a server error must not remove the saved sign-in"
         );
         server.verify().await;
     }

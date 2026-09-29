@@ -1436,6 +1436,8 @@ GitHub Copilot uses a device flow for authentication, so no API keys are require
 4. Paste the code to authorize the application
 5. When you return to gosling, GitHub Copilot will be available as a provider in both CLI and Desktop.
 
+If GitHub later rejects the saved sign-in (for example, after you revoke the authorization or it expires), gosling removes it and reports the rejection once. The next GitHub Copilot request starts the device flow again; you can also run `gosling configure` and select **GitHub Copilot** to sign in right away.
+
 ## Azure OpenAI Authentication
 
 gosling supports three authentication methods for Azure OpenAI:
