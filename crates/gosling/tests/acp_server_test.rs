@@ -2,9 +2,10 @@
 #[path = "acp_common_tests/mod.rs"]
 mod common_tests;
 use agent_client_protocol::schema::v1::{
-    ContentBlock, ListSessionsRequest, ListSessionsResponse, NewSessionRequest, PromptRequest,
-    SessionConfigKind, SessionConfigOptionCategory, SessionConfigOptionValue, SessionInfo,
-    SessionUpdate, SetSessionConfigOptionRequest, StopReason, TextContent,
+    ContentBlock, ListSessionsRequest, ListSessionsResponse, McpServer, McpServerHttp,
+    NewSessionRequest, PromptRequest, SessionConfigKind, SessionConfigOptionCategory,
+    SessionConfigOptionValue, SessionInfo, SessionUpdate, SetSessionConfigOptionRequest,
+    StopReason, TextContent,
 };
 use agent_client_protocol::ErrorCode;
 use common_tests::fixtures::server::AcpServerConnection;
@@ -30,8 +31,9 @@ use gosling::config::GoslingMode;
 use gosling::conversation::message::{Message, MessageMetadata};
 use gosling::custom_requests::{GetSessionInfoRequest, GetSessionInfoResponse};
 use gosling::session::{SessionManager, SessionType};
-use gosling_test_support::TEST_MODEL;
+use gosling_test_support::{IgnoreSessionId, McpFixture, TEST_MODEL};
 use std::path::Path;
+use std::sync::Arc;
 
 tests_config_option_set_error!(AcpServerConnection);
 tests_mode_set_error!(AcpServerConnection);
@@ -1038,5 +1040,130 @@ fn test_prompt_end_usage_update_reports_the_last_provider_request() {
             })
             .last();
         assert_eq!(last_used, Some(110));
+    });
+}
+
+fn extension_name(extension: &serde_json::Value) -> &str {
+    extension["name"]
+        .as_str()
+        .or_else(|| extension["server"]["name"].as_str())
+        .unwrap_or_default()
+}
+
+async fn session_extensions(
+    conn: &AcpServerConnection,
+    session_id: &str,
+) -> Vec<serde_json::Value> {
+    let response = common_tests::fixtures::send_custom(
+        conn.cx(),
+        "_gosling/unstable/session/extensions/list",
+        serde_json::json!({ "sessionId": session_id }),
+    )
+    .await
+    .unwrap();
+    response["extensions"].as_array().unwrap().clone()
+}
+
+async fn session_extension_names(
+    conn: &AcpServerConnection,
+    session_id: &str,
+) -> std::collections::BTreeSet<String> {
+    session_extensions(conn, session_id)
+        .await
+        .iter()
+        .map(|extension| extension_name(extension).to_string())
+        .collect()
+}
+
+fn write_configured_extensions(data_root: &Path, extensions_yaml: &str) {
+    std::fs::write(
+        data_root.join(gosling::config::base::CONFIG_YAML_NAME),
+        format!(
+            "GOSLING_MODEL: {TEST_MODEL}\nGOSLING_PROVIDER: openai\nextensions:\n{extensions_yaml}"
+        ),
+    )
+    .unwrap();
+}
+
+const CONFIGURED_DEVELOPER_YAML: &str = "  developer:\n    enabled: true\n    type: platform\n    name: developer\n    description: Developer\n    display_name: Developer\n    bundled: true\n    available_tools: []\n";
+
+#[test]
+fn test_new_session_loads_client_mcp_servers_alongside_configured_extensions() {
+    run_test(async {
+        let client_server = McpFixture::new(Arc::new(IgnoreSessionId)).await;
+        let data_root = tempfile::tempdir().unwrap();
+        write_configured_extensions(data_root.path(), CONFIGURED_DEVELOPER_YAML);
+        let openai = OpenAiFixture::new(vec![], AcpServerConnection::expected_session_id()).await;
+        let mut conn = AcpServerConnection::new(
+            TestConnectionConfig {
+                data_root: data_root.path().to_path_buf(),
+                mcp_servers: vec![McpServer::Http(McpServerHttp::new(
+                    "client-server",
+                    &client_server.url,
+                ))],
+                ..Default::default()
+            },
+            openai,
+        )
+        .await;
+
+        let SessionData { session, .. } = conn.new_session().await.unwrap();
+        let with_client = session_extension_names(&conn, &session.session_id().0).await;
+
+        let SessionData { session, .. } = conn.new_session().await.unwrap();
+        let without_client = session_extension_names(&conn, &session.session_id().0).await;
+
+        assert!(without_client.contains("developer"), "{without_client:?}");
+        assert!(
+            !without_client.contains("client-server"),
+            "{without_client:?}"
+        );
+        let mut expected = without_client.clone();
+        expected.insert("client-server".to_string());
+        assert_eq!(with_client, expected);
+    });
+}
+
+#[test]
+fn test_new_session_keeps_configured_extension_when_client_mcp_server_shares_its_name() {
+    run_test(async {
+        let configured_server = McpFixture::new(Arc::new(IgnoreSessionId)).await;
+        let client_server = McpFixture::new(Arc::new(IgnoreSessionId)).await;
+        let data_root = tempfile::tempdir().unwrap();
+        write_configured_extensions(
+            data_root.path(),
+            &format!(
+                "{CONFIGURED_DEVELOPER_YAML}  shared:\n    enabled: true\n    type: streamable_http\n    name: shared\n    description: Configured\n    uri: \"{}\"\n",
+                configured_server.url
+            ),
+        );
+        let openai = OpenAiFixture::new(vec![], AcpServerConnection::expected_session_id()).await;
+        let mut conn = AcpServerConnection::new(
+            TestConnectionConfig {
+                data_root: data_root.path().to_path_buf(),
+                mcp_servers: vec![McpServer::Http(McpServerHttp::new(
+                    "shared",
+                    &client_server.url,
+                ))],
+                ..Default::default()
+            },
+            openai,
+        )
+        .await;
+
+        let SessionData { session, .. } = conn.new_session().await.unwrap();
+        let extensions = session_extensions(&conn, &session.session_id().0).await;
+        let shared: Vec<&serde_json::Value> = extensions
+            .iter()
+            .filter(|extension| extension_name(extension) == "shared")
+            .collect();
+        assert_eq!(shared.len(), 1, "{extensions:?}");
+        assert_eq!(
+            shared[0]["server"]["url"].as_str(),
+            Some(configured_server.url.as_str())
+        );
+        assert!(extensions
+            .iter()
+            .any(|extension| extension_name(extension) == "developer"));
     });
 }
