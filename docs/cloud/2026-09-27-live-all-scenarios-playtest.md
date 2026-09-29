@@ -235,7 +235,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | A02 | Unknown provider from `GOSLING_PROVIDER` env is reported as "No model configured" | fixed (R8b) |
 | Low | A04 | Ctrl-C in `gosling configure` leaves the terminal cursor hidden | fixed (R8b) |
 | Low | A05 | Broken config.yaml: session/run say "Run 'gosling configure' first" but configure refuses to run | fixed (R5) |
-| Low | A07 | REPL silently discards input that arrives in the same burst as a submitting Enter | deferred (needs rustyline buffer-redux feature or upstream change — operator decision) (R8b) |
+| Low | A07 | REPL silently discards input that arrives in the same burst as a submitting Enter | fixed (input kept; rare reorder with typing during a reply — rustyline limit) (R8b) |
 | Low | A09 | Opening a session with `--resume` and exiting without sending re-stamps `updated_at` | fixed (R4) |
 | Low | A10 | Provider picker shows a cryptic "Groq (d)" label | fixed (R9) |
 | Low | A11 | `gosling session export --help` documents resume semantics that don't apply | fixed (R8b) |
