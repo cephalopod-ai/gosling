@@ -27,6 +27,14 @@ gosling supports automatic setup for both providers that takes you through OAuth
 
 When gosling sends your requests through one of these providers, the provider will automatically switch models when necessary to avoid interruptions due to rate limiting.
 
+## What you see while gosling waits
+
+When a provider rejects a request as rate limited, gosling waits for the time the provider's
+`Retry-After` asks for (or a short backoff) and then retries. Before each wait the CLI, and ACP
+clients that accept gosling status notices, show a notice such as `The provider is rate limiting requests. Retrying in 45s (1/3)...`;
+other transient failures show `The provider request failed. Retrying in 2s (1/3)...`. You can cancel
+the turn during the wait.
+
 ## Configure Gosling's turn-level fallback
 
 Gosling can also switch one unexecuted turn to a second provider after the primary provider's

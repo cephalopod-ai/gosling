@@ -1,7 +1,9 @@
 use crate::base::Provider;
 use crate::errors::ProviderError;
 use async_trait::async_trait;
+use std::fmt;
 use std::future::Future;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::sleep;
 
@@ -133,6 +135,60 @@ pub fn should_failover(error: &ProviderError, config: &RetryConfig) -> bool {
         || matches!(error, ProviderError::RequestFailed(message) if is_unavailable_model_failure(message))
 }
 
+/// A provider backing off before it retries a failed request. Hosts listen for
+/// these so a long wait (a Retry-After can ask for up to an hour) is explained
+/// rather than shown as an unexplained spinner.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RetryNotice {
+    pub attempt: usize,
+    pub max_retries: usize,
+    pub delay: Duration,
+    pub rate_limited: bool,
+}
+
+impl RetryNotice {
+    fn new(error: &ProviderError, attempt: usize, max_retries: usize, delay: Duration) -> Self {
+        Self {
+            attempt,
+            max_retries,
+            delay,
+            rate_limited: matches!(error, ProviderError::RateLimitExceeded { .. }),
+        }
+    }
+}
+
+impl fmt::Display for RetryNotice {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let reason = if self.rate_limited {
+            "The provider is rate limiting requests"
+        } else {
+            "The provider request failed"
+        };
+        let seconds = self.delay.as_secs_f64().ceil() as u64;
+        write!(
+            f,
+            "{reason}. Retrying in {seconds}s ({}/{})...",
+            self.attempt, self.max_retries
+        )
+    }
+}
+
+pub type RetryNoticeSink = Arc<dyn Fn(RetryNotice) + Send + Sync>;
+
+tokio::task_local! {
+    static RETRY_NOTICE_SINK: RetryNoticeSink;
+}
+
+/// Runs `future` with `sink` receiving a [`RetryNotice`] before every retry
+/// backoff that a provider performs inside it.
+pub async fn with_retry_notices<F: Future>(sink: RetryNoticeSink, future: F) -> F::Output {
+    RETRY_NOTICE_SINK.scope(sink, future).await
+}
+
+fn announce_retry(notice: RetryNotice) {
+    let _ = RETRY_NOTICE_SINK.try_with(|sink| sink(notice));
+}
+
 pub async fn retry_operation<F, Fut, T>(
     config: &RetryConfig,
     operation: F,
@@ -165,6 +221,12 @@ where
                         _ => config.delay_for_attempt(attempts),
                     };
 
+                    announce_retry(RetryNotice::new(
+                        &error,
+                        attempts,
+                        config.max_retries,
+                        delay,
+                    ));
                     sleep(delay).await;
                     continue;
                 }
@@ -273,6 +335,12 @@ impl<P: Provider> ProviderRetry for P {
                             tracing::info!("Skipping backoff due to GOSLING_PROVIDER_SKIP_BACKOFF");
                         } else {
                             tracing::info!("Backing off for {:?} before retry", delay);
+                            announce_retry(RetryNotice::new(
+                                &error,
+                                attempts,
+                                config.max_retries,
+                                delay,
+                            ));
                             sleep(delay).await;
                         }
                         continue;
@@ -379,6 +447,34 @@ mod tests {
             },
             &config
         ));
+    }
+
+    #[test]
+    fn retry_notice_names_rate_limiting_only_for_429s() {
+        let rate_limited = RetryNotice::new(
+            &ProviderError::RateLimitExceeded {
+                details: "too many requests".into(),
+                retry_delay: None,
+            },
+            1,
+            3,
+            Duration::from_secs(45),
+        );
+        let server_error = RetryNotice::new(
+            &ProviderError::ServerError("500 internal".into()),
+            2,
+            3,
+            Duration::from_millis(1500),
+        );
+
+        assert_eq!(
+            rate_limited.to_string(),
+            "The provider is rate limiting requests. Retrying in 45s (1/3)..."
+        );
+        assert_eq!(
+            server_error.to_string(),
+            "The provider request failed. Retrying in 2s (2/3)..."
+        );
     }
 
     #[test]

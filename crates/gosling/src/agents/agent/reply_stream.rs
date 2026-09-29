@@ -372,16 +372,36 @@ impl Agent {
                     )
                 };
 
-                let (mut stream, stream_setup_failed) = match Self::stream_response_from_provider(
-                    active_provider.clone(),
-                    active_model_config.clone(),
-                    &session_config.id,
-                    &provider_system_prompt,
-                    &provider_messages,
-                    &tools,
-                    &toolshim_tools,
-                    &interaction_policy,
-                ).await {
+                let (retry_notice_tx, mut retry_notices) = tokio::sync::mpsc::unbounded_channel();
+                let mut stream_setup = Box::pin(gosling_providers::retry::with_retry_notices(
+                    Arc::new(move |notice| {
+                        let _ = retry_notice_tx.send(notice);
+                    }),
+                    Self::stream_response_from_provider(
+                        active_provider.clone(),
+                        active_model_config.clone(),
+                        &session_config.id,
+                        &provider_system_prompt,
+                        &provider_messages,
+                        &tools,
+                        &toolshim_tools,
+                        &interaction_policy,
+                    ),
+                ));
+                let stream_setup_result = loop {
+                    let notice = tokio::select! {
+                        result = &mut stream_setup => break result,
+                        Some(notice) = retry_notices.recv() => notice,
+                    };
+                    yield AgentEvent::Message(
+                        Message::assistant().with_system_notification(
+                            SystemNotificationType::InlineMessage,
+                            notice.to_string(),
+                        )
+                    );
+                };
+                drop(stream_setup);
+                let (mut stream, stream_setup_failed) = match stream_setup_result {
                     Ok(stream) => (stream, false),
                     Err(error) => {
                         let failed: crate::providers::base::MessageStream = Box::pin(stream::once(async move { Err(error) }));
