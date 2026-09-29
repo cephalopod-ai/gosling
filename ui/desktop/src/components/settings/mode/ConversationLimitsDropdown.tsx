@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { Input } from '../../ui/input';
+import { cn } from '../../../utils';
 import { defineMessages, useIntl } from '../../../i18n';
 
 const i18n = defineMessages({
@@ -16,19 +17,34 @@ const i18n = defineMessages({
     id: 'conversationLimitsDropdown.maxTurnsDescription',
     defaultMessage: 'Maximum agent turns before Gosling asks for user input',
   },
+  invalidMaxTurns: {
+    id: 'conversationLimitsDropdown.invalidMaxTurns',
+    defaultMessage:
+      'config.yaml has an invalid Max Turns value: "{value}". Gosling uses the default ({fallback}) until you enter a whole number.',
+  },
 });
 
 interface ConversationLimitsDropdownProps {
   maxTurns: number;
+  invalidMaxTurns: string | null;
+  defaultMaxTurns: number;
   onMaxTurnsChange: (value: number) => void;
 }
 
 export const ConversationLimitsDropdown = ({
   maxTurns,
+  invalidMaxTurns,
+  defaultMaxTurns,
   onMaxTurnsChange,
 }: ConversationLimitsDropdownProps) => {
   const intl = useIntl();
   const [isExpanded, setIsExpanded] = useState(false);
+
+  useEffect(() => {
+    if (invalidMaxTurns !== null) {
+      setIsExpanded(true);
+    }
+  }, [invalidMaxTurns]);
 
   const toggleExpanded = () => {
     setIsExpanded(!isExpanded);
@@ -66,11 +82,22 @@ export const ConversationLimitsDropdown = ({
               type="number"
               min="1"
               max="10000"
-              value={maxTurns}
+              value={invalidMaxTurns === null ? maxTurns : ''}
+              placeholder={invalidMaxTurns ?? undefined}
+              aria-invalid={invalidMaxTurns !== null}
+              aria-describedby={invalidMaxTurns === null ? undefined : 'max-turns-invalid'}
               onChange={(e) => onMaxTurnsChange(Number(e.target.value))}
-              className="w-20"
+              className={cn('w-20', invalidMaxTurns !== null && 'border-red-500')}
             />
           </div>
+          {invalidMaxTurns !== null && (
+            <p id="max-turns-invalid" role="alert" className="px-2 text-xs text-text-danger">
+              {intl.formatMessage(i18n.invalidMaxTurns, {
+                value: invalidMaxTurns,
+                fallback: defaultMaxTurns,
+              })}
+            </p>
+          )}
         </div>
       </div>
     </div>

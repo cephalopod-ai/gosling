@@ -10,9 +10,24 @@ import { CodeExecutionRuntimeSection } from './CodeExecutionRuntimeSection';
 /// call was auto-approved when it was not. (WFG-GOS-001)
 const DEFAULT_GOSLING_MODE = 'auto';
 
+/// Must match `DEFAULT_MAX_TURNS` in `crates/gosling/src/agents/agent.rs`, which
+/// the backend uses when `GOSLING_MAX_TURNS` does not parse as a `u32`.
+const DEFAULT_MAX_TURNS = 1000;
+const MAX_U32 = 4294967295;
+
+const parseMaxTurns = (value: unknown): number | null => {
+  const digits = typeof value === 'number' ? String(value) : String(value).trim();
+  if (!/^\d+$/.test(digits)) {
+    return null;
+  }
+  const turns = Number(digits);
+  return turns <= MAX_U32 ? turns : null;
+};
+
 export const ModeSection = () => {
   const [currentMode, setCurrentMode] = useState(DEFAULT_GOSLING_MODE);
-  const [maxTurns, setMaxTurns] = useState<number>(1000);
+  const [maxTurns, setMaxTurns] = useState<number>(DEFAULT_MAX_TURNS);
+  const [invalidMaxTurns, setInvalidMaxTurns] = useState<string | null>(null);
   const { config, read, upsert } = useConfig();
 
   const handleModeChange = async (newMode: string) => {
@@ -32,14 +47,29 @@ export const ModeSection = () => {
     }
   }, [config.GOSLING_MODE]);
 
-  const fetchMaxTurns = useCallback(async () => {
+  const fetchStoredSettings = useCallback(async () => {
     try {
-      const turns = (await read('GOSLING_MAX_TURNS', false)) as number;
-      if (turns) {
-        setMaxTurns(turns);
+      // The shared config snapshot is loaded once per renderer, so re-read the file to
+      // pick up edits made outside the app since then.
+      const [mode, turns] = await Promise.all([
+        read('GOSLING_MODE', false),
+        read('GOSLING_MAX_TURNS', false),
+      ]);
+      if (typeof mode === 'string' && mode) {
+        setCurrentMode(mode);
+      }
+      if (turns == null) {
+        return;
+      }
+      const parsedTurns = parseMaxTurns(turns);
+      if (parsedTurns === null) {
+        setInvalidMaxTurns(typeof turns === 'object' ? JSON.stringify(turns) : String(turns));
+      } else {
+        setMaxTurns(parsedTurns);
+        setInvalidMaxTurns(null);
       }
     } catch (error) {
-      console.error('Error fetching max turns:', error);
+      console.error('Error reading mode and max turns:', error);
     }
   }, [read]);
 
@@ -47,14 +77,15 @@ export const ModeSection = () => {
     try {
       await upsert('GOSLING_MAX_TURNS', value, false);
       setMaxTurns(value);
+      setInvalidMaxTurns(null);
     } catch (error) {
       console.error('Error updating max turns:', error);
     }
   };
 
   useEffect(() => {
-    fetchMaxTurns();
-  }, [fetchMaxTurns]);
+    fetchStoredSettings();
+  }, [fetchStoredSettings]);
 
   return (
     <div className="space-y-1">
@@ -71,7 +102,12 @@ export const ModeSection = () => {
       ))}
 
       {/* Conversation Limits Dropdown */}
-      <ConversationLimitsDropdown maxTurns={maxTurns} onMaxTurnsChange={handleMaxTurnsChange} />
+      <ConversationLimitsDropdown
+        maxTurns={maxTurns}
+        invalidMaxTurns={invalidMaxTurns}
+        defaultMaxTurns={DEFAULT_MAX_TURNS}
+        onMaxTurnsChange={handleMaxTurnsChange}
+      />
 
       <CodeExecutionRuntimeSection />
     </div>

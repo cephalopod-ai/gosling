@@ -4186,5 +4186,14 @@
   },
   "toolCallWithResponse.toolNotRun": {
     "defaultMessage": "Not run — the run ended before this tool started"
+  },
+  "configSettings.editInConfigFile": {
+    "defaultMessage": "Edit this value in config.yaml."
+  },
+  "configSettings.saveValue": {
+    "defaultMessage": "Save {name}"
+  },
+  "conversationLimitsDropdown.invalidMaxTurns": {
+    "defaultMessage": "config.yaml has an invalid Max Turns value: \"{value}\". Gosling uses the default ({fallback}) until you enter a whole number."
   }
 }

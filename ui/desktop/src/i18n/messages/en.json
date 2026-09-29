@@ -533,6 +533,9 @@
   "configSettings.editConfiguration": {
     "defaultMessage": "Edit Configuration"
   },
+  "configSettings.editInConfigFile": {
+    "defaultMessage": "Edit this value in config.yaml."
+  },
   "configSettings.enterValue": {
     "defaultMessage": "Enter {name}"
   },
@@ -547,6 +550,9 @@
   },
   "configSettings.saveFailedMsg": {
     "defaultMessage": "Failed to save \"{name}\""
+  },
+  "configSettings.saveValue": {
+    "defaultMessage": "Save {name}"
   },
   "configSettings.saving": {
     "defaultMessage": "Saving..."
@@ -823,6 +829,9 @@
   },
   "conversationLimitsDropdown.conversationLimits": {
     "defaultMessage": "Conversation Limits"
+  },
+  "conversationLimitsDropdown.invalidMaxTurns": {
+    "defaultMessage": "config.yaml has an invalid Max Turns value: \"{value}\". Gosling uses the default ({fallback}) until you enter a whole number."
   },
   "conversationLimitsDropdown.maxTurns": {
     "defaultMessage": "Max Turns"
