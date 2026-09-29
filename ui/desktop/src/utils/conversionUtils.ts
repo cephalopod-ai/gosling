@@ -12,11 +12,15 @@ export async function safeJsonParse<T>(
   }
 }
 
+// ipcRenderer.invoke rejects with "Error invoking remote method '<channel>': <Name>: <message>",
+// which leaks the channel name and Electron's wording into user-facing text.
+const IPC_INVOKE_ERROR_PREFIX = /^Error invoking remote method '[^']*': (?:\w*Error: )?/;
+
 export function errorMessage(err: Error | unknown, default_value?: string) {
   if (err instanceof Error) {
-    return err.message;
+    return err.message.replace(IPC_INVOKE_ERROR_PREFIX, '');
   } else if (typeof err === 'object' && err !== null && 'message' in err) {
-    return String(err.message);
+    return String(err.message).replace(IPC_INVOKE_ERROR_PREFIX, '');
   } else {
     return default_value || String(err);
   }
