@@ -1,8 +1,10 @@
 pub mod auth;
+mod idle;
 #[cfg(any(feature = "rustls-tls", feature = "native-tls"))]
 pub mod tls;
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use agent_client_protocol_http::{AcpHttpServer, CorsOptions, ServerOptions};
 use axum::{
@@ -202,13 +204,27 @@ fn aux_cors_layer(policy: AcpOriginPolicy) -> CorsLayer {
 }
 
 fn create_acp_router_inner(server: Arc<AcpServer>, policy: AcpOriginPolicy) -> Router {
-    AcpHttpServer::new(move || GoslingAgentConnection::new(server.clone()))
-        .with_options(acp_http_options())
-        .into_router()
-        .layer(axum::middleware::from_fn_with_state(
-            policy,
-            enforce_acp_origin,
-        ))
+    acp_http_router(server, policy, idle::HTTP_CONNECTION_IDLE_TIMEOUT)
+}
+
+fn acp_http_router(
+    server: Arc<AcpServer>,
+    policy: AcpOriginPolicy,
+    idle_timeout: Duration,
+) -> Router {
+    AcpHttpServer::new(move || {
+        GoslingAgentConnection::with_control(server.clone(), idle::connection_control())
+    })
+    .with_options(acp_http_options())
+    .into_router()
+    .layer(axum::middleware::from_fn_with_state(
+        idle::IdleHttpConnections::new(idle_timeout),
+        idle::track_http_connections,
+    ))
+    .layer(axum::middleware::from_fn_with_state(
+        policy,
+        enforce_acp_origin,
+    ))
 }
 
 fn create_acp_router_with_policy(

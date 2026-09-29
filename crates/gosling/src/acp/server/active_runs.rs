@@ -274,6 +274,13 @@ pub(super) async fn unregister_active_prompt_run(
 }
 
 impl GoslingAcpAgent {
+    /// A run map that is locked right now counts as running a prompt.
+    pub(super) fn has_active_prompt_runs(&self) -> bool {
+        self.active_prompt_runs
+            .try_lock()
+            .map_or(true, |runs| !runs.is_empty())
+    }
+
     /// The returned claim keeps prompts from the server's other connections
     /// out of this session until it drops.
     pub(super) async fn start_active_run(
