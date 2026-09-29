@@ -215,7 +215,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Medium | G129 | A reply interrupted by window close/quit is shown after relaunch as a normal complete message; the session stays "in_progress" | fixed (R1a+R13a) |
 | Medium | G131 | Invalid config values are invisible in Desktop; Configuration Editor shows "[object Object]" for providers | fixed (nested values read-only, invalid Max Turns shown; per-key config validation API is a follow-up) (R13b) |
 | Medium | G132 | Onboarding "OpenAI" API-key field shows the secret in clear text (and offers no host/base-path for "OpenAI compatible" endpoints) | fixed (R13a) |
-| Medium | G201 | Opening a large Markdown output freezes the whole Desktop window for 15–20 s | open — queued R13b |
+| Medium | G201 | Opening a large Markdown output freezes the whole Desktop window for 15–20 s | fixed (128 KiB Markdown render cap + plain-text view; per-tab parse cache is a follow-up) (R13b) |
 | Medium | G207 | "Open in new window" on a session in a non-active typed workspace replaces the current window with a fatal error screen | open — queued R13b |
 | Medium | G211 | Archiving does not reach other windows: the archived chat stays open there and keeps accepting turns while staying archived | open — queued R13b |
 | Medium | G212 | External-backend secret is put in the ACP WebSocket URL (`?token=<secret>`) and printed in the renderer console on every failed connect | fixed (R13a) |
