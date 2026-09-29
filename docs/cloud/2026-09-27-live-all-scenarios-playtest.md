@@ -180,7 +180,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Medium | B02 | Re-running `configure` preselects the first listed model, not the saved one; Enter silently replaces the saved model | fixed (R9) |
 | Medium | B03 | `configure` cannot complete when the model list cannot be fetched; no manual model entry is offered | fixed (R9) |
 | Medium | B04 | Rate-limit backoff is invisible: Retry-After waits show only a generic spinner (CLI) and nothing (ACP) | fixed (R9) |
-| Medium | B05 | `OPENAI_TIMEOUT` is per attempt; a stalled provider errors only after ≈4× the timeout plus backoff, with no feedback | open — queued R9 |
+| Medium | B05 | `OPENAI_TIMEOUT` is per attempt; a stalled provider errors only after ≈4× the timeout plus backoff, with no feedback | fixed (retries announced; per-attempt meaning documented) (R9) |
 | Medium | B06 | ACP streams text from retracted (interrupted) attempts with no retraction signal; live transcript differs from persisted/replayed history | fixed (R1b) |
 | Medium | B09 | Compaction shrink ladder bottoms out at payload/8, so large histories never reach small chunks | fixed (R2) |
 | Medium | B10 | Compaction completion notice under-reports the resulting context (system prompt and tool schemas excluded) | fixed (R2) |
