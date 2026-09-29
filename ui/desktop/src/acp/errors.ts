@@ -107,6 +107,27 @@ export function describeAcpError(error: unknown): string {
   return detail && detail !== message ? `${message}: ${detail}` : message;
 }
 
+const INVALID_PARAMS_CODE = -32602;
+
+/**
+ * Like describeAcpError, but a request the backend rejected as Invalid params is described by its
+ * reason alone: the `data` explains what is wrong ("Workspace is unavailable: …") and the generic
+ * JSON-RPC "Invalid params" label in front of it only reads as an internal error.
+ */
+export function describeAcpRejection(error: unknown): string {
+  if (isRecord(error)) {
+    const candidate = isRecord(error.error) ? error.error : error;
+    if (
+      candidate.code === INVALID_PARAMS_CODE &&
+      typeof candidate.data === 'string' &&
+      candidate.data.trim()
+    ) {
+      return candidate.data;
+    }
+  }
+  return describeAcpError(error);
+}
+
 export function isAcpConnectionClosedError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : asErrorMessage(error);
   return /ACP connection closed|ACP WebSocket connection failed|WebSocket.*(?:closed|reset|failed)|Not connected/i.test(
