@@ -4246,5 +4246,11 @@
   },
   "artifactPane.htmlScriptsDisabled": {
     "defaultMessage": "Scripts are disabled in this preview. Open the file externally to run them."
+  },
+  "workspaceEditorDialog.nameLength": {
+    "defaultMessage": "{count}/{limit} characters"
+  },
+  "workspaceEditorDialog.nameTooLong": {
+    "defaultMessage": "{excess,plural,one{Name must be at most {limit} characters. Remove # character.} other{Name must be at most {limit} characters. Remove # characters.}}"
   }
 }

@@ -4244,6 +4244,12 @@
   "workingDirectoriesMenu.workspaceSessionOnlyHint": {
     "defaultMessage": "Workspace folders remain pinned. Directories added here belong only to this session; other sessions and the workspace do not receive access."
   },
+  "workspaceEditorDialog.nameLength": {
+    "defaultMessage": "{count}/{limit} characters"
+  },
+  "workspaceEditorDialog.nameTooLong": {
+    "defaultMessage": "{excess,plural,one{Name must be at most {limit} characters. Remove # character.} other{Name must be at most {limit} characters. Remove # characters.}}"
+  },
   "workspaceSidebar.chatReady": {
     "defaultMessage": "A chat in this workspace has a new reply"
   }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { FolderOpen, KeyRound, Plus, Trash2 } from 'lucide-react';
 import { v7 as uuidv7 } from 'uuid';
 import { toast } from 'react-toastify';
@@ -21,6 +21,7 @@ import { useWorkspace } from '../../contexts/WorkspaceContext';
 import type { ProviderDetails } from '../../types/providers';
 import { getDefaultWorkspaceWorkingDir } from '../../utils/workingDir';
 import { workspaceErrorMessage } from '../../utils/workspaceError';
+import { defineMessages, useIntl } from '../../i18n';
 import { Button } from '../ui/button';
 import {
   Dialog,
@@ -64,6 +65,21 @@ const PRODUCT_TYPES: ProductType[] = [
 ];
 
 const INSTRUCTIONS_WORD_LIMIT = 100;
+/// Mirrors MAX_NAME_CHARS in crates/gosling/src/workspace/service.rs, which counts
+/// Unicode scalar values of the trimmed, NFC-normalized name.
+const NAME_CHAR_LIMIT = 100;
+
+const i18n = defineMessages({
+  nameLength: {
+    id: 'workspaceEditorDialog.nameLength',
+    defaultMessage: '{count}/{limit} characters',
+  },
+  nameTooLong: {
+    id: 'workspaceEditorDialog.nameTooLong',
+    defaultMessage:
+      'Name must be at most {limit} characters. Remove {excess, plural, one {# character} other {# characters}}.',
+  },
+});
 
 const DEFAULT_WORKSPACE_PROVIDER = 'chatgpt_codex';
 const DEFAULT_WORKSPACE_MODEL = 'gpt-5.6-terra';
@@ -87,6 +103,8 @@ export function WorkspaceEditorDialog({
   onOpenChange,
 }: WorkspaceEditorDialogProps) {
   const navigate = useNavigate();
+  const intl = useIntl();
+  const nameLengthId = useId();
   const { credentialProfiles, createWorkspace, updateWorkspace, validateWorkspace } =
     useWorkspace();
   const [draft, setDraft] = useState<WorkspaceMutation>(() => createDraft(workspace));
@@ -302,8 +320,12 @@ export function WorkspaceEditorDialog({
     });
   }, []);
 
+  const nameLength = countNameChars(draft.name);
+  const nameTooLong = nameLength > NAME_CHAR_LIMIT;
+  const nameInvalid = !draft.name.trim() || nameTooLong;
+
   const runValidation = useCallback(async (): Promise<WorkspaceValidationReport | null> => {
-    if (!draft.name.trim() || validating) return null;
+    if (nameInvalid || validating) return null;
     setValidating(true);
     setError(null);
     try {
@@ -316,10 +338,10 @@ export function WorkspaceEditorDialog({
     } finally {
       setValidating(false);
     }
-  }, [draft, validateWorkspace, validating, workspace?.id]);
+  }, [draft, nameInvalid, validateWorkspace, validating, workspace?.id]);
 
   const save = useCallback(async () => {
-    if (!draft.name.trim() || saving || validating) return;
+    if (nameInvalid || saving || validating) return;
     setSaving(true);
     setError(null);
     try {
@@ -379,6 +401,7 @@ export function WorkspaceEditorDialog({
   }, [
     createWorkspace,
     draft,
+    nameInvalid,
     onOpenChange,
     runValidation,
     saving,
@@ -488,14 +511,33 @@ export function WorkspaceEditorDialog({
           <div className="min-h-0 space-y-6 overflow-y-auto pr-2">
             <Section title="General">
               <div className="grid gap-3 md:grid-cols-2">
-                <Field label="Name">
-                  <Input
-                    value={draft.name}
-                    onChange={(event) => setDraft({ ...draft, name: event.target.value })}
-                    maxLength={100}
-                    autoFocus
-                  />
-                </Field>
+                <div className="space-y-1.5">
+                  <Field label="Name">
+                    <Input
+                      value={draft.name}
+                      onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+                      aria-invalid={nameTooLong}
+                      aria-describedby={nameLengthId}
+                      autoFocus
+                    />
+                  </Field>
+                  <span
+                    id={nameLengthId}
+                    className={`block text-right text-xs ${
+                      nameTooLong ? 'text-red-600' : 'text-text-secondary'
+                    }`}
+                  >
+                    {nameTooLong
+                      ? intl.formatMessage(i18n.nameTooLong, {
+                          limit: NAME_CHAR_LIMIT,
+                          excess: nameLength - NAME_CHAR_LIMIT,
+                        })
+                      : intl.formatMessage(i18n.nameLength, {
+                          count: nameLength,
+                          limit: NAME_CHAR_LIMIT,
+                        })}
+                  </span>
+                </div>
                 <Field label="Icon label (optional)">
                   <Input
                     value={draft.icon ?? ''}
@@ -1113,7 +1155,7 @@ export function WorkspaceEditorDialog({
             <Button
               variant="outline"
               onClick={() => void runValidation()}
-              disabled={saving || validating || !draft.name.trim()}
+              disabled={saving || validating || nameInvalid}
             >
               {validating ? 'Validating…' : 'Validate'}
             </Button>
@@ -1124,10 +1166,7 @@ export function WorkspaceEditorDialog({
             >
               Cancel
             </Button>
-            <Button
-              onClick={() => void save()}
-              disabled={saving || validating || !draft.name.trim()}
-            >
+            <Button onClick={() => void save()} disabled={saving || validating || nameInvalid}>
               {saving ? 'Saving…' : 'Save workspace'}
             </Button>
           </DialogFooter>
@@ -1224,6 +1263,10 @@ function createDraft(workspace?: Workspace | null): WorkspaceMutation {
 function formatEffort(effort: WorkspaceThinkingEffort): string {
   if (effort === 'off') return 'Off';
   return effort.charAt(0).toUpperCase() + effort.slice(1);
+}
+
+function countNameChars(name: string): number {
+  return Array.from(name.trim().normalize('NFC')).length;
 }
 
 function countWords(text: string): number {

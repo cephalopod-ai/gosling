@@ -17,6 +17,7 @@ use uuid::Uuid;
 const MAX_INSTRUCTIONS_WORDS: usize = 100;
 const MAX_FOLDER_DESCRIPTION_CHARS: usize = 280;
 const MAX_LABEL_CHARS: usize = 100;
+const MAX_NAME_CHARS: usize = 100;
 const MAX_PATH_CHARS: usize = 4_096;
 const MAX_IDENTIFIER_CHARS: usize = 256;
 const MAX_ADDITIONAL_FOLDERS: usize = 64;
@@ -799,8 +800,8 @@ pub(super) fn normalized_name(name: &str) -> Result<String> {
     if name.is_empty() {
         bail!("name cannot be empty");
     }
-    if name.chars().count() > 100 {
-        bail!("name must be at most 100 characters");
+    if name.chars().count() > MAX_NAME_CHARS {
+        bail!("name must be at most {MAX_NAME_CHARS} characters");
     }
     Ok(name)
 }
@@ -819,14 +820,21 @@ fn reject_duplicate_name(
     Ok(())
 }
 
+/// Shortens the source name when needed so the copy suffix always fits the
+/// name limit; a copy of a maximum-length name would otherwise be rejected.
 fn unique_copy_name(document: &WorkspaceStoreDocument, source: &str) -> String {
     (1..)
         .map(|index| {
-            if index == 1 {
-                format!("{source} copy")
+            let suffix = if index == 1 {
+                " copy".to_string()
             } else {
-                format!("{source} copy {index}")
-            }
+                format!(" copy {index}")
+            };
+            let base: String = source
+                .chars()
+                .take(MAX_NAME_CHARS - suffix.chars().count())
+                .collect();
+            format!("{}{suffix}", base.trim_end())
         })
         .find(|candidate| {
             let key = name_key(candidate);
@@ -995,6 +1003,41 @@ mod tests {
 
         assert_eq!(created.name, "Caf\u{e9}");
         assert_eq!(service.get(&created.id).unwrap().name, "Caf\u{e9}");
+    }
+
+    #[tokio::test]
+    async fn duplicating_a_maximum_length_name_shortens_it_to_fit_the_suffix() {
+        let data = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let service = WorkspaceService::initialize(data.path(), root.path())
+            .await
+            .unwrap();
+        let mut long = mutation(root.path());
+        long.name = format!("{}-END", "a".repeat(MAX_NAME_CHARS - 4));
+        let source = service.create(long).await.unwrap();
+
+        let first = service.duplicate(&source.id).await.unwrap();
+        let second = service.duplicate(&source.id).await.unwrap();
+
+        assert_eq!(first.name.chars().count(), MAX_NAME_CHARS);
+        assert!(first.name.ends_with("a copy"));
+        assert_eq!(second.name.chars().count(), MAX_NAME_CHARS);
+        assert!(second.name.ends_with("a copy 2"));
+    }
+
+    #[tokio::test]
+    async fn over_length_workspace_names_are_rejected() {
+        let data = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let service = WorkspaceService::initialize(data.path(), root.path())
+            .await
+            .unwrap();
+        let mut long = mutation(root.path());
+        long.name = "a".repeat(MAX_NAME_CHARS + 1);
+
+        let error = service.create(long).await.unwrap_err();
+
+        assert!(error.to_string().contains("at most 100 characters"));
     }
 
     #[tokio::test]
