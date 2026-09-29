@@ -1334,7 +1334,7 @@ impl Agent {
                             error!("Error: {}", provider_err);
                             let failure_message = provider_failure_message(
                                 provider_err,
-                                &format!("Ran into this error: {provider_err}.\n\nPlease retry if you think this is a transient or recoverable error."),
+                                &format!("Ran into this error: {provider_err}.\n\n{}", provider_error_advice(provider_err)),
                                 no_tools_called,
                             );
                             if no_tools_called {
@@ -1643,6 +1643,15 @@ fn configured_context_side_channels_allowed(
     )
 }
 
+fn provider_error_advice(error: &ProviderError) -> &'static str {
+    match error {
+        ProviderError::Authentication(_) => {
+            "Check your API key or sign-in, or run `gosling configure` to update it."
+        }
+        _ => "Please retry if you think this is a transient or recoverable error.",
+    }
+}
+
 /// A reply cut off by a terminal provider error stays visible to the user, but
 /// it is not replayed to the model on the next turn as if it were complete.
 fn hide_interrupted_reply_from_agent(messages: Conversation) -> Conversation {
@@ -1671,6 +1680,20 @@ mod tests {
         assert!(configured_context_side_channels_allowed(
             &crate::session::InteractionPolicy::Normal
         ));
+    }
+
+    #[test]
+    fn authentication_failures_point_to_configure_instead_of_retrying() {
+        let advice = provider_error_advice(&ProviderError::Authentication(
+            "Incorrect API key provided".to_string(),
+        ));
+        assert!(advice.contains("gosling configure"));
+        assert!(!advice.contains("retry"));
+
+        assert_eq!(
+            provider_error_advice(&ProviderError::ServerError("boom".to_string())),
+            "Please retry if you think this is a transient or recoverable error."
+        );
     }
 
     #[tokio::test]
