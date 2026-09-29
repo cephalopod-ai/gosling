@@ -19,6 +19,7 @@ use gosling::session::{
 use gosling::utils::safe_truncate;
 use gosling_providers::secret_redaction::SecretRedactor;
 use regex::Regex;
+use std::borrow::Cow;
 use std::fmt::Write as FmtWrite;
 use std::fs;
 use std::io::{self, IsTerminal, Write};
@@ -28,6 +29,24 @@ use std::path::Path;
 use std::path::PathBuf;
 
 const TRUNCATED_DESC_LENGTH: usize = 60;
+
+/// Session names can come from untrusted transcripts (foreign importers derive them from the
+/// first user message), so control characters are shown escaped instead of reaching the terminal
+/// where ESC/BEL sequences could retitle, recolor or clear it.
+fn terminal_safe(text: &str) -> Cow<'_, str> {
+    if !text.chars().any(char::is_control) {
+        return Cow::Borrowed(text);
+    }
+    let mut escaped = String::with_capacity(text.len());
+    for c in text.chars() {
+        if c.is_control() {
+            escaped.extend(c.escape_debug());
+        } else {
+            escaped.push(c);
+        }
+    }
+    Cow::Owned(escaped)
+}
 
 fn display_path_with_tilde(path: &Path) -> String {
     #[cfg(not(target_os = "windows"))]
@@ -52,7 +71,7 @@ async fn remove_sessions(
 
     println!("The following sessions will be removed:");
     for session in &sessions {
-        println!("- {} {}", session.id, session.name);
+        println!("- {} {}", session.id, terminal_safe(&session.name));
     }
 
     let should_delete = skip_confirmation
@@ -86,11 +105,11 @@ fn prompt_interactive_session_removal(sessions: &[Session]) -> Result<Vec<Sessio
         .iter()
         .map(|s| {
             let desc = if s.name.is_empty() {
-                "(no name)"
+                Cow::Borrowed("(no name)")
             } else {
-                &s.name
+                terminal_safe(&s.name)
             };
-            let truncated_desc = safe_truncate(desc, TRUNCATED_DESC_LENGTH);
+            let truncated_desc = safe_truncate(&desc, TRUNCATED_DESC_LENGTH);
             let display_text =
                 format!("{} - {} ({})", session_activity_at(s), truncated_desc, s.id);
             (display_text, s.clone())
@@ -233,7 +252,7 @@ pub async fn handle_session_list(
                 let output = format!(
                     "{} - {} - {} - {}",
                     session.id,
-                    session.name,
+                    terminal_safe(&session.name),
                     session_activity_at(&session),
                     display_path_with_tilde(&session.working_dir)
                 );
@@ -722,7 +741,7 @@ pub async fn handle_session_import(
     match result {
         gosling::session::session_manager::SessionImportOutcome::Imported(session) => {
             println!("Session imported:");
-            println!("{} - {}", session.id, session.name);
+            println!("{} - {}", session.id, terminal_safe(&session.name));
             println!(
                 "Mode: {}{}. Change the mode with /mode after resuming.",
                 session.gosling_mode,
@@ -735,13 +754,13 @@ pub async fn handle_session_import(
         }
         gosling::session::session_manager::SessionImportOutcome::AlreadyImported(session) => {
             println!("Session already imported from this exact source:");
-            println!("{} - {}", session.id, session.name);
+            println!("{} - {}", session.id, terminal_safe(&session.name));
         }
         gosling::session::session_manager::SessionImportOutcome::SourceChanged(session) => {
             println!(
                 "Source file changed after its first import; skipped to prevent duplicate transcript history:"
             );
-            println!("{} - {}", session.id, session.name);
+            println!("{} - {}", session.id, terminal_safe(&session.name));
         }
     }
 
@@ -919,6 +938,18 @@ mod session_export_tests {
         assert!(markdown.contains("Say HELLO"));
         assert!(markdown.contains("HELLO"));
     }
+
+    #[test]
+    fn terminal_safe_escapes_c0_c1_and_del_but_keeps_unicode_text() {
+        assert_eq!(
+            terminal_safe("a\u{1b}[31mb\u{7}c\td\u{9b}2Je\u{7f}"),
+            r"a\u{1b}[31mb\u{7}c\td\u{9b}2Je\u{7f}"
+        );
+        assert!(matches!(
+            terminal_safe("café \"quoted\" \\ 🪿"),
+            Cow::Borrowed("café \"quoted\" \\ 🪿")
+        ));
+    }
 }
 
 #[cfg(all(test, unix))]
@@ -1089,11 +1120,11 @@ pub async fn prompt_interactive_session_selection(
         .iter()
         .map(|s| {
             let desc = if s.name.is_empty() {
-                "(no name)"
+                Cow::Borrowed("(no name)")
             } else {
-                &s.name
+                terminal_safe(&s.name)
             };
-            let truncated_desc = safe_truncate(desc, TRUNCATED_DESC_LENGTH);
+            let truncated_desc = safe_truncate(&desc, TRUNCATED_DESC_LENGTH);
 
             let display_text = format!("{} - {} ({})", s.updated_at, truncated_desc, s.id);
             (display_text, s.clone())
