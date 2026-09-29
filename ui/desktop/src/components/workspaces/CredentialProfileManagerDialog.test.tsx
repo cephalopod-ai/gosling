@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { acpListProviderDetails } from '../../acp/providers';
@@ -214,5 +214,53 @@ describe('CredentialProfileManagerDialog', () => {
       'Live credential testing is not supported for anthropic. Secure profile status: configured.'
     );
     expect(screen.queryByText(/SENTINEL_WORKSPACE_SECRET/)).not.toBeInTheDocument();
+  });
+
+  describe('initial focus', () => {
+    const profile = {
+      id: 'profile-1',
+      name: 'Current antigravity configuration',
+      providerOrServiceId: 'anthropic',
+      authKind: 'config_fields' as const,
+      configuredSecretFields: ['ANTHROPIC_API_KEY'],
+      nonSecretFields: {},
+      status: 'configured' as const,
+      source: 'workspace_secure_storage' as const,
+      createdAt: '2026-07-18T00:00:00Z',
+      updatedAt: '2026-07-18T00:00:00Z',
+    };
+
+    beforeEach(() => {
+      const context = vi.mocked(useWorkspace)();
+      vi.mocked(useWorkspace).mockReturnValue({ ...context, credentialProfiles: [profile] });
+    });
+
+    it('starts on New profile rather than a live Test button', async () => {
+      render(<CredentialProfileManagerDialog open onOpenChange={vi.fn()} />, {
+        wrapper: IntlTestWrapper,
+      });
+
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'New profile' })).toHaveFocus()
+      );
+      expect(
+        screen.getByRole('button', { name: 'Test Current antigravity configuration' })
+      ).not.toHaveFocus();
+    });
+
+    it('still starts on the profile name when opened to edit a profile', async () => {
+      render(
+        <CredentialProfileManagerDialog
+          open
+          onOpenChange={vi.fn()}
+          initialEditProfileId="profile-1"
+        />,
+        { wrapper: IntlTestWrapper }
+      );
+
+      await waitFor(() =>
+        expect(screen.getByDisplayValue('Current antigravity configuration')).toHaveFocus()
+      );
+    });
   });
 });

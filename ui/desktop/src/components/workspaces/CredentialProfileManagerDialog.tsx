@@ -63,6 +63,7 @@ export function CredentialProfileManagerDialog({
   const [testingProfileId, setTestingProfileId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const newProfileRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!open) {
@@ -213,7 +214,15 @@ export function CredentialProfileManagerDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="grid max-h-[85vh] grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-3xl">
+      <DialogContent
+        className="grid max-h-[85vh] grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-3xl"
+        onOpenAutoFocus={(event) => {
+          // The first tabbable control would be a profile's live "Test" button.
+          if (!newProfileRef.current) return;
+          event.preventDefault();
+          newProfileRef.current.focus();
+        }}
+      >
         <DialogHeader>
           <DialogTitle>Credential profiles</DialogTitle>
           <DialogDescription>
@@ -357,7 +366,7 @@ export function CredentialProfileManagerDialog({
               <Button variant="outline" onClick={() => handleOpenChange(false)}>
                 Close
               </Button>
-              <Button onClick={() => setDraft(emptyDraft())}>
+              <Button ref={newProfileRef} onClick={() => setDraft(emptyDraft())}>
                 <Plus className="mr-1 size-4" /> New profile
               </Button>
             </>
