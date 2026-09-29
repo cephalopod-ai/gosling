@@ -1805,13 +1805,15 @@ async fn handle_serve_command(args: ServeCommandArgs) -> Result<()> {
             axum_server::bind_rustls(addr, tls_setup.config)
                 .handle(shutdown_handle)
                 .serve(router.into_make_service_with_connect_info::<SocketAddr>())
-                .await?;
+                .await
+                .map_err(|error| serve_failed(&format!("https://{addr}"), error))?;
 
             #[cfg(feature = "native-tls")]
             axum_server::bind_openssl(addr, tls_setup.config)
                 .handle(shutdown_handle)
                 .serve(router.into_make_service_with_connect_info::<SocketAddr>())
-                .await?;
+                .await
+                .map_err(|error| serve_failed(&format!("https://{addr}"), error))?;
         }
 
         #[cfg(not(any(feature = "rustls-tls", feature = "native-tls")))]
@@ -1823,8 +1825,11 @@ async fn handle_serve_command(args: ServeCommandArgs) -> Result<()> {
             );
         }
     } else {
-        info!("Starting ACP server on http://{}", addr);
-        let listener = tokio::net::TcpListener::bind(addr).await?;
+        let listener = tokio::net::TcpListener::bind(addr)
+            .await
+            .map_err(|error| serve_failed(&format!("http://{addr}"), error))?;
+        info!("ACP server listening on http://{}", addr);
+        eprintln!("gosling serve listening on http://{addr}");
         let stopping_server = Arc::clone(&server);
         serve_http_until_shutdown(
             listener,
@@ -1840,6 +1845,13 @@ async fn handle_serve_command(args: ServeCommandArgs) -> Result<()> {
 
     server.shutdown().await;
     Ok(())
+}
+
+/// `gosling serve` logs only to its log file, so a failed start must name the
+/// address both there and in the error the user sees.
+fn serve_failed(url: &str, error: std::io::Error) -> anyhow::Error {
+    tracing::error!("ACP server on {url} failed: {error}");
+    anyhow::anyhow!("gosling serve could not use {url}: {error}")
 }
 
 /// How long a stopping server waits for running prompts to answer, and then
@@ -3001,6 +3013,23 @@ mod tests {
         let help = String::from_utf8(buffer).expect("utf8");
         assert!(!help.contains("Requires --resume"), "{help}");
         assert!(help.contains("Select a session by ID"), "{help}");
+    }
+
+    // GSL-PT-20260927-F03: a serve start on a taken port printed only
+    // "Address already in use" and its log still claimed the server started.
+    #[tokio::test]
+    async fn serve_bind_failure_names_the_address() {
+        let taken = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = taken.local_addr().unwrap();
+
+        let error = tokio::net::TcpListener::bind(addr)
+            .await
+            .map_err(|error| serve_failed(&format!("http://{addr}"), error))
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains(&format!("http://{addr}")), "{error}");
+        assert!(error.contains("could not use"), "{error}");
     }
 
     #[test]
