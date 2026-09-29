@@ -166,7 +166,10 @@ pub async fn handle_session_remove(
             .collect();
 
         if matched_sessions.is_empty() {
-            println!("Regex string '{}' does not match any sessions", regex_val);
+            println!(
+                "Regex string '{}' does not match any session IDs (--regex matches IDs, not names)",
+                regex_val
+            );
             return Ok(());
         }
     } else {

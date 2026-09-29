@@ -542,7 +542,8 @@ enum SessionCommand {
         #[arg(
             short = 'r',
             long,
-            help = "Regex for removing matched sessions (optional)"
+            value_name = "PATTERN",
+            help = "Remove sessions whose ID (e.g., '20250921_1') matches this regex; names are not matched"
         )]
         regex: Option<String>,
         #[arg(
