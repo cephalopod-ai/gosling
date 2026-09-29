@@ -2436,13 +2436,17 @@ fn parse_run_input_from_reader(
             })
         }
         (Some(file), _) => {
-            let contents = std::fs::read_to_string(file).unwrap_or_else(|err| {
-                eprintln!(
-                    "Instruction file not found — did you mean to use gosling run --text?\n{}",
-                    err
-                );
-                std::process::exit(1);
-            });
+            let contents = match std::fs::read_to_string(file) {
+                Ok(contents) => contents,
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                    eprintln!(
+                        "Instruction file not found — did you mean to use gosling run --text?\n{}",
+                        err
+                    );
+                    std::process::exit(1);
+                }
+                Err(err) => anyhow::bail!("Could not read instruction file {file}: {err}"),
+            };
             Some(InputConfig {
                 contents: Some(contents),
                 additional_system_prompt: input_opts.system.clone(),
