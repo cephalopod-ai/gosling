@@ -260,7 +260,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | C13 | CLI resume rebinds an imported session's trusted working dir to the current directory | fixed (R4) |
 | Low | C15 | Session exports embed extension `--env` values; pasted secrets exported verbatim | fixed (R5) |
 | Low | C16 | Markdown export drops the tool-error flag | fixed (R8b) |
-| Low | C17 | CLI help/docs drift found while executing | open — queued R8b |
+| Low | C17 | CLI help/docs drift found while executing | fixed (R8b) |
 | Low | C18 | `/skills <name>` differs by surface and never validates the name | fixed (R11) |
 | Low | C19 | Extension failure messages are noisy and lose the cause; no health state in listings | fixed (messages; listing health state is a follow-up) (R11) |
 | Low | C21 | `mcp remove` leaves the extension's secrets in `secrets.yaml` | fixed (per-extension secrets) (R5) |
@@ -282,7 +282,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | D18 | Typeahead during interactive startup is not submitted; later lines (even `/exit`) are merged into one prompt | open — queued R8b |
 | Low | D19 | `session list --format xml` silently falls back to text (exit 0) (suspicion) | fixed (R8b) |
 | Low | D24 | Import de-duplication blocks importing new turns of a grown transcript | note (product question) |
-| Low | D25 | `gosling tui` with non-interactive stdin renders a frame, then dumps an Ink/React stack trace | open — queued R8b |
+| Low | D25 | `gosling tui` with non-interactive stdin renders a frame, then dumps an Ink/React stack trace | fixed (R8b) |
 | Low | D26 | Default `review --dry-run` does not show what would run: `--checks-only` and `--instructions` produce byte-identical output that still announces a main pass | fixed (R8b) |
 | Low | E08 | Nested hints are re-appended on every resume / `session/load` + access (unbounded duplication) | fixed (R7) |
 | Low | E09 | Unreadable or invalid-UTF-8 `AGENTS.md`/`.goslinghints` are dropped silently (warning only in the log file) | fixed (R7) |
@@ -339,7 +339,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | H07 | Delegate activity title echoes the raw `source` argument (`null`, blanks, normalized sentinel) | fixed (R11) |
 | Low | S01 | Stale turn-lease rows left by concurrent `gosling run` processes | fixed (R4) |
 | Low | S02 | Interactive type-ahead under load: Enter becomes a newline, a later `/exit` is sent to the model | open — queued R8b |
-| Low | S05 | `session -r --history` renders at ~32 ms per message (6.7 s for 206 messages) | open — queued R8b |
+| Low | S05 | `session -r --history` renders at ~32 ms per message (6.7 s for 206 messages) | fixed (R8b) |
 | Low | S08 | `/model` typed during a stream queues, and every switch persists a hidden checkpoint | fixed (R9) |
 | Low | S09 | Markdown export includes hidden internal checkpoint messages | fixed (R9) |
 | Low | S10 | kill -9 mid-stream leaves the truncated reply stored as a normal, complete assistant message | fixed (R1a) |
