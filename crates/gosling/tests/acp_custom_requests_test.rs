@@ -1571,6 +1571,105 @@ fn test_steer_session_adds_input_to_active_prompt() {
 
 #[test]
 #[serial]
+fn test_prompt_to_session_archived_elsewhere_is_refused_until_restored() {
+    write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
+    run_test(async move {
+        let openai = OpenAiFixture::new(
+            vec![
+                (
+                    "what is 1+1".to_string(),
+                    include_str!("acp_test_data/openai_basic.txt"),
+                ),
+                (
+                    "ZOMBIE-TURN".to_string(),
+                    include_str!("acp_test_data/openai_basic.txt"),
+                ),
+                (
+                    "AFTER-RESTORE".to_string(),
+                    include_str!("acp_test_data/openai_basic.txt"),
+                ),
+            ],
+            Arc::new(IgnoreSessionId),
+        )
+        .await;
+        let data_root = tempfile::tempdir().unwrap();
+        let manager = Arc::new(SessionManager::new(data_root.path().to_path_buf()));
+        let mut conn = AcpServerConnection::new(
+            TestConnectionConfig {
+                data_root: data_root.path().to_path_buf(),
+                session_manager: Some(Arc::clone(&manager)),
+                ..Default::default()
+            },
+            openai,
+        )
+        .await;
+
+        let SessionData { mut session, .. } = conn.new_session().await.unwrap();
+        let session_id = session.session_id().0.to_string();
+        session
+            .prompt("what is 1+1", PermissionDecision::Cancel)
+            .await
+            .unwrap();
+
+        // Archived through the store, as another window would, while this
+        // connection still has the session loaded.
+        manager
+            .update(&session_id)
+            .archived_at(Some(chrono::Utc::now()))
+            .apply()
+            .await
+            .unwrap();
+        let before = manager.get_session(&session_id, false).await.unwrap();
+
+        let refused = conn
+            .cx()
+            .send_request(PromptRequest::new(
+                session.session_id().clone(),
+                vec![ContentBlock::Text(TextContent::new("ZOMBIE-TURN"))],
+            ))
+            .block_task()
+            .await
+            .expect_err("a prompt to an archived session must be refused");
+        let expected = format!("session {session_id} is archived; restore it to continue");
+        assert_eq!(
+            refused.code,
+            agent_client_protocol::ErrorCode::InvalidRequest
+        );
+        assert_eq!(refused.message, expected);
+        let data = refused.data.expect("structured error data");
+        assert_eq!(data["reason"], "session_archived");
+        assert_eq!(data["sessionId"], session_id);
+
+        let after = manager.get_session(&session_id, true).await.unwrap();
+        assert_eq!(after.archived_at, before.archived_at);
+        assert_eq!(after.message_count, before.message_count);
+        assert!(!after
+            .conversation
+            .unwrap_or_default()
+            .messages()
+            .iter()
+            .any(|message| message.as_concat_text().contains("ZOMBIE-TURN")));
+
+        send_custom(
+            conn.cx(),
+            "_gosling/unstable/session/unarchive",
+            serde_json::json!({ "sessionId": session_id }),
+        )
+        .await
+        .unwrap();
+        let output = session
+            .prompt("AFTER-RESTORE", PermissionDecision::Cancel)
+            .await
+            .expect("a restored session accepts prompts again");
+        assert_eq!(output.text, "2");
+        let restored = manager.get_session(&session_id, false).await.unwrap();
+        assert!(restored.archived_at.is_none());
+        assert!(restored.message_count > before.message_count);
+    });
+}
+
+#[test]
+#[serial]
 fn test_custom_list_builtin_skill_sources() {
     write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
     run_test(async move {

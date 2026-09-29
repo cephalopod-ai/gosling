@@ -501,6 +501,7 @@ impl GoslingAcpAgent {
 
         self.require_active_run(&req.session_id, &req.expected_run_id)
             .await?;
+        self.reject_archived_session(&req.session_id).await?;
         let agent = self.get_session_agent(&req.session_id).await?;
         let active_run_id = self
             .require_active_run(&req.session_id, &req.expected_run_id)

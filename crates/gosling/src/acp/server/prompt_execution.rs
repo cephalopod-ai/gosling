@@ -11,6 +11,7 @@ const RESEARCH_AWAITING_REPLY_NOTICE: &str =
     "Deep Research is waiting for your reply. Answer the question above and it will continue and write the report.";
 const RESEARCH_AWAITING_REPLY_REASON: &str = "deep_research_awaiting_reply";
 const RESEARCH_PERMISSION_DENIED_REASON: &str = "deep_research_permission_denied";
+const SESSION_ARCHIVED_REASON: &str = "session_archived";
 /// Prefix `Agent::handle_denied_tools` puts on the result of a tool call the
 /// permission policy refused.
 const POLICY_DENIED_TOOL_RESULT_PREFIX: &str = "Tool denied by policy:";
@@ -306,6 +307,32 @@ impl GoslingAcpAgent {
         }
     }
 
+    /// Another window or client may archive a session this connection still
+    /// has loaded; new input would then grow a session hidden from history.
+    pub(super) async fn reject_archived_session(
+        &self,
+        session_id: &str,
+    ) -> Result<(), agent_client_protocol::Error> {
+        let Ok(session) = self
+            .session_manager
+            .get_session_without_message_stats(session_id)
+            .await
+        else {
+            return Ok(());
+        };
+        if session.archived_at.is_none() {
+            return Ok(());
+        }
+        let message = format!("session {session_id} is archived; restore it to continue");
+        Err(
+            agent_client_protocol::Error::new(-32600, message.clone()).data(serde_json::json!({
+                "reason": SESSION_ARCHIVED_REASON,
+                "message": message,
+                "sessionId": session_id,
+            })),
+        )
+    }
+
     pub(super) async fn on_prompt(
         &self,
         cx: &ConnectionTo<Client>,
@@ -320,6 +347,7 @@ impl GoslingAcpAgent {
             return Err(agent_client_protocol::Error::invalid_params()
                 .data("prompt must contain at least one supported content block"));
         }
+        self.reject_archived_session(&session_id).await?;
         let sid = sid_short(&session_id);
         let t_start = std::time::Instant::now();
         let research_run_started_at = chrono::Utc::now() - chrono::Duration::seconds(1);
