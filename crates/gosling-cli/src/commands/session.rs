@@ -102,30 +102,16 @@ fn prompt_interactive_session_removal(sessions: &[Session]) -> Result<Vec<Sessio
         "Select sessions to delete (use spacebar, Enter to confirm, Ctrl+C to cancel):",
     );
 
-    let display_map: std::collections::HashMap<String, Session> = sessions
-        .iter()
-        .map(|s| {
-            let desc = if s.name.is_empty() {
-                Cow::Borrowed("(no name)")
-            } else {
-                terminal_safe(&s.name)
-            };
-            let truncated_desc = safe_truncate(&desc, TRUNCATED_DESC_LENGTH);
-            let display_text =
-                format!("{} - {} ({})", session_activity_at(s), truncated_desc, s.id);
-            (display_text, s.clone())
-        })
-        .collect();
-
-    for display_text in display_map.keys() {
-        selector = selector.item(display_text.clone(), display_text.clone(), "");
+    for (id, label) in session_picker_items(sessions) {
+        selector = selector.item(id, label, "");
     }
 
-    let selected_display_texts: Vec<String> = selector.interact()?;
+    let selected_ids: Vec<String> = selector.interact()?;
 
-    let selected_sessions: Vec<Session> = selected_display_texts
-        .into_iter()
-        .filter_map(|text| display_map.get(&text).cloned())
+    let selected_sessions: Vec<Session> = sessions
+        .iter()
+        .filter(|s| selected_ids.contains(&s.id))
+        .cloned()
         .collect();
 
     Ok(selected_sessions)
@@ -201,6 +187,29 @@ fn session_activity_at(session: &Session) -> chrono::DateTime<chrono::Utc> {
     session.last_message_at.unwrap_or(session.updated_at)
 }
 
+fn sort_most_recent_first(sessions: &mut [Session]) {
+    sessions.sort_by_key(|s| std::cmp::Reverse(session_activity_at(s)));
+}
+
+/// `(session id, label)` pairs for the session pickers, in `session list` order.
+fn session_picker_items(sessions: &[Session]) -> Vec<(String, String)> {
+    let mut sessions = sessions.to_vec();
+    sort_most_recent_first(&mut sessions);
+    sessions
+        .iter()
+        .map(|s| {
+            let desc = if s.name.is_empty() {
+                Cow::Borrowed("(no name)")
+            } else {
+                terminal_safe(&s.name)
+            };
+            let truncated_desc = safe_truncate(&desc, TRUNCATED_DESC_LENGTH);
+            let label = format!("{} - {} ({})", session_activity_at(s), truncated_desc, s.id);
+            (s.id.clone(), label)
+        })
+        .collect()
+}
+
 /// `session list -w` matches the directory itself and anything inside it, by
 /// whole path components: a substring match leaked sibling directories such
 /// as `proj-b` for `proj`. The canonical form is also tried so `/tmp/x`
@@ -235,7 +244,7 @@ pub async fn handle_session_list(
     if ascending {
         sessions.sort_by_key(session_activity_at);
     } else {
-        sessions.sort_by_key(|b| std::cmp::Reverse(session_activity_at(b)));
+        sort_most_recent_first(&mut sessions);
     }
 
     if let Some(n) = limit {
@@ -995,6 +1004,44 @@ mod session_export_tests {
     }
 
     #[test]
+    fn session_pickers_list_the_most_recent_session_first_like_session_list() {
+        let at = |hour: u32| {
+            chrono::DateTime::parse_from_rfc3339(&format!("2026-09-27T{hour:02}:00:00Z"))
+                .unwrap()
+                .with_timezone(&chrono::Utc)
+        };
+        let session = |id: &str, updated: u32, last_message: Option<u32>| Session {
+            id: id.to_string(),
+            name: format!("name-{id}"),
+            updated_at: at(updated),
+            last_message_at: last_message.map(at),
+            ..Session::default()
+        };
+        let sessions = vec![
+            session("old", 1, None),
+            session("chatted", 2, Some(9)),
+            session("renamed", 8, None),
+            session("tie-a", 5, None),
+            session("tie-b", 5, None),
+        ];
+
+        let ids = |items: Vec<(String, String)>| -> Vec<String> {
+            items.into_iter().map(|(id, _)| id).collect()
+        };
+        let picked = ids(session_picker_items(&sessions));
+        assert_eq!(picked, ["chatted", "renamed", "tie-a", "tie-b", "old"]);
+        assert_eq!(ids(session_picker_items(&sessions)), picked);
+
+        let mut listed = sessions.clone();
+        sort_most_recent_first(&mut listed);
+        let listed: Vec<String> = listed.into_iter().map(|s| s.id).collect();
+        assert_eq!(listed, picked);
+
+        let (_, label) = &session_picker_items(&sessions)[0];
+        assert_eq!(label, "2026-09-27 09:00:00 UTC - name-chatted (chatted)");
+    }
+
+    #[test]
     fn terminal_safe_escapes_c0_c1_and_del_but_keeps_unicode_text() {
         assert_eq!(
             terminal_safe("a\u{1b}[31mb\u{7}c\td\u{9b}2Je\u{7f}"),
@@ -1160,6 +1207,7 @@ pub fn ensure_session_picker_terminal(selectors: &str) -> Result<()> {
 /// Shows a list of available sessions and lets the user select one
 pub async fn prompt_interactive_session_selection(
     session_manager: &SessionManager,
+    prompt: &str,
 ) -> Result<String> {
     let sessions = session_manager.list_sessions().await?;
 
@@ -1167,45 +1215,13 @@ pub async fn prompt_interactive_session_selection(
         return Err(anyhow::anyhow!("No sessions found"));
     }
 
-    // Build the selection prompt
-    let mut selector = select("Select a session to export:");
-
-    // Map to display text
-    let display_map: std::collections::HashMap<String, Session> = sessions
-        .iter()
-        .map(|s| {
-            let desc = if s.name.is_empty() {
-                Cow::Borrowed("(no name)")
-            } else {
-                terminal_safe(&s.name)
-            };
-            let truncated_desc = safe_truncate(&desc, TRUNCATED_DESC_LENGTH);
-
-            let display_text = format!("{} - {} ({})", s.updated_at, truncated_desc, s.id);
-            (display_text, s.clone())
-        })
-        .collect();
-
-    // Add each session as an option
-    for display_text in display_map.keys() {
-        selector = selector.item(display_text.clone(), display_text.clone(), "");
+    let mut selector = select(prompt);
+    for (id, label) in session_picker_items(&sessions) {
+        selector = selector.item(Some(id), label, "");
     }
+    selector = selector.item(None, "Cancel", "");
 
-    // Add a cancel option
-    let cancel_value = String::from("cancel");
-    selector = selector.item(cancel_value, "Cancel", "Cancel export");
-
-    // Get user selection
-    let selected_display_text: String = selector.interact()?;
-
-    if selected_display_text == "cancel" {
-        return Err(anyhow::anyhow!("Export canceled"));
-    }
-
-    // Retrieve the selected session
-    if let Some(session) = display_map.get(&selected_display_text) {
-        Ok(session.id.clone())
-    } else {
-        Err(anyhow::anyhow!("Invalid selection"))
-    }
+    selector
+        .interact()?
+        .ok_or_else(|| crate::signal::PromptCancelled.into())
 }

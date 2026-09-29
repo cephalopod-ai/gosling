@@ -465,13 +465,17 @@ async fn get_or_create_session_id(
 async fn resolve_or_prompt_session_id(
     session_manager: &SessionManager,
     identifier: Option<Identifier>,
+    picker_prompt: &str,
 ) -> Result<Option<String>> {
     let Some(id) = identifier else {
         crate::commands::session::ensure_session_picker_terminal(
             "--session-id <ID> or --name <NAME>",
         )?;
         return match crate::signal::cancellable_prompts(
-            crate::commands::session::prompt_interactive_session_selection(session_manager),
+            crate::commands::session::prompt_interactive_session_selection(
+                session_manager,
+                picker_prompt,
+            ),
         )
         .await
         {
@@ -2050,8 +2054,12 @@ async fn handle_session_subcommand(command: SessionCommand) -> Result<()> {
             no_redact,
         } => {
             let session_manager = SessionManager::instance();
-            let Some(session_identifier) =
-                resolve_or_prompt_session_id(&session_manager, identifier).await?
+            let Some(session_identifier) = resolve_or_prompt_session_id(
+                &session_manager,
+                identifier,
+                "Select a session to export:",
+            )
+            .await?
             else {
                 return Ok(());
             };
@@ -2074,8 +2082,12 @@ async fn handle_session_subcommand(command: SessionCommand) -> Result<()> {
         }
         SessionCommand::Diagnostics { identifier, output } => {
             let session_manager = SessionManager::instance();
-            let Some(session_id) =
-                resolve_or_prompt_session_id(&session_manager, identifier).await?
+            let Some(session_id) = resolve_or_prompt_session_id(
+                &session_manager,
+                identifier,
+                "Select a session for diagnostics:",
+            )
+            .await?
             else {
                 return Ok(());
             };
@@ -2098,8 +2110,12 @@ async fn handle_context_history_subcommand(command: ContextHistoryCommand) -> Re
             include_expired,
             format,
         } => {
-            let Some(session_id) =
-                resolve_or_prompt_session_id(&session_manager, identifier).await?
+            let Some(session_id) = resolve_or_prompt_session_id(
+                &session_manager,
+                identifier,
+                "Select a session to list context history for:",
+            )
+            .await?
             else {
                 return Ok(());
             };
@@ -2117,8 +2133,12 @@ async fn handle_context_history_subcommand(command: ContextHistoryCommand) -> Re
             generation,
             format,
         } => {
-            let Some(session_id) =
-                resolve_or_prompt_session_id(&session_manager, identifier).await?
+            let Some(session_id) = resolve_or_prompt_session_id(
+                &session_manager,
+                identifier,
+                "Select a session to show context history for:",
+            )
+            .await?
             else {
                 return Ok(());
             };
@@ -2132,8 +2152,12 @@ async fn handle_context_history_subcommand(command: ContextHistoryCommand) -> Re
             format,
             yes,
         } => {
-            let Some(session_id) =
-                resolve_or_prompt_session_id(&session_manager, identifier).await?
+            let Some(session_id) = resolve_or_prompt_session_id(
+                &session_manager,
+                identifier,
+                "Select a session to export context history from:",
+            )
+            .await?
             else {
                 return Ok(());
             };
@@ -2146,8 +2170,12 @@ async fn handle_context_history_subcommand(command: ContextHistoryCommand) -> Re
             identifier,
             generation,
         } => {
-            let Some(session_id) =
-                resolve_or_prompt_session_id(&session_manager, identifier).await?
+            let Some(session_id) = resolve_or_prompt_session_id(
+                &session_manager,
+                identifier,
+                "Select a session to pin a context generation in:",
+            )
+            .await?
             else {
                 return Ok(());
             };
@@ -2158,8 +2186,12 @@ async fn handle_context_history_subcommand(command: ContextHistoryCommand) -> Re
             identifier,
             generation,
         } => {
-            let Some(session_id) =
-                resolve_or_prompt_session_id(&session_manager, identifier).await?
+            let Some(session_id) = resolve_or_prompt_session_id(
+                &session_manager,
+                identifier,
+                "Select a session to unpin a context generation in:",
+            )
+            .await?
             else {
                 return Ok(());
             };
@@ -2171,8 +2203,12 @@ async fn handle_context_history_subcommand(command: ContextHistoryCommand) -> Re
             generation,
             yes,
         } => {
-            let Some(session_id) =
-                resolve_or_prompt_session_id(&session_manager, identifier).await?
+            let Some(session_id) = resolve_or_prompt_session_id(
+                &session_manager,
+                identifier,
+                "Select a session to delete a context generation from:",
+            )
+            .await?
             else {
                 return Ok(());
             };
@@ -2184,8 +2220,12 @@ async fn handle_context_history_subcommand(command: ContextHistoryCommand) -> Re
             all_unpinned,
             yes,
         } => {
-            let Some(session_id) =
-                resolve_or_prompt_session_id(&session_manager, identifier).await?
+            let Some(session_id) = resolve_or_prompt_session_id(
+                &session_manager,
+                identifier,
+                "Select a session to prune context history for:",
+            )
+            .await?
             else {
                 return Ok(());
             };
