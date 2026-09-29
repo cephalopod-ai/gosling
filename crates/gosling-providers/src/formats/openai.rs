@@ -7,7 +7,7 @@ use crate::json::{parse_tool_arguments, truncation_error_message};
 use crate::mcp_utils::extract_text_from_resource;
 use crate::model::ModelConfig;
 use crate::thinking::{
-    split_think_blocks, ThinkFilter, ThinkingEffort, GEMINI_THOUGHT_SIGNATURE_KEY,
+    split_think_blocks, FilterOut, ThinkFilter, ThinkingEffort, GEMINI_THOUGHT_SIGNATURE_KEY,
 };
 use anyhow::{anyhow, Error};
 use async_stream::try_stream;
@@ -213,6 +213,23 @@ fn extract_content_and_signature(
             (text, signature)
         }
         None => (None, None),
+    }
+}
+
+fn filter_delta_text_into(
+    delta_content: Option<&DeltaContent>,
+    think_filter: &mut ThinkFilter,
+    last_signature: &mut Option<String>,
+    out: &mut FilterOut,
+) {
+    let (text, signature) = extract_content_and_signature(delta_content);
+    if let Some(sig) = signature {
+        *last_signature = Some(sig);
+    }
+    if let Some(text) = text {
+        let filtered = think_filter.push(&text);
+        out.content.push_str(&filtered.content);
+        out.thinking.push_str(&filtered.thinking);
     }
 }
 
@@ -1351,6 +1368,10 @@ where
                 yield (None, usage)
             } else if chunk.choices[0].delta.tool_calls.as_ref().is_some_and(|tc| !tc.is_empty()) {
                 let mut tool_call_data: ToolCallData = HashMap::new();
+                // Some providers send lead-in text in the same chunk as the first
+                // tool-call delta, or interleave text with argument deltas.
+                let mut tool_turn_text = FilterOut::default();
+                filter_delta_text_into(chunk.choices[0].delta.content.as_ref(), &mut think_filter, &mut last_signature, &mut tool_turn_text);
 
                 if let Some(tool_calls) = &chunk.choices[0].delta.tool_calls {
                     for (position, tool_call) in tool_calls.iter().enumerate() {
@@ -1394,6 +1415,7 @@ where
                                             pending_inline_thinking.clear();
                                         }
                                     }
+                                    filter_delta_text_into(tool_chunk.choices[0].delta.content.as_ref(), &mut think_filter, &mut last_signature, &mut tool_turn_text);
                                     if let Some(delta_tool_calls) = &tool_chunk.choices[0].delta.tool_calls {
                                         for delta_call in delta_tool_calls {
                                             if let Some(index) = delta_call.index {
@@ -1438,7 +1460,10 @@ where
                     None
                 };
 
-                let filtered = think_filter.push("");
+                let flushed = think_filter.push("");
+                let mut filtered = tool_turn_text;
+                filtered.content.push_str(&flushed.content);
+                filtered.thinking.push_str(&flushed.thinking);
                 let mut flush_thinking = String::new();
                 if !saw_structured_reasoning {
                     flush_thinking.push_str(&pending_inline_thinking);
@@ -4613,6 +4638,76 @@ data: [DONE]"#;
 
         assert_eq!(thinking, "tool thought");
         assert_eq!(tool_calls, 1);
+        Ok(())
+    }
+
+    async fn stream_text_and_tool_names(
+        response_lines: &str,
+    ) -> anyhow::Result<(Vec<String>, Vec<Message>)> {
+        let lines: Vec<String> = response_lines.lines().map(|s| s.to_string()).collect();
+        let response_stream = tokio_stream::iter(lines.into_iter().map(Ok));
+        let mut messages = std::pin::pin!(response_to_streaming_message(response_stream));
+
+        let mut sequence = Vec::new();
+        let mut history = Vec::new();
+        while let Some(result) = messages.next().await {
+            let (message, _usage) = result?;
+            if let Some(msg) = message {
+                for content in &msg.content {
+                    match content {
+                        MessageContent::Text(t) => sequence.push(format!("text:{}", t.text)),
+                        MessageContent::ToolRequest(request) => {
+                            let call = request.tool_call.as_ref().expect("tool call should parse");
+                            sequence.push(format!("tool:{}", call.name));
+                        }
+                        _ => {}
+                    }
+                }
+                history.push(msg);
+            }
+        }
+        Ok((sequence, history))
+    }
+
+    #[tokio::test]
+    async fn test_streaming_keeps_text_sent_in_the_same_chunk_as_a_tool_call_start(
+    ) -> anyhow::Result<()> {
+        let response_lines = concat!(
+            "data: {\"id\":\"x\",\"object\":\"chat.completion.chunk\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"Let me check.\",\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"get_weather\",\"arguments\":\"\"}}]},\"finish_reason\":null}]}\n",
+            "data: {\"id\":\"x\",\"object\":\"chat.completion.chunk\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{\\\"city\\\":\"}}]},\"finish_reason\":null}]}\n",
+            "data: {\"id\":\"x\",\"object\":\"chat.completion.chunk\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"\\\"Paris\\\"}\"}}]},\"finish_reason\":\"tool_calls\"}]}\n",
+            "data: [DONE]"
+        );
+        let (sequence, history) = stream_text_and_tool_names(response_lines).await?;
+
+        assert_eq!(sequence, vec!["text:Let me check.", "tool:get_weather"]);
+
+        assert!(history
+            .iter()
+            .all(|m| m.id.is_some() && m.id == history[0].id));
+        let tool_call = history
+            .iter()
+            .flat_map(|m| &m.content)
+            .find_map(|c| match c {
+                MessageContent::ToolRequest(r) => r.tool_call.as_ref().ok(),
+                _ => None,
+            })
+            .expect("tool request should be present");
+        assert_eq!(tool_call.arguments, Some(object!({"city": "Paris"})));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_streaming_keeps_text_sent_after_tool_call_deltas() -> anyhow::Result<()> {
+        let response_lines = concat!(
+            "data: {\"id\":\"x\",\"object\":\"chat.completion.chunk\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"get_weather\",\"arguments\":\"{\\\"city\\\":\"}}]},\"finish_reason\":null}]}\n",
+            "data: {\"id\":\"x\",\"object\":\"chat.completion.chunk\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Checking now.\",\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"\\\"Paris\\\"}\"}}]},\"finish_reason\":null}]}\n",
+            "data: {\"id\":\"x\",\"object\":\"chat.completion.chunk\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n",
+            "data: [DONE]"
+        );
+        let (sequence, _history) = stream_text_and_tool_names(response_lines).await?;
+
+        assert_eq!(sequence, vec!["text:Checking now.", "tool:get_weather"]);
         Ok(())
     }
 
