@@ -26,6 +26,9 @@ const LAST_MESSAGE_TIMESTAMP_SQL: &str = "CASE \
     WHEN s.second_last_message IS NULL THEN s.millisecond_last_message \
     ELSE MAX(s.millisecond_last_message, s.second_last_message) END";
 
+const PERSON_SESSION_TYPES: [SessionType; 3] =
+    [SessionType::User, SessionType::Scheduled, SessionType::Acp];
+
 #[derive(Debug, Default)]
 struct SessionListQuery<'a> {
     filters: SessionListFilters<'a>,
@@ -253,12 +256,24 @@ impl SessionStorage {
     }
 
     /// The sessions a person had, from any surface: `Acp` sessions come from
-    /// editors and `gosling serve`, and ACP `session/list` shows the same set.
+    /// editors and `gosling serve`.
     pub(super) async fn list_sessions(&self) -> Result<Vec<Session>> {
-        self.list_sessions_by_types(
-            Some(&[SessionType::User, SessionType::Scheduled, SessionType::Acp]),
-            SessionArchiveState::Active,
-        )
+        self.list_sessions_by_types(Some(&PERSON_SESSION_TYPES), SessionArchiveState::Active)
+            .await
+    }
+
+    /// [`Self::list_sessions`] under the rule ACP `session/list` applies:
+    /// sessions that never recorded a message are left out.
+    pub(super) async fn list_sessions_with_messages(&self) -> Result<Vec<Session>> {
+        self.list_sessions_matching(SessionListQuery {
+            filters: SessionListFilters {
+                types: Some(&PERSON_SESSION_TYPES),
+                archive_state: SessionArchiveState::Active,
+                only_sessions_with_messages: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        })
         .await
     }
 }
@@ -430,6 +445,9 @@ mod tests {
 
         let unpaged = sm.list_sessions().await.unwrap();
         assert_matches_activity(&unpaged, &expected);
+
+        let unpaged_with_messages = sm.list_sessions_with_messages().await.unwrap();
+        assert_matches_activity(&unpaged_with_messages, &with_messages);
     }
 
     #[tokio::test]

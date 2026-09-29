@@ -3,6 +3,7 @@
 //! (GSL-PT-20260927-S11).
 
 use gosling::config::GoslingMode;
+use gosling::conversation::message::Message;
 use gosling::session::{SessionManager, SessionType};
 use std::path::PathBuf;
 use std::process::{Command, Output};
@@ -28,13 +29,17 @@ async fn seed_sessions(root: &TempDir) {
         ("hidden helper", SessionType::Hidden),
         ("terminal shell", SessionType::Terminal),
     ] {
-        sessions
+        let session = sessions
             .create_session(
                 PathBuf::from("/tmp/session-list-types"),
                 name.to_string(),
                 session_type,
                 GoslingMode::default(),
             )
+            .await
+            .unwrap();
+        sessions
+            .add_message(&session.id, &Message::user().with_text("hello"))
             .await
             .unwrap();
     }

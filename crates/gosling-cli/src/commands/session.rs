@@ -234,7 +234,7 @@ pub async fn handle_session_list(
     limit: Option<usize>,
 ) -> Result<()> {
     let session_manager = SessionManager::instance();
-    let mut sessions = session_manager.list_sessions().await?;
+    let mut sessions = session_manager.list_sessions_with_messages().await?;
 
     if let Some(ref dir) = working_dir {
         let roots = working_dir_filter_roots(dir);

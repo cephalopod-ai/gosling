@@ -1257,6 +1257,10 @@ impl SessionManager {
         self.storage.list_sessions().await
     }
 
+    pub async fn list_sessions_with_messages(&self) -> Result<Vec<Session>> {
+        self.storage.list_sessions_with_messages().await
+    }
+
     pub async fn list_sessions_by_types(&self, types: &[SessionType]) -> Result<Vec<Session>> {
         self.storage
             .list_sessions_by_types(Some(types), SessionArchiveState::Active)

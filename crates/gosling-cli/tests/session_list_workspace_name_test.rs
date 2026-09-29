@@ -3,6 +3,7 @@
 //! misattributed (GSL-PT-20260927-G105).
 
 use gosling::config::GoslingMode;
+use gosling::conversation::message::Message;
 use gosling::session::{SessionManager, SessionType};
 use gosling::workspace::WorkspaceSessionContext;
 use std::path::{Path, PathBuf};
@@ -88,6 +89,10 @@ async fn seed_session(data_dir: &Path, folder: &Path, workspace_id: &str, snapsh
             },
         )
         .apply()
+        .await
+        .unwrap();
+    sessions
+        .add_message(&session.id, &Message::user().with_text("hello"))
         .await
         .unwrap();
 }
