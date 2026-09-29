@@ -3379,7 +3379,8 @@ mod tests {
 
         let help = String::from_utf8(buffer).expect("utf8");
         assert!(help.contains("gosling term init nu"));
-        assert!(help.contains("Supported for zsh, bash, and nu"));
+        assert!(help.contains("Supported for zsh, bash 4.0 or newer"));
+        assert!(help.contains("macOS /bin/bash), and nu."));
     }
 
     #[test]
