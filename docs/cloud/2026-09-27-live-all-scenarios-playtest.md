@@ -228,7 +228,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Medium | S03 | `--max-tool-repetitions` denies repeats but never ends the turn (1000 provider calls) | fixed (R3) |
 | Medium | S04 | A one-off `GOSLING_CONTEXT_LIMIT` is frozen into a resumed session forever | fixed (R2) |
 | Medium | S07 | ACP: selecting the model already in use still runs a full provider transition | fixed (R9) |
-| Medium | S11 | Sessions created over `gosling serve`/`gosling acp` are invisible to `gosling session list` | open — queued R8b |
+| Medium | S11 | Sessions created over `gosling serve`/`gosling acp` are invisible to `gosling session list` | fixed (R8b) |
 | Medium | S13 | Corrupt config.yaml silently drops `GOSLING_DISABLE_KEYRING: true` (keyring re-enabled) (suspicion) | fixed (R5) |
 | Medium | S18 | Corrupt permission.yaml: CLI/ACP panic, serve hangs `initialize`, `doctor` stays green, denials mislead | fixed (R6) |
 | Medium | S20 | Subdirectory AGENTS.md from any touched directory (including ignored ones) is injected into the user turn | fixed (R7) |
