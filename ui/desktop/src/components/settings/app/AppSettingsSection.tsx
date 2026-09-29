@@ -412,6 +412,7 @@ export default function AppSettingsSection({ scrollToSection }: AppSettingsSecti
               <Switch
                 checked={notificationsEnabled}
                 onCheckedChange={handleNotificationsToggle}
+                aria-label={intl.formatMessage(i18n.taskNotifications)}
                 variant="mono"
               />
             </div>
@@ -428,6 +429,7 @@ export default function AppSettingsSection({ scrollToSection }: AppSettingsSecti
               <Switch
                 checked={menuBarIconEnabled}
                 onCheckedChange={handleMenuBarIconToggle}
+                aria-label={intl.formatMessage(i18n.menuBarIcon)}
                 variant="mono"
               />
             </div>
@@ -446,6 +448,7 @@ export default function AppSettingsSection({ scrollToSection }: AppSettingsSecti
                   disabled={isDockSwitchDisabled}
                   checked={dockIconEnabled}
                   onCheckedChange={handleDockIconToggle}
+                  aria-label={intl.formatMessage(i18n.dockIcon)}
                   variant="mono"
                 />
               </div>
@@ -464,6 +467,7 @@ export default function AppSettingsSection({ scrollToSection }: AppSettingsSecti
               <Switch
                 checked={wakelockEnabled}
                 onCheckedChange={handleWakelockToggle}
+                aria-label={intl.formatMessage(i18n.preventSleep)}
                 variant="mono"
               />
             </div>
@@ -482,6 +486,7 @@ export default function AppSettingsSection({ scrollToSection }: AppSettingsSecti
                 <Switch
                   checked={showPricing}
                   onCheckedChange={handleShowPricingToggle}
+                  aria-label={intl.formatMessage(i18n.costTracking)}
                   variant="mono"
                 />
               </div>

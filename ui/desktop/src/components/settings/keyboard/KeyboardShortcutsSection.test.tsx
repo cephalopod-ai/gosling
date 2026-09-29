@@ -15,9 +15,23 @@ const rowFor = (label: string): HTMLElement =>
 
 const startRecording = async (label: string) => {
   const user = userEvent.setup();
-  await user.click(within(rowFor(label)).getByRole('button', { name: 'Change' }));
+  await user.click(within(rowFor(label)).getByRole('button', { name: `Change ${label} shortcut` }));
   return screen.getByText('Press shortcut...').parentElement!;
 };
+
+const shortcutLabels = [
+  'Focus Gosling Window',
+  'Quick Launcher',
+  'New Chat',
+  'New Chat Window',
+  'Open Directory',
+  'Settings',
+  'Find',
+  'Find Next',
+  'Find Previous',
+  'Always on Top',
+  'Toggle Navigation',
+];
 
 describe('KeyboardShortcutsSection', () => {
   beforeEach(() => {
@@ -60,5 +74,17 @@ describe('KeyboardShortcutsSection', () => {
       expect.objectContaining({ toggleNavigation: 'CommandOrControl+Shift+K' })
     );
     expect(await screen.findByText('Restart Required')).toBeInTheDocument();
+  });
+
+  it('names each binding Change button and enable switch after the binding', async () => {
+    render(<KeyboardShortcutsSection />, { wrapper: IntlTestWrapper });
+    await screen.findByRole('heading', { name: 'New Chat' });
+
+    for (const label of shortcutLabels) {
+      const row = rowFor(label);
+      expect(within(row).getByRole('button', { name: `Change ${label} shortcut` })).toBeVisible();
+      expect(within(row).getByRole('switch', { name: `Enable ${label} shortcut` })).toBeChecked();
+    }
+    expect(screen.getAllByRole('switch')).toHaveLength(shortcutLabels.length);
   });
 });

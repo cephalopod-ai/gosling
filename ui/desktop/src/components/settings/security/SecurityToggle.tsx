@@ -334,6 +334,7 @@ export const SecurityToggle = () => {
           <Switch
             checked={isPromptOverridden ? promptOverrideValue : enabled}
             onCheckedChange={handleToggle}
+            aria-label={intl.formatMessage(i18n.enablePromptInjection)}
             disabled={isPromptOverridden}
             variant="mono"
           />
@@ -415,6 +416,7 @@ export const SecurityToggle = () => {
                 <Switch
                   checked={effectiveCommandClassifierEnabled}
                   onCheckedChange={handleCommandClassifierToggle}
+                  aria-label={intl.formatMessage(i18n.enableCommandInjection)}
                   disabled={!effectiveEnabled || isCommandClassifierOverridden}
                   variant="mono"
                 />
@@ -478,6 +480,7 @@ export const SecurityToggle = () => {
                 <Switch
                   checked={mlEnabled}
                   onCheckedChange={handleMlToggle}
+                  aria-label={intl.formatMessage(i18n.enablePromptInjectionMl)}
                   disabled={!effectiveEnabled}
                   variant="mono"
                 />

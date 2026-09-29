@@ -4252,5 +4252,11 @@
   },
   "credentialProfileSelector.appDefaultDetail": {
     "defaultMessage": "Uses the app's default provider credentials"
+  },
+  "keyboardShortcuts.changeShortcutFor": {
+    "defaultMessage": "Change {label} shortcut"
+  },
+  "keyboardShortcuts.enableShortcutFor": {
+    "defaultMessage": "Enable {label} shortcut"
   }
 }

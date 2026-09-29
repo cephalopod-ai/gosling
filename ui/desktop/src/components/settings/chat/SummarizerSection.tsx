@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useId, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { acpListSummarizerModels } from '../../../acp/providers';
 import { useConfig } from '../../ConfigContext';
@@ -45,6 +45,10 @@ const DEFAULT_TIMEOUT_MS = 4000;
 
 export const SummarizerSection = () => {
   const { read, upsert } = useConfig();
+  const fieldId = useId();
+  const endpointId = `${fieldId}-endpoint`;
+  const modelId = `${fieldId}-model`;
+  const timeoutId = `${fieldId}-timeout`;
 
   const [mode, setMode] = useState('off');
   const [endpoint, setEndpoint] = useState('');
@@ -210,6 +214,7 @@ export const SummarizerSection = () => {
                     value={option.key}
                     checked={checked}
                     onChange={() => handleModeChange(option.key)}
+                    aria-label={option.label}
                     className="peer sr-only"
                   />
                   <div
@@ -228,10 +233,14 @@ export const SummarizerSection = () => {
       {showEndpointFields && (
         <div className="space-y-3 px-2">
           <div className="flex flex-col">
-            <label className="text-sm font-medium mb-1 block text-text-primary">
+            <label
+              htmlFor={endpointId}
+              className="text-sm font-medium mb-1 block text-text-primary"
+            >
               Endpoint (local OpenAI-compatible URL)
             </label>
             <Input
+              id={endpointId}
               value={endpoint}
               placeholder={DEFAULT_ENDPOINT_PLACEHOLDER}
               onChange={(e) => setEndpoint(e.target.value)}
@@ -242,7 +251,9 @@ export const SummarizerSection = () => {
 
           <div className="flex flex-col">
             <div className="flex items-center justify-between mb-1">
-              <label className="text-sm font-medium text-text-primary">Model</label>
+              <label htmlFor={modelId} className="text-sm font-medium text-text-primary">
+                Model
+              </label>
               <Button
                 type="button"
                 variant="ghost"
@@ -257,6 +268,7 @@ export const SummarizerSection = () => {
             </div>
             {modelOptions.length > 0 ? (
               <Select
+                inputId={modelId}
                 options={visibleModelOptions}
                 value={model ? { value: model, label: model } : null}
                 onChange={handleModelSelect}
@@ -266,6 +278,7 @@ export const SummarizerSection = () => {
               />
             ) : (
               <Input
+                id={modelId}
                 value={model}
                 placeholder={DEFAULT_MODEL_PLACEHOLDER}
                 onChange={(e) => setModel(e.target.value)}
@@ -279,8 +292,14 @@ export const SummarizerSection = () => {
           </div>
 
           <div className="flex flex-col">
-            <label className="text-sm font-medium mb-1 block text-text-primary">Timeout (ms)</label>
+            <label
+              htmlFor={timeoutId}
+              className="text-sm font-medium mb-1 block text-text-primary"
+            >
+              Timeout (ms)
+            </label>
             <Input
+              id={timeoutId}
               type="number"
               min={1}
               value={timeoutMs}

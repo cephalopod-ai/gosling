@@ -67,4 +67,13 @@ describe('ModeSection', () => {
     await waitFor(() => expect(radio('approve').checked).toBe(true));
     expect(radio('auto').checked).toBe(false);
   });
+
+  it('names every default mode radio after its visible label', async () => {
+    renderSection({ GOSLING_MODE: 'smart_approve' });
+
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'Smart' })).toBeChecked());
+    for (const name of ['Autonomous', 'Manual', 'Chat only']) {
+      expect(screen.getByRole('radio', { name })).not.toBeChecked();
+    }
+  });
 });

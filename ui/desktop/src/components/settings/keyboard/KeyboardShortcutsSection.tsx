@@ -159,6 +159,14 @@ const i18n = defineMessages({
     id: 'keyboardShortcuts.change',
     defaultMessage: 'Change',
   },
+  changeShortcutFor: {
+    id: 'keyboardShortcuts.changeShortcutFor',
+    defaultMessage: 'Change {label} shortcut',
+  },
+  enableShortcutFor: {
+    id: 'keyboardShortcuts.enableShortcutFor',
+    defaultMessage: 'Enable {label} shortcut',
+  },
   resetToDefaultsHeading: {
     id: 'keyboardShortcuts.resetToDefaultsHeading',
     defaultMessage: 'Reset to Defaults',
@@ -531,13 +539,12 @@ export default function KeyboardShortcutsSection() {
             {configs.map((config) => {
               const shortcut = shortcuts[config.key];
               const isEditing = editingKey === config.key;
+              const label = intl.formatMessage(config.label);
 
               return (
                 <div key={config.key} className="flex items-center justify-between">
                   <div className="flex-1">
-                    <h3 className="text-text-primary text-xs">
-                      {intl.formatMessage(config.label)}
-                    </h3>
+                    <h3 className="text-text-primary text-xs">{label}</h3>
                     <p className="text-xs text-text-secondary max-w-md mt-[2px]">
                       {intl.formatMessage(config.description)}
                     </p>
@@ -558,6 +565,7 @@ export default function KeyboardShortcutsSection() {
                           variant="secondary"
                           size="sm"
                           onClick={() => handleEdit(config.key)}
+                          aria-label={intl.formatMessage(i18n.changeShortcutFor, { label })}
                           className="text-xs"
                         >
                           {intl.formatMessage(i18n.change)}
@@ -565,6 +573,7 @@ export default function KeyboardShortcutsSection() {
                         <Switch
                           checked={shortcut !== null}
                           onCheckedChange={(checked) => handleToggle(config.key, checked)}
+                          aria-label={intl.formatMessage(i18n.enableShortcutFor, { label })}
                           variant="mono"
                         />
                       </>

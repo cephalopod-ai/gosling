@@ -46,6 +46,7 @@ const ThemeSelector: React.FC<ThemeSelectorProps> = ({
         <Button
           data-testid="light-mode-button"
           onClick={() => setUserThemePreference('light')}
+          aria-pressed={userThemePreference === 'light'}
           className={`flex items-center justify-center gap-1 p-2 rounded-md border transition-colors text-xs ${
             userThemePreference === 'light'
               ? 'bg-background-inverse text-text-inverse border-text-inverse hover:!bg-background-inverse hover:!text-text-inverse'
@@ -61,6 +62,7 @@ const ThemeSelector: React.FC<ThemeSelectorProps> = ({
         <Button
           data-testid="dark-mode-button"
           onClick={() => setUserThemePreference('dark')}
+          aria-pressed={userThemePreference === 'dark'}
           className={`flex items-center justify-center gap-1 p-2 rounded-md border transition-colors text-xs ${
             userThemePreference === 'dark'
               ? 'bg-background-inverse text-text-inverse border-text-inverse hover:!bg-background-inverse hover:!text-text-inverse'
@@ -76,6 +78,7 @@ const ThemeSelector: React.FC<ThemeSelectorProps> = ({
         <Button
           data-testid="system-mode-button"
           onClick={() => setUserThemePreference('system')}
+          aria-pressed={userThemePreference === 'system'}
           className={`flex items-center justify-center gap-1 p-2 rounded-md border transition-colors text-xs ${
             userThemePreference === 'system'
               ? 'bg-background-inverse text-text-inverse border-text-inverse hover:!bg-background-inverse hover:!text-text-inverse'

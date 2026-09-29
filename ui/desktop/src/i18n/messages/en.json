@@ -1748,11 +1748,17 @@
   "keyboardShortcuts.change": {
     "defaultMessage": "Change"
   },
+  "keyboardShortcuts.changeShortcutFor": {
+    "defaultMessage": "Change {label} shortcut"
+  },
   "keyboardShortcuts.disabled": {
     "defaultMessage": "Disabled"
   },
   "keyboardShortcuts.dismiss": {
     "defaultMessage": "Dismiss"
+  },
+  "keyboardShortcuts.enableShortcutFor": {
+    "defaultMessage": "Enable {label} shortcut"
   },
   "keyboardShortcuts.findDescription": {
     "defaultMessage": "Open search in conversation"
