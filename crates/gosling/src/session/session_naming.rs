@@ -71,12 +71,19 @@ fn extract_short_title(text: &str) -> String {
     text.to_string()
 }
 
+/// Messages Gosling adds for the model alone (handoff checkpoints and their
+/// acknowledgement prompts) are user-role but hidden from the operator, so they
+/// must never name the session or count towards naming.
+pub(crate) fn is_operator_message(message: &Message) -> bool {
+    message.role == rmcp::model::Role::User && message.metadata.user_visible
+}
+
 /// Returns the first 3 user messages as strings for session naming,
 /// filtering out assistant-only content (e.g. preprompt blocks).
 fn get_initial_user_messages(messages: &Conversation) -> Vec<String> {
     messages
         .iter()
-        .filter(|m| m.role == rmcp::model::Role::User)
+        .filter(|m| is_operator_message(m))
         .take(MSG_COUNT_FOR_SESSION_NAME_GENERATION)
         .map(|m| {
             m.content
@@ -95,7 +102,7 @@ fn get_initial_user_messages(messages: &Conversation) -> Vec<String> {
 fn get_preprompt_context(messages: &Conversation) -> String {
     let context = messages
         .iter()
-        .filter(|m| m.role == rmcp::model::Role::User)
+        .filter(|m| is_operator_message(m))
         .take(1)
         .flat_map(|m| m.content.iter())
         .filter_map(|c| {
@@ -213,6 +220,27 @@ mod tests {
 
         assert_eq!(context[0].chars().count(), SESSION_NAME_CONTEXT_MAX_CHARS);
         assert_eq!(context[1], "list files");
+    }
+
+    // GSL-PT-20260927-A13: a model switch's checkpoint named the session.
+    #[test]
+    fn session_name_comes_from_operator_text_not_handoff_checkpoints() {
+        let checkpoint = crate::session::handoff::handoff_bootstrap_message(
+            &gosling_sdk_types::session_handoff::SessionHandoffSnapshotV1Dto::default(),
+        )
+        .unwrap();
+        let conversation = Conversation::new_unvalidated(vec![
+            checkpoint,
+            Message::user().with_text("Say HELLO"),
+            Message::assistant().with_text("HELLO"),
+            Message::user().with_text("Say GOODBYE"),
+        ]);
+
+        assert_eq!(
+            get_initial_user_messages(&conversation),
+            vec!["Say HELLO".to_string(), "Say GOODBYE".to_string()]
+        );
+        assert!(!get_preprompt_context(&conversation).contains("Gosling session checkpoint"));
     }
 
     #[test]

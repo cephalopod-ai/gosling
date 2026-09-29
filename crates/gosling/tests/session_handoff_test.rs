@@ -759,6 +759,101 @@ async fn provider_transition_rebases_current_usage_and_preserves_accumulated_usa
     assert_eq!(transitioned.accumulated_usage, accumulated);
 }
 
+async fn switch_model_then_prompt(
+    manager: &SessionManager,
+    session_id: &str,
+    prompt: &str,
+) -> (Conversation, Option<String>) {
+    let snapshot = SessionHandoffBuilder::new(manager)
+        .build(
+            session_id,
+            "openai",
+            "gpt-4o-mini",
+            128_000,
+            ProviderCapabilities::gosling_managed(),
+            SessionHandoffTriggerDto::ModelChangeRequiresRecreation,
+        )
+        .await
+        .unwrap();
+    let prepared = manager
+        .prepare_handoff_snapshot(snapshot, None)
+        .await
+        .unwrap();
+    manager
+        .update_handoff_status(
+            &prepared.snapshot_id,
+            SessionHandoffStatusDto::Activating,
+            None,
+        )
+        .await
+        .unwrap();
+    manager
+        .commit_provider_transition(
+            &prepared.snapshot_id,
+            "openai",
+            ModelConfig::new("gpt-4o-mini"),
+            GoslingMode::Approve,
+        )
+        .await
+        .unwrap();
+    manager
+        .add_message(session_id, &Message::user().with_text(prompt))
+        .await
+        .unwrap();
+    let conversation = manager
+        .get_session(session_id, true)
+        .await
+        .unwrap()
+        .conversation
+        .unwrap();
+    gosling::session::handoff::conversation_for_pending_handoff(manager, session_id, &conversation)
+        .await
+        .unwrap()
+}
+
+// GSL-PT-20260927-A13: `/model` on a fresh session prefixed the first prompt
+// with a ~3 KB checkpoint that covered nothing.
+#[tokio::test]
+async fn model_switch_on_an_empty_session_sends_the_prompt_without_a_checkpoint() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let manager = SessionManager::new(temp_dir.path().to_path_buf());
+    let session_id = source_session(&manager).await;
+
+    let (delivered, pending_id) =
+        switch_model_then_prompt(&manager, &session_id, "Say HELLO").await;
+
+    assert!(pending_id.is_none());
+    assert_eq!(delivered.messages().len(), 1);
+    assert_eq!(delivered.messages()[0].as_concat_text(), "Say HELLO");
+    let stored = manager.get_session(&session_id, true).await.unwrap();
+    assert_eq!(stored.conversation.unwrap().messages().len(), 1);
+    assert_eq!(stored.usage.total_tokens, Some(0));
+}
+
+#[tokio::test]
+async fn model_switch_on_a_session_with_history_still_carries_its_checkpoint() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let manager = SessionManager::new(temp_dir.path().to_path_buf());
+    let session_id = source_session(&manager).await;
+    manager
+        .add_message(
+            &session_id,
+            &Message::user().with_text("remember the MARKER-A13-KEEP objective"),
+        )
+        .await
+        .unwrap();
+
+    let (delivered, pending_id) =
+        switch_model_then_prompt(&manager, &session_id, "Say HELLO").await;
+
+    assert!(pending_id.is_some());
+    assert_eq!(delivered.messages().len(), 2);
+    let checkpoint = delivered.messages()[0].as_concat_text();
+    assert!(checkpoint.starts_with("# Gosling session checkpoint"));
+    assert!(checkpoint.contains("MARKER-A13-KEEP"));
+    assert_eq!(delivered.messages()[1].as_concat_text(), "Say HELLO");
+}
+
 #[tokio::test]
 async fn provider_transition_preserves_unknown_message_metadata() {
     let temp_dir = tempfile::tempdir().unwrap();

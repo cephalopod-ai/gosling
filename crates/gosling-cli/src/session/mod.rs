@@ -516,6 +516,7 @@ impl CliSession {
         let mut editor = self.create_editor()?;
         let history_manager = HistoryManager::new(self.persist_local_state);
         history_manager.load(&mut editor);
+        let mut typeahead = input::TypeaheadBuffer::default();
 
         loop {
             self.display_context_usage().await?;
@@ -533,7 +534,7 @@ impl CliSession {
                 .collect();
 
             self.run_status_hook("waiting").await;
-            let input = input::get_input(&mut editor, Some(&conversation_strings))?;
+            let input = input::get_input(&mut editor, &mut typeahead, Some(&conversation_strings))?;
             if matches!(input, InputResult::Exit) {
                 break;
             }

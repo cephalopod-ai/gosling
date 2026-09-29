@@ -179,14 +179,14 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Medium | B01 | Aborted `gosling configure` persists the new host/API key while reporting "the active provider was not changed" | fixed (R9) |
 | Medium | B02 | Re-running `configure` preselects the first listed model, not the saved one; Enter silently replaces the saved model | fixed (R9) |
 | Medium | B03 | `configure` cannot complete when the model list cannot be fetched; no manual model entry is offered | fixed (R9) |
-| Medium | B04 | Rate-limit backoff is invisible: Retry-After waits show only a generic spinner (CLI) and nothing (ACP) | open — queued R9 |
-| Medium | B05 | `OPENAI_TIMEOUT` is per attempt; a stalled provider errors only after ≈4× the timeout plus backoff, with no feedback | open — queued R9 |
+| Medium | B04 | Rate-limit backoff is invisible: Retry-After waits show only a generic spinner (CLI) and nothing (ACP) | fixed (R9) |
+| Medium | B05 | `OPENAI_TIMEOUT` is per attempt; a stalled provider errors only after ≈4× the timeout plus backoff, with no feedback | fixed (retries announced; per-attempt meaning documented) (R9) |
 | Medium | B06 | ACP streams text from retracted (interrupted) attempts with no retraction signal; live transcript differs from persisted/replayed history | fixed (R1b) |
 | Medium | B09 | Compaction shrink ladder bottoms out at payload/8, so large histories never reach small chunks | fixed (R2) |
 | Medium | B10 | Compaction completion notice under-reports the resulting context (system prompt and tool schemas excluded) | fixed (R2) |
 | Medium | B11 | Malformed-stream errors echo raw provider lines unredacted (incl. bearer/API-key-like strings) into the error, session history and log | fixed (R5) |
 | Medium | B18 | CLI cost line shows only the last request's cost without saying so; `--stats` silently ignored with json/stream-json | fixed (R8a) |
-| Medium | B21 | Rejected Copilot token refresh surfaces as "failed to get api info after 3 attempts" + "Please retry"; no re-auth request | open — queued R9 |
+| Medium | B21 | Rejected Copilot token refresh surfaces as "failed to get api info after 3 attempts" + "Please retry"; no re-auth request | fixed (R9) |
 | Medium | C01 | ACP client `mcpServers` replace all of gosling's configured extensions | open — queued R10 |
 | Medium | C02 | A hanging MCP extension blocks session start for 300 s with no feedback (run/ACP) | open — queued R11 |
 | Medium | C03 | Removed MCP extensions come back when an older session is resumed/loaded | open — queued R11 |
@@ -239,7 +239,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | A09 | Opening a session with `--resume` and exiting without sending re-stamps `updated_at` | fixed (R4) |
 | Low | A10 | Provider picker shows a cryptic "Groq (d)" label | open — queued R9 |
 | Low | A11 | `gosling session export --help` documents resume semantics that don't apply | open — queued R8b |
-| Low | A13 | `/model` switch injects a ~3 KB "Gosling session checkpoint" into the next prompt (even for an empty session) and the session title is generated from it | open — queued R9 |
+| Low | A13 | `/model` switch injects a ~3 KB "Gosling session checkpoint" into the next prompt (even for an empty session) and the session title is generated from it | fixed (R9) |
 | Low | A14 | Documented slash commands without their argument are reported as "Unknown command" | open — queued R8b |
 | Low | A15 | Version/help text gaps: `--version` prints " 1.3.0" with no program name; undocumented `session diagnostics` and `shell-validate` options | open — queued R8b |
 | Low | A18 | Tool output and the following assistant text are printed with no separator (text and quiet modes) | fixed (R8a) |
@@ -247,7 +247,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | A20 | (exploratory) `gosling secret` reports the wrong storage location and "removes" servers that don't exist | fixed (R5) |
 | Low | A21 | (exploratory) `shell-validate` has side effects and accepts unknown builtins | fixed (R7) |
 | Low | B07 | CLI stdout keeps the retracted partial attempt (text/-q/stream-json) | fixed (R1b) |
-| Low | B12 | Auth failures end with "Please retry if you think this is a transient or recoverable error" | open — queued R9 |
+| Low | B12 | Auth failures end with "Please retry if you think this is a transient or recoverable error" | fixed (R9) |
 | Low | B13 | Empty or space-containing `--model` / `GOSLING_MODEL` accepted and sent verbatim | open — queued R9 |
 | Low | B14 | CLI output hygiene (cosmetic) | fixed (typed-input echo deferred: needs design) (R8a) |
 | Low | B15 | stream-json on provider failure has no terminal `error`/`complete` event | fixed (R8a) |
@@ -340,8 +340,8 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | S01 | Stale turn-lease rows left by concurrent `gosling run` processes | fixed (R4) |
 | Low | S02 | Interactive type-ahead under load: Enter becomes a newline, a later `/exit` is sent to the model | open — queued R8b |
 | Low | S05 | `session -r --history` renders at ~32 ms per message (6.7 s for 206 messages) | open — queued R8b |
-| Low | S08 | `/model` typed during a stream queues, and every switch persists a hidden checkpoint | open — queued R9 |
-| Low | S09 | Markdown export includes hidden internal checkpoint messages | open — queued R9 |
+| Low | S08 | `/model` typed during a stream queues, and every switch persists a hidden checkpoint | fixed (R9) |
+| Low | S09 | Markdown export includes hidden internal checkpoint messages | fixed (R9) |
 | Low | S10 | kill -9 mid-stream leaves the truncated reply stored as a normal, complete assistant message | fixed (R1a) |
 | Low | S12 | Corrupt config.yaml: `run`/`doctor` blame "No provider configured" | fixed (R5) |
 | Low | S16 | Empty sessions: listed by the CLI, hidden by ACP; a failed `run` leaves one behind | failed-start part fixed; listing parity queued (R4/R8b) |

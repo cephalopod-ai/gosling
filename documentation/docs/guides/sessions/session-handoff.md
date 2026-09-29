@@ -44,6 +44,10 @@ The server supplies these labels from provider capabilities. Desktop does not gu
 names. Built-in adapters currently use summarized handoff or new context; native resume/import is an
 adapter contract for providers that can verify it.
 
+A switch on a chat with no messages yet has nothing to carry over, so its delivery method is new
+context: no checkpoint is stored or sent, and your first prompt reaches the model on its own.
+Checkpoints are never used to generate the session title.
+
 ## What the checkpoint contains
 
 The checkpoint can include the current objective and latest request, verified completed work,

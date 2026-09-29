@@ -116,6 +116,7 @@ fn should_use_editor_always(
 
 pub fn get_input(
     editor: &mut Editor<GoslingCompleter, rustyline::history::DefaultHistory>,
+    typeahead: &mut TypeaheadBuffer,
     conversation_messages: Option<&Vec<String>>,
 ) -> Result<InputResult> {
     let config = Config::global();
@@ -142,18 +143,30 @@ pub fn get_input(
 
     #[cfg(unix)]
     if std::io::stdin().is_terminal() {
-        match take_typeahead(libc::STDIN_FILENO) {
-            Some(Typeahead::Line(line)) => {
+        match typeahead.take(libc::STDIN_FILENO) {
+            Some((Typeahead::Line(line), superseded)) => {
+                for skipped in &superseded {
+                    println!("> {skipped}");
+                    editor.add_history_entry(skipped.as_str())?;
+                }
+                if !superseded.is_empty() {
+                    println!(
+                        "Skipped {} queued /model command(s); only the last one is applied.",
+                        superseded.len()
+                    );
+                }
                 println!("> {line}");
                 if !line.trim().is_empty() {
                     editor.add_history_entry(line.as_str())?;
                 }
                 return Ok(parse_inline_input(&line));
             }
-            Some(Typeahead::Eof) => return Ok(InputResult::Exit),
+            Some((Typeahead::Eof, _)) => return Ok(InputResult::Exit),
             None => {}
         }
     }
+    #[cfg(not(unix))]
+    let _ = typeahead;
 
     let completion_cache = editor
         .helper()
@@ -196,6 +209,48 @@ pub fn get_input(
 enum Typeahead {
     Line(String),
     Eof,
+}
+
+/// Holds a typed-ahead line that was read from the terminal but not yet submitted.
+#[derive(Default)]
+pub struct TypeaheadBuffer {
+    #[cfg(unix)]
+    held: Option<Typeahead>,
+}
+
+#[cfg(unix)]
+impl TypeaheadBuffer {
+    /// Takes the next typed-ahead line, collapsing a run of queued `/model <name>` lines to the
+    /// last one. Each switch is a full provider transition that persists a checkpoint, so replaying
+    /// a burst typed during a reply would bloat the session; the skipped lines are returned.
+    fn take(&mut self, fd: libc::c_int) -> Option<(Typeahead, Vec<String>)> {
+        let mut current = self.held.take().or_else(|| take_typeahead(fd))?;
+        let mut superseded = Vec::new();
+        while let Typeahead::Line(line) = &current {
+            if !is_model_switch(line) {
+                break;
+            }
+            match take_typeahead(fd) {
+                Some(Typeahead::Line(next)) if is_model_switch(&next) => {
+                    superseded.push(line.clone());
+                    current = Typeahead::Line(next);
+                }
+                next => {
+                    self.held = next;
+                    break;
+                }
+            }
+        }
+        Some((current, superseded))
+    }
+}
+
+#[cfg(unix)]
+fn is_model_switch(line: &str) -> bool {
+    line.trim()
+        .strip_prefix("/model ")
+        .map(str::trim)
+        .is_some_and(|name| !name.is_empty() && !name.contains(char::is_whitespace))
 }
 
 /// Takes one line the user finished typing while no prompt was active.
@@ -591,6 +646,60 @@ mod tests {
 
         write(b"unfinished");
         assert_eq!(take_typeahead(slave), None);
+
+        // SAFETY: both descriptors came from openpty above.
+        unsafe {
+            libc::close(slave);
+            libc::close(master);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_queued_model_switches_collapse_to_the_last_one() {
+        let (mut master, mut slave) = (0, 0);
+        // SAFETY: both out-pointers are valid; name, termios and winsize are optional.
+        let opened = unsafe {
+            libc::openpty(
+                &mut master,
+                &mut slave,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        };
+        assert_eq!(opened, 0);
+        let write = |bytes: &[u8]| {
+            // SAFETY: `bytes` is valid for its length and `master` is open.
+            let written = unsafe { libc::write(master, bytes.as_ptr().cast(), bytes.len()) };
+            assert_eq!(written, bytes.len() as isize);
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        };
+        let line = |text: &str| Typeahead::Line(text.to_string());
+        let mut typeahead = TypeaheadBuffer::default();
+
+        write(b"/model model-b\r/model model-a\r/model model-b\r/model\r/model model-a\r/model model-b\rhello\r");
+        let (switch, superseded) = typeahead.take(slave).unwrap();
+        assert_eq!(switch, line("/model model-b"));
+        assert_eq!(superseded, vec!["/model model-b", "/model model-a"]);
+        assert_eq!(typeahead.take(slave), Some((line("/model"), vec![])));
+        let (switch, superseded) = typeahead.take(slave).unwrap();
+        assert_eq!(switch, line("/model model-b"));
+        assert_eq!(superseded, vec!["/model model-a"]);
+        assert_eq!(typeahead.take(slave), Some((line("hello"), vec![])));
+        assert_eq!(typeahead.take(slave), None);
+
+        write(b"/model model-a\r");
+        let (switch, superseded) = typeahead.take(slave).unwrap();
+        assert!(superseded.is_empty());
+        let Typeahead::Line(switch) = switch else {
+            panic!("expected the typed-ahead switch");
+        };
+        assert!(matches!(
+            parse_inline_input(&switch),
+            InputResult::Model(Some(model)) if model == "model-a"
+        ));
+        assert_eq!(typeahead.take(slave), None);
 
         // SAFETY: both descriptors came from openpty above.
         unsafe {

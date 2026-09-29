@@ -901,6 +901,24 @@ mod session_export_tests {
             .unwrap()
             .contains("plan_history_v1"));
     }
+
+    #[test]
+    fn markdown_export_leaves_out_messages_hidden_from_the_user() {
+        let messages = vec![
+            Message::user()
+                .with_text("# Gosling session checkpoint {\"trigger\": \"model_change\"}")
+                .agent_only(),
+            Message::user().with_text("Say HELLO"),
+            Message::assistant().with_text("HELLO"),
+        ];
+
+        let markdown = export_session_to_markdown(messages, &"switch".to_string());
+
+        assert!(!markdown.contains("Gosling session checkpoint"));
+        assert!(markdown.contains("*Total messages: 2*"));
+        assert!(markdown.contains("Say HELLO"));
+        assert!(markdown.contains("HELLO"));
+    }
 }
 
 #[cfg(all(test, unix))]
@@ -976,6 +994,10 @@ fn export_session_to_markdown(
 
     markdown_output.push_str(&format!("# Session Export: {}\n\n", session_name));
 
+    let messages: Vec<_> = messages
+        .into_iter()
+        .filter(|message| message.is_user_visible())
+        .collect();
     if messages.is_empty() {
         markdown_output.push_str("*(This session has no messages)*\n");
         return markdown_output;

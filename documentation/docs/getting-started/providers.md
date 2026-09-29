@@ -296,6 +296,7 @@ Need to connect to multiple OpenAI-compatible endpoints? [Configure custom provi
 | `OPENAI_PROJECT` | No | Project identifier for resource management |
 | `OPENAI_CUSTOM_HEADERS` | No | Additional headers to include in the request. Can be set via environment variable, configuration file, or CLI, in the format `HEADER_A=VALUE_A,HEADER_B=VALUE_B`. |
 | `OPENAI_STORE` | No | Whether to persist the generated Responses API response for later retrieval via API. Defaults to `false`. |
+| `OPENAI_TIMEOUT` | No | Seconds the endpoint may go without sending any data before a request attempt is abandoned (defaults to `600`). It measures a stall within one attempt, not the length of the turn, so a long reply that keeps streaming is not cut off. A timed-out attempt is retried up to 3 times after a short backoff, and each retry is announced (`The provider request timed out. Retrying in 2s (1/3)...`), so an endpoint that never answers fails after roughly four times this value. Connecting is bounded separately at 30 seconds. |
 
 #### Example Configurations
 
