@@ -186,7 +186,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Medium | B10 | Compaction completion notice under-reports the resulting context (system prompt and tool schemas excluded) | fixed (R2) |
 | Medium | B11 | Malformed-stream errors echo raw provider lines unredacted (incl. bearer/API-key-like strings) into the error, session history and log | fixed (R5) |
 | Medium | B18 | CLI cost line shows only the last request's cost without saying so; `--stats` silently ignored with json/stream-json | fixed (R8a) |
-| Medium | B21 | Rejected Copilot token refresh surfaces as "failed to get api info after 3 attempts" + "Please retry"; no re-auth request | open — queued R9 |
+| Medium | B21 | Rejected Copilot token refresh surfaces as "failed to get api info after 3 attempts" + "Please retry"; no re-auth request | fixed (R9) |
 | Medium | C01 | ACP client `mcpServers` replace all of gosling's configured extensions | open — queued R10 |
 | Medium | C02 | A hanging MCP extension blocks session start for 300 s with no feedback (run/ACP) | open — queued R11 |
 | Medium | C03 | Removed MCP extensions come back when an older session is resumed/loaded | open — queued R11 |
