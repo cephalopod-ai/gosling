@@ -80,6 +80,7 @@ function DialogContent({
   style,
   children,
   onCloseAutoFocus,
+  onEscapeKeyDown,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content>) {
   const intl = useIntl();
@@ -97,6 +98,18 @@ function DialogContent({
     target.focus();
   };
 
+  // Radix hears Escape in the capture phase, before a combobox inside the dialog (react-select)
+  // can close its own popup, so an open dropdown would take the whole dialog down with it.
+  const handleEscapeKeyDown = (event: KeyboardEvent) => {
+    onEscapeKeyDown?.(event);
+    if (
+      event.target instanceof HTMLElement &&
+      event.target.closest('[role="combobox"][aria-expanded="true"]')
+    ) {
+      event.preventDefault();
+    }
+  };
+
   return (
     <DialogPortal data-slot="dialog-portal">
       <DialogOverlay />
@@ -108,6 +121,7 @@ function DialogContent({
         )}
         style={{ zIndex: Z_INDEX.OVERLAY, ...style }}
         onCloseAutoFocus={handleCloseAutoFocus}
+        onEscapeKeyDown={handleEscapeKeyDown}
         {...props}
       >
         <ReturnFocusCapture targetRef={returnFocusRef} />

@@ -10,6 +10,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from './dropdown-menu';
+import { Select } from './Select';
 
 function StateDialog({
   open,
@@ -145,5 +146,42 @@ describe('DialogContent return focus', () => {
 
     await closeWithEscape(user);
     await waitFor(() => expect(screen.getByRole('button', { name: 'Elsewhere' })).toHaveFocus());
+  });
+});
+
+describe('DialogContent Escape with an open dropdown', () => {
+  function SelectDialog() {
+    const [open, setOpen] = useState(true);
+    return (
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogTitle>Switch models</DialogTitle>
+          <DialogDescription>Pick a provider</DialogDescription>
+          <Select
+            aria-label="Provider"
+            options={[
+              { value: 'openai', label: 'OpenAI' },
+              { value: 'anthropic', label: 'Anthropic' },
+            ]}
+          />
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  it('closes only the open dropdown, then the dialog on the next Escape', async () => {
+    const user = userEvent.setup();
+    renderWithIntl(<SelectDialog />);
+    const provider = await screen.findByRole('combobox', { name: 'Provider' });
+
+    await user.click(provider);
+    await user.keyboard('{ArrowDown}');
+    expect(await screen.findByRole('option', { name: 'OpenAI' })).toBeInTheDocument();
+
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('option')).not.toBeInTheDocument());
+    expect(screen.getByRole('dialog', { name: 'Switch models' })).toBeInTheDocument();
+
+    await closeWithEscape(user);
   });
 });
