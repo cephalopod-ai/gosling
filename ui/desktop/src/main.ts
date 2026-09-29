@@ -1579,6 +1579,7 @@ registerRendererIpcHandlers(ipcMain, {
 
 registerSettingsIpcHandlers(ipcMain, {
   app,
+  goslingPathRoot: appConfig.GOSLING_PATH_ROOT,
   getSettings,
   updateSettings,
   getExternalBackendSecret: () => externalBackendSecret,

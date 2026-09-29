@@ -12,6 +12,7 @@ import {
   defaultResearchLibraryPath,
   importResearchLibraryFiles,
   listResearchLibraryFiles,
+  RESEARCH_LIBRARY_FOLDER_NAME,
 } from '../utils/researchLibrary';
 import type { Settings, SettingKey } from '../utils/settings';
 import { isSettingKey, isSettingValue, setSettingValue } from '../utils/settings';
@@ -45,6 +46,7 @@ export async function ensureGitignoredIfInRepo(directoryPath: string): Promise<v
 
 export interface SettingsIpcDependencies {
   app: App;
+  goslingPathRoot?: string;
   getSettings: () => Settings;
   updateSettings: (modifier: (settings: Settings) => void) => void;
   getExternalBackendSecret: () => string;
@@ -71,6 +73,7 @@ export function registerSettingsIpcHandlers(
 ): void {
   const {
     app,
+    goslingPathRoot,
     getSettings,
     updateSettings,
     getExternalBackendSecret,
@@ -94,7 +97,10 @@ export function registerSettingsIpcHandlers(
 
   function configuredResearchLibraryPath(): string {
     return path.resolve(
-      getSettings().researchLibraryPath ?? defaultResearchLibraryPath(app.getPath('documents'))
+      getSettings().researchLibraryPath ??
+        (goslingPathRoot
+          ? path.join(goslingPathRoot, RESEARCH_LIBRARY_FOLDER_NAME)
+          : defaultResearchLibraryPath(app.getPath('documents')))
     );
   }
 

@@ -357,12 +357,12 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Note | G115 | "Gosling secure storage" wording when keyring is disabled (plaintext secrets.yaml) | open — queued R13b |
 | Note | G118 | Skills tab in an isolated GOSLING_PATH_ROOT lists the operator's real skills | fixed (R7) |
 | Note | G121 | Duplicate element id / test id for the composer | open — queued R13b |
-| Note | G127 | Isolated Desktop instance lists and grants the operator's real Research Library | open — queued R7 |
+| Note | G127 | Isolated Desktop instance lists and grants the operator's real Research Library | fixed (isolated path roots now own their default library) (R7) |
 | Note | G134 | Renderer asks for git-branch info on folders it was never granted (37 main-process errors); persisted grants contain only the operator's Research Library | open — queued R13b |
 | Note | G206 | Switching to an image/SVG tab logs `net::ERR_INVALID_URL` every time | open — queued R13b |
 | Note | G210 | The window's renderer roots include the whole home directory by default | open — queued R13b |
 | Note | G216 | "Gosling finished the task." is sent for turns that ended without success (suspicion) (suspicion) | open — queued R13b |
-| Note | G220 | PermissionModal renders a `<button>` inside a `<button>` | open — queued R13b |
+| Note | G220 | PermissionModal renders a `<button>` inside a `<button>` | fixed (Radix trigger delegates to the existing button) (R13b) |
 | Note | H08 | Note: InvalidParams feedback identifies the contract only if the extension's own message does | note (product question) |
 | Note | H09 | Note: `dummy` sentinel matching is trim-insensitive and shadows a genuine `dummy` agent | note (product question) |
 | Note | S06 | Compaction token figures disagree between the CLI cue and context-history | fixed (R2) |
