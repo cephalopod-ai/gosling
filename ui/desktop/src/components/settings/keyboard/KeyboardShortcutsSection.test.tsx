@@ -119,13 +119,11 @@ describe('KeyboardShortcutsSection', () => {
       within(rowFor('Find')).queryByRole('button', { name: 'Reset Find shortcut to default' })
     ).not.toBeInTheDocument();
 
-    await userEvent
-      .setup()
-      .click(
-        within(rowFor('New Chat')).getByRole('button', {
-          name: 'Reset New Chat shortcut to default',
-        })
-      );
+    await userEvent.setup().click(
+      within(rowFor('New Chat')).getByRole('button', {
+        name: 'Reset New Chat shortcut to default',
+      })
+    );
 
     expect(window.electron.showMessageBox).not.toHaveBeenCalled();
     expect(window.electron.setSetting).toHaveBeenCalledWith('keyboardShortcuts', {

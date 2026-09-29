@@ -292,10 +292,7 @@ export const SummarizerSection = () => {
           </div>
 
           <div className="flex flex-col">
-            <label
-              htmlFor={timeoutId}
-              className="text-sm font-medium mb-1 block text-text-primary"
-            >
+            <label htmlFor={timeoutId} className="text-sm font-medium mb-1 block text-text-primary">
               Timeout (ms)
             </label>
             <Input
