@@ -11,11 +11,13 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use tokio::sync::Mutex;
 use tracing::warn;
+use unicode_normalization::UnicodeNormalization;
 use uuid::Uuid;
 
 const MAX_INSTRUCTIONS_WORDS: usize = 100;
 const MAX_FOLDER_DESCRIPTION_CHARS: usize = 280;
 const MAX_LABEL_CHARS: usize = 100;
+const MAX_NAME_CHARS: usize = 100;
 const MAX_PATH_CHARS: usize = 4_096;
 const MAX_IDENTIFIER_CHARS: usize = 256;
 const MAX_ADDITIONAL_FOLDERS: usize = 64;
@@ -593,7 +595,7 @@ pub(super) fn workspace_from_mutation(
     Workspace {
         id,
         schema_version: WORKSPACE_SCHEMA_VERSION,
-        name: mutation.name.trim().to_string(),
+        name: nfc_trimmed(&mutation.name),
         instructions: mutation
             .instructions
             .filter(|value| !value.trim().is_empty()),
@@ -781,15 +783,27 @@ fn validate_text(value: &str, label: &str, max_chars: usize) -> Result<()> {
     Ok(())
 }
 
+/// Names are stored in NFC so that a precomposed "é" and "e" + U+0301 are the
+/// same name, both for display and for the uniqueness check.
+fn nfc_trimmed(name: &str) -> String {
+    name.trim().nfc().collect()
+}
+
+/// The identity two names share when they must not coexist: canonically
+/// equivalent and equal ignoring case.
+pub(super) fn name_key(name: &str) -> String {
+    nfc_trimmed(name).to_lowercase()
+}
+
 pub(super) fn normalized_name(name: &str) -> Result<String> {
-    let name = name.trim();
+    let name = nfc_trimmed(name);
     if name.is_empty() {
         bail!("name cannot be empty");
     }
-    if name.chars().count() > 100 {
-        bail!("name must be at most 100 characters");
+    if name.chars().count() > MAX_NAME_CHARS {
+        bail!("name must be at most {MAX_NAME_CHARS} characters");
     }
-    Ok(name.to_string())
+    Ok(name)
 }
 
 fn reject_duplicate_name(
@@ -797,29 +811,37 @@ fn reject_duplicate_name(
     current_id: Option<&str>,
     name: &str,
 ) -> Result<()> {
+    let key = name_key(name);
     if document.workspaces.iter().any(|workspace| {
-        Some(workspace.id.as_str()) != current_id
-            && workspace.name.eq_ignore_ascii_case(name.trim())
+        Some(workspace.id.as_str()) != current_id && name_key(&workspace.name) == key
     }) {
         bail!("workspace name is already in use");
     }
     Ok(())
 }
 
+/// Shortens the source name when needed so the copy suffix always fits the
+/// name limit; a copy of a maximum-length name would otherwise be rejected.
 fn unique_copy_name(document: &WorkspaceStoreDocument, source: &str) -> String {
     (1..)
         .map(|index| {
-            if index == 1 {
-                format!("{source} copy")
+            let suffix = if index == 1 {
+                " copy".to_string()
             } else {
-                format!("{source} copy {index}")
-            }
+                format!(" copy {index}")
+            };
+            let base: String = source
+                .chars()
+                .take(MAX_NAME_CHARS - suffix.chars().count())
+                .collect();
+            format!("{}{suffix}", base.trim_end())
         })
         .find(|candidate| {
+            let key = name_key(candidate);
             !document
                 .workspaces
                 .iter()
-                .any(|workspace| workspace.name.eq_ignore_ascii_case(candidate))
+                .any(|workspace| name_key(&workspace.name) == key)
         })
         .expect("unbounded copy suffixes always yield a unique name")
 }
@@ -944,6 +966,78 @@ mod tests {
         assert_eq!(active, default);
         assert!(service.get(&created.id).is_ok());
         assert!(service.delete(&default).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn canonically_equivalent_workspace_names_are_duplicates() {
+        let data = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let service = WorkspaceService::initialize(data.path(), root.path())
+            .await
+            .unwrap();
+        let mut composed = mutation(root.path());
+        composed.name = "Caf\u{e9}".into();
+        service.create(composed).await.unwrap();
+        let other = service.create(mutation(root.path())).await.unwrap();
+
+        let mut decomposed = mutation(root.path());
+        decomposed.name = "Cafe\u{301}".into();
+        let create_error = service.create(decomposed.clone()).await.unwrap_err();
+        let rename_error = service.update(&other.id, decomposed).await.unwrap_err();
+
+        assert!(create_error.to_string().contains("already in use"));
+        assert!(rename_error.to_string().contains("already in use"));
+    }
+
+    #[tokio::test]
+    async fn workspace_names_are_stored_in_nfc() {
+        let data = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let service = WorkspaceService::initialize(data.path(), root.path())
+            .await
+            .unwrap();
+        let mut decomposed = mutation(root.path());
+        decomposed.name = " Cafe\u{301} ".into();
+
+        let created = service.create(decomposed).await.unwrap();
+
+        assert_eq!(created.name, "Caf\u{e9}");
+        assert_eq!(service.get(&created.id).unwrap().name, "Caf\u{e9}");
+    }
+
+    #[tokio::test]
+    async fn duplicating_a_maximum_length_name_shortens_it_to_fit_the_suffix() {
+        let data = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let service = WorkspaceService::initialize(data.path(), root.path())
+            .await
+            .unwrap();
+        let mut long = mutation(root.path());
+        long.name = format!("{}-END", "a".repeat(MAX_NAME_CHARS - 4));
+        let source = service.create(long).await.unwrap();
+
+        let first = service.duplicate(&source.id).await.unwrap();
+        let second = service.duplicate(&source.id).await.unwrap();
+
+        assert_eq!(first.name.chars().count(), MAX_NAME_CHARS);
+        assert!(first.name.ends_with("a copy"));
+        assert_eq!(second.name.chars().count(), MAX_NAME_CHARS);
+        assert!(second.name.ends_with("a copy 2"));
+    }
+
+    #[tokio::test]
+    async fn over_length_workspace_names_are_rejected() {
+        let data = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let service = WorkspaceService::initialize(data.path(), root.path())
+            .await
+            .unwrap();
+        let mut long = mutation(root.path());
+        long.name = "a".repeat(MAX_NAME_CHARS + 1);
+
+        let error = service.create(long).await.unwrap_err();
+
+        assert!(error.to_string().contains("at most 100 characters"));
     }
 
     #[tokio::test]

@@ -39,7 +39,12 @@ export const SpellcheckToggle = () => {
         </p>
       </div>
       <div className="flex items-center">
-        <Switch checked={enabled} onCheckedChange={handleToggle} variant="mono" />
+        <Switch
+          checked={enabled}
+          onCheckedChange={handleToggle}
+          aria-label={intl.formatMessage(i18n.title)}
+          variant="mono"
+        />
       </div>
     </div>
   );

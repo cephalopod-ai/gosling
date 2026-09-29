@@ -115,6 +115,20 @@ describe('CredentialProfileSelector', () => {
     expect(screen.getByText('Team OpenAI')).toHaveClass('truncate');
   });
 
+  it('names the app default credentials when no profile is pinned', async () => {
+    const user = userEvent.setup();
+    render(<CredentialProfileSelector surface="header" />, { wrapper: IntlTestWrapper });
+
+    const chip = screen.getByRole('button', { name: 'Credential for this chat: App default' });
+    expect(chip).toHaveTextContent('App default');
+    expect(screen.queryByText('No credential')).not.toBeInTheDocument();
+
+    await user.click(chip);
+
+    expect(screen.getByText("Uses the app's default provider credentials")).toBeInTheDocument();
+    expect(screen.queryByText('No credential profile is pinned')).not.toBeInTheDocument();
+  });
+
   it('keeps the saved profile name visible when the pinned profile is unavailable', async () => {
     const user = userEvent.setup();
     vi.mocked(useWorkspace).mockReturnValue({

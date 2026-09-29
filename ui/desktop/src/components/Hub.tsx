@@ -40,7 +40,7 @@ import { ResearchInitialInputsDialog } from './research/ResearchInitialInputsDia
 import { ResearchModelTeamSelector } from './research/ResearchModelTeamSelector';
 import { addResearchInitialInputs, resolveSessionLibraryInputs } from '../acp/sessionLibraryInputs';
 import { acpAppendSessionSystemPrompt, acpDeleteSession } from '../acp/sessions';
-import { describeAcpError } from '../acp/errors';
+import { describeAcpError, describeAcpRejection } from '../acp/errors';
 import {
   buildResearchScientificMethodPrompt,
   RESEARCH_SCIENTIFIC_METHOD_PROMPT_KEY,
@@ -127,8 +127,15 @@ export default function Hub({
   const intl = useIntl();
   const { extensionsList } = useConfig();
   const { currentModel, currentProvider } = useModelAndProvider();
-  const { workspaces, activeWorkspaceId, defaultWorkspaceId, credentialProfiles, loading, error } =
-    useWorkspace();
+  const {
+    workspaces,
+    activeWorkspaceId,
+    defaultWorkspaceId,
+    credentialProfiles,
+    loading,
+    error,
+    refreshWorkspaces,
+  } = useWorkspace();
   const preferredWorkspaceId = useMemo(() => {
     const availableWorkspaceIds = new Set(workspaces.map((item) => item.workspace.id));
     const configuredWorkspaceId = [initialWorkspaceId, activeWorkspaceId, defaultWorkspaceId].find(
@@ -252,6 +259,13 @@ export default function Hub({
       return preferredWorkspaceId ?? '';
     });
   }, [preferredWorkspaceId, workspaces]);
+
+  // Workspace validation is computed when the list loads. A folder moved or unlinked since then
+  // would otherwise pass here and only fail once the chat is submitted.
+  useEffect(() => {
+    if (!selectedWorkspaceId) return;
+    void refreshWorkspaces();
+  }, [refreshWorkspaces, selectedWorkspaceId]);
 
   const handleWorkspaceChange = useCallback(
     (workspaceId: string) => {
@@ -482,7 +496,8 @@ export default function Hub({
         }
       }
       console.error('Failed to create session:', error);
-      const detail = describeAcpError(error);
+      void refreshWorkspaces();
+      const detail = describeAcpRejection(error);
       setSessionCreationError(
         `Could not start the ${isResearch ? 'research session' : 'chat'}: ${detail}${
           cleanupFailure

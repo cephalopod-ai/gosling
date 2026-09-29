@@ -119,6 +119,7 @@ export const ModeSelectionItem = forwardRef<HTMLDivElement, ModeSelectionItemPro
               value={mode.key}
               checked={checked}
               onChange={() => handleModeChange(mode.key)}
+              aria-label={intl.formatMessage(mode.labelDescriptor)}
               className="peer sr-only"
             />
             <div

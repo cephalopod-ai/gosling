@@ -1,7 +1,38 @@
 // @vitest-environment node
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
 import { buildConnectSrc, buildFrameSrc, shouldUpgradeInsecureRequests, buildCSP } from '../csp';
 import type { ExternalGoslingdConfig } from '../settings';
+
+// CSP3 source-expression grammar: a host-part is only ALPHA / DIGIT / "-"
+// labels, so an IPv6 literal such as [::1] is not a valid host-source.
+const KEYWORD_SOURCE = /^'[a-z-]+'$/;
+const SCHEME_SOURCE = /^[a-zA-Z][a-zA-Z0-9+.-]*:$/;
+const HOST_SOURCE =
+  /^([a-zA-Z][a-zA-Z0-9+.-]*:\/\/)?(\*|(\*\.)?[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+)*)(:(\d+|\*))?(\/[^\s;,]*)?$/;
+
+function invalidCspSources(policy: string): string[] {
+  return policy
+    .split(';')
+    .map((directive) => directive.trim().split(/\s+/).slice(1))
+    .flat()
+    .filter(
+      (source) =>
+        source &&
+        !KEYWORD_SOURCE.test(source) &&
+        !SCHEME_SOURCE.test(source) &&
+        !HOST_SOURCE.test(source)
+    );
+}
+
+function directiveSources(policy: string, name: string): string[] {
+  const directive = policy
+    .split(';')
+    .map((entry) => entry.trim().split(/\s+/))
+    .find(([directiveName]) => directiveName === name);
+  return directive ? directive.slice(1) : [];
+}
 
 describe('buildConnectSrc', () => {
   it('includes default sources when no external backend is configured', () => {
@@ -181,5 +212,36 @@ describe('buildCSP', () => {
     expect(csp).toContain('ws://127.0.0.1:12345');
     expect(csp).toContain('http://127.0.0.1:12345');
     expect(csp).not.toContain('http://127.0.0.1:*');
+  });
+});
+
+describe('CSP source syntax', () => {
+  it('never emits IPv6 literal sources, which CSP host-source cannot express', () => {
+    const csp = buildCSP(
+      { enabled: true, url: 'http://[fd00::1]:12604', secret: 'test' },
+      'ws://[::1]:64027/acp'
+    );
+
+    expect(invalidCspSources(csp)).toEqual([]);
+    expect(csp).not.toContain('[');
+  });
+
+  it('keeps every source in the index.html policy valid, including IPv4 and localhost loopback', () => {
+    const html = readFileSync(
+      fileURLToPath(new URL('../../../index.html', import.meta.url)),
+      'utf8'
+    );
+    const policy = html.match(/http-equiv="Content-Security-Policy"\s+content="([^"]+)"/)?.[1];
+    expect(policy).toBeDefined();
+
+    expect(invalidCspSources(policy!)).toEqual([]);
+    expect(directiveSources(policy!, 'connect-src')).toEqual(
+      expect.arrayContaining([
+        'http://127.0.0.1:*',
+        'ws://127.0.0.1:*',
+        'http://localhost:*',
+        'ws://localhost:*',
+      ])
+    );
   });
 });

@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   describeAcpError,
+  describeAcpRejection,
   isAcpAwaitingReplyError,
   isAcpConnectionClosedError,
   isAcpSessionArchivedError,
@@ -221,6 +222,33 @@ describe('describeAcpError', () => {
 
   it('falls back to a plain Error message', () => {
     expect(describeAcpError(new Error('ACP connection closed'))).toBe('ACP connection closed');
+  });
+});
+
+describe('describeAcpRejection', () => {
+  it('describes an Invalid params rejection by its reason alone', () => {
+    expect(
+      describeAcpRejection({
+        code: -32602,
+        message: 'Invalid params',
+        data: 'Workspace is unavailable: primary working folder (/p) is unavailable',
+      })
+    ).toBe('Workspace is unavailable: primary working folder (/p) is unavailable');
+    expect(
+      describeAcpRejection({
+        error: { code: -32602, message: 'Invalid params', data: 'name is already in use' },
+      })
+    ).toBe('name is already in use');
+  });
+
+  it('keeps the label for other errors and for rejections without a reason', () => {
+    expect(
+      describeAcpRejection({ code: -32603, message: 'Internal error', data: 'database busy' })
+    ).toBe('Internal error: database busy');
+    expect(describeAcpRejection({ code: -32602, message: 'Invalid params' })).toBe(
+      'Invalid params'
+    );
+    expect(describeAcpRejection(new Error('socket closed'))).toBe('socket closed');
   });
 });
 

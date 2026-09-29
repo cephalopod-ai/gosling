@@ -27,7 +27,7 @@ describe('ExternalBackendSection', () => {
     const user = userEvent.setup();
     renderWithIntl(<ExternalBackendSection />);
 
-    const toggle = await screen.findByRole('switch');
+    const toggle = await screen.findByRole('switch', { name: 'Use external backend' });
     await user.click(toggle);
 
     await waitFor(() => {

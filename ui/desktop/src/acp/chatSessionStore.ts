@@ -909,7 +909,13 @@ function applyChatStateChanges(entry: StoreEntry, changes: AcpChatStateChange[])
         break;
       case 'sessionInfo':
         if (change.name && entry.session) {
-          entry.session = { ...entry.session, name: change.name };
+          // The loaded message_count stays 0 for a chat opened empty, and the display
+          // name hides every name behind "New Chat" until it is non-zero.
+          entry.session = {
+            ...entry.session,
+            name: change.name,
+            message_count: Math.max(entry.session.message_count, entry.messages.length),
+          };
         }
         if (change.activeRunId !== undefined) {
           entry.activeRunId = change.activeRunId;

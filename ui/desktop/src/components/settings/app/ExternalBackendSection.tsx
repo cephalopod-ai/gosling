@@ -234,6 +234,7 @@ export default function ExternalBackendSection() {
               <Switch
                 checked={config.enabled}
                 onCheckedChange={handleEnabledChange}
+                aria-label={intl.formatMessage(i18n.useExternalServer)}
                 disabled={isSaving}
                 variant="mono"
               />

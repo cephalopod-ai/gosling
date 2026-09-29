@@ -495,6 +495,39 @@ describe('WorkspaceEditorDialog', () => {
     expect(alert.closest('.overflow-y-auto')).toBeNull();
   });
 
+  it('keeps an over-length name intact and says how much to remove instead of truncating it', async () => {
+    const user = userEvent.setup();
+    const overLength = `${'a'.repeat(100)}-END`;
+    render(<WorkspaceEditorDialog open workspace={activeWorkspace} onOpenChange={vi.fn()} />, {
+      wrapper: TestWrapper,
+    });
+
+    await user.clear(screen.getByLabelText('Name'));
+    await user.click(screen.getByLabelText('Name'));
+    await user.paste(overLength);
+
+    expect(screen.getByLabelText('Name')).toHaveValue(overLength);
+    expect(
+      screen.getByText('Name must be at most 100 characters. Remove 4 characters.')
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText('Name')).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByRole('button', { name: 'Save workspace' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Validate' })).toBeDisabled();
+  });
+
+  it('shows the name length against the limit', async () => {
+    const user = userEvent.setup();
+    render(<WorkspaceEditorDialog open workspace={activeWorkspace} onOpenChange={vi.fn()} />, {
+      wrapper: TestWrapper,
+    });
+
+    await user.clear(screen.getByLabelText('Name'));
+    await user.type(screen.getByLabelText('Name'), 'Café');
+
+    expect(screen.getByText('4/100 characters')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save workspace' })).toBeEnabled();
+  });
+
   it('updates an existing workspace without creating a replacement', async () => {
     const user = userEvent.setup();
     updateWorkspace.mockResolvedValue(activeWorkspace);

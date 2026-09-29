@@ -82,6 +82,7 @@ export function ResponseStyleSelectionItem({
             value={style.key}
             checked={checked}
             onChange={() => handleStyleChange(style.key)}
+            aria-label={intl.formatMessage(style.label)}
             className="peer sr-only"
           />
           <div

@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from '@testing-library/react';
+import { useCallback, useState } from 'react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { IntlTestWrapper } from '../i18n/test-utils';
@@ -90,6 +91,7 @@ vi.mock('./ModelAndProviderContext', () => ({
 }));
 
 const setActiveWorkspace = vi.fn();
+const refreshWorkspaces = vi.fn();
 const researchExtensions = [
   {
     name: 'math_mcp',
@@ -172,6 +174,7 @@ describe('Hub workspace selection', () => {
       credentialProfiles: [configuredCredentialProfile],
       loading: false,
       error: null,
+      refreshWorkspaces,
       setActiveWorkspace,
     } as unknown as ReturnType<typeof useWorkspace>);
     vi.mocked(createSession).mockResolvedValue({ id: 'session-personal' } as never);
@@ -289,7 +292,7 @@ describe('Hub workspace selection', () => {
     );
   });
 
-  it('surfaces ACP error data when session creation fails', async () => {
+  it('surfaces the rejection reason without the Invalid params label and revalidates', async () => {
     const user = userEvent.setup();
     vi.mocked(createSession).mockRejectedValueOnce({
       code: -32602,
@@ -297,12 +300,66 @@ describe('Hub workspace selection', () => {
       data: 'primary working folder is unavailable; relink the workspace',
     });
     render(<Hub setView={vi.fn()} />, { wrapper: IntlTestWrapper });
+    refreshWorkspaces.mockClear();
 
     await user.click(screen.getByRole('button', { name: 'Send message' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Could not start the chat: Invalid params: primary working folder is unavailable; relink the workspace'
+      /^Could not start the chat: primary working folder is unavailable; relink the workspace$/
     );
+    expect(refreshWorkspaces).toHaveBeenCalledTimes(1);
+  });
+
+  it('revalidates workspaces when shown and when another workspace is chosen', async () => {
+    const user = userEvent.setup();
+    render(<Hub setView={vi.fn()} />, { wrapper: IntlTestWrapper });
+    await waitFor(() => expect(refreshWorkspaces).toHaveBeenCalledTimes(1));
+
+    await user.selectOptions(screen.getByLabelText('Workspace'), 'personal');
+
+    await waitFor(() => expect(refreshWorkspaces).toHaveBeenCalledTimes(2));
+  });
+
+  it('blocks a workspace whose folder became unavailable since the list was loaded', async () => {
+    const stale = workspace('default', 'Default', '/Users/tester/Work');
+    const current = {
+      ...workspace('default', 'Default', '/Users/tester/Work', false),
+      validation: {
+        validForSession: false,
+        issues: [
+          {
+            code: 'missing_primary_folder' as const,
+            severity: 'error' as const,
+            message:
+              'primary working folder (/Users/tester/Work) is unavailable; relink it before starting a session',
+            path: '/Users/tester/Work',
+          },
+        ],
+      },
+    };
+    vi.mocked(useWorkspace).mockImplementation(function useRevalidatingWorkspace() {
+      const [workspaces, setWorkspaces] = useState<(typeof stale | typeof current)[]>([stale]);
+      const refresh = useCallback(async () => setWorkspaces([current]), []);
+      return {
+        workspaces,
+        activeWorkspaceId: 'default',
+        defaultWorkspaceId: 'default',
+        credentialProfiles: [],
+        loading: false,
+        error: null,
+        refreshWorkspaces: refresh,
+      } as unknown as ReturnType<typeof useWorkspace>;
+    });
+    render(<Hub setView={vi.fn()} />, { wrapper: IntlTestWrapper });
+
+    const send = screen.getByRole('button', { name: 'Send message' });
+    await waitFor(() => expect(send).toBeDisabled());
+    expect(send).toHaveAttribute(
+      'title',
+      'primary working folder (/Users/tester/Work) is unavailable; relink it before starting a session'
+    );
+    expect(screen.getByRole('option', { name: 'Default — needs attention' })).toBeDisabled();
+    expect(createSession).not.toHaveBeenCalled();
   });
 
   it('scaffolds a tagged research session on the shared new-session flow', async () => {
@@ -573,6 +630,7 @@ describe('Hub workspace selection', () => {
       credentialProfiles: [],
       loading: false,
       error: null,
+      refreshWorkspaces,
     } as unknown as ReturnType<typeof useWorkspace>);
 
     const setView = vi.fn();
@@ -616,6 +674,7 @@ describe('Hub workspace selection', () => {
       credentialProfiles: [],
       loading: true,
       error: null,
+      refreshWorkspaces,
     } as unknown as ReturnType<typeof useWorkspace>);
 
     const { rerender } = render(<Hub setView={vi.fn()} />, { wrapper: IntlTestWrapper });
@@ -628,6 +687,7 @@ describe('Hub workspace selection', () => {
       credentialProfiles: [],
       loading: false,
       error: null,
+      refreshWorkspaces,
     } as unknown as ReturnType<typeof useWorkspace>);
     rerender(<Hub setView={vi.fn()} />);
 
@@ -645,6 +705,7 @@ describe('Hub workspace selection', () => {
       credentialProfiles: [],
       loading: false,
       error: null,
+      refreshWorkspaces,
     } as unknown as ReturnType<typeof useWorkspace>);
 
     const { unmount } = render(<Hub setView={vi.fn()} />, { wrapper: IntlTestWrapper });
@@ -661,6 +722,7 @@ describe('Hub workspace selection', () => {
       credentialProfiles: [],
       loading: false,
       error: null,
+      refreshWorkspaces,
     } as unknown as ReturnType<typeof useWorkspace>);
 
     render(<Hub setView={vi.fn()} />, { wrapper: IntlTestWrapper });

@@ -159,6 +159,22 @@ const i18n = defineMessages({
     id: 'keyboardShortcuts.change',
     defaultMessage: 'Change',
   },
+  changeShortcutFor: {
+    id: 'keyboardShortcuts.changeShortcutFor',
+    defaultMessage: 'Change {label} shortcut',
+  },
+  enableShortcutFor: {
+    id: 'keyboardShortcuts.enableShortcutFor',
+    defaultMessage: 'Enable {label} shortcut',
+  },
+  resetToDefault: {
+    id: 'keyboardShortcuts.resetToDefault',
+    defaultMessage: 'Reset',
+  },
+  resetShortcutFor: {
+    id: 'keyboardShortcuts.resetShortcutFor',
+    defaultMessage: 'Reset {label} shortcut to default',
+  },
   resetToDefaultsHeading: {
     id: 'keyboardShortcuts.resetToDefaultsHeading',
     defaultMessage: 'Reset to Defaults',
@@ -349,54 +365,77 @@ export default function KeyboardShortcutsSection() {
     loadShortcuts();
   }, [loadShortcuts]);
 
+  // Resolves to null when the user declines to take the default away from another binding.
+  const assignDefault = async (
+    current: KeyboardShortcuts,
+    key: keyof KeyboardShortcuts
+  ): Promise<KeyboardShortcuts | null> => {
+    const defaultValue = defaultKeyboardShortcuts[key];
+    const newShortcuts = { ...current };
+    const conflictingKey = Object.entries(current).find(
+      ([k, value]) => k !== key && value === defaultValue
+    )?.[0];
+
+    if (conflictingKey) {
+      const confirmed = await window.electron.showMessageBox({
+        type: 'warning',
+        title: intl.formatMessage(i18n.shortcutConflictTitle),
+        message: intl.formatMessage(i18n.shortcutConflictToggleMessage, {
+          shortcut: formatShortcut(defaultValue),
+          conflictLabel: getShortcutLabel(conflictingKey, intl.formatMessage),
+        }),
+        detail: intl.formatMessage(i18n.shortcutConflictToggleDetail, {
+          conflictLabel: getShortcutLabel(conflictingKey, intl.formatMessage),
+          targetLabel: getShortcutLabel(key, intl.formatMessage),
+        }),
+        buttons: [intl.formatMessage(i18n.reassignShortcut), intl.formatMessage(i18n.cancel)],
+        defaultId: 1,
+      });
+
+      if (confirmed.response !== 0) {
+        return null;
+      }
+
+      newShortcuts[conflictingKey as keyof KeyboardShortcuts] = null;
+    }
+
+    newShortcuts[key] = defaultValue;
+    return newShortcuts;
+  };
+
+  const persistShortcuts = async (
+    newShortcuts: KeyboardShortcuts,
+    changedKeys: (keyof KeyboardShortcuts)[]
+  ) => {
+    await window.electron.setSetting('keyboardShortcuts', newShortcuts);
+    setShortcuts(newShortcuts);
+    if (changedKeys.some((key) => needsRestart.has(key))) {
+      setShowRestartNotice(true);
+    }
+  };
+
+  const changedKeysBetween = (before: KeyboardShortcuts, after: KeyboardShortcuts) =>
+    (Object.keys(after) as (keyof KeyboardShortcuts)[]).filter((k) => before[k] !== after[k]);
+
   const handleToggle = async (key: keyof KeyboardShortcuts, enabled: boolean) => {
     if (!shortcuts) return;
 
-    const defaultValue = defaultKeyboardShortcuts[key];
-    const newShortcuts = { ...shortcuts };
+    const newShortcuts = enabled
+      ? await assignDefault(shortcuts, key)
+      : { ...shortcuts, [key]: null };
+    if (!newShortcuts) return;
 
-    if (enabled) {
-      const conflictingKey = Object.entries(shortcuts).find(
-        ([k, value]) => k !== key && value === defaultValue
-      )?.[0];
-
-      if (conflictingKey) {
-        const confirmed = await window.electron.showMessageBox({
-          type: 'warning',
-          title: intl.formatMessage(i18n.shortcutConflictTitle),
-          message: intl.formatMessage(i18n.shortcutConflictToggleMessage, {
-            shortcut: formatShortcut(defaultValue),
-            conflictLabel: getShortcutLabel(conflictingKey, intl.formatMessage),
-          }),
-          detail: intl.formatMessage(i18n.shortcutConflictToggleDetail, {
-            conflictLabel: getShortcutLabel(conflictingKey, intl.formatMessage),
-            targetLabel: getShortcutLabel(key, intl.formatMessage),
-          }),
-          buttons: [
-            intl.formatMessage(i18n.reassignShortcut),
-            intl.formatMessage(i18n.cancel),
-          ],
-          defaultId: 1,
-        });
-
-        if (confirmed.response !== 0) {
-          return;
-        }
-
-        newShortcuts[conflictingKey as keyof KeyboardShortcuts] = null;
-      }
-
-      newShortcuts[key] = defaultValue;
-    } else {
-      newShortcuts[key] = null;
-    }
-
-    await window.electron.setSetting('keyboardShortcuts', newShortcuts);
-    setShortcuts(newShortcuts);
+    await persistShortcuts(newShortcuts, [key]);
     trackSettingToggled(`shortcut_${key}`, enabled);
-    if (needsRestart.has(key)) {
-      setShowRestartNotice(true);
-    }
+  };
+
+  const handleResetOne = async (key: keyof KeyboardShortcuts) => {
+    if (!shortcuts) return;
+
+    const newShortcuts = await assignDefault(shortcuts, key);
+    if (!newShortcuts) return;
+
+    await persistShortcuts(newShortcuts, changedKeysBetween(shortcuts, newShortcuts));
   };
 
   const handleEdit = (key: keyof KeyboardShortcuts) => {
@@ -531,13 +570,12 @@ export default function KeyboardShortcutsSection() {
             {configs.map((config) => {
               const shortcut = shortcuts[config.key];
               const isEditing = editingKey === config.key;
+              const label = intl.formatMessage(config.label);
 
               return (
                 <div key={config.key} className="flex items-center justify-between">
                   <div className="flex-1">
-                    <h3 className="text-text-primary text-xs">
-                      {intl.formatMessage(config.label)}
-                    </h3>
+                    <h3 className="text-text-primary text-xs">{label}</h3>
                     <p className="text-xs text-text-secondary max-w-md mt-[2px]">
                       {intl.formatMessage(config.description)}
                     </p>
@@ -558,6 +596,7 @@ export default function KeyboardShortcutsSection() {
                           variant="secondary"
                           size="sm"
                           onClick={() => handleEdit(config.key)}
+                          aria-label={intl.formatMessage(i18n.changeShortcutFor, { label })}
                           className="text-xs"
                         >
                           {intl.formatMessage(i18n.change)}
@@ -565,8 +604,20 @@ export default function KeyboardShortcutsSection() {
                         <Switch
                           checked={shortcut !== null}
                           onCheckedChange={(checked) => handleToggle(config.key, checked)}
+                          aria-label={intl.formatMessage(i18n.enableShortcutFor, { label })}
                           variant="mono"
                         />
+                        {shortcut !== defaultKeyboardShortcuts[config.key] && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleResetOne(config.key)}
+                            aria-label={intl.formatMessage(i18n.resetShortcutFor, { label })}
+                            className="text-xs"
+                          >
+                            {intl.formatMessage(i18n.resetToDefault)}
+                          </Button>
+                        )}
                       </>
                     ) : (
                       <ShortcutRecorder

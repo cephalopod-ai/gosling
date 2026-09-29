@@ -298,6 +298,8 @@ Search allows you to find specific content within sessions or find specific sess
         ```
 
         If you resume a session from a different directory, `gosling session --resume` asks whether to switch back to the session's original directory; if you stay, the session moves to your current directory. `gosling run --resume` stays in the current directory and moves the session there. Sessions whose tools are restricted to their working directory, such as imported sessions, always keep their working directory: gosling switches to it instead.
+
+        Resuming an archived session by `--name` or `--session-id` restores it first and prints `Session <id> was archived; restored it so you can continue.`, while `gosling session -r` on its own never picks an archived session.
     </TabItem>
 </Tabs>
 

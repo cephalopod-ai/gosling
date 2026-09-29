@@ -413,6 +413,10 @@ async fn resolve_session_id(
                     ));
                     process::exit(1);
                 }
+                Ok(session) if session.archived_at.is_some() => {
+                    restore_archived_session(session_manager, session_id).await;
+                    session_id.clone()
+                }
                 Ok(_) => session_id.clone(),
                 Err(error) if error.downcast_ref::<SessionNotFound>().is_some() => {
                     output::render_error(&format!(
@@ -441,6 +445,27 @@ async fn resolve_session_id(
     } else {
         session_config.session_id.clone().unwrap()
     }
+}
+
+/// Archived sessions are hidden from `session list` and ACP refuses prompts to
+/// them, so resuming one from the CLI restores it before the turn is appended.
+async fn restore_archived_session(
+    session_manager: &gosling::session::session_manager::SessionManager,
+    session_id: &str,
+) {
+    if let Err(error) = session_manager
+        .update(session_id)
+        .archived_at(None)
+        .apply()
+        .await
+    {
+        output::render_error(&format!(
+            "Cannot restore archived session {}: {error}",
+            style(session_id).cyan()
+        ));
+        process::exit(1);
+    }
+    eprintln!("Session {session_id} was archived; restored it so you can continue.");
 }
 
 /// A turn that was killed mid-run is closed before the history is loaded, so

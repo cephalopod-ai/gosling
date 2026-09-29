@@ -235,7 +235,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | A02 | Unknown provider from `GOSLING_PROVIDER` env is reported as "No model configured" | fixed (R8b) |
 | Low | A04 | Ctrl-C in `gosling configure` leaves the terminal cursor hidden | fixed (R8b) |
 | Low | A05 | Broken config.yaml: session/run say "Run 'gosling configure' first" but configure refuses to run | fixed (R5) |
-| Low | A07 | REPL silently discards input that arrives in the same burst as a submitting Enter | open — queued R8b |
+| Low | A07 | REPL silently discards input that arrives in the same burst as a submitting Enter | fixed (input kept; rare reorder with typing during a reply — rustyline limit) (R8b) |
 | Low | A09 | Opening a session with `--resume` and exiting without sending re-stamps `updated_at` | fixed (R4) |
 | Low | A10 | Provider picker shows a cryptic "Groq (d)" label | fixed (R9) |
 | Low | A11 | `gosling session export --help` documents resume semantics that don't apply | fixed (R8b) |
@@ -279,7 +279,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | D15 | `term init` aliases break when the gosling binary path contains a space | fixed (R8b) |
 | Low | D16 | CLI guide's `--resume --path ./session.json  # exported session` does not work | fixed (R8b) |
 | Low | D17 | Forks lose their lineage (auto-renamed, banner says "resuming", no forked-from metadata) | fixed (cheap parts) (R4) |
-| Low | D18 | Typeahead during interactive startup is not submitted; later lines (even `/exit`) are merged into one prompt | open — queued R8b |
+| Low | D18 | Typeahead during interactive startup is not submitted; later lines (even `/exit`) are merged into one prompt | fixed (R8b) |
 | Low | D19 | `session list --format xml` silently falls back to text (exit 0) (suspicion) | fixed (R8b) |
 | Low | D24 | Import de-duplication blocks importing new turns of a grown transcript | note (product question) |
 | Low | D25 | `gosling tui` with non-interactive stdin renders a frame, then dumps an Ink/React stack trace | fixed (R8b) |
@@ -306,21 +306,21 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | F16 | The protocol-version gate is advisory on stdio and WebSocket | fixed (R10) |
 | Low | F17 | Advertised capabilities do not match what is callable | fixed (R10) |
 | Low | G103 | Chat header labels overlap at the default 940px window (and all narrower widths) | fixed (structure tested; pixels not verified in the app) (R13b) |
-| Low | G106 | Unicode-equivalent workspace names are both accepted (NFC vs NFD) | open — queued R13b |
-| Low | G107 | Duplicate fails for a max-length (100-char) workspace name; over-length input silently truncated | open — queued R13b |
-| Low | G109 | Workspace warnings never name the folder they refer to | open — queued R13b |
+| Low | G106 | Unicode-equivalent workspace names are both accepted (NFC vs NFD) | fixed (R13b) |
+| Low | G107 | Duplicate fails for a max-length (100-char) workspace name; over-length input silently truncated | fixed (R13b) |
+| Low | G109 | Workspace warnings never name the folder they refer to | fixed (R13b) |
 | Low | G110 | Symlinked output/primary folders that resolve outside the declared tree pass validation silently; the grant is on the resolved outside path while the UI shows the link path (suspicion) | fixed (validation warning; grant unchanged) (R13b) |
-| Low | G111 | Hub uses stale workspace validation; failure only surfaces on submit with "Invalid params:" prefix | open — queued R13b |
+| Low | G111 | Hub uses stale workspace validation; failure only surfaces on submit with "Invalid params:" prefix | fixed (R13b) |
 | Low | G112 | With the Inputs/Outputs pane open at 940px, the New Chat hub is crushed (workspace selector 18 px wide) | fixed (structure tested; pixels not verified in the app) (R13b) |
 | Low | G113 | Renderer IPC listener leak warning after several chats (suspicion) | open — queued R13b |
-| Low | G114 | Chat header says "No credential" while the app-default global key is in use | open — queued R13b |
-| Low | G116 | Shortcut recorder: Escape is recorded as a key instead of cancelling; no per-binding reset | open — queued R13b |
-| Low | G117 | Settings controls lack accessible names | open — queued R13b |
+| Low | G114 | Chat header says "No credential" while the app-default global key is in use | fixed (R13b) |
+| Low | G116 | Shortcut recorder: Escape is recorded as a key instead of cancelling; no per-binding reset | fixed (R13b) |
+| Low | G117 | Settings controls lack accessible names | fixed (R13b) |
 | Low | G119 | Toasts clipped at the right window edge (940px) | fixed (structure tested; pixels not verified in the app) (R13b) |
-| Low | G120 | Header title stays "New Chat" after the session is titled | open — queued R13b |
+| Low | G120 | Header title stays "New Chat" after the session is titled | fixed (R13b) |
 | Low | G123 | Automatic navigation collapse at narrow width is persisted as the user's preference | fixed (R13b) |
 | Low | G124 | At the minimum window (480x400) with navigation open, the Chats list has zero height | fixed (structure tested; pixels not verified in the app) (R13b) |
-| Low | G125 | Renderer CSP lists invalid IPv6 sources (console error on every page load) | open — queued R13b |
+| Low | G125 | Renderer CSP lists invalid IPv6 sources (console error on every page load) | fixed (R13b) |
 | Low | G126 | Concurrent-turn rejection is shown as "Internal error / Task failed" with an unrelated recovery action, and the rejected text is lost | fixed (R13b) |
 | Low | G133 | A failing extension is reported only as "Failed to add extension" and is not flagged in the Extensions list | open — queued R11 |
 | Low | G202 | HTML artifact preview never runs its scripts: the app page's CSP blocks the inline scripts the preview sandbox is designed to allow | fixed (scripts disabled with notice; running them needs a sandboxed preview scheme — follow-up) (R13b) |
@@ -338,7 +338,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | H06 | After a normal exit all session data lives only in `sessions.db-wal`; `sessions.db` is an empty 4 KB file | fixed (R4) |
 | Low | H07 | Delegate activity title echoes the raw `source` argument (`null`, blanks, normalized sentinel) | fixed (R11) |
 | Low | S01 | Stale turn-lease rows left by concurrent `gosling run` processes | fixed (R4) |
-| Low | S02 | Interactive type-ahead under load: Enter becomes a newline, a later `/exit` is sent to the model | open — queued R8b |
+| Low | S02 | Interactive type-ahead under load: Enter becomes a newline, a later `/exit` is sent to the model | fixed (R8b) |
 | Low | S05 | `session -r --history` renders at ~32 ms per message (6.7 s for 206 messages) | fixed (R8b) |
 | Low | S08 | `/model` typed during a stream queues, and every switch persists a hidden checkpoint | fixed (R9) |
 | Low | S09 | Markdown export includes hidden internal checkpoint messages | fixed (R9) |

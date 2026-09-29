@@ -902,6 +902,12 @@
   "costTracker.totalSessionCost": {
     "defaultMessage": "Total session cost: {cost}"
   },
+  "credentialProfileSelector.appDefault": {
+    "defaultMessage": "App default"
+  },
+  "credentialProfileSelector.appDefaultDetail": {
+    "defaultMessage": "Uses the app's default provider credentials"
+  },
   "credentialProfileSelector.availableProfiles": {
     "defaultMessage": "Available credential profiles"
   },
@@ -916,12 +922,6 @@
   },
   "credentialProfileSelector.newChats": {
     "defaultMessage": "New chats"
-  },
-  "credentialProfileSelector.noProfile": {
-    "defaultMessage": "No credential"
-  },
-  "credentialProfileSelector.noProfilePinned": {
-    "defaultMessage": "No credential profile is pinned"
   },
   "credentialProfileSelector.pinned": {
     "defaultMessage": "Pinned"
@@ -1748,11 +1748,17 @@
   "keyboardShortcuts.change": {
     "defaultMessage": "Change"
   },
+  "keyboardShortcuts.changeShortcutFor": {
+    "defaultMessage": "Change {label} shortcut"
+  },
   "keyboardShortcuts.disabled": {
     "defaultMessage": "Disabled"
   },
   "keyboardShortcuts.dismiss": {
     "defaultMessage": "Dismiss"
+  },
+  "keyboardShortcuts.enableShortcutFor": {
+    "defaultMessage": "Enable {label} shortcut"
   },
   "keyboardShortcuts.findDescription": {
     "defaultMessage": "Open search in conversation"
@@ -1811,6 +1817,9 @@
   "keyboardShortcuts.resetAllShortcuts": {
     "defaultMessage": "Reset All Shortcuts"
   },
+  "keyboardShortcuts.resetShortcutFor": {
+    "defaultMessage": "Reset {label} shortcut to default"
+  },
   "keyboardShortcuts.resetShortcutsDetail": {
     "defaultMessage": "This will restore all shortcuts to their original configuration."
   },
@@ -1819,6 +1828,9 @@
   },
   "keyboardShortcuts.resetShortcutsTitle": {
     "defaultMessage": "Reset Keyboard Shortcuts"
+  },
+  "keyboardShortcuts.resetToDefault": {
+    "defaultMessage": "Reset"
   },
   "keyboardShortcuts.resetToDefaultsDescription": {
     "defaultMessage": "Restore all keyboard shortcuts to their original configuration"
@@ -4243,6 +4255,12 @@
   },
   "workingDirectoriesMenu.workspaceSessionOnlyHint": {
     "defaultMessage": "Workspace folders remain pinned. Directories added here belong only to this session; other sessions and the workspace do not receive access."
+  },
+  "workspaceEditorDialog.nameLength": {
+    "defaultMessage": "{count}/{limit} characters"
+  },
+  "workspaceEditorDialog.nameTooLong": {
+    "defaultMessage": "{excess,plural,one{Name must be at most {limit} characters. Remove # character.} other{Name must be at most {limit} characters. Remove # characters.}}"
   },
   "workspaceSidebar.chatReady": {
     "defaultMessage": "A chat in this workspace has a new reply"

@@ -36,30 +36,34 @@ pub fn validate_workspace_mutation(
     profiles: &[CredentialProfile],
 ) -> WorkspaceValidationReport {
     let mut issues = Vec::new();
+    let primary_subject = "primary working folder".to_string();
     let normalized_working_folder = validate_path(
         &workspace.working_folder,
         true,
+        &primary_subject,
         None,
         WorkspaceIssueCode::MissingPrimaryFolder,
         &mut issues,
     );
 
     let mut ids = HashSet::new();
-    let mut paths = HashSet::new();
+    let mut paths = HashMap::new();
     if let Some(path) = normalized_working_folder.as_ref() {
-        paths.insert(comparison_path(path));
+        paths.insert(comparison_path(path), primary_subject);
     }
 
     for folder in &workspace.folders {
         validate_identifier(&folder.id, "folder", &mut ids, &mut issues);
+        let subject = folder_subject("folder", &folder.label);
         if let Some(path) = validate_path(
             &folder.path,
             false,
+            &subject,
             Some(&folder.id),
             WorkspaceIssueCode::MissingFolder,
             &mut issues,
         ) {
-            validate_unique_path(path, &folder.id, &mut paths, &mut issues);
+            validate_unique_path(path, subject, &folder.id, &mut paths, &mut issues);
         }
     }
 
@@ -88,14 +92,16 @@ pub fn validate_workspace_mutation(
                 Some(output.path.clone()),
             ));
         }
+        let subject = folder_subject("output folder", &output.label);
         if let Some(path) = validate_path(
             &output.path,
             false,
+            &subject,
             Some(&output.id),
             WorkspaceIssueCode::MissingOutputFolder,
             &mut issues,
         ) {
-            validate_unique_path(path, &output.id, &mut paths, &mut issues);
+            validate_unique_path(path, subject, &output.id, &mut paths, &mut issues);
         }
     }
 
@@ -199,9 +205,21 @@ pub(super) fn validate_default_extensions(
     }
 }
 
+fn folder_subject(kind: &str, label: &str) -> String {
+    let label = label.trim();
+    if label.is_empty() {
+        kind.to_string()
+    } else {
+        format!("{kind} \"{label}\"")
+    }
+}
+
+/// `subject` names the folder in every message ("output folder \"Outputs\""), and the
+/// path follows it, so a list of issues says which folder each one is about.
 fn validate_path(
     raw: &str,
     required: bool,
+    subject: &str,
     target_id: Option<&str>,
     missing_code: WorkspaceIssueCode,
     issues: &mut Vec<WorkspaceIssue>,
@@ -213,6 +231,11 @@ fn validate_path(
                 WorkspaceIssueCode::PathTraversal
             } else {
                 WorkspaceIssueCode::RelativePath
+            };
+            let message = if raw.trim().is_empty() {
+                format!("{subject}: {message}")
+            } else {
+                format!("{subject} ({}): {message}", raw.trim())
             };
             issues.push(issue(
                 code,
@@ -235,10 +258,12 @@ fn validate_path(
                 } else {
                     WorkspaceIssueSeverity::Warning
                 },
-                if required {
-                    "primary working folder is unavailable; relink it before starting a session"
+                &if required {
+                    format!(
+                        "{subject} ({normalized}) is unavailable; relink it before starting a session"
+                    )
                 } else {
-                    "optional workspace folder is unavailable"
+                    format!("{subject} ({normalized}) is unavailable")
                 },
                 target_id.map(str::to_string),
                 Some(normalized.clone()),
@@ -251,7 +276,7 @@ fn validate_path(
                 } else {
                     WorkspaceIssueSeverity::Warning
                 },
-                "workspace path is not a directory",
+                &format!("{subject} ({normalized}) is not a directory"),
                 target_id.map(str::to_string),
                 Some(normalized.clone()),
             ));
@@ -280,7 +305,9 @@ fn validate_path(
             } else {
                 WorkspaceIssueSeverity::Warning
             },
-            "workspace path is unavailable on this platform; relink it before use",
+            &format!(
+                "{subject} ({normalized}) is unavailable on this platform; relink it before use"
+            ),
             target_id.map(str::to_string),
             Some(normalized.clone()),
         ));
@@ -309,18 +336,25 @@ fn symlink_leaving_its_folder(path: &Path) -> Option<PathBuf> {
 
 fn validate_unique_path(
     path: String,
+    subject: String,
     target_id: &str,
-    paths: &mut HashSet<String>,
+    paths: &mut HashMap<String, String>,
     issues: &mut Vec<WorkspaceIssue>,
 ) {
-    if !paths.insert(comparison_path(&path)) {
-        issues.push(issue(
+    match paths.entry(comparison_path(&path)) {
+        std::collections::hash_map::Entry::Occupied(existing) => issues.push(issue(
             WorkspaceIssueCode::DuplicatePath,
             WorkspaceIssueSeverity::Warning,
-            "workspace folder duplicates another configured path",
+            &format!(
+                "{subject} ({path}) is the same folder as the {}",
+                existing.get()
+            ),
             Some(target_id.to_string()),
             Some(path),
-        ));
+        )),
+        std::collections::hash_map::Entry::Vacant(slot) => {
+            slot.insert(subject);
+        }
     }
 }
 
@@ -412,7 +446,7 @@ mod tests {
     use super::*;
     use crate::workspace::{
         CredentialBinding, CredentialProfileSource, CredentialProfileStatus, ProductOutputFolder,
-        ProductType,
+        ProductType, WorkspaceFolder,
     };
 
     #[test]
@@ -464,6 +498,140 @@ mod tests {
             issue.code == WorkspaceIssueCode::MissingOutputFolder
                 && issue.severity == WorkspaceIssueSeverity::Warning
         }));
+    }
+
+    fn issue_message(report: &WorkspaceValidationReport, code: WorkspaceIssueCode) -> &str {
+        report
+            .issues
+            .iter()
+            .find(|issue| issue.code == code)
+            .map(|issue| issue.message.as_str())
+            .unwrap()
+    }
+
+    #[test]
+    fn unavailable_folder_issues_name_the_folder_and_its_path() {
+        let mutation = WorkspaceMutation {
+            name: "Test".into(),
+            working_folder: "/definitely/missing/gosling-primary".into(),
+            folders: vec![WorkspaceFolder {
+                id: "reference".into(),
+                label: "Reference".into(),
+                path: "/definitely/missing/gosling-reference".into(),
+                ..WorkspaceFolder::default()
+            }],
+            product_output_folders: vec![ProductOutputFolder {
+                id: "output".into(),
+                label: "Outputs".into(),
+                path: "/definitely/missing/gosling-output".into(),
+                product_types: vec![ProductType::Document],
+                is_default: true,
+                create_if_missing: false,
+            }],
+            ..WorkspaceMutation::default()
+        };
+
+        let report = validate_workspace_mutation(&mutation, &[]);
+
+        assert_eq!(
+            issue_message(&report, WorkspaceIssueCode::MissingPrimaryFolder),
+            "primary working folder (/definitely/missing/gosling-primary) is unavailable; relink it before starting a session"
+        );
+        assert_eq!(
+            issue_message(&report, WorkspaceIssueCode::MissingFolder),
+            "folder \"Reference\" (/definitely/missing/gosling-reference) is unavailable"
+        );
+        assert_eq!(
+            issue_message(&report, WorkspaceIssueCode::MissingOutputFolder),
+            "output folder \"Outputs\" (/definitely/missing/gosling-output) is unavailable"
+        );
+        let output_issue = report
+            .issues
+            .iter()
+            .find(|issue| issue.code == WorkspaceIssueCode::MissingOutputFolder)
+            .unwrap();
+        assert_eq!(output_issue.target_id.as_deref(), Some("output"));
+        assert_eq!(
+            output_issue.path.as_deref(),
+            Some("/definitely/missing/gosling-output")
+        );
+    }
+
+    #[test]
+    fn duplicate_path_warning_names_both_folders() {
+        let root = tempfile::tempdir().unwrap();
+        let canonical = root.path().canonicalize().unwrap();
+        let mutation = WorkspaceMutation {
+            name: "Test".into(),
+            working_folder: root.path().to_string_lossy().into(),
+            folders: vec![WorkspaceFolder {
+                id: "reference".into(),
+                label: "Reference".into(),
+                path: root.path().to_string_lossy().into(),
+                ..WorkspaceFolder::default()
+            }],
+            product_output_folders: vec![ProductOutputFolder {
+                id: "output".into(),
+                label: "".into(),
+                path: root.path().to_string_lossy().into(),
+                product_types: vec![ProductType::Document],
+                is_default: true,
+                create_if_missing: false,
+            }],
+            ..WorkspaceMutation::default()
+        };
+
+        let report = validate_workspace_mutation(&mutation, &[]);
+        let messages: Vec<_> = report
+            .issues
+            .iter()
+            .filter(|issue| issue.code == WorkspaceIssueCode::DuplicatePath)
+            .map(|issue| issue.message.clone())
+            .collect();
+
+        assert_eq!(
+            messages,
+            vec![
+                format!(
+                    "folder \"Reference\" ({}) is the same folder as the primary working folder",
+                    canonical.display()
+                ),
+                format!(
+                    "output folder ({}) is the same folder as the primary working folder",
+                    canonical.display()
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_file_configured_as_a_folder_is_named_in_the_issue() {
+        let root = tempfile::tempdir().unwrap();
+        let file = root.path().join("notes.txt");
+        std::fs::write(&file, "not a folder").unwrap();
+        let mutation = WorkspaceMutation {
+            name: "Test".into(),
+            working_folder: root.path().to_string_lossy().into(),
+            product_output_folders: vec![ProductOutputFolder {
+                id: "output".into(),
+                label: "Outputs".into(),
+                path: file.to_string_lossy().into(),
+                product_types: vec![ProductType::Document],
+                is_default: true,
+                create_if_missing: false,
+            }],
+            ..WorkspaceMutation::default()
+        };
+
+        let report = validate_workspace_mutation(&mutation, &[]);
+
+        assert_eq!(
+            issue_message(&report, WorkspaceIssueCode::NotDirectory),
+            format!(
+                "output folder \"Outputs\" ({}) is not a directory",
+                file.display()
+            )
+        );
     }
 
     #[test]
