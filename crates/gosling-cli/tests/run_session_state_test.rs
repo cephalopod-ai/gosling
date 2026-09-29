@@ -852,3 +852,82 @@ fn ignored_root_level_model_edits_are_reported() {
     assert!(stdout.contains("Effective Provider:"), "{stdout}");
     assert!(stdout.contains(expected), "{stdout}");
 }
+
+async fn stored_session(env: &Env, session_id: &str) -> gosling::session::Session {
+    gosling::session::SessionManager::new(env.root.path().join("data"))
+        .get_session(session_id, false)
+        .await
+        .unwrap()
+}
+
+async fn archive(env: &Env, session_id: &str) {
+    gosling::session::SessionManager::new(env.root.path().join("data"))
+        .update(session_id)
+        .archived_at(Some(chrono::Utc::now()))
+        .apply()
+        .await
+        .unwrap();
+}
+
+fn restored_notice(session_id: &str) -> String {
+    format!("Session {session_id} was archived; restored it so you can continue.")
+}
+
+/// GSL-PT-20260927-G211: the ACP backend refuses prompts to archived sessions,
+/// but `run --resume` / `session --resume` appended to them while they stayed
+/// hidden from `session list`.
+#[tokio::test]
+async fn resuming_an_archived_session_restores_it_and_continues() {
+    let env = Env::new();
+    let cwd = env.root.path();
+    let created = env.run_ok(cwd, &["run", "-n", "g211", "-t", "hi"]);
+    let id = banner_session_id(&created);
+
+    archive(&env, &id).await;
+    let by_id = env.run_ok(cwd, &["run", "-r", "--session-id", &id, "-t", "again"]);
+    let stderr = String::from_utf8_lossy(&by_id.stderr);
+    assert_eq!(stderr.matches(&restored_notice(&id)).count(), 1, "{stderr}");
+    assert!(String::from_utf8_lossy(&by_id.stdout).contains("MOCK-REPLY"));
+    let session = stored_session(&env, &id).await;
+    assert_eq!(session.archived_at, None);
+    assert_eq!(session.message_count, 4);
+
+    archive(&env, &id).await;
+    let by_name = env.run_ok(cwd, &["run", "-r", "-n", "g211", "-t", "third"]);
+    let stderr = String::from_utf8_lossy(&by_name.stderr);
+    assert!(stderr.contains(&restored_notice(&id)), "{stderr}");
+    let session = stored_session(&env, &id).await;
+    assert_eq!(session.archived_at, None);
+    assert_eq!(session.message_count, 6);
+}
+
+#[tokio::test]
+async fn resuming_an_active_session_prints_no_restore_notice() {
+    let env = Env::new();
+    let cwd = env.root.path();
+    let created = env.run_ok(cwd, &["run", "-n", "active", "-t", "hi"]);
+    let id = banner_session_id(&created);
+
+    let resumed = env.run_ok(cwd, &["run", "-r", "--session-id", &id, "-t", "again"]);
+
+    let stderr = String::from_utf8_lossy(&resumed.stderr);
+    assert!(!stderr.contains("was archived"), "{stderr}");
+    assert_eq!(stored_session(&env, &id).await.message_count, 4);
+}
+
+#[tokio::test]
+async fn resume_latest_skips_archived_sessions() {
+    let env = Env::new();
+    let cwd = env.root.path();
+    let older = banner_session_id(&env.run_ok(cwd, &["run", "-n", "older", "-t", "hi"]));
+    let newer = banner_session_id(&env.run_ok(cwd, &["run", "-n", "newer", "-t", "hi"]));
+    archive(&env, &newer).await;
+
+    let resumed = env.run_ok(cwd, &["run", "-r", "-t", "again"]);
+
+    assert!(!String::from_utf8_lossy(&resumed.stderr).contains("was archived"));
+    assert_eq!(stored_session(&env, &older).await.message_count, 4);
+    let newer = stored_session(&env, &newer).await;
+    assert!(newer.archived_at.is_some());
+    assert_eq!(newer.message_count, 2);
+}

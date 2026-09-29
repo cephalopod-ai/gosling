@@ -417,7 +417,7 @@ async fn get_or_create_session_id(
                 .ok_or_else(|| anyhow::anyhow!("No session found to resume"))?;
             return Ok(Some(session_id));
         };
-        return lookup_session_id(id).await.map(Some);
+        return lookup_session_id(id, true).await.map(Some);
     }
 
     let Some(id) = identifier else {
@@ -488,19 +488,39 @@ async fn resolve_or_prompt_session_id(
             }
         };
     };
-    Ok(Some(lookup_session_id(id).await?))
+    Ok(Some(lookup_session_id(id, false).await?))
 }
 
-async fn lookup_session_id(identifier: Identifier) -> Result<String> {
+/// With `include_archived`, a name that matches no active session may select
+/// an archived one; active sessions still win when names collide.
+async fn lookup_session_id(identifier: Identifier, include_archived: bool) -> Result<String> {
     let session_manager = SessionManager::instance();
 
     if let Some(session_id) = identifier.session_id {
         Ok(session_id)
     } else if let Some(name) = identifier.name {
-        let sessions = session_manager.list_sessions().await?;
-        sessions
+        let is_named = |s: &gosling::session::Session| s.name == name || s.id == name;
+        let active = session_manager
+            .list_sessions()
+            .await?
             .into_iter()
-            .find(|s| s.name == name || s.id == name)
+            .find(is_named);
+        let found = match active {
+            None if include_archived => session_manager
+                .list_all_sessions()
+                .await?
+                .into_iter()
+                .filter(|s| s.archived_at.is_some())
+                .filter(|s| {
+                    matches!(
+                        s.session_type,
+                        SessionType::User | SessionType::Scheduled | SessionType::Acp
+                    )
+                })
+                .find(is_named),
+            found => found,
+        };
+        found
             .map(|s| s.id)
             .ok_or_else(|| anyhow::anyhow!("No session found with name '{}'", name))
     } else if let Some(path) = identifier.path {
