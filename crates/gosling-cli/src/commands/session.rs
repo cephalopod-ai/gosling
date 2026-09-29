@@ -17,6 +17,7 @@ use gosling::session::{
     Session, SessionManager, SessionType,
 };
 use gosling::utils::safe_truncate;
+use gosling::workspace::WorkspaceNames;
 use gosling_providers::secret_redaction::SecretRedactor;
 use regex::Regex;
 use std::borrow::Cow;
@@ -246,6 +247,13 @@ pub async fn handle_session_list(
 
     match format.as_str() {
         "json" => {
+            // An unreadable workspace store must not hide sessions, so their
+            // stored names are shown instead.
+            let workspace_names =
+                WorkspaceNames::load(&session_manager.data_dir()).unwrap_or_default();
+            for session in &mut sessions {
+                workspace_names.apply(session);
+            }
             let payload = serde_json::to_string(&sessions)?;
             if !write_line_or_broken_pipe_ok(&mut out, &payload)? {
                 return Ok(());

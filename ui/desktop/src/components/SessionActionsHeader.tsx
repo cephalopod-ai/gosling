@@ -18,6 +18,7 @@ import { acpReadSessionHandoffCheckpoint } from '../acp/providers';
 import { acpExportSession, acpForkSession, acpRenameSession } from '../acp/sessions';
 import { getSessionDisplayName } from '../sessions';
 import type { Session } from '../types/session';
+import type { WorkspaceWithValidation } from '@repo-makeover/gosling-sdk';
 import { errorMessage } from '../utils/conversionUtils';
 import { writeTextToClipboard } from '../utils/clipboard';
 import { cn } from '../utils';
@@ -356,6 +357,29 @@ function JsonTree({
   );
 }
 
+const REMOVED_WORKSPACE_SUFFIX = ' (removed)';
+
+// The session carries a creation-time snapshot of its workspace name; the
+// workspace may since have been renamed, and another workspace may now use the
+// old name. An empty list means workspaces have not loaded yet.
+function currentWorkspaceName(
+  session: Session,
+  workspaces: WorkspaceWithValidation[]
+): string | undefined {
+  const snapshot = session.workspace_name ?? undefined;
+  if (!session.workspace_id || workspaces.length === 0) {
+    return snapshot;
+  }
+  const current = workspaces.find((item) => item.workspace.id === session.workspace_id);
+  if (current) {
+    return current.workspace.name;
+  }
+  if (!snapshot || snapshot.endsWith(REMOVED_WORKSPACE_SUFFIX)) {
+    return snapshot;
+  }
+  return `${snapshot}${REMOVED_WORKSPACE_SUFFIX}`;
+}
+
 export default function SessionActionsHeader({
   session,
   onSessionChange,
@@ -374,9 +398,13 @@ export default function SessionActionsHeader({
   const [isHandingOff, setIsHandingOff] = useState(false);
   const [isContextHistoryOpen, setIsContextHistoryOpen] = useState(false);
   const [fullTextSelection, setFullTextSelection] = useState<FullTextSelection | null>(null);
-  const { activeWorkspace } = useWorkspace();
+  const { activeWorkspace, workspaces } = useWorkspace();
 
   const title = useMemo(() => (session ? getSessionDisplayName(session) : ''), [session]);
+  const workspaceName = useMemo(
+    () => (session ? currentWorkspaceName(session, workspaces) : undefined),
+    [session, workspaces]
+  );
   const workspaceMismatch = Boolean(
     session?.workspace_id && activeWorkspace && session.workspace_id !== activeWorkspace.id
   );
@@ -558,7 +586,7 @@ export default function SessionActionsHeader({
               aria-label={intl.formatMessage(i18n.actionsLabel)}
             >
               <span className="truncate text-xs font-medium">{title}</span>
-              {session.workspace_name && (
+              {workspaceName && (
                 <span
                   className={cn(
                     'max-w-36 truncate rounded-full px-1.5 py-0.5 text-[10px]',
@@ -568,11 +596,11 @@ export default function SessionActionsHeader({
                   )}
                   title={
                     workspaceMismatch
-                      ? `Pinned to ${session.workspace_name}; new chats use ${activeWorkspace?.name}`
-                      : `Workspace: ${session.workspace_name}`
+                      ? `Pinned to ${workspaceName}; new chats use ${activeWorkspace?.name}`
+                      : `Workspace: ${workspaceName}`
                   }
                 >
-                  {session.workspace_name}
+                  {workspaceName}
                 </span>
               )}
               {session.credential_profile_name && (

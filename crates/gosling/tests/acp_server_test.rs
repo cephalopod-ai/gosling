@@ -970,6 +970,136 @@ fn test_workspace_rejects_model_from_another_provider_before_session_activation(
     });
 }
 
+fn workspace_record(id: &str, name: &str, folder: &Path) -> serde_json::Value {
+    serde_json::json!({
+        "id": id,
+        "schemaVersion": 1,
+        "name": name,
+        "workingFolder": folder,
+        "productOutputFolders": [{
+            "id": format!("{id}-outputs"),
+            "label": "Outputs",
+            "path": folder,
+            "productTypes": ["document"],
+            "isDefault": true,
+            "createIfMissing": false
+        }],
+        "createdAt": "2026-09-27T00:00:00Z",
+        "updatedAt": "2026-09-27T00:00:00Z",
+        "lastOpenedAt": "2026-09-27T00:00:00Z"
+    })
+}
+
+async fn seed_workspace_session(
+    data_root: &Path,
+    folder: &Path,
+    workspace_id: &str,
+    snapshot: &str,
+) -> String {
+    let session_manager = SessionManager::new(data_root.to_path_buf());
+    let session = session_manager
+        .create_session(
+            folder.to_path_buf(),
+            format!("chat in {workspace_id}"),
+            SessionType::Acp,
+            GoslingMode::default(),
+        )
+        .await
+        .unwrap();
+    session_manager
+        .update(&session.id)
+        .workspace_snapshot(
+            workspace_id.to_string(),
+            snapshot.to_string(),
+            None,
+            None,
+            None,
+            gosling::workspace::WorkspaceSessionContext {
+                workspace_id: workspace_id.to_string(),
+                workspace_name: snapshot.to_string(),
+                primary_working_folder: folder.to_string_lossy().to_string(),
+                ..Default::default()
+            },
+        )
+        .apply()
+        .await
+        .unwrap();
+    session_manager
+        .add_message(&session.id, &Message::user().with_text("hello"))
+        .await
+        .unwrap();
+    session.id
+}
+
+fn meta_workspace_name(meta: Option<&serde_json::Map<String, serde_json::Value>>) -> &str {
+    meta.and_then(|meta| meta.get("workspaceName"))
+        .and_then(|name| name.as_str())
+        .unwrap()
+}
+
+#[test]
+fn test_session_workspace_name_follows_rename_and_ignores_reused_label() {
+    run_test(async {
+        let data_root = tempfile::tempdir().unwrap();
+        let work_dir = tempfile::tempdir().unwrap();
+        let workspace_dir = data_root.path().join("workspaces");
+        std::fs::create_dir_all(&workspace_dir).unwrap();
+        std::fs::write(
+            workspace_dir.join("workspaces.json"),
+            serde_json::to_vec(&serde_json::json!({
+                "schema_version": 1,
+                "active_workspace_id": "default",
+                "default_workspace_id": "default",
+                "migration_completed": true,
+                "templates_materialized": true,
+                "workspaces": [
+                    workspace_record("default", "Default", work_dir.path()),
+                    workspace_record("renamed", "Alpha Renamed", work_dir.path()),
+                    workspace_record("reused", "Alpha", work_dir.path()),
+                ],
+                "credential_profiles": [],
+                "distribution_profile_secret_fields": {},
+                "workspace_profile_required_secret_fields": {},
+                "pending_secret_deletions": []
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let renamed =
+            seed_workspace_session(data_root.path(), work_dir.path(), "renamed", "Alpha").await;
+        let deleted =
+            seed_workspace_session(data_root.path(), work_dir.path(), "deleted", "Gamma").await;
+        let conn = new_connection(data_root.path()).await;
+
+        let listed = list_sessions_request(&conn, ListSessionsRequest::new())
+            .await
+            .unwrap();
+        let listed_name = |id: &str| {
+            let info = listed
+                .sessions
+                .iter()
+                .find(|info| info.session_id.0.as_ref() == id)
+                .unwrap();
+            meta_workspace_name(info.meta.as_ref()).to_string()
+        };
+        assert_eq!(listed_name(&renamed), "Alpha Renamed");
+        assert_eq!(listed_name(&deleted), "Gamma (removed)");
+
+        let info = get_session_info_request(
+            &conn,
+            GetSessionInfoRequest {
+                session_id: renamed.clone(),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            meta_workspace_name(info.session.meta.as_ref()),
+            "Alpha Renamed"
+        );
+    });
+}
+
 #[test]
 fn test_model_set() {
     run_test(async { run_model_set::<AcpServerConnection>().await });

@@ -319,6 +319,7 @@ impl GoslingAcpAgent {
             response = response.config_options(co);
         }
 
+        self.current_workspace_names().apply(&mut session);
         let mut response_meta = session_response_meta(&session, &extension_results);
         if load_options.compacted {
             let page = self
