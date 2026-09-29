@@ -49,7 +49,8 @@ const i18n = defineMessages({
   },
   pinnedExplanation: {
     id: 'credentialProfileSelector.pinnedExplanation',
-    defaultMessage: 'Credentials are pinned when a chat starts. Start a new chat to use another profile.',
+    defaultMessage:
+      'Credentials are pinned when a chat starts. Start a new chat to use another profile.',
   },
   tooltip: {
     id: 'credentialProfileSelector.tooltip',
@@ -93,11 +94,11 @@ export function CredentialProfileSelector({
                   className={cn(
                     'z-[100] flex max-w-[220px] items-center text-xs text-text-primary/70 transition-colors hover:cursor-pointer hover:text-text-primary [&>svg]:size-4',
                     surface === 'header'
-                      ? 'no-drag rounded-full border border-border-primary bg-background-secondary px-2 py-1 hover:bg-background-tertiary'
+                      ? 'no-drag min-w-0 rounded-full border border-border-primary bg-background-secondary px-2 py-1 hover:bg-background-tertiary'
                       : 'pl-1'
                   )}
                 >
-                  <KeyRound className={compact ? '' : 'mr-1'} />
+                  <KeyRound className={compact ? 'shrink-0' : 'mr-1 shrink-0'} />
                   {!compact && <span className="truncate">{displayName}</span>}
                   {missingProfile && (
                     <TriangleAlert className="ml-1 shrink-0 text-amber-500" aria-hidden="true" />

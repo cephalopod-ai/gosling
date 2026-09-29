@@ -166,6 +166,7 @@ const navItemClass = (active: boolean) =>
   cn(
     'flex flex-row items-center gap-3 outline-none no-drag w-full',
     'rounded-full px-3 py-2 text-sm font-medium transition-colors',
+    'focus-visible:ring-1 focus-visible:ring-border-active',
     active
       ? 'bg-background-tertiary text-text-primary'
       : 'text-text-primary hover:bg-background-tertiary/60'
@@ -229,32 +230,45 @@ const SessionRow: React.FC<SessionRowProps> = ({
         active && 'bg-background-tertiary'
       )}
     >
-      <InlineEditText
-        value={session.name}
-        onSave={async (newName) => {
-          await acpRenameSession(session.id, newName);
-          window.dispatchEvent(
-            new CustomEvent(AppEvents.SESSION_RENAMED, {
-              detail: { sessionId: session.id, newName, userInitiated: true },
-            })
-          );
+      <div
+        role={isEditing ? undefined : 'button'}
+        tabIndex={isEditing ? undefined : 0}
+        onKeyDown={(event) => {
+          if (isEditing || event.target !== event.currentTarget) return;
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            onClick();
+          }
         }}
-        placeholder={intl.formatMessage(i18n.untitledSession)}
-        disabled={isStreaming}
-        singleClickEdit={false}
-        className="truncate text-text-primary flex-1 !px-0 !py-0 hover:bg-transparent"
-        editClassName="!text-sm"
-        editToken={renameToken}
-        onEditStart={() => setIsEditing(true)}
-        onEditEnd={() => setIsEditing(false)}
-      />
+        className="flex min-w-0 flex-1 rounded-full focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-active"
+      >
+        <InlineEditText
+          value={session.name}
+          onSave={async (newName) => {
+            await acpRenameSession(session.id, newName);
+            window.dispatchEvent(
+              new CustomEvent(AppEvents.SESSION_RENAMED, {
+                detail: { sessionId: session.id, newName, userInitiated: true },
+              })
+            );
+          }}
+          placeholder={intl.formatMessage(i18n.untitledSession)}
+          disabled={isStreaming}
+          singleClickEdit={false}
+          className="truncate text-text-primary flex-1 !px-0 !py-0 hover:bg-transparent"
+          editClassName="!text-sm"
+          editToken={renameToken}
+          onEditStart={() => setIsEditing(true)}
+          onEditEnd={() => setIsEditing(false)}
+        />
+      </div>
       <div className="flex items-center gap-1">
         <SessionIndicators isStreaming={isStreaming} hasUnread={hasUnread} hasError={hasError} />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              className="rounded-full p-1 text-text-secondary opacity-0 transition-opacity hover:bg-background-secondary hover:text-text-primary focus-visible:opacity-100 focus-visible:outline-none group-hover:opacity-100"
+              className="rounded-full p-1 text-text-secondary opacity-0 transition-opacity hover:bg-background-secondary hover:text-text-primary focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-active group-hover:opacity-100"
               onClick={(event) => event.stopPropagation()}
               aria-label={intl.formatMessage(i18n.moreSessionActions)}
             >
@@ -638,7 +652,7 @@ export const Navigation: React.FC<{ className?: string }> = ({ className }) => {
       transition={{ duration: 0.15 }}
       className={cn('bg-background-primary outline-none flex flex-col h-full', className)}
     >
-      <div className="h-[48px] no-drag" />
+      <div className="h-[48px] shrink-0 no-drag" />
 
       {/* Nav items */}
       <div className="px-2 flex flex-col gap-0.5">
@@ -654,7 +668,10 @@ export const Navigation: React.FC<{ className?: string }> = ({ className }) => {
 
       <div
         ref={workspacesPaneRef}
-        className={cn('mt-3 shrink-0 overflow-y-auto', workspacesHeight === null && 'max-h-[45%]')}
+        className={cn(
+          'mt-3 min-h-0 shrink overflow-y-auto',
+          workspacesHeight === null && 'max-h-[45%]'
+        )}
         style={workspacesHeight === null ? undefined : { height: workspacesHeight }}
       >
         <WorkspaceSidebarSection
@@ -678,8 +695,10 @@ export const Navigation: React.FC<{ className?: string }> = ({ className }) => {
         <span className="pointer-events-none absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-border-secondary transition-colors group-hover:bg-border-active group-focus-visible:bg-border-active" />
       </div>
 
-      {/* Chats section — takes remaining vertical space */}
-      <div className="flex-1 min-h-0 flex flex-col mt-2">
+      {/* Chats section — takes remaining vertical space. In a window too short
+          for both sections the workspaces list shrinks (and scrolls) so this
+          keeps its header and at least one row. */}
+      <div className="flex-1 min-h-18 flex flex-col mt-2">
         <button
           onClick={() => setIsChatsExpanded((v) => !v)}
           className="flex items-center gap-1 px-4 py-1 text-xs font-semibold uppercase tracking-wider text-text-secondary hover:text-text-primary transition-colors self-start"

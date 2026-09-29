@@ -8,7 +8,8 @@ use crate::session::{build_session, SessionBuilderConfig};
 use gosling::checks::{discover, DiscoveredReview};
 
 use super::orchestrator::{
-    emit_findings, run_checks_in_parallel, run_main_pass_in_parallel, Severity,
+    check_prompt, emit_findings, main_pass_prompts, run_checks_in_parallel,
+    run_main_pass_in_parallel, Severity,
 };
 use super::prompt::{build_review_prompt, DEFAULT_REVIEW_PROMPT};
 use super::worker::ReviewWorkerPool;
@@ -169,13 +170,12 @@ pub async fn handle_review(opts: ReviewOptions) -> Result<()> {
     );
 
     if opts.dry_run {
-        println!("{}", prompt);
-        if use_orchestrator {
-            println!(
-                "\n# orchestrator: {} check(s) would run as parallel subprocesses",
-                discovered.checks.len()
-            );
-            println!("# orchestrator: main pass would fan out one subprocess per touched file");
+        // `--checks-only` runs through the orchestrator's check runner even
+        // with `--no-orchestrate`, so it previews the same way.
+        if use_orchestrator || opts.checks_only {
+            print_orchestrated_dry_run(&diff, &base_prompt, &discovered, &opts);
+        } else {
+            println!("{}", prompt);
         }
         return Ok(());
     }
@@ -295,6 +295,41 @@ fn prepend_instructions(base_prompt: &str, instructions: Option<&str>) -> String
             )
         }
         _ => base_prompt.to_string(),
+    }
+}
+
+fn print_orchestrated_dry_run(
+    diff: &str,
+    base_prompt: &str,
+    discovered: &DiscoveredReview,
+    opts: &ReviewOptions,
+) {
+    let main_pass = if opts.checks_only {
+        Vec::new()
+    } else {
+        main_pass_prompts(diff, base_prompt, opts)
+    };
+    for (path, prompt) in &main_pass {
+        println!("# main pass: {path}\n\n{prompt}");
+    }
+    for check in &discovered.checks {
+        println!(
+            "# check: {}\n\n{}",
+            check.name,
+            check_prompt(check, diff, opts)
+        );
+    }
+    println!(
+        "# orchestrator: {} check(s) would run as parallel subprocesses",
+        discovered.checks.len()
+    );
+    if opts.checks_only {
+        println!("# orchestrator: main pass skipped (--checks-only)");
+    } else {
+        println!(
+            "# orchestrator: main pass would run {} subprocess(es), one per touched file",
+            main_pass.len()
+        );
     }
 }
 

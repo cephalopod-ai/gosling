@@ -110,6 +110,57 @@ describe('ExternalBackendSection', () => {
     });
   });
 
+  it('does not save an invalid URL when the Secret field loses focus', async () => {
+    const user = userEvent.setup();
+    mockedGetSetting.mockResolvedValue({
+      enabled: true,
+      url: 'http://127.0.0.1:18690',
+      secret: '',
+      secretConfigured: false,
+      certFingerprint: '',
+    });
+    renderWithIntl(<ExternalBackendSection />);
+
+    const urlInput = await screen.findByLabelText('Backend Base URL');
+    await user.clear(urlInput);
+    await user.type(urlInput, 'ftp://127.0.0.1:18690');
+    const secretInput = screen.getByLabelText('Secret Key');
+    await user.click(secretInput);
+    await user.type(secretInput, 'secret');
+    await user.tab();
+
+    expect(mockedSetSetting).not.toHaveBeenCalled();
+    expect(screen.getByText('URL must use http or https protocol')).toBeInTheDocument();
+  });
+
+  it('turns the backend off without persisting an invalid unsaved URL', async () => {
+    const user = userEvent.setup();
+    mockedGetSetting.mockResolvedValue({
+      enabled: true,
+      url: 'http://127.0.0.1:18690',
+      secret: '',
+      secretConfigured: false,
+      certFingerprint: '',
+    });
+    renderWithIntl(<ExternalBackendSection />);
+
+    const urlInput = await screen.findByLabelText('Backend Base URL');
+    await user.clear(urlInput);
+    await user.type(urlInput, 'not a url');
+    await user.click(screen.getByRole('switch'));
+
+    await waitFor(() => {
+      expect(mockedSetSetting).toHaveBeenCalledWith(
+        'externalGoslingd',
+        expect.objectContaining({ enabled: false, url: 'http://127.0.0.1:18690' })
+      );
+    });
+    expect(mockedSetSetting).not.toHaveBeenCalledWith(
+      'externalGoslingd',
+      expect.objectContaining({ url: 'not a url' })
+    );
+  });
+
   it('never reloads a stored secret and clears replacement input after submit', async () => {
     const user = userEvent.setup();
     mockedGetSetting.mockResolvedValue({

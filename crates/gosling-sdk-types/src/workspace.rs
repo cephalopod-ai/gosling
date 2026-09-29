@@ -117,6 +117,7 @@ pub enum WorkspaceIssueCode {
     UnsupportedSchemaVersion,
     SecretFieldRejected,
     UnknownExtension,
+    FolderResolvesOutside,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

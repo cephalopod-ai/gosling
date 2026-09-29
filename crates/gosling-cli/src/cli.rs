@@ -36,6 +36,7 @@ use gosling::agents::Container;
 use gosling::conversation::Conversation;
 use gosling::session::session_manager::SessionType;
 use gosling::session::SessionManager;
+use std::collections::HashSet;
 use std::io::{IsTerminal, Read};
 use std::path::PathBuf;
 use strum::VariantNames;
@@ -128,7 +129,7 @@ impl From<ServePlatform> for GoslingPlatform {
 }
 
 #[derive(Parser)]
-#[command(name = "gosling", author, version, display_name = "", about, long_about = None)]
+#[command(name = "gosling", author, version, about, long_about = None)]
 pub struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
@@ -465,15 +466,22 @@ async fn get_or_create_session_id(
 async fn resolve_or_prompt_session_id(
     session_manager: &SessionManager,
     identifier: Option<Identifier>,
+    picker_prompt: &str,
 ) -> Result<Option<String>> {
     let Some(id) = identifier else {
         crate::commands::session::ensure_session_picker_terminal(
             "--session-id <ID> or --name <NAME>",
         )?;
-        return match crate::commands::session::prompt_interactive_session_selection(session_manager)
-            .await
+        return match crate::signal::cancellable_prompts(
+            crate::commands::session::prompt_interactive_session_selection(
+                session_manager,
+                picker_prompt,
+            ),
+        )
+        .await
         {
             Ok(id) => Ok(Some(id)),
+            Err(e) if crate::signal::is_prompt_cancellation(&e) => Err(e),
             Err(e) => {
                 eprintln!("Error: {}", e);
                 Ok(None)
@@ -496,13 +504,17 @@ async fn lookup_session_id(identifier: Identifier) -> Result<String> {
             .map(|s| s.id)
             .ok_or_else(|| anyhow::anyhow!("No session found with name '{}'", name))
     } else if let Some(path) = identifier.path {
-        path.file_stem()
-            .and_then(|s| s.to_str())
-            .map(|s| s.to_string())
-            .ok_or_else(|| anyhow::anyhow!("Could not extract session ID from path: {:?}", path))
+        session_id_from_legacy_path(&path)
     } else {
         Err(anyhow::anyhow!("No identifier provided"))
     }
+}
+
+fn session_id_from_legacy_path(path: &std::path::Path) -> Result<String> {
+    path.file_stem()
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_string())
+        .ok_or_else(|| anyhow::anyhow!("Could not extract session ID from path: {:?}", path))
 }
 
 #[derive(Subcommand)]
@@ -513,7 +525,8 @@ enum SessionCommand {
             short,
             long,
             help = "Output format (text, json)",
-            default_value = "text"
+            default_value = "text",
+            value_parser = clap::builder::PossibleValuesParser::new(["text", "json"])
         )]
         format: String,
 
@@ -542,7 +555,8 @@ enum SessionCommand {
         #[arg(
             short = 'r',
             long,
-            help = "Regex for removing matched sessions (optional)"
+            value_name = "PATTERN",
+            help = "Remove sessions whose ID (e.g., '20250921_1') matches this regex; names are not matched"
         )]
         regex: Option<String>,
         #[arg(
@@ -561,7 +575,7 @@ enum SessionCommand {
             short,
             long,
             help = "Output file path (default: stdout)",
-            long_help = "Path to save the exported Markdown. If not provided, output will be sent to stdout"
+            long_help = "Path to save the export, written in the format chosen by --format. If not provided, output will be sent to stdout"
         )]
         output: Option<PathBuf>,
 
@@ -569,7 +583,8 @@ enum SessionCommand {
             long = "format",
             value_name = "FORMAT",
             help = "Output format (markdown, json, yaml)",
-            default_value = "markdown"
+            default_value = "markdown",
+            value_parser = clap::builder::PossibleValuesParser::new(["markdown", "json", "yaml"])
         )]
         format: String,
 
@@ -613,12 +628,20 @@ enum SessionCommand {
         )]
         working_dir: Option<PathBuf>,
     },
-    #[command(name = "diagnostics")]
+    #[command(
+        name = "diagnostics",
+        about = "Write a JSON diagnostics report for a session. Prompts for the session if none is given."
+    )]
     Diagnostics {
         #[command(flatten)]
         identifier: Option<Identifier>,
 
-        #[arg(short = 'o', long)]
+        #[arg(
+            short = 'o',
+            long,
+            value_name = "FILE",
+            help = "Where to write the report (default: diagnostics_<session_id>.json in the current directory)"
+        )]
         output: Option<PathBuf>,
     },
     #[command(
@@ -644,7 +667,12 @@ enum ContextHistoryCommand {
         before: Option<u64>,
         #[arg(long, help = "Include snapshots past their retention date")]
         include_expired: bool,
-        #[arg(long, default_value = "text", help = "Output format (text, json)")]
+        #[arg(
+            long,
+            default_value = "text",
+            help = "Output format (text, json)",
+            value_parser = clap::builder::PossibleValuesParser::new(["text", "json"])
+        )]
         format: String,
     },
     #[command(about = "Show one saved compaction snapshot")]
@@ -656,7 +684,8 @@ enum ContextHistoryCommand {
         #[arg(
             long,
             default_value = "markdown",
-            help = "Output format (markdown, json)"
+            help = "Output format (markdown, json)",
+            value_parser = clap::builder::PossibleValuesParser::new(["markdown", "json"])
         )]
         format: String,
     },
@@ -668,7 +697,12 @@ enum ContextHistoryCommand {
         generation: Option<u64>,
         #[arg(short, long)]
         output: Option<PathBuf>,
-        #[arg(long, default_value = "json", help = "Output format (json, markdown)")]
+        #[arg(
+            long,
+            default_value = "json",
+            help = "Output format (json, markdown)",
+            value_parser = clap::builder::PossibleValuesParser::new(["json", "markdown"])
+        )]
         format: String,
         #[arg(short = 'y', long, help = "Acknowledge the sensitive-data warning")]
         yes: bool,
@@ -827,7 +861,7 @@ enum McpSubcommand {
         #[arg(long = "secret", value_name = "KEY[=VALUE]")]
         secrets: Vec<String>,
 
-        /// Startup timeout in seconds
+        /// Tool-call timeout in seconds; startup is bounded by GOSLING_EXTENSION_STARTUP_TIMEOUT (default 30) or this value if smaller
         #[arg(long, value_name = "SECS")]
         timeout: Option<u64>,
 
@@ -920,21 +954,46 @@ enum Command {
     },
 
     /// Validate a shell provisioning document against main Gosling settings
-    #[command(about = "Validate a shell provisioning document")]
+    #[command(
+        about = "Validate a shell provisioning document",
+        long_about = "Validate a shell provisioning document against this installation's Gosling settings without starting a server. Prints a JSON report and exits non-zero when the document is invalid."
+    )]
     ShellValidate {
-        #[arg(long = "shell-id", value_name = "ID")]
+        #[arg(
+            long = "shell-id",
+            value_name = "ID",
+            help = "Shell identity to validate as (1-64 lowercase letters, digits, '-' or '_')"
+        )]
         shell_id: String,
 
-        #[arg(long = "shell-display-name", value_name = "NAME")]
+        #[arg(
+            long = "shell-display-name",
+            value_name = "NAME",
+            help = "Display name for the shell identity"
+        )]
         shell_display_name: String,
 
-        #[arg(long = "shell-version", default_value = "1")]
+        #[arg(
+            long = "shell-version",
+            value_name = "VERSION",
+            default_value = "1",
+            help = "Version string for the shell identity"
+        )]
         shell_version: String,
 
-        #[arg(long = "shell-provisioning", value_name = "PATH")]
+        #[arg(
+            long = "shell-provisioning",
+            value_name = "PATH",
+            help = "Shell provisioning document (JSON) to validate"
+        )]
         shell_provisioning: PathBuf,
 
-        #[arg(long = "with-builtin", value_name = "NAME", value_delimiter = ',')]
+        #[arg(
+            long = "with-builtin",
+            value_name = "NAME",
+            value_delimiter = ',',
+            help = "Builtin extensions the shell server would run with, as for `gosling serve --with-builtin` (comma-separated); unknown names are reported"
+        )]
         builtins: Vec<String>,
     },
 
@@ -1334,7 +1393,7 @@ enum TermCommand {
         #[arg(
             long = "default",
             help = "Make gosling the default handler for unknown commands",
-            long_help = "When enabled, anything you type that isn't a valid command will be sent to gosling. Supported for zsh, bash, and nu."
+            long_help = "When enabled, anything you type that isn't a valid command will be sent to gosling. Supported for zsh, bash 4.0 or newer (not the bash 3.2 that ships as macOS /bin/bash), and nu."
         )]
         default: bool,
     },
@@ -1393,6 +1452,106 @@ impl CompletionShell {
             CompletionShell::Zsh => generate(ClapShell::Zsh, cmd, bin_name, writer),
         }
     }
+}
+
+// clap_complete lists hidden subcommands like visible ones, so completions are generated from
+// a copy of the command tree that leaves them out.
+fn without_hidden_subcommands(cmd: clap::Command) -> clap::Command {
+    let cmd = cmd.mut_subcommands(without_hidden_subcommands);
+    if cmd.get_subcommands().any(clap::Command::is_hide_set) {
+        rebuild_with_subcommands(&cmd, |sub| !sub.is_hide_set())
+    } else {
+        cmd
+    }
+}
+
+// clap has no way to remove a subcommand, so the parent is rebuilt from the settings that the
+// derived commands use.
+fn rebuild_with_subcommands(
+    cmd: &clap::Command,
+    keep: impl Fn(&clap::Command) -> bool,
+) -> clap::Command {
+    let visible_aliases: Vec<String> = cmd.get_visible_aliases().map(str::to_owned).collect();
+    let hidden_aliases: Vec<String> = cmd
+        .get_all_aliases()
+        .filter(|alias| !visible_aliases.iter().any(|visible| visible == alias))
+        .map(str::to_owned)
+        .collect();
+    let mut rebuilt = clap::Command::new(cmd.get_name().to_owned())
+        .visible_aliases(visible_aliases)
+        .aliases(hidden_aliases)
+        .hide(cmd.is_hide_set())
+        .subcommand_required(cmd.is_subcommand_required_set())
+        .arg_required_else_help(cmd.is_arg_required_else_help_set())
+        .args(cmd.get_arguments().cloned())
+        .groups(cmd.get_groups().cloned())
+        .subcommands(cmd.get_subcommands().filter(|sub| keep(sub)).cloned());
+    if let Some(about) = cmd.get_about() {
+        rebuilt = rebuilt.about(about.clone());
+    }
+    if let Some(long_about) = cmd.get_long_about() {
+        rebuilt = rebuilt.long_about(long_about.clone());
+    }
+    if let Some(version) = cmd.get_version() {
+        rebuilt = rebuilt.version(version.to_owned());
+    }
+    if let Some(long_version) = cmd.get_long_version() {
+        rebuilt = rebuilt.long_version(long_version.to_owned());
+    }
+    if let Some(author) = cmd.get_author() {
+        rebuilt = rebuilt.author(author.to_owned());
+    }
+    rebuilt
+}
+
+fn hidden_subcommand_names(cmd: &clap::Command, names: &mut HashSet<String>) {
+    for sub in cmd.get_subcommands() {
+        if sub.is_hide_set() {
+            names.insert(sub.get_name().to_owned());
+            names.extend(sub.get_all_aliases().map(str::to_owned));
+        }
+        hidden_subcommand_names(sub, names);
+    }
+}
+
+fn visible_subcommand_names(cmd: &clap::Command, names: &mut HashSet<String>) {
+    for sub in cmd.get_subcommands().filter(|sub| !sub.is_hide_set()) {
+        names.insert(sub.get_name().to_owned());
+        names.extend(sub.get_all_aliases().map(str::to_owned));
+        visible_subcommand_names(sub, names);
+    }
+}
+
+// clap's "similar subcommands" tip draws on hidden subcommands too.
+fn drop_hidden_subcommand_suggestions(mut error: clap::Error) -> clap::Error {
+    use clap::error::{ContextKind, ContextValue};
+
+    if error.kind() != clap::error::ErrorKind::InvalidSubcommand {
+        return error;
+    }
+    let Some(ContextValue::Strings(suggestions)) = error.get(ContextKind::SuggestedSubcommand)
+    else {
+        return error;
+    };
+    let cmd = Cli::command();
+    let mut hidden = HashSet::new();
+    hidden_subcommand_names(&cmd, &mut hidden);
+    let mut visible = HashSet::new();
+    visible_subcommand_names(&cmd, &mut visible);
+    let remaining: Vec<String> = suggestions
+        .iter()
+        .filter(|name| !hidden.contains(*name) || visible.contains(*name))
+        .cloned()
+        .collect();
+    if remaining.is_empty() {
+        error.remove(ContextKind::SuggestedSubcommand);
+    } else {
+        error.insert(
+            ContextKind::SuggestedSubcommand,
+            ContextValue::Strings(remaining),
+        );
+    }
+    error
 }
 
 #[derive(Debug)]
@@ -1765,6 +1924,8 @@ async fn handle_serve_command(args: ServeCommandArgs) -> Result<()> {
     );
 
     let config = Config::global();
+    let tls_cert_from_flag = tls_cert_path.is_some();
+    let tls_key_from_flag = tls_key_path.is_some();
     let tls_cert_path =
         tls_cert_path.or_else(|| config.get_param::<String>("GOSLING_TLS_CERT_PATH").ok());
     let tls_key_path =
@@ -1792,11 +1953,20 @@ async fn handle_serve_command(args: ServeCommandArgs) -> Result<()> {
     if tls {
         #[cfg(any(feature = "rustls-tls", feature = "native-tls"))]
         {
+            let tls_path_sources = if tls_cert_path.is_some() && tls_key_path.is_some() {
+                mixed_tls_path_sources(tls_cert_from_flag, tls_key_from_flag)
+            } else {
+                None
+            };
             let tls_setup = gosling::acp::transport::tls::setup_tls(
                 tls_cert_path.as_deref(),
                 tls_key_path.as_deref(),
             )
-            .await?;
+            .await
+            .map_err(|error| match tls_path_sources {
+                Some(sources) => error.context(sources),
+                None => error,
+            })?;
             info!("Starting ACP server on https://{}", addr);
             let shutdown_handle = axum_server::Handle::new();
             let signal_handle = shutdown_handle.clone();
@@ -1824,7 +1994,12 @@ async fn handle_serve_command(args: ServeCommandArgs) -> Result<()> {
 
         #[cfg(not(any(feature = "rustls-tls", feature = "native-tls")))]
         {
-            let _ = (tls_cert_path, tls_key_path);
+            let _ = (
+                tls_cert_path,
+                tls_key_path,
+                tls_cert_from_flag,
+                tls_key_from_flag,
+            );
             anyhow::bail!(
                 "TLS was requested but no TLS backend is enabled. \
                  Enable the `rustls-tls` or `native-tls` feature."
@@ -1871,6 +2046,23 @@ fn is_exact_origin(origin: &str) -> bool {
         && url.fragment().is_none()
         && matches!(url.path(), "" | "/")
         && !origin.ends_with('/')
+}
+
+// The certificate and key paths fall back to settings independently, so a flag can end up
+// paired with a stale setting; say so when loading the pair fails.
+#[cfg(any(feature = "rustls-tls", feature = "native-tls"))]
+fn mixed_tls_path_sources(cert_from_flag: bool, key_from_flag: bool) -> Option<&'static str> {
+    match (cert_from_flag, key_from_flag) {
+        (true, false) => Some(
+            "the TLS certificate path came from --tls-cert-path but the private key path came \
+             from GOSLING_TLS_KEY_PATH (environment or config)",
+        ),
+        (false, true) => Some(
+            "the TLS private key path came from --tls-key-path but the certificate path came \
+             from GOSLING_TLS_CERT_PATH (environment or config)",
+        ),
+        _ => None,
+    }
 }
 
 /// `gosling serve` logs only to its log file, so a failed start must name the
@@ -1950,12 +2142,15 @@ async fn handle_session_subcommand(command: SessionCommand) -> Result<()> {
             regex,
             yes,
         } => {
-            let (session_id, name) = if let Some(id) = identifier {
-                (id.session_id, id.name)
-            } else {
-                (None, None)
+            let (session_id, name) = match identifier {
+                Some(Identifier {
+                    path: Some(path), ..
+                }) => (Some(session_id_from_legacy_path(&path)?), None),
+                Some(id) => (id.session_id, id.name),
+                None => (None, None),
             };
-            handle_session_remove(session_id, name, regex, yes).await?;
+            crate::signal::cancellable_prompts(handle_session_remove(session_id, name, regex, yes))
+                .await?;
         }
         SessionCommand::Export {
             identifier,
@@ -1966,8 +2161,12 @@ async fn handle_session_subcommand(command: SessionCommand) -> Result<()> {
             no_redact,
         } => {
             let session_manager = SessionManager::instance();
-            let Some(session_identifier) =
-                resolve_or_prompt_session_id(&session_manager, identifier).await?
+            let Some(session_identifier) = resolve_or_prompt_session_id(
+                &session_manager,
+                identifier,
+                "Select a session to export:",
+            )
+            .await?
             else {
                 return Ok(());
             };
@@ -1990,15 +2189,19 @@ async fn handle_session_subcommand(command: SessionCommand) -> Result<()> {
         }
         SessionCommand::Diagnostics { identifier, output } => {
             let session_manager = SessionManager::instance();
-            let Some(session_id) =
-                resolve_or_prompt_session_id(&session_manager, identifier).await?
+            let Some(session_id) = resolve_or_prompt_session_id(
+                &session_manager,
+                identifier,
+                "Select a session for diagnostics:",
+            )
+            .await?
             else {
                 return Ok(());
             };
             crate::commands::session::handle_diagnostics(&session_id, output).await?;
         }
         SessionCommand::ContextHistory { command } => {
-            handle_context_history_subcommand(command).await?;
+            crate::signal::cancellable_prompts(handle_context_history_subcommand(command)).await?;
         }
     }
     Ok(())
@@ -2014,8 +2217,12 @@ async fn handle_context_history_subcommand(command: ContextHistoryCommand) -> Re
             include_expired,
             format,
         } => {
-            let Some(session_id) =
-                resolve_or_prompt_session_id(&session_manager, identifier).await?
+            let Some(session_id) = resolve_or_prompt_session_id(
+                &session_manager,
+                identifier,
+                "Select a session to list context history for:",
+            )
+            .await?
             else {
                 return Ok(());
             };
@@ -2033,8 +2240,12 @@ async fn handle_context_history_subcommand(command: ContextHistoryCommand) -> Re
             generation,
             format,
         } => {
-            let Some(session_id) =
-                resolve_or_prompt_session_id(&session_manager, identifier).await?
+            let Some(session_id) = resolve_or_prompt_session_id(
+                &session_manager,
+                identifier,
+                "Select a session to show context history for:",
+            )
+            .await?
             else {
                 return Ok(());
             };
@@ -2048,8 +2259,12 @@ async fn handle_context_history_subcommand(command: ContextHistoryCommand) -> Re
             format,
             yes,
         } => {
-            let Some(session_id) =
-                resolve_or_prompt_session_id(&session_manager, identifier).await?
+            let Some(session_id) = resolve_or_prompt_session_id(
+                &session_manager,
+                identifier,
+                "Select a session to export context history from:",
+            )
+            .await?
             else {
                 return Ok(());
             };
@@ -2062,8 +2277,12 @@ async fn handle_context_history_subcommand(command: ContextHistoryCommand) -> Re
             identifier,
             generation,
         } => {
-            let Some(session_id) =
-                resolve_or_prompt_session_id(&session_manager, identifier).await?
+            let Some(session_id) = resolve_or_prompt_session_id(
+                &session_manager,
+                identifier,
+                "Select a session to pin a context generation in:",
+            )
+            .await?
             else {
                 return Ok(());
             };
@@ -2074,8 +2293,12 @@ async fn handle_context_history_subcommand(command: ContextHistoryCommand) -> Re
             identifier,
             generation,
         } => {
-            let Some(session_id) =
-                resolve_or_prompt_session_id(&session_manager, identifier).await?
+            let Some(session_id) = resolve_or_prompt_session_id(
+                &session_manager,
+                identifier,
+                "Select a session to unpin a context generation in:",
+            )
+            .await?
             else {
                 return Ok(());
             };
@@ -2087,8 +2310,12 @@ async fn handle_context_history_subcommand(command: ContextHistoryCommand) -> Re
             generation,
             yes,
         } => {
-            let Some(session_id) =
-                resolve_or_prompt_session_id(&session_manager, identifier).await?
+            let Some(session_id) = resolve_or_prompt_session_id(
+                &session_manager,
+                identifier,
+                "Select a session to delete a context generation from:",
+            )
+            .await?
             else {
                 return Ok(());
             };
@@ -2100,8 +2327,12 @@ async fn handle_context_history_subcommand(command: ContextHistoryCommand) -> Re
             all_unpinned,
             yes,
         } => {
-            let Some(session_id) =
-                resolve_or_prompt_session_id(&session_manager, identifier).await?
+            let Some(session_id) = resolve_or_prompt_session_id(
+                &session_manager,
+                identifier,
+                "Select a session to prune context history for:",
+            )
+            .await?
             else {
                 return Ok(());
             };
@@ -2312,13 +2543,17 @@ fn parse_run_input_from_reader(
             })
         }
         (Some(file), _) => {
-            let contents = std::fs::read_to_string(file).unwrap_or_else(|err| {
-                eprintln!(
-                    "Instruction file not found — did you mean to use gosling run --text?\n{}",
-                    err
-                );
-                std::process::exit(1);
-            });
+            let contents = match std::fs::read_to_string(file) {
+                Ok(contents) => contents,
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                    eprintln!(
+                        "Instruction file not found — did you mean to use gosling run --text?\n{}",
+                        err
+                    );
+                    std::process::exit(1);
+                }
+                Err(err) => anyhow::bail!("Could not read instruction file {file}: {err}"),
+            };
             Some(InputConfig {
                 contents: Some(contents),
                 additional_system_prompt: input_opts.system.clone(),
@@ -2523,9 +2758,10 @@ async fn handle_default_session() -> Result<()> {
 pub async fn cli() -> anyhow::Result<()> {
     register_builtin_extensions(gosling_mcp::BUILTIN_EXTENSIONS.clone());
 
-    // Parse first: `--help`, `--version` and usage errors exit inside
-    // `Cli::parse()`, so they never create a log file in the state directory.
-    let cli = Cli::parse();
+    // Parse first: `--help`, `--version` and usage errors exit here, so they
+    // never create a log file in the state directory.
+    let cli =
+        Cli::try_parse().unwrap_or_else(|error| drop_hidden_subcommand_suggestions(error).exit());
     if let Err(e) = crate::logging::setup_logging(None) {
         eprintln!("Warning: Failed to initialize logging: {}", e);
     }
@@ -2552,7 +2788,7 @@ pub async fn cli() -> anyhow::Result<()> {
             // Generate into a buffer first: clap_complete panics if the writer
             // fails, which turns `gosling completion bash | head` (early-closed
             // pipe) into a panic instead of a silent broken-pipe exit.
-            let mut cmd = Cli::command();
+            let mut cmd = without_hidden_subcommands(Cli::command());
             let mut buffer = Vec::new();
             shell.generate(&mut cmd, &bin_name, &mut buffer);
             use std::io::Write;
@@ -2748,6 +2984,19 @@ pub async fn cli() -> anyhow::Result<()> {
 mod tests {
     use super::*;
     use gosling::conversation::message::Message;
+
+    #[cfg(any(feature = "rustls-tls", feature = "native-tls"))]
+    #[test]
+    fn mixed_tls_path_sources_names_where_each_path_came_from() {
+        let cert_flag = mixed_tls_path_sources(true, false).unwrap();
+        assert!(
+            cert_flag.contains("--tls-cert-path") && cert_flag.contains("GOSLING_TLS_KEY_PATH")
+        );
+        let key_flag = mixed_tls_path_sources(false, true).unwrap();
+        assert!(key_flag.contains("--tls-key-path") && key_flag.contains("GOSLING_TLS_CERT_PATH"));
+        assert_eq!(mixed_tls_path_sources(true, true), None);
+        assert_eq!(mixed_tls_path_sources(false, false), None);
+    }
 
     async fn named_source_session(manager: &SessionManager, dir: &std::path::Path) -> String {
         let source = manager
@@ -3023,6 +3272,42 @@ mod tests {
         assert!(script.contains("export use completions *"));
     }
 
+    fn rebuild_all_keeping_subcommands(cmd: clap::Command) -> clap::Command {
+        let cmd = cmd.mut_subcommands(rebuild_all_keeping_subcommands);
+        rebuild_with_subcommands(&cmd, |_| true)
+    }
+
+    // GSL-PT-20260927-A19: the rebuild that drops hidden subcommands must not change anything
+    // else a completion script is generated from.
+    #[test]
+    fn rebuilt_command_tree_generates_identical_completions() {
+        for shell in [
+            CompletionShell::Bash,
+            CompletionShell::Elvish,
+            CompletionShell::Fish,
+            CompletionShell::Powershell,
+            CompletionShell::Nu,
+            CompletionShell::Zsh,
+        ] {
+            let mut original = Cli::command();
+            let mut rebuilt = rebuild_all_keeping_subcommands(Cli::command());
+            let mut expected = Vec::new();
+            let mut actual = Vec::new();
+            shell.generate(&mut original, "gosling", &mut expected);
+            shell.generate(&mut rebuilt, "gosling", &mut actual);
+            let expected = String::from_utf8(expected).expect("utf8");
+            let actual = String::from_utf8(actual).expect("utf8");
+            let first_difference = expected
+                .lines()
+                .zip(actual.lines())
+                .find(|(before, after)| before != after);
+            assert!(
+                expected == actual,
+                "{shell:?} completion changed: {first_difference:?}"
+            );
+        }
+    }
+
     // GSL-PT-20260927-A11: the shared session selector told `session export`
     // users that --session-id "Requires --resume", an option export lacks.
     #[test]
@@ -3039,6 +3324,24 @@ mod tests {
         let help = String::from_utf8(buffer).expect("utf8");
         assert!(!help.contains("Requires --resume"), "{help}");
         assert!(help.contains("Select a session by ID"), "{help}");
+    }
+
+    // GSL-PT-20260927-C17: `-o` claimed to save "the exported Markdown" even
+    // with --format json or yaml.
+    #[test]
+    fn session_export_output_help_covers_every_format() {
+        let mut cmd = Cli::command();
+        let session = cmd.find_subcommand_mut("session").expect("session command");
+        let export = session
+            .find_subcommand_mut("export")
+            .expect("export command");
+        let mut buffer = Vec::new();
+
+        export.write_long_help(&mut buffer).expect("write help");
+
+        let help = String::from_utf8(buffer).expect("utf8");
+        assert!(!help.contains("exported Markdown"), "{help}");
+        assert!(help.contains("in the format chosen by --format"), "{help}");
     }
 
     // GSL-PT-20260927-F05: `--allowed-origin localhost:5173` was accepted,
@@ -3094,7 +3397,8 @@ mod tests {
 
         let help = String::from_utf8(buffer).expect("utf8");
         assert!(help.contains("gosling term init nu"));
-        assert!(help.contains("Supported for zsh, bash, and nu"));
+        assert!(help.contains("Supported for zsh, bash 4.0 or newer"));
+        assert!(help.contains("macOS /bin/bash), and nu."));
     }
 
     #[test]

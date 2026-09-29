@@ -4,6 +4,7 @@
 //! Clients: run identifiers, steer fences, cancellation, and close behavior remain stable.
 
 use super::*;
+use crate::session::LocalTurnClaim;
 
 #[derive(Default)]
 struct SessionOperationState {
@@ -273,12 +274,21 @@ pub(super) async fn unregister_active_prompt_run(
 }
 
 impl GoslingAcpAgent {
+    /// A run map that is locked right now counts as running a prompt.
+    pub(super) fn has_active_prompt_runs(&self) -> bool {
+        self.active_prompt_runs
+            .try_lock()
+            .map_or(true, |runs| !runs.is_empty())
+    }
+
+    /// The returned claim keeps prompts from the server's other connections
+    /// out of this session until it drops.
     pub(super) async fn start_active_run(
         &self,
         session_id: &str,
         run_id: String,
         cancel_token: CancellationToken,
-    ) -> Result<(), agent_client_protocol::Error> {
+    ) -> Result<LocalTurnClaim, agent_client_protocol::Error> {
         if self.closed_session_ids.lock().await.contains(session_id) {
             return Err(agent_client_protocol::Error::resource_not_found(Some(
                 session_id.to_string(),
@@ -294,6 +304,14 @@ impl GoslingAcpAgent {
             ))
             .data(format!("Session not found: {}", session_id)));
         }
+        let turn_claim = self
+            .session_manager
+            .claim_local_turn(session_id)
+            .ok_or_else(|| {
+                agent_client_protocol::Error::invalid_request().data(format!(
+                    "session {session_id} already has a prompt running on another connection to this server"
+                ))
+            })?;
 
         register_active_prompt_run(
             &self.active_prompt_runs,
@@ -303,7 +321,8 @@ impl GoslingAcpAgent {
             cancel_token,
             operation_guard,
         )
-        .await
+        .await?;
+        Ok(turn_claim)
     }
 
     pub(super) async fn clear_active_run(
@@ -482,6 +501,7 @@ impl GoslingAcpAgent {
 
         self.require_active_run(&req.session_id, &req.expected_run_id)
             .await?;
+        self.reject_archived_session(&req.session_id).await?;
         let agent = self.get_session_agent(&req.session_id).await?;
         let active_run_id = self
             .require_active_run(&req.session_id, &req.expected_run_id)

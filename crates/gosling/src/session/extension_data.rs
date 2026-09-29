@@ -2,7 +2,7 @@
 // Provides a simple way to store extension-specific data with versioned keys
 
 use crate::config::base::Config;
-use crate::config::extensions::is_extension_available;
+use crate::config::extensions::{configured_extension_keys, is_extension_available};
 use crate::config::ExtensionConfig;
 use crate::session::SessionManager;
 use anyhow::Result;
@@ -211,6 +211,28 @@ pub struct EnabledExtensionsState {
     pub extensions: Vec<ExtensionConfig>,
     #[serde(default)]
     pub platform_catalog_revision: u32,
+    /// Keys of the extensions taken from the user's config, as opposed to ones
+    /// added for this session alone (ACP `mcpServers` and `_meta` extensions,
+    /// `--with-extension`, recipes, subagents, plugin MCP servers). Resuming
+    /// drops these once their config entry is gone. Sessions saved before this
+    /// field existed have none, so everything they saved is restored.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub config_keys: Vec<String>,
+}
+
+/// A session's saved extensions as they apply to a resume under the current config.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ResumedExtensions {
+    pub extensions: Vec<ExtensionConfig>,
+    pub config_keys: Vec<String>,
+    /// Names of config extensions left out because their config entry is gone.
+    pub removed_from_config: Vec<String>,
+}
+
+pub fn removed_from_config_message(name: &str) -> String {
+    format!(
+        "Extension '{name}' was removed from your configuration and was not loaded for this session."
+    )
 }
 
 const PLATFORM_CATALOG_REVISION: u32 = 1;
@@ -225,7 +247,36 @@ impl EnabledExtensionsState {
         Self {
             extensions,
             platform_catalog_revision: PLATFORM_CATALOG_REVISION,
+            config_keys: Vec::new(),
         }
+    }
+
+    pub fn with_config_keys(mut self, config_keys: Vec<String>) -> Self {
+        self.config_keys = config_keys;
+        self
+    }
+
+    fn drop_removed_config_extensions(&mut self, config: &Config) -> Vec<String> {
+        if self.config_keys.is_empty() {
+            return Vec::new();
+        }
+        let Some(configured) = configured_extension_keys(config) else {
+            return Vec::new();
+        };
+        let (kept, removed): (Vec<String>, Vec<String>) = self
+            .config_keys
+            .drain(..)
+            .partition(|key| configured.contains(key));
+        self.config_keys = kept;
+        let mut removed_names = Vec::new();
+        self.extensions.retain(|extension| {
+            let is_removed = removed.contains(&extension.key());
+            if is_removed {
+                removed_names.push(extension.name());
+            }
+            !is_removed
+        });
+        removed_names
     }
 
     pub fn from_extension_data(extension_data: &ExtensionData) -> Option<Self> {
@@ -259,24 +310,40 @@ impl EnabledExtensionsState {
         (self, true)
     }
 
+    pub fn resume(extension_data: Option<&ExtensionData>, config: &Config) -> ResumedExtensions {
+        let configured = crate::config::extensions::get_enabled_extensions_with_config(config);
+        match extension_data.and_then(Self::from_extension_data) {
+            Some(state) => {
+                let (mut state, _) = state.upgrade_platform_catalog(&configured);
+                let removed_from_config = state.drop_removed_config_extensions(config);
+                ResumedExtensions {
+                    extensions: state.extensions,
+                    config_keys: state.config_keys,
+                    removed_from_config,
+                }
+            }
+            None => ResumedExtensions {
+                config_keys: configured.iter().map(ExtensionConfig::key).collect(),
+                extensions: configured,
+                removed_from_config: Vec::new(),
+            },
+        }
+    }
+
     pub fn extensions_or_default(
         extension_data: Option<&ExtensionData>,
         config: &Config,
     ) -> Vec<ExtensionConfig> {
-        let configured = crate::config::extensions::get_enabled_extensions_with_config(config);
-        extension_data
-            .and_then(Self::from_extension_data)
-            .map(|state| state.upgrade_platform_catalog(&configured).0.extensions)
-            .unwrap_or(configured)
+        Self::resume(extension_data, config).extensions
     }
 
     pub async fn for_session(
         session_manager: &SessionManager,
         session_id: &str,
         config: &Config,
-    ) -> Vec<ExtensionConfig> {
+    ) -> ResumedExtensions {
         let session = session_manager.get_session(session_id, false).await.ok();
-        Self::extensions_or_default(session.as_ref().map(|s| &s.extension_data), config)
+        Self::resume(session.as_ref().map(|s| &s.extension_data), config)
     }
 }
 
@@ -386,6 +453,111 @@ mod tests {
             EnabledExtensionsState::extensions_or_default(extension_data.as_ref(), &config),
             expected,
         );
+    }
+
+    fn config_with_extensions(extensions_yaml: &str) -> (Config, tempfile::TempDir) {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("config.yaml");
+        std::fs::write(&config_path, extensions_yaml).unwrap();
+        let config =
+            Config::new_with_file_secrets(&config_path, dir.path().join("secrets.yaml")).unwrap();
+        (config, dir)
+    }
+
+    fn http_extension(name: &str) -> ExtensionConfig {
+        ExtensionConfig::streamable_http(name, &format!("http://127.0.0.1:9/{name}"), "", 30u64)
+    }
+
+    const KEPT_AND_DISABLED_CONFIG: &str = "extensions:\n  kept:\n    enabled: true\n    type: streamable_http\n    name: kept\n    uri: http://127.0.0.1:9/kept\n  switched_off:\n    enabled: false\n    type: streamable_http\n    name: switched_off\n    uri: http://127.0.0.1:9/switched_off\n";
+
+    fn saved_state(state: EnabledExtensionsState) -> ExtensionData {
+        let mut data = ExtensionData::new();
+        state.to_extension_data(&mut data).unwrap();
+        data
+    }
+
+    // GSL-PT-20260927-C03
+    #[test]
+    fn resume_leaves_out_config_extensions_whose_entry_was_removed() {
+        let (config, _dir) = config_with_extensions(KEPT_AND_DISABLED_CONFIG);
+        let data = saved_state(
+            EnabledExtensionsState::new(vec![
+                http_extension("gone"),
+                http_extension("kept"),
+                http_extension("switched_off"),
+                http_extension("client-server"),
+            ])
+            .with_config_keys(vec![
+                "gone".into(),
+                "kept".into(),
+                "switched_off".into(),
+            ]),
+        );
+
+        let resumed = EnabledExtensionsState::resume(Some(&data), &config);
+
+        assert_eq!(
+            resumed.extensions,
+            vec![
+                http_extension("kept"),
+                http_extension("switched_off"),
+                http_extension("client-server"),
+            ]
+        );
+        assert_eq!(resumed.config_keys, vec!["kept", "switched_off"]);
+        assert_eq!(resumed.removed_from_config, vec!["gone"]);
+        assert_eq!(
+            removed_from_config_message("gone"),
+            "Extension 'gone' was removed from your configuration and was not loaded for this session."
+        );
+        assert_eq!(
+            EnabledExtensionsState::extensions_or_default(Some(&data), &config),
+            resumed.extensions
+        );
+    }
+
+    #[test]
+    fn resume_keeps_session_scoped_extensions_named_like_a_removed_config_entry() {
+        let (config, _dir) = config_with_extensions(KEPT_AND_DISABLED_CONFIG);
+        let data = saved_state(
+            EnabledExtensionsState::new(vec![http_extension("gone"), http_extension("kept")])
+                .with_config_keys(vec!["kept".into()]),
+        );
+
+        let resumed = EnabledExtensionsState::resume(Some(&data), &config);
+
+        assert_eq!(
+            resumed.extensions,
+            vec![http_extension("gone"), http_extension("kept")]
+        );
+        assert!(resumed.removed_from_config.is_empty());
+    }
+
+    #[test]
+    fn resume_restores_everything_a_session_saved_before_config_keys_existed() {
+        let (config, _dir) = config_with_extensions(KEPT_AND_DISABLED_CONFIG);
+        let mut data = ExtensionData::new();
+        data.set_extension_state(
+            EnabledExtensionsState::EXTENSION_NAME,
+            EnabledExtensionsState::VERSION,
+            json!({
+                "extensions": [http_extension("gone"), http_extension("kept")],
+                "platform_catalog_revision": PLATFORM_CATALOG_REVISION,
+            }),
+        );
+
+        let resumed = EnabledExtensionsState::resume(Some(&data), &config);
+
+        assert_eq!(
+            resumed.extensions,
+            vec![http_extension("gone"), http_extension("kept")]
+        );
+        assert!(resumed.config_keys.is_empty());
+        assert!(resumed.removed_from_config.is_empty());
+        let stored =
+            serde_json::to_value(EnabledExtensionsState::from_extension_data(&data).unwrap())
+                .unwrap();
+        assert!(stored.get("config_keys").is_none());
     }
 
     #[test]

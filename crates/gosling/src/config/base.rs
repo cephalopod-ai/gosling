@@ -1719,6 +1719,7 @@ impl Config {
 }
 
 config_value!(GOSLING_DEFAULT_EXTENSION_TIMEOUT, u64);
+config_value!(GOSLING_EXTENSION_STARTUP_TIMEOUT, u64);
 
 #[cfg(test)]
 mod tests {

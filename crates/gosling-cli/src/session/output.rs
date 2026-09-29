@@ -1236,14 +1236,32 @@ fn print_markdown(content: &str, theme: Theme) {
 
 /// Renders markdown content using bat (no table processing)
 fn print_markdown_raw(content: &str, theme: Theme) {
-    bat::PrettyPrinter::new()
-        .input(bat::Input::from_bytes(content.as_bytes()))
-        .theme(theme.as_str())
-        .colored_output(env_no_color())
-        .language("Markdown")
-        .wrapping_mode(WrappingMode::NoWrapping(true))
-        .print()
-        .unwrap();
+    render_markdown_raw(content, theme, None::<&mut String>);
+}
+
+thread_local! {
+    // A fresh PrettyPrinter deserializes bat's bundled themes, and its first
+    // print deserializes the whole syntax set. Both are cached inside the
+    // printer, so reusing it keeps `session --history` from paying that cost
+    // for every restored message.
+    static MARKDOWN_PRINTER: RefCell<bat::PrettyPrinter<'static>> =
+        RefCell::new(bat::PrettyPrinter::new());
+}
+
+fn render_markdown_raw<W: std::fmt::Write>(content: &str, theme: Theme, writer: Option<W>) {
+    MARKDOWN_PRINTER.with(|printer| {
+        printer
+            .borrow_mut()
+            .input(bat::Input::from_reader(std::io::Cursor::new(
+                content.as_bytes().to_vec(),
+            )))
+            .theme(theme.as_str())
+            .colored_output(env_no_color())
+            .language("Markdown")
+            .wrapping_mode(WrappingMode::NoWrapping(true))
+            .print_with_writer(writer)
+            .unwrap();
+    });
 }
 
 fn extract_markdown_table(content: &str) -> Option<(String, Vec<&str>, &str)> {
@@ -1888,6 +1906,22 @@ mod tests {
     #[test]
     fn format_usage_omits_missing_provider_usage() {
         assert_eq!(format_usage(&Usage::default()), None);
+    }
+
+    #[test]
+    fn markdown_rendering_reuses_highlighting_assets_across_messages() {
+        let message = "## Result\n\nHere is the **fix**:\n\n```rust\nfn main() {\n    println!(\"hi\");\n}\n```\n\n- one\n- two\n";
+        let start = std::time::Instant::now();
+        for _ in 0..200 {
+            let mut out = String::new();
+            render_markdown_raw(message, Theme::Ansi, Some(&mut out));
+            assert!(out.contains("println!"));
+        }
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed < Duration::from_secs(2),
+            "rendering 200 history messages took {elapsed:?}; bat's syntax set is being reloaded per message"
+        );
     }
 
     #[test]

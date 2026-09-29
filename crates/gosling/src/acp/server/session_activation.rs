@@ -13,8 +13,9 @@ impl GoslingAcpAgent {
         mcp_servers: Vec<McpServer>,
         gosling_extensions: Option<Vec<GoslingExtension>>,
         workspace_extensions: Option<&[String]>,
-    ) -> Result<Vec<ExtensionConfig>, agent_client_protocol::Error> {
+    ) -> Result<(Vec<ExtensionConfig>, Vec<String>), agent_client_protocol::Error> {
         let mut extensions = selected_builtin_extensions(config, &self.builtins);
+        let mut config_keys = HashSet::new();
 
         if let Some(gosling_extensions) = gosling_extensions {
             let configured = get_enabled_extensions_with_config_for_cwd(config, project_root);
@@ -24,11 +25,13 @@ impl GoslingAcpAgent {
             }
         } else {
             for extension in get_enabled_extensions_with_config_for_cwd(config, project_root) {
+                config_keys.insert(extension.key());
                 push_or_replace_extension(&mut extensions, extension);
             }
             for extension in
                 crate::plugins::mcp_servers::enabled_plugin_mcp_servers(Some(project_root))
             {
+                config_keys.remove(&extension.key());
                 push_or_replace_extension(&mut extensions, extension);
             }
             // Client servers are added alongside gosling's own extensions; on a
@@ -42,6 +45,7 @@ impl GoslingAcpAgent {
                     .iter()
                     .any(|existing| existing.name() == extension.name())
                 {
+                    config_keys.remove(&extension.key());
                     extensions.push(extension);
                 }
             }
@@ -57,7 +61,12 @@ impl GoslingAcpAgent {
                 .extensions
                 .as_deref(),
         );
-        Ok(extensions)
+        let config_keys = extensions
+            .iter()
+            .map(ExtensionConfig::key)
+            .filter(|key| config_keys.contains(key))
+            .collect();
+        Ok((extensions, config_keys))
     }
 
     async fn apply_acp_extension_overrides(
@@ -302,7 +311,7 @@ impl GoslingAcpAgent {
         gosling_extensions: Option<Vec<GoslingExtension>>,
         workspace_extensions: Option<&[String]>,
     ) -> Result<ExtensionData, agent_client_protocol::Error> {
-        let extensions = self.initial_session_extensions(
+        let (extensions, config_keys) = self.initial_session_extensions(
             config,
             &session.working_dir,
             mcp_servers,
@@ -311,6 +320,7 @@ impl GoslingAcpAgent {
         )?;
         let mut extension_data = session.extension_data.clone();
         EnabledExtensionsState::new(extensions)
+            .with_config_keys(config_keys)
             .to_extension_data(&mut extension_data)
             .internal_err_ctx("Failed to initialize session extensions")?;
         if let Some(skill_ids) = &self.shell_runtime.provisioning().session.skill_ids {

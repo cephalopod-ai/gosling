@@ -23,6 +23,15 @@
   "announcementModal.gotIt": {
     "defaultMessage": "Got it!"
   },
+  "app.newWindowFailed": {
+    "defaultMessage": "Couldn’t open a new window: {error}"
+  },
+  "app.newWindowFolderNotApproved": {
+    "defaultMessage": "Choose the folder “{dir}” again before starting a chat in it."
+  },
+  "app.newWindowFolderUnavailable": {
+    "defaultMessage": "The folder “{dir}” is missing or can’t be read, so the chat can’t open."
+  },
   "appLayout.collapseNavigation": {
     "defaultMessage": "Collapse navigation"
   },
@@ -125,11 +134,23 @@
   "artifactPane.emptyTitle": {
     "defaultMessage": "View an output or deliverable"
   },
+  "artifactPane.fileEmpty": {
+    "defaultMessage": "File is empty"
+  },
+  "artifactPane.fileMissing": {
+    "defaultMessage": "File no longer exists"
+  },
   "artifactPane.grantAccessToPreview": {
     "defaultMessage": "Select this file to grant access and preview it"
   },
   "artifactPane.hideRepositoryFiles": {
     "defaultMessage": "Hide repository files"
+  },
+  "artifactPane.htmlScriptsDisabled": {
+    "defaultMessage": "Scripts are disabled in this preview. Open the file externally to run them."
+  },
+  "artifactPane.imageParseFailed": {
+    "defaultMessage": "Could not parse this file as an image."
   },
   "artifactPane.inputEmptyBody": {
     "defaultMessage": "Uploaded files and pasted content added to the session will appear here."
@@ -142,6 +163,12 @@
   },
   "artifactPane.inputs": {
     "defaultMessage": "Inputs"
+  },
+  "artifactPane.jsonParseFailed": {
+    "defaultMessage": "Could not parse this file as JSON. Showing the original text."
+  },
+  "artifactPane.jsonlParseFailed": {
+    "defaultMessage": "Could not parse line {line} as JSON. Showing the original text."
   },
   "artifactPane.library": {
     "defaultMessage": "Library"
@@ -226,6 +253,9 @@
   },
   "artifactPane.sessionScope": {
     "defaultMessage": "Session"
+  },
+  "artifactPane.showAsPlainText": {
+    "defaultMessage": "Show as plain text"
   },
   "artifactPane.truncated": {
     "defaultMessage": "Truncated"
@@ -356,6 +386,12 @@
   "baseChat.researchBadge": {
     "defaultMessage": "Deep Research"
   },
+  "baseChat.restoreArchivedAndSend": {
+    "defaultMessage": "Restore and send"
+  },
+  "baseChat.restoreArchivedFailed": {
+    "defaultMessage": "Could not restore this chat: {error}"
+  },
   "baseChat.resumeTask": {
     "defaultMessage": "Resume task"
   },
@@ -364,6 +400,18 @@
   },
   "baseChat.retryInputs": {
     "defaultMessage": "Retry with current inputs"
+  },
+  "baseChat.sessionArchived": {
+    "defaultMessage": "This chat is archived"
+  },
+  "baseChat.sessionArchivedBody": {
+    "defaultMessage": "It was archived, possibly in another window, so your message was not sent. Restore the chat to send it."
+  },
+  "baseChat.sessionBusy": {
+    "defaultMessage": "This chat is busy in another window"
+  },
+  "baseChat.sessionBusyBody": {
+    "defaultMessage": "Another window is running a task in this chat, so your message was not sent. It was kept; send it again when that task finishes."
   },
   "baseChat.taskFailed": {
     "defaultMessage": "Task failed"
@@ -418,6 +466,9 @@
   },
   "chat.notification.taskComplete.title": {
     "defaultMessage": "Gosling finished the task."
+  },
+  "chatInput.attachFile": {
+    "defaultMessage": "Attach file"
   },
   "chatInput.contextWindow": {
     "defaultMessage": "Context window"
@@ -533,6 +584,9 @@
   "configSettings.editConfiguration": {
     "defaultMessage": "Edit Configuration"
   },
+  "configSettings.editInConfigFile": {
+    "defaultMessage": "Edit this value in config.yaml."
+  },
   "configSettings.enterValue": {
     "defaultMessage": "Enter {name}"
   },
@@ -547,6 +601,9 @@
   },
   "configSettings.saveFailedMsg": {
     "defaultMessage": "Failed to save \"{name}\""
+  },
+  "configSettings.saveValue": {
+    "defaultMessage": "Save {name}"
   },
   "configSettings.saving": {
     "defaultMessage": "Saving..."
@@ -823,6 +880,9 @@
   },
   "conversationLimitsDropdown.conversationLimits": {
     "defaultMessage": "Conversation Limits"
+  },
+  "conversationLimitsDropdown.invalidMaxTurns": {
+    "defaultMessage": "config.yaml has an invalid Max Turns value: \"{value}\". Gosling uses the default ({fallback}) until you enter a whole number."
   },
   "conversationLimitsDropdown.maxTurns": {
     "defaultMessage": "Max Turns"

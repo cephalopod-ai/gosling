@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { IntlTestWrapper } from '../../i18n/test-utils';
 import { useNavigationContext } from './NavigationContext';
@@ -138,6 +139,22 @@ describe('NavigationPanel workspaces/chats divider', () => {
     fireEvent.keyDown(divider, { key: 'ArrowDown' });
     expect(pane.style.height).toBe('224px');
     expect(window.localStorage.getItem(WORKSPACES_HEIGHT_KEY)).toBe('224');
+  });
+
+  it('gives way to the chats list when the window is too short for both sections', () => {
+    window.localStorage.setItem(WORKSPACES_HEIGHT_KEY, '300');
+    renderPanel();
+
+    const pane = screen.getByTestId('workspaces').parentElement as HTMLElement;
+    expect(pane).not.toHaveClass('shrink-0');
+    expect(pane).toHaveClass('min-h-0', 'shrink');
+
+    const chatsSection = screen.getByRole('button', { name: /chats/i })
+      .parentElement as HTMLElement;
+    expect(chatsSection).toHaveClass('flex-1', 'min-h-18');
+
+    const topInset = (pane.parentElement as HTMLElement).firstElementChild as HTMLElement;
+    expect(topInset).toHaveClass('h-[48px]', 'shrink-0');
   });
 
   it('restores content sizing on a double-click', () => {
@@ -356,4 +373,79 @@ describe('NavigationPanel workspace unread activity', () => {
     status('math-1', 'math', 'idle');
     expect(screen.getByText('Ready workspace: math')).toBeInTheDocument();
   });
+});
+
+describe('NavigationPanel keyboard access to chats', () => {
+  const onSessionClick = vi.fn();
+  const session = {
+    id: 'math-1',
+    workspaceId: 'math',
+    name: 'First math chat',
+    workingDir: '/math',
+    createdAt: '2026-09-08T10:00:00Z',
+    updatedAt: '',
+    messageCount: 2,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    route.pathname = '/';
+    vi.mocked(useNavigationContext).mockReturnValue({
+      isNavExpanded: true,
+      setIsNavExpanded: vi.fn(),
+    });
+    vi.mocked(useNavigationSessions).mockReturnValue({
+      recentSessions: [session],
+      activeSessionId: undefined,
+      fetchSessions: vi.fn(),
+      handleNavClick: vi.fn(),
+      handleSessionClick: onSessionClick,
+    });
+  });
+
+  const tabTo = async (user: ReturnType<typeof userEvent.setup>, target: HTMLElement) => {
+    for (let stop = 0; stop < 30 && document.activeElement !== target; stop += 1) {
+      await user.tab();
+    }
+  };
+
+  it('reaches a chat row with Tab and opens it with Enter or Space', async () => {
+    const user = userEvent.setup();
+    render(<Navigation />, { wrapper: IntlTestWrapper });
+    const row = screen.getByRole('button', { name: 'First math chat' });
+
+    await tabTo(user, row);
+    expect(row).toHaveFocus();
+    await user.keyboard('{Enter}');
+    expect(onSessionClick).toHaveBeenCalledWith('math-1');
+
+    onSessionClick.mockClear();
+    await user.keyboard(' ');
+    expect(onSessionClick).toHaveBeenCalledWith('math-1');
+  });
+
+  it('keeps the session actions button outside the row and does not open the chat from it', async () => {
+    const user = userEvent.setup();
+    render(<Navigation />, { wrapper: IntlTestWrapper });
+    const row = screen.getByRole('button', { name: 'First math chat' });
+    const actions = screen.getByRole('button', { name: 'Session actions' });
+
+    expect(row).not.toContainElement(actions);
+    await tabTo(user, actions);
+    expect(actions).toHaveFocus();
+    await user.keyboard('{Enter}');
+    expect(onSessionClick).not.toHaveBeenCalled();
+    expect(await screen.findByRole('menuitem', { name: 'Rename session' })).toBeInTheDocument();
+  });
+
+  it.each(['New Chat', 'New Research', 'Session History', 'Settings', 'Session actions'])(
+    'shows the focus ring on the %s button',
+    (name) => {
+      render(<Navigation />, { wrapper: IntlTestWrapper });
+      const button = screen.getByRole('button', { name });
+
+      expect(button).toHaveClass('focus-visible:ring-1', 'focus-visible:ring-border-active');
+    }
+  );
 });

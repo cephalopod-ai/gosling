@@ -27,7 +27,11 @@ describe('assertArtifactFileAccess', () => {
     const filePath = path.join(artifactRoot, 'report.md');
     await fs.writeFile(filePath, '# report');
 
-    await expect(resolveArtifactFileCapability(filePath)).resolves.toBe(await fs.realpath(filePath));
+    const launchRoot = await temporaryDirectory();
+
+    await expect(resolveArtifactFileCapability(filePath, [launchRoot])).resolves.toBe(
+      await fs.realpath(filePath)
+    );
   });
 
   it('does not create artifact capabilities for source files or directories', async () => {
@@ -35,8 +39,37 @@ describe('assertArtifactFileAccess', () => {
     const sourcePath = path.join(artifactRoot, 'main.ts');
     await fs.writeFile(sourcePath, 'export {};');
 
-    await expect(resolveArtifactFileCapability(sourcePath)).resolves.toBeNull();
-    await expect(resolveArtifactFileCapability(artifactRoot)).resolves.toBeNull();
+    await expect(resolveArtifactFileCapability(sourcePath, [])).resolves.toBeNull();
+    await expect(resolveArtifactFileCapability(artifactRoot, [])).resolves.toBeNull();
+  });
+
+  it('refuses a capability for a symlink inside an approved root that resolves outside it', async () => {
+    const approvedRoot = await temporaryDirectory();
+    const outsideRoot = await temporaryDirectory();
+    const secret = path.join(outsideRoot, 'outside-note.md');
+    await fs.writeFile(secret, 'secret');
+    await fs.symlink(secret, path.join(approvedRoot, 'link-note.md'));
+    await fs.symlink(outsideRoot, path.join(approvedRoot, 'linked-dir'));
+
+    for (const reference of [
+      path.join(approvedRoot, 'link-note.md'),
+      path.join(approvedRoot, 'linked-dir', 'outside-note.md'),
+    ]) {
+      await expect(resolveArtifactFileCapability(reference, [approvedRoot])).resolves.toBeNull();
+    }
+  });
+
+  it('keeps capabilities for symlinks that resolve inside an approved root', async () => {
+    const approvedRoot = await temporaryDirectory();
+    const outputRoot = await temporaryDirectory();
+    const insideTarget = path.join(outputRoot, 'report.md');
+    await fs.writeFile(insideTarget, '# report');
+    const link = path.join(approvedRoot, 'report-link.md');
+    await fs.symlink(insideTarget, link);
+
+    await expect(resolveArtifactFileCapability(link, [approvedRoot, outputRoot])).resolves.toBe(
+      await fs.realpath(insideTarget)
+    );
   });
 
   it('allows a file inside a validated workspace output root', async () => {

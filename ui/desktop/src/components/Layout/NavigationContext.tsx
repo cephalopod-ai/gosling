@@ -11,7 +11,9 @@ import React, {
 /**
  * When the window is narrower than this many CSS pixels, we auto-collapse
  * the sidebar. The user can re-expand it via the menu button; it will only
- * auto-collapse again if they go below the threshold from above.
+ * auto-collapse again if they go below the threshold from above. An automatic
+ * collapse is never saved as the user's preference, and it is undone when the
+ * window widens past the threshold again.
  */
 const NARROW_WINDOW_THRESHOLD = 700;
 
@@ -44,9 +46,22 @@ export const NavigationProvider: React.FC<NavigationProviderProps> = ({ children
     return stored !== 'false';
   });
 
+  const isAutoCollapsedRef = useRef(false);
+
   const setIsNavExpanded = useCallback((expanded: boolean) => {
+    isAutoCollapsedRef.current = false;
     setIsNavExpandedState(expanded);
     localStorage.setItem('navigation_expanded', String(expanded));
+  }, []);
+
+  const autoCollapse = useCallback(() => {
+    isAutoCollapsedRef.current = true;
+    setIsNavExpandedState(false);
+  }, []);
+
+  const undoAutoCollapse = useCallback(() => {
+    isAutoCollapsedRef.current = false;
+    setIsNavExpandedState(true);
   }, []);
 
   const isNavExpandedRef = useRef(isNavExpanded);
@@ -70,22 +85,22 @@ export const NavigationProvider: React.FC<NavigationProviderProps> = ({ children
   useEffect(() => {
     let lastWidth = window.innerWidth;
     if (lastWidth < NARROW_WINDOW_THRESHOLD && isNavExpandedRef.current) {
-      setIsNavExpanded(false);
+      autoCollapse();
     }
     const onResize = () => {
       const width = window.innerWidth;
-      if (
-        width < NARROW_WINDOW_THRESHOLD &&
-        lastWidth >= NARROW_WINDOW_THRESHOLD &&
-        isNavExpandedRef.current
-      ) {
-        setIsNavExpanded(false);
+      const isNarrow = width < NARROW_WINDOW_THRESHOLD;
+      const wasNarrow = lastWidth < NARROW_WINDOW_THRESHOLD;
+      if (isNarrow && !wasNarrow && isNavExpandedRef.current) {
+        autoCollapse();
+      } else if (!isNarrow && wasNarrow && isAutoCollapsedRef.current) {
+        undoAutoCollapse();
       }
       lastWidth = width;
     };
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
-  }, [setIsNavExpanded]);
+  }, [autoCollapse, undoAutoCollapse]);
 
   const value: NavigationContextValue = {
     isNavExpanded,

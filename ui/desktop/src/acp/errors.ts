@@ -56,6 +56,36 @@ export function isAcpAwaitingReplyError(error: unknown): boolean {
   );
 }
 
+const SESSION_ARCHIVED_REASON = 'session_archived';
+
+/** The backend refused input because the session was archived, possibly from another window. */
+export function isAcpSessionArchivedError(error: unknown): boolean {
+  const jsonRpcError = asAcpJsonRpcError(error);
+  return (
+    jsonRpcError !== null &&
+    isRecord(jsonRpcError.data) &&
+    jsonRpcError.data.reason === SESSION_ARCHIVED_REASON
+  );
+}
+
+// The server refuses a second concurrent turn with one of these texts (another connection to the
+// same server, or the cross-process turn lease); neither carries a structured reason.
+const SESSION_BUSY_PATTERN =
+  /already has (?:a prompt running on another connection|an active turn in another Gosling process or window)/;
+
+/** The backend refused input because another window or process is running a turn in the session. */
+export function isAcpSessionBusyError(error: unknown): boolean {
+  const jsonRpcError = asAcpJsonRpcError(error);
+  if (!jsonRpcError) {
+    return false;
+  }
+  const { message, data } = jsonRpcError;
+  return (
+    SESSION_BUSY_PATTERN.test(message) ||
+    (typeof data === 'string' && SESSION_BUSY_PATTERN.test(data))
+  );
+}
+
 /**
  * Renders an ACP JSON-RPC error the way the Rust `Display for Error` impl does:
  * the message, plus the `data` payload (often the real underlying cause, e.g. an

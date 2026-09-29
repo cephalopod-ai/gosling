@@ -188,18 +188,18 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Medium | B18 | CLI cost line shows only the last request's cost without saying so; `--stats` silently ignored with json/stream-json | fixed (R8a) |
 | Medium | B21 | Rejected Copilot token refresh surfaces as "failed to get api info after 3 attempts" + "Please retry"; no re-auth request | fixed (R9) |
 | Medium | C01 | ACP client `mcpServers` replace all of gosling's configured extensions | fixed (R10) |
-| Medium | C02 | A hanging MCP extension blocks session start for 300 s with no feedback (run/ACP) | open — queued (operator: startup cap + env var) (R11) |
-| Medium | C03 | Removed MCP extensions come back when an older session is resumed/loaded | open — queued (operator: record extension origin) (R11) |
+| Medium | C02 | A hanging MCP extension blocks session start for 300 s with no feedback (run/ACP) | fixed (30 s startup cap + GOSLING_EXTENSION_STARTUP_TIMEOUT) (R11) |
+| Medium | C03 | Removed MCP extensions come back when an older session is resumed/loaded | fixed (CLI/ACP; Desktop _meta sessions need a configKey protocol field — follow-up) (R11) |
 | Medium | C05 | Skill discovery ignores `GOSLING_PATH_ROOT` and reads/writes HOME-based skill dirs | fixed (R7) |
 | Medium | C06 | `disabledPlugins` does not disable an installed plugin's skills | fixed (R11) |
 | Medium | C08 | ACP: parallel subagents' tool activity is attributed to the first delegate call | fixed (R11) |
 | Medium | C10 | A stalled provider stream inside a synchronous subagent blocks the parent indefinitely | fixed (docs: real 30-min sync delegate limit; timeout path tested) (R11) |
 | Medium | C14 | No guard against opening a store written by a newer schema (downgrade not blocked) | fixed (R4) |
 | Medium | D03 | Failed `--fork --edit` leaves an orphan fork with the source's name that then hijacks `--resume` | fixed (R4) |
-| Medium | D04 | `--edit` with invalid YAML discards the user's edits without naming or keeping the temp file; wrong "failed to launch" wording | open — queued R8b |
+| Medium | D04 | `--edit` with invalid YAML discards the user's edits without naming or keeping the temp file; wrong "failed to launch" wording | fixed (R8b) |
 | Medium | D05 | Diagnostics bundle leaks credentials that are not regex-shaped (including the configured provider key) | fixed (R5) |
-| Medium | D07 | `session list -w` leaks sibling directories (case-insensitive substring) and misses paths with a trailing slash | open — queued R8b |
-| Medium | D08 | Terminal control sequences in session names are printed raw; imported transcripts can inject them | open — queued R8b |
+| Medium | D07 | `session list -w` leaks sibling directories (case-insensitive substring) and misses paths with a trailing slash | fixed (R8b) |
+| Medium | D08 | Terminal control sequences in session names are printed raw; imported transcripts can inject them | fixed (R8b) |
 | Medium | E05 | CLI text mode never shows a permission refusal; the operator sees a tool card as if the call ran | fixed (R8a) |
 | Medium | E06 | `GOSLING_PATH_ROOT` does not isolate skills/agents; operator's personal skill catalog is sent to the disposable root's provider (suspicion) | fixed (R7) |
 | Medium | E07 | Nested (subdirectory) context files are injected as a plain `user` message without the "untrusted project hints" framing | fixed (R7) |
@@ -208,16 +208,16 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Medium | F15 | SIGTERM "graceful" shutdown keeps running turns alive for 5 s, then drops every client without a terminal event | fixed (R1b) |
 | Medium | G102 | Credential picker/profile manager marks 14 alias profiles "configured", including providers the app reports as unconfigured | fixed (R13a) |
 | Medium | G104 | Workspace save/duplicate errors show only "Invalid params" (reason dropped) and the editor error renders out of view | fixed (R13a) |
-| Medium | G105 | A chat's workspace label is a creation-time snapshot; after rename + name reuse it names a different workspace | open — queued R13b |
+| Medium | G105 | A chat's workspace label is a creation-time snapshot; after rename + name reuse it names a different workspace | fixed (R13b) |
 | Medium | G108 | Historical session with a moved working folder fails with "Invalid params: invalid directory path" and cannot be recovered by relinking | partial (named error + restore works; re-home of pinned chats needs product decision) (R13a) |
 | Medium | G122 | Quitting while a tool approval is pending leaves the tool "pending" forever; the next message silently re-submits the old request | fixed (R1a+R13a) |
-| Medium | G128 | Keyboard-only users cannot open existing chats, lose focus after dialogs, and get no focus ring on primary navigation | open — queued R13b |
+| Medium | G128 | Keyboard-only users cannot open existing chats, lose focus after dialogs, and get no focus ring on primary navigation | fixed (R13b) |
 | Medium | G129 | A reply interrupted by window close/quit is shown after relaunch as a normal complete message; the session stays "in_progress" | fixed (R1a+R13a) |
-| Medium | G131 | Invalid config values are invisible in Desktop; Configuration Editor shows "[object Object]" for providers | open — queued R13b |
+| Medium | G131 | Invalid config values are invisible in Desktop; Configuration Editor shows "[object Object]" for providers | fixed (nested values read-only, invalid Max Turns shown; per-key config validation API is a follow-up) (R13b) |
 | Medium | G132 | Onboarding "OpenAI" API-key field shows the secret in clear text (and offers no host/base-path for "OpenAI compatible" endpoints) | fixed (R13a) |
-| Medium | G201 | Opening a large Markdown output freezes the whole Desktop window for 15–20 s | open — queued R13b |
-| Medium | G207 | "Open in new window" on a session in a non-active typed workspace replaces the current window with a fatal error screen | open — queued R13b |
-| Medium | G211 | Archiving does not reach other windows: the archived chat stays open there and keeps accepting turns while staying archived | open — queued R13b |
+| Medium | G201 | Opening a large Markdown output freezes the whole Desktop window for 15–20 s | fixed (128 KiB Markdown render cap + plain-text view; per-tab parse cache is a follow-up) (R13b) |
+| Medium | G207 | "Open in new window" on a session in a non-active typed workspace replaces the current window with a fatal error screen | fixed (R13b) |
+| Medium | G211 | Archiving does not reach other windows: the archived chat stays open there and keeps accepting turns while staying archived | fixed (backend refuses prompts to archived sessions; Desktop offers Restore; cross-window broadcast is a follow-up) (R13b) |
 | Medium | G212 | External-backend secret is put in the ACP WebSocket URL (`?token=<secret>`) and printed in the renderer console on every failed connect | fixed (R13a) |
 | Medium | G221 | Downloads started right after switching chats are saved into the previous chat's workspace | fixed (R13a) |
 | Medium | H01 | Repeated identical failing tool calls are denied but the turn never ends before 1000 turns | fixed (R3) |
@@ -228,22 +228,22 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Medium | S03 | `--max-tool-repetitions` denies repeats but never ends the turn (1000 provider calls) | fixed (R3) |
 | Medium | S04 | A one-off `GOSLING_CONTEXT_LIMIT` is frozen into a resumed session forever | fixed (R2) |
 | Medium | S07 | ACP: selecting the model already in use still runs a full provider transition | fixed (R9) |
-| Medium | S11 | Sessions created over `gosling serve`/`gosling acp` are invisible to `gosling session list` | open — queued R8b |
+| Medium | S11 | Sessions created over `gosling serve`/`gosling acp` are invisible to `gosling session list` | fixed (R8b) |
 | Medium | S13 | Corrupt config.yaml silently drops `GOSLING_DISABLE_KEYRING: true` (keyring re-enabled) (suspicion) | fixed (R5) |
 | Medium | S18 | Corrupt permission.yaml: CLI/ACP panic, serve hangs `initialize`, `doctor` stays green, denials mislead | fixed (R6) |
 | Medium | S20 | Subdirectory AGENTS.md from any touched directory (including ignored ones) is injected into the user turn | fixed (R7) |
-| Low | A02 | Unknown provider from `GOSLING_PROVIDER` env is reported as "No model configured" | open — queued R8b |
-| Low | A04 | Ctrl-C in `gosling configure` leaves the terminal cursor hidden | open — queued R8b |
+| Low | A02 | Unknown provider from `GOSLING_PROVIDER` env is reported as "No model configured" | fixed (R8b) |
+| Low | A04 | Ctrl-C in `gosling configure` leaves the terminal cursor hidden | fixed (R8b) |
 | Low | A05 | Broken config.yaml: session/run say "Run 'gosling configure' first" but configure refuses to run | fixed (R5) |
 | Low | A07 | REPL silently discards input that arrives in the same burst as a submitting Enter | open — queued R8b |
 | Low | A09 | Opening a session with `--resume` and exiting without sending re-stamps `updated_at` | fixed (R4) |
 | Low | A10 | Provider picker shows a cryptic "Groq (d)" label | fixed (R9) |
 | Low | A11 | `gosling session export --help` documents resume semantics that don't apply | fixed (R8b) |
 | Low | A13 | `/model` switch injects a ~3 KB "Gosling session checkpoint" into the next prompt (even for an empty session) and the session title is generated from it | fixed (R9) |
-| Low | A14 | Documented slash commands without their argument are reported as "Unknown command" | open — queued R8b |
-| Low | A15 | Version/help text gaps: `--version` prints " 1.3.0" with no program name; undocumented `session diagnostics` and `shell-validate` options | open — queued R8b |
+| Low | A14 | Documented slash commands without their argument are reported as "Unknown command" | fixed (R8b) |
+| Low | A15 | Version/help text gaps: `--version` prints " 1.3.0" with no program name; undocumented `session diagnostics` and `shell-validate` options | fixed (R8b) |
 | Low | A18 | Tool output and the following assistant text are printed with no separator (text and quiet modes) | fixed (R8a) |
-| Low | A19 | Hidden internal subcommands leak into shell completion and typo suggestions | open — queued R8b |
+| Low | A19 | Hidden internal subcommands leak into shell completion and typo suggestions | fixed (R8b) |
 | Low | A20 | (exploratory) `gosling secret` reports the wrong storage location and "removes" servers that don't exist | fixed (R5) |
 | Low | A21 | (exploratory) `shell-validate` has side effects and accepts unknown builtins | fixed (R7) |
 | Low | B07 | CLI stdout keeps the retracted partial attempt (text/-q/stream-json) | fixed (R1b) |
@@ -256,11 +256,11 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | C07 | Duplicate plugin skill names are silently shadowed; precedence set by directory order | fixed (R11) |
 | Low | C09 | Subagent docs say delegates inherit parent extensions; code defaults ad-hoc delegates to none | fixed (docs) (R11) |
 | Low | C11 | Imported sessions silently run in `approve` mode; CLI denial names the wrong mode | fixed (R6) |
-| Low | C12 | `session import` announces a working directory before it knows the outcome; raw serde errors | open — queued R8b |
+| Low | C12 | `session import` announces a working directory before it knows the outcome; raw serde errors | fixed (R8b) |
 | Low | C13 | CLI resume rebinds an imported session's trusted working dir to the current directory | fixed (R4) |
 | Low | C15 | Session exports embed extension `--env` values; pasted secrets exported verbatim | fixed (R5) |
-| Low | C16 | Markdown export drops the tool-error flag | open — queued R8b |
-| Low | C17 | CLI help/docs drift found while executing | open — queued R8b |
+| Low | C16 | Markdown export drops the tool-error flag | fixed (R8b) |
+| Low | C17 | CLI help/docs drift found while executing | fixed (R8b) |
 | Low | C18 | `/skills <name>` differs by surface and never validates the name | fixed (R11) |
 | Low | C19 | Extension failure messages are noisy and lose the cause; no health state in listings | fixed (messages; listing health state is a follow-up) (R11) |
 | Low | C21 | `mcp remove` leaves the extension's secrets in `secrets.yaml` | fixed (per-extension secrets) (R5) |
@@ -270,23 +270,23 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | C25 | Workspace `defaultExtensions` accepts unknown names silently | fixed (R11) |
 | Low | D02 | Open CLI session crashes with a raw FOREIGN KEY error after the session is removed elsewhere; typed prompt lost | fixed (R4) |
 | Low | D06 | Session exports write raw secrets from tool output (diagnostics redacts, export does not) | fixed (R5) |
-| Low | D09 | Session pickers are shuffled on every run; diagnostics/context-history picker says "Select a session to export:" | open — queued R8b |
-| Low | D10 | Ctrl-C in the `session remove` picker kills the process by SIGINT and leaves the cursor hidden | open — queued R8b |
+| Low | D09 | Session pickers are shuffled on every run; diagnostics/context-history picker says "Select a session to export:" | fixed (R8b) |
+| Low | D10 | Ctrl-C in the `session remove` picker kills the process by SIGINT and leaves the cursor hidden | fixed (R8b) |
 | Low | D11 | `session export\|diagnostics\|context-history list` without an identifier outside a TTY: "Error: not connected", exit 0 | fixed (R8a) |
-| Low | D12 | `session remove -r` matches IDs only, but the CLI guide's example implies names | open — queued R8b |
-| Low | D13 | Failed imports print "Imported session working directory: …" first; errors lack file/format context | open — queued R8b |
-| Low | D14 | `gosling project` stops (exit 0) when the newest project is gone and hides child failures | open — queued R8b |
-| Low | D15 | `term init` aliases break when the gosling binary path contains a space | open — queued R8b |
-| Low | D16 | CLI guide's `--resume --path ./session.json  # exported session` does not work | open — queued R8b |
+| Low | D12 | `session remove -r` matches IDs only, but the CLI guide's example implies names | fixed (R8b) |
+| Low | D13 | Failed imports print "Imported session working directory: …" first; errors lack file/format context | fixed (R8b) |
+| Low | D14 | `gosling project` stops (exit 0) when the newest project is gone and hides child failures | fixed (R8b) |
+| Low | D15 | `term init` aliases break when the gosling binary path contains a space | fixed (R8b) |
+| Low | D16 | CLI guide's `--resume --path ./session.json  # exported session` does not work | fixed (R8b) |
 | Low | D17 | Forks lose their lineage (auto-renamed, banner says "resuming", no forked-from metadata) | fixed (cheap parts) (R4) |
 | Low | D18 | Typeahead during interactive startup is not submitted; later lines (even `/exit`) are merged into one prompt | open — queued R8b |
-| Low | D19 | `session list --format xml` silently falls back to text (exit 0) (suspicion) | open — queued R8b |
+| Low | D19 | `session list --format xml` silently falls back to text (exit 0) (suspicion) | fixed (R8b) |
 | Low | D24 | Import de-duplication blocks importing new turns of a grown transcript | note (product question) |
-| Low | D25 | `gosling tui` with non-interactive stdin renders a frame, then dumps an Ink/React stack trace | open — queued R8b |
-| Low | D26 | Default `review --dry-run` does not show what would run: `--checks-only` and `--instructions` produce byte-identical output that still announces a main pass | open — queued R8b |
+| Low | D25 | `gosling tui` with non-interactive stdin renders a frame, then dumps an Ink/React stack trace | fixed (R8b) |
+| Low | D26 | Default `review --dry-run` does not show what would run: `--checks-only` and `--instructions` produce byte-identical output that still announces a main pass | fixed (R8b) |
 | Low | E08 | Nested hints are re-appended on every resume / `session/load` + access (unbounded duplication) | fixed (R7) |
 | Low | E09 | Unreadable or invalid-UTF-8 `AGENTS.md`/`.goslinghints` are dropped silently (warning only in the log file) | fixed (R7) |
-| Low | E10 | `run -i` reports every read failure as "Instruction file not found" | open — queued R8b |
+| Low | E10 | `run -i` reports every read failure as "Instruction file not found" | fixed (R8b) |
 | Low | E11 | Code-execution gate blames `GOSLING_CODE_EXECUTION_RUNTIME=disabled` when the variable is unset or invalid | fixed (R8a) |
 | Low | E12 | `run --no-session` banner still announces "● new session" with an ID that cannot be resumed | fixed (R8a) |
 | Low | E13 | Every CLI invocation, including `--help` and `--version`, creates a new log file in the state directory | fixed (R7) |
@@ -296,55 +296,55 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | F03 | `gosling serve` is silent on the console and its log misreports failed starts | fixed (R10) |
 | Low | F04 | WebSocket closes never carry a server close frame (client always sees 1006) | upstream crate (agent-client-protocol-http) |
 | Low | F05 | `--allowed-origin` accepts values that can never match and gives no diagnostics for rejections | fixed (R10) |
-| Low | F06 | TLS startup validation/messaging gaps | open — queued R10 |
+| Low | F06 | TLS startup validation/messaging gaps | fixed (R10) |
 | Low | F07 | Structurally invalid requests get -32700 Parse error with id:null | upstream crate (agent-client-protocol) |
 | Low | F08 | `session/prompt` with an empty prompt array sends the model a fabricated "Hello" | fixed (R10) |
-| Low | F09 | Streamable-HTTP connections that never open a stream or DELETE are never reaped (suspicion) | open — queued R10 |
+| Low | F09 | Streamable-HTTP connections that never open a stream or DELETE are never reaped (suspicion) | fixed (10-min idle reaper for HTTP connections) (R10) |
 | Low | F11 | Losing the turn lease does not stop the in-flight provider call; the revoked turn lingers until the provider returns | fixed (R1b) |
-| Low | F12 | Two connections can drive one session; the owner gets no updates and a misleading refusal | open — queued R10 |
+| Low | F12 | Two connections can drive one session; the owner gets no updates and a misleading refusal | fixed (clear refusal; cross-connection streaming is a follow-up) (R10) |
 | Low | F13 | ACP reports provider/config problems as generic -32603 "Internal error" | fixed (R10) |
 | Low | F16 | The protocol-version gate is advisory on stdio and WebSocket | fixed (R10) |
 | Low | F17 | Advertised capabilities do not match what is callable | fixed (R10) |
-| Low | G103 | Chat header labels overlap at the default 940px window (and all narrower widths) | open — queued R13b |
+| Low | G103 | Chat header labels overlap at the default 940px window (and all narrower widths) | fixed (structure tested; pixels not verified in the app) (R13b) |
 | Low | G106 | Unicode-equivalent workspace names are both accepted (NFC vs NFD) | open — queued R13b |
 | Low | G107 | Duplicate fails for a max-length (100-char) workspace name; over-length input silently truncated | open — queued R13b |
 | Low | G109 | Workspace warnings never name the folder they refer to | open — queued R13b |
-| Low | G110 | Symlinked output/primary folders that resolve outside the declared tree pass validation silently; the grant is on the resolved outside path while the UI shows the link path (suspicion) | open — queued R13b |
+| Low | G110 | Symlinked output/primary folders that resolve outside the declared tree pass validation silently; the grant is on the resolved outside path while the UI shows the link path (suspicion) | fixed (validation warning; grant unchanged) (R13b) |
 | Low | G111 | Hub uses stale workspace validation; failure only surfaces on submit with "Invalid params:" prefix | open — queued R13b |
-| Low | G112 | With the Inputs/Outputs pane open at 940px, the New Chat hub is crushed (workspace selector 18 px wide) | open — queued R13b |
+| Low | G112 | With the Inputs/Outputs pane open at 940px, the New Chat hub is crushed (workspace selector 18 px wide) | fixed (structure tested; pixels not verified in the app) (R13b) |
 | Low | G113 | Renderer IPC listener leak warning after several chats (suspicion) | open — queued R13b |
 | Low | G114 | Chat header says "No credential" while the app-default global key is in use | open — queued R13b |
 | Low | G116 | Shortcut recorder: Escape is recorded as a key instead of cancelling; no per-binding reset | open — queued R13b |
 | Low | G117 | Settings controls lack accessible names | open — queued R13b |
-| Low | G119 | Toasts clipped at the right window edge (940px) | open — queued R13b |
+| Low | G119 | Toasts clipped at the right window edge (940px) | fixed (structure tested; pixels not verified in the app) (R13b) |
 | Low | G120 | Header title stays "New Chat" after the session is titled | open — queued R13b |
-| Low | G123 | Automatic navigation collapse at narrow width is persisted as the user's preference | open — queued R13b |
-| Low | G124 | At the minimum window (480x400) with navigation open, the Chats list has zero height | open — queued R13b |
+| Low | G123 | Automatic navigation collapse at narrow width is persisted as the user's preference | fixed (R13b) |
+| Low | G124 | At the minimum window (480x400) with navigation open, the Chats list has zero height | fixed (structure tested; pixels not verified in the app) (R13b) |
 | Low | G125 | Renderer CSP lists invalid IPv6 sources (console error on every page load) | open — queued R13b |
-| Low | G126 | Concurrent-turn rejection is shown as "Internal error / Task failed" with an unrelated recovery action, and the rejected text is lost | open — queued R13b |
+| Low | G126 | Concurrent-turn rejection is shown as "Internal error / Task failed" with an unrelated recovery action, and the rejected text is lost | fixed (R13b) |
 | Low | G133 | A failing extension is reported only as "Failed to add extension" and is not flagged in the Extensions list | open — queued R11 |
-| Low | G202 | HTML artifact preview never runs its scripts: the app page's CSP blocks the inline scripts the preview sandbox is designed to allow | open — queued R13b |
-| Low | G203 | Malformed, empty and missing previewable outputs are not reported with a clear, bounded message | open — queued R13b |
-| Low | G204 | Markdown preview shows gosling's own output-history marker as a visible code block | open — queued R13b |
-| Low | G205 | Output rows show the absolute path truncated at the end, hiding the file name | open — queued R13b |
-| Low | G208 | An assistant reference to an in-workspace symlink grants the renderer read access to the outside-root target | open — queued R13b |
+| Low | G202 | HTML artifact preview never runs its scripts: the app page's CSP blocks the inline scripts the preview sandbox is designed to allow | fixed (scripts disabled with notice; running them needs a sandboxed preview scheme — follow-up) (R13b) |
+| Low | G203 | Malformed, empty and missing previewable outputs are not reported with a clear, bounded message | fixed (R13b) |
+| Low | G204 | Markdown preview shows gosling's own output-history marker as a visible code block | fixed (R13b) |
+| Low | G205 | Output rows show the absolute path truncated at the end, hiding the file name | fixed (R13b) |
+| Low | G208 | An assistant reference to an in-workspace symlink grants the renderer read access to the outside-root target | fixed (R13b) |
 | Low | G209 | Two windows overwrite each other's persisted artifact tabs; tabs closed in one window come back after relaunch | open — queued R13b |
 | Low | G213 | External backend faults are indistinguishable and undetected while idle | open — queued R13b |
-| Low | G214 | An invalid external-backend URL is saved when the Secret field loses focus | open — queued R13b |
+| Low | G214 | An invalid external-backend URL is saved when the Secret field loses focus | fixed (R13b) |
 | Low | G215 | Desktop per-session state is keyed by session id only, so sessions of different backends share UI state | open — queued R13b |
-| Low | G217 | Copy/IPC failure toasts show Electron's internal "Error invoking remote method '…': Error:" prefix | open — queued R13b |
+| Low | G217 | Copy/IPC failure toasts show Electron's internal "Error invoking remote method '…': Error:" prefix | fixed (R13b) |
 | Low | G218 | After a turn with more than 200 outputs, the live Outputs list and count silently stop at 200 | open — queued R13b |
-| Low | G219 | Escape inside an open provider/model dropdown closes the entire model-switch dialog | open — queued R13b |
+| Low | G219 | Escape inside an open provider/model dropdown closes the entire model-switch dialog | fixed (R13b) |
 | Low | H06 | After a normal exit all session data lives only in `sessions.db-wal`; `sessions.db` is an empty 4 KB file | fixed (R4) |
 | Low | H07 | Delegate activity title echoes the raw `source` argument (`null`, blanks, normalized sentinel) | fixed (R11) |
 | Low | S01 | Stale turn-lease rows left by concurrent `gosling run` processes | fixed (R4) |
 | Low | S02 | Interactive type-ahead under load: Enter becomes a newline, a later `/exit` is sent to the model | open — queued R8b |
-| Low | S05 | `session -r --history` renders at ~32 ms per message (6.7 s for 206 messages) | open — queued R8b |
+| Low | S05 | `session -r --history` renders at ~32 ms per message (6.7 s for 206 messages) | fixed (R8b) |
 | Low | S08 | `/model` typed during a stream queues, and every switch persists a hidden checkpoint | fixed (R9) |
 | Low | S09 | Markdown export includes hidden internal checkpoint messages | fixed (R9) |
 | Low | S10 | kill -9 mid-stream leaves the truncated reply stored as a normal, complete assistant message | fixed (R1a) |
 | Low | S12 | Corrupt config.yaml: `run`/`doctor` blame "No provider configured" | fixed (R5) |
-| Low | S16 | Empty sessions: listed by the CLI, hidden by ACP; a failed `run` leaves one behind | failed-start part fixed; listing parity queued (R4/R8b) |
+| Low | S16 | Empty sessions: listed by the CLI, hidden by ACP; a failed `run` leaves one behind | fixed (R8b) |
 | Note | A06 | (Suspicion, safety) A config.yaml parse failure silently drops `GOSLING_DISABLE_KEYRING: true` and re-enables the OS keychain (suspicion) | fixed (R5) |
 | Note | B16 | `run --resume` ignores provider/model env vars but `--provider/--model` permanently re-pin the session | note |
 | Note | B17 | ACP model options fall back to the static OpenAI catalogue when a custom host's `/models` fails; inventory says `stale: false` | note |

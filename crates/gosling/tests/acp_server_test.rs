@@ -970,6 +970,136 @@ fn test_workspace_rejects_model_from_another_provider_before_session_activation(
     });
 }
 
+fn workspace_record(id: &str, name: &str, folder: &Path) -> serde_json::Value {
+    serde_json::json!({
+        "id": id,
+        "schemaVersion": 1,
+        "name": name,
+        "workingFolder": folder,
+        "productOutputFolders": [{
+            "id": format!("{id}-outputs"),
+            "label": "Outputs",
+            "path": folder,
+            "productTypes": ["document"],
+            "isDefault": true,
+            "createIfMissing": false
+        }],
+        "createdAt": "2026-09-27T00:00:00Z",
+        "updatedAt": "2026-09-27T00:00:00Z",
+        "lastOpenedAt": "2026-09-27T00:00:00Z"
+    })
+}
+
+async fn seed_workspace_session(
+    data_root: &Path,
+    folder: &Path,
+    workspace_id: &str,
+    snapshot: &str,
+) -> String {
+    let session_manager = SessionManager::new(data_root.to_path_buf());
+    let session = session_manager
+        .create_session(
+            folder.to_path_buf(),
+            format!("chat in {workspace_id}"),
+            SessionType::Acp,
+            GoslingMode::default(),
+        )
+        .await
+        .unwrap();
+    session_manager
+        .update(&session.id)
+        .workspace_snapshot(
+            workspace_id.to_string(),
+            snapshot.to_string(),
+            None,
+            None,
+            None,
+            gosling::workspace::WorkspaceSessionContext {
+                workspace_id: workspace_id.to_string(),
+                workspace_name: snapshot.to_string(),
+                primary_working_folder: folder.to_string_lossy().to_string(),
+                ..Default::default()
+            },
+        )
+        .apply()
+        .await
+        .unwrap();
+    session_manager
+        .add_message(&session.id, &Message::user().with_text("hello"))
+        .await
+        .unwrap();
+    session.id
+}
+
+fn meta_workspace_name(meta: Option<&serde_json::Map<String, serde_json::Value>>) -> &str {
+    meta.and_then(|meta| meta.get("workspaceName"))
+        .and_then(|name| name.as_str())
+        .unwrap()
+}
+
+#[test]
+fn test_session_workspace_name_follows_rename_and_ignores_reused_label() {
+    run_test(async {
+        let data_root = tempfile::tempdir().unwrap();
+        let work_dir = tempfile::tempdir().unwrap();
+        let workspace_dir = data_root.path().join("workspaces");
+        std::fs::create_dir_all(&workspace_dir).unwrap();
+        std::fs::write(
+            workspace_dir.join("workspaces.json"),
+            serde_json::to_vec(&serde_json::json!({
+                "schema_version": 1,
+                "active_workspace_id": "default",
+                "default_workspace_id": "default",
+                "migration_completed": true,
+                "templates_materialized": true,
+                "workspaces": [
+                    workspace_record("default", "Default", work_dir.path()),
+                    workspace_record("renamed", "Alpha Renamed", work_dir.path()),
+                    workspace_record("reused", "Alpha", work_dir.path()),
+                ],
+                "credential_profiles": [],
+                "distribution_profile_secret_fields": {},
+                "workspace_profile_required_secret_fields": {},
+                "pending_secret_deletions": []
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let renamed =
+            seed_workspace_session(data_root.path(), work_dir.path(), "renamed", "Alpha").await;
+        let deleted =
+            seed_workspace_session(data_root.path(), work_dir.path(), "deleted", "Gamma").await;
+        let conn = new_connection(data_root.path()).await;
+
+        let listed = list_sessions_request(&conn, ListSessionsRequest::new())
+            .await
+            .unwrap();
+        let listed_name = |id: &str| {
+            let info = listed
+                .sessions
+                .iter()
+                .find(|info| info.session_id.0.as_ref() == id)
+                .unwrap();
+            meta_workspace_name(info.meta.as_ref()).to_string()
+        };
+        assert_eq!(listed_name(&renamed), "Alpha Renamed");
+        assert_eq!(listed_name(&deleted), "Gamma (removed)");
+
+        let info = get_session_info_request(
+            &conn,
+            GetSessionInfoRequest {
+                session_id: renamed.clone(),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            meta_workspace_name(info.session.meta.as_ref()),
+            "Alpha Renamed"
+        );
+    });
+}
+
 #[test]
 fn test_model_set() {
     run_test(async { run_model_set::<AcpServerConnection>().await });
@@ -1069,6 +1199,91 @@ fn test_prompt_end_usage_update_reports_the_last_provider_request() {
             })
             .last();
         assert_eq!(last_used, Some(110));
+    });
+}
+
+// GSL-PT-20260927-C03: an extension removed from the config came back when a
+// session created before the removal was loaded.
+#[test]
+fn test_load_session_leaves_out_a_config_extension_removed_since_the_session_was_created() {
+    run_test(async {
+        let configured_server = McpFixture::new(Arc::new(IgnoreSessionId)).await;
+        let client_server = McpFixture::new(Arc::new(IgnoreSessionId)).await;
+        let data_root = tempfile::tempdir().unwrap();
+        let removable_yaml = format!(
+            "  removable:\n    enabled: true\n    type: streamable_http\n    name: removable\n    description: Removable\n    uri: \"{}\"\n",
+            configured_server.url
+        );
+        write_configured_extensions(
+            data_root.path(),
+            &format!("{CONFIGURED_DEVELOPER_YAML}{removable_yaml}"),
+        );
+        let openai = OpenAiFixture::new(vec![], AcpServerConnection::expected_session_id()).await;
+        let mut creating_conn = AcpServerConnection::new(
+            TestConnectionConfig {
+                data_root: data_root.path().to_path_buf(),
+                mcp_servers: vec![McpServer::Http(McpServerHttp::new(
+                    "client-server",
+                    &client_server.url,
+                ))],
+                ..Default::default()
+            },
+            openai,
+        )
+        .await;
+        let SessionData {
+            session: _created_session,
+            ..
+        } = creating_conn.new_session().await.unwrap();
+        let stored = SessionManager::new(data_root.path().to_path_buf())
+            .list_all_sessions()
+            .await
+            .unwrap()
+            .remove(0);
+        let created = session_extension_names(&creating_conn, &stored.id).await;
+        assert!(
+            created.contains("removable") && created.contains("client-server"),
+            "{created:?}"
+        );
+
+        write_configured_extensions(data_root.path(), CONFIGURED_DEVELOPER_YAML);
+        let conn = new_connection(data_root.path()).await;
+        let response = conn
+            .cx()
+            .send_request(agent_client_protocol::schema::v1::LoadSessionRequest::new(
+                agent_client_protocol::schema::v1::SessionId::new(stored.id.clone()),
+                stored.working_dir.clone(),
+            ))
+            .block_task()
+            .await
+            .unwrap();
+
+        let results = response
+            .meta
+            .as_ref()
+            .and_then(|meta| meta.get("extensionResults"))
+            .and_then(|results| results.as_array())
+            .cloned()
+            .expect("load reports extension results");
+        let result = |name: &str| {
+            results
+                .iter()
+                .find(|result| result["name"] == name)
+                .cloned()
+                .unwrap_or_else(|| panic!("no result for {name}: {results:?}"))
+        };
+        assert_eq!(result("removable")["success"], false);
+        assert_eq!(
+            result("removable")["error"],
+            "Extension 'removable' was removed from your configuration and was not loaded for this session."
+        );
+        assert_eq!(result("client-server")["success"], true);
+        assert_eq!(result("developer")["success"], true);
+
+        let loaded = session_extension_names(&conn, &stored.id).await;
+        assert!(!loaded.contains("removable"), "{loaded:?}");
+        assert!(loaded.contains("client-server"), "{loaded:?}");
+        assert!(loaded.contains("developer"), "{loaded:?}");
     });
 }
 

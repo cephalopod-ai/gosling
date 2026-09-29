@@ -182,6 +182,7 @@ use tool_metadata::{
 #[cfg(test)]
 use tool_metadata::{get_requested_line, is_developer_file_tool, summarize_tool_call};
 use transport::negotiate_protocol_version;
+pub(crate) use transport::AgentConnectionControl;
 #[cfg(test)]
 use transport::{finish_connection_on_eof, EofAwareReader};
 pub use transport::{run, serve, GoslingAcpHandler, GoslingAgentConnection};

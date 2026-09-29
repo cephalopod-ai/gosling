@@ -20,7 +20,8 @@ import { getMotionAwareScrollBehavior } from '../utils/motion';
 import { useChatSession } from '../hooks/useChatSession';
 import { useRunStatus } from '../hooks/useRunStatus';
 import { RunStatusControl } from './RunStatusControl';
-import { acpSetSessionMode, acpUpdateWorkingDir } from '../acp/sessions';
+import { acpSetSessionMode, acpUnarchiveSession, acpUpdateWorkingDir } from '../acp/sessions';
+import { toast } from 'react-toastify';
 import type { GoslingMode } from '../types/session';
 import { useNavigation } from '../hooks/useNavigation';
 import {
@@ -33,6 +34,7 @@ import { useAutoSubmit } from '../hooks/useAutoSubmit';
 import { Gosling } from './icons';
 import EnvironmentBadge from './GoslingSidebar/EnvironmentBadge';
 import SessionActionsHeader from './SessionActionsHeader';
+import { ChatHeaderBar } from './ChatHeaderBar';
 import SessionInfoSummary from './SessionInfoSummary';
 import WorkingDirectoriesMenu from './WorkingDirectoriesMenu';
 import { CredentialProfileSelector } from './bottom_menu/CredentialProfileSelector';
@@ -118,6 +120,32 @@ const i18n = defineMessages({
   retryInputs: {
     id: 'baseChat.retryInputs',
     defaultMessage: 'Retry with current inputs',
+  },
+  sessionArchived: {
+    id: 'baseChat.sessionArchived',
+    defaultMessage: 'This chat is archived',
+  },
+  sessionArchivedBody: {
+    id: 'baseChat.sessionArchivedBody',
+    defaultMessage:
+      'It was archived, possibly in another window, so your message was not sent. Restore the chat to send it.',
+  },
+  sessionBusy: {
+    id: 'baseChat.sessionBusy',
+    defaultMessage: 'This chat is busy in another window',
+  },
+  sessionBusyBody: {
+    id: 'baseChat.sessionBusyBody',
+    defaultMessage:
+      'Another window is running a task in this chat, so your message was not sent. It was kept; send it again when that task finishes.',
+  },
+  restoreArchivedAndSend: {
+    id: 'baseChat.restoreArchivedAndSend',
+    defaultMessage: 'Restore and send',
+  },
+  restoreArchivedFailed: {
+    id: 'baseChat.restoreArchivedFailed',
+    defaultMessage: 'Could not restore this chat: {error}',
   },
   researchBadge: {
     id: 'baseChat.researchBadge',
@@ -342,6 +370,24 @@ export default function BaseChat({
     },
     [handleSubmit]
   );
+
+  const [restoringArchivedSession, setRestoringArchivedSession] = useState(false);
+  const restoreArchivedSessionAndSend = useCallback(async () => {
+    setRestoringArchivedSession(true);
+    try {
+      await acpUnarchiveSession(sessionId);
+      window.dispatchEvent(
+        new CustomEvent(AppEvents.SESSION_UNARCHIVED, { detail: { sessionId } })
+      );
+      await handleSubmit({ msg: '', images: [] });
+    } catch (error) {
+      toast.error(
+        intl.formatMessage(i18n.restoreArchivedFailed, { error: describeAcpError(error) })
+      );
+    } finally {
+      setRestoringArchivedSession(false);
+    }
+  }, [handleSubmit, intl, sessionId]);
 
   const sessionModel = session?.model_config?.model_name ?? null;
   const sessionProvider = session?.provider_name ?? null;
@@ -817,50 +863,57 @@ export default function BaseChat({
         {renderHeader && renderHeader()}
 
         <div className="flex flex-col flex-1 min-h-0 relative">
-          {/* Gosling watermark - top right */}
-          <div className="pointer-events-none absolute top-[14px] right-4 z-[60] flex flex-col items-end gap-2">
-            <div
-              className={cn(
-                'pointer-events-auto flex flex-row items-center gap-2',
-                !isArtifactWorkbenchOpen && 'mr-10'
-              )}
-            >
-              <a
-                href="https://github.com/cephalopod-ai/gosling"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="no-drag flex flex-row items-center gap-1 hover:opacity-80 transition-opacity"
-              >
-                <Gosling className="size-5 gosling-icon-animation" />
-                <span className="text-sm leading-none text-text-secondary -translate-y-px">
-                  gosling
-                </span>
-              </a>
-              <EnvironmentBadge className="translate-y-px" />
-              {(sessionExperience === 'research' || session?.research_library_path) && (
-                <span
-                  className="rounded-full border border-border-primary bg-background-secondary px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-text-secondary"
-                  data-session-tag="research"
+          <ChatHeaderBar
+            reserveNavToggle={isNavCollapsed}
+            title={<SessionActionsHeader session={session} onSessionChange={updateSession} />}
+            actions={
+              <>
+                <div
+                  className={cn(
+                    'pointer-events-auto flex min-w-0 max-w-full flex-row items-center gap-2',
+                    !isArtifactWorkbenchOpen && 'mr-10'
+                  )}
                 >
-                  {intl.formatMessage(i18n.researchBadge)}
-                </span>
-              )}
-              <WorkingDirectoriesMenu session={session} onSessionChange={updateSession} compact />
-              <CredentialProfileSelector
-                credentialProfileId={session?.credential_profile_id}
-                credentialProfileName={session?.credential_profile_name}
-                surface="header"
-              />
-            </div>
-            <RunStatusControl
-              status={runStatus}
-              onOpenTask={(taskId) => {
-                window.electron.createChatWindow({ resumeSessionId: taskId, viewType: 'pair' });
-              }}
-            />
-          </div>
-
-          <SessionActionsHeader session={session} onSessionChange={updateSession} />
+                  <a
+                    href="https://github.com/cephalopod-ai/gosling"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="no-drag flex shrink-0 flex-row items-center gap-1 hover:opacity-80 transition-opacity"
+                  >
+                    <Gosling className="size-5 gosling-icon-animation" />
+                    <span className="text-sm leading-none text-text-secondary -translate-y-px max-sm:hidden">
+                      gosling
+                    </span>
+                  </a>
+                  <EnvironmentBadge className="translate-y-px shrink-0" />
+                  {(sessionExperience === 'research' || session?.research_library_path) && (
+                    <span
+                      className="shrink-0 rounded-full border border-border-primary bg-background-secondary px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-text-secondary"
+                      data-session-tag="research"
+                    >
+                      {intl.formatMessage(i18n.researchBadge)}
+                    </span>
+                  )}
+                  <WorkingDirectoriesMenu
+                    session={session}
+                    onSessionChange={updateSession}
+                    compact
+                  />
+                  <CredentialProfileSelector
+                    credentialProfileId={session?.credential_profile_id}
+                    credentialProfileName={session?.credential_profile_name}
+                    surface="header"
+                  />
+                </div>
+                <RunStatusControl
+                  status={runStatus}
+                  onOpenTask={(taskId) => {
+                    window.electron.createChatWindow({ resumeSessionId: taskId, viewType: 'pair' });
+                  }}
+                />
+              </>
+            }
+          />
 
           <ScrollArea
             ref={scrollRef}
@@ -957,9 +1010,13 @@ export default function BaseChat({
                     ? i18n.awaitingReply
                     : promptError?.connectionLost
                       ? i18n.connectionInterrupted
-                      : promptError
-                        ? i18n.taskFailed
-                        : i18n.taskInterrupted
+                      : promptError?.recovery === 'restore'
+                        ? i18n.sessionArchived
+                        : promptError?.recovery === 'busy'
+                          ? i18n.sessionBusy
+                          : promptError
+                            ? i18n.taskFailed
+                            : i18n.taskInterrupted
                 )}
               </p>
               <p className="mt-1 text-xs text-text-secondary">
@@ -967,7 +1024,11 @@ export default function BaseChat({
                   ? intl.formatMessage(i18n.awaitingReplyBody)
                   : promptError?.connectionLost
                     ? intl.formatMessage(i18n.connectionInterruptedBody)
-                    : promptError?.message || intl.formatMessage(i18n.taskInterruptedBody)}
+                    : promptError?.recovery === 'restore'
+                      ? intl.formatMessage(i18n.sessionArchivedBody)
+                      : promptError?.recovery === 'busy'
+                        ? intl.formatMessage(i18n.sessionBusyBody)
+                        : promptError?.message || intl.formatMessage(i18n.taskInterruptedBody)}
               </p>
             </div>
             {promptError?.connectionLost ? (
@@ -978,6 +1039,15 @@ export default function BaseChat({
               >
                 {intl.formatMessage(i18n.reconnect)}
               </button>
+            ) : promptError?.recovery === 'restore' ? (
+              <button
+                type="button"
+                disabled={restoringArchivedSession || chatState !== ChatState.Idle}
+                onClick={() => void restoreArchivedSessionAndSend()}
+                className="max-w-64 shrink-0 rounded-md border border-border-primary px-3 py-1.5 text-sm hover:bg-background-secondary disabled:opacity-50"
+              >
+                {intl.formatMessage(i18n.restoreArchivedAndSend)}
+              </button>
             ) : promptError?.recovery === 'inputs' ? (
               <button
                 type="button"
@@ -987,7 +1057,7 @@ export default function BaseChat({
               >
                 {intl.formatMessage(i18n.retryInputs)}
               </button>
-            ) : promptError && !promptError.awaitingReply ? (
+            ) : promptError && !promptError.awaitingReply && promptError.recovery !== 'busy' ? (
               <button
                 type="button"
                 onClick={() => setIsRecoveryModelPickerOpen(true)}
@@ -1033,6 +1103,7 @@ export default function BaseChat({
             queueProcessingBlocked={queueProcessingBlocked}
             commandHistory={commandHistory}
             initialValue={initialPrompt}
+            restoredDraft={promptError?.draft}
             setView={setView}
             totalTokens={tokenState?.totalTokens ?? session?.usage?.total_tokens ?? undefined}
             contextLimit={tokenState?.contextLimit}

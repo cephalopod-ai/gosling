@@ -161,6 +161,10 @@ const i18n = defineMessages({
     id: 'chatInput.failedToReadImage',
     defaultMessage: 'Failed to read image file',
   },
+  attachFile: {
+    id: 'chatInput.attachFile',
+    defaultMessage: 'Attach file',
+  },
 });
 
 interface ChatInputProps {
@@ -173,6 +177,7 @@ interface ChatInputProps {
   queueProcessingBlocked?: boolean;
   commandHistory?: string[];
   initialValue?: string;
+  restoredDraft?: string;
   droppedFiles?: DroppedFile[];
   onFilesProcessed?: () => void;
   setView: (view: View) => void;
@@ -216,6 +221,7 @@ export default function ChatInput({
   queueProcessingBlocked = false,
   commandHistory = [],
   initialValue = '',
+  restoredDraft,
   droppedFiles = [],
   onFilesProcessed,
   setView,
@@ -568,6 +574,14 @@ export default function ChatInput({
     setIsInGlobalHistory(false);
     setHasUserTyped(false);
   }, [initialValue]);
+
+  useEffect(() => {
+    if (!restoredDraft) return;
+    const merge = (current: string) =>
+      current.trim() ? `${restoredDraft}\n${current}` : restoredDraft;
+    setValue(merge);
+    setDisplayValue(merge);
+  }, [restoredDraft]);
 
   // Handle initial prompt updates
   useEffect(() => {
@@ -1816,6 +1830,7 @@ export default function ChatInput({
                   type="button"
                   onClick={handleFileSelect}
                   disabled={isFilePickerOpen}
+                  aria-label={intl.formatMessage(i18n.attachFile)}
                   variant="ghost"
                   size="sm"
                   shape="round"
@@ -1827,7 +1842,7 @@ export default function ChatInput({
                   <Attach className="w-4 h-4" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Attach file</TooltipContent>
+              <TooltipContent>{intl.formatMessage(i18n.attachFile)}</TooltipContent>
             </Tooltip>
           </>
         )}

@@ -11,10 +11,11 @@ This guide explains how you can create an **allowlist** of safe extensions that 
 ## How It Works
 
 1. The allowlist is a YAML file that contains a list of allowed extension commands.
-2. gosling fetches the allowlist from a URL specified by the `GOSLING_ALLOWLIST` environment variable.
+2. gosling fetches the allowlist from an `https://` URL specified by the `GOSLING_ALLOWLIST` environment variable.
 3. The allowlist is fetched when first needed and is cached. It is refetched on every restart of gosling.
-4. When a user attempts to install an extension, gosling checks the MCP server's installation command against the allowlist.
+4. When a user attempts to install or start a command-based (stdio) extension, gosling checks the MCP server's command and arguments against the allowlist.
 5. If the command is not in the allowlist, the extension installation is rejected.
+6. If the allowlist cannot be fetched or parsed, every command-based extension is rejected until gosling restarts with a working allowlist.
 
 ## Configuration
 
@@ -51,7 +52,7 @@ After creating the allowlist, you must deploy it to a URL.
 
 ### 2. Set Environment Variable
 
-Create an environment variable called `GOSLING_ALLOWLIST` and set the value to the URL of your YAML file:
+Create an environment variable called `GOSLING_ALLOWLIST` and set the value to the URL of your YAML file. The URL must use HTTPS. Any other scheme fails with `GOSLING_ALLOWLIST must use https`.
 
 ```bash
 export GOSLING_ALLOWLIST=https://example.com/gosling-allowlist.yaml
@@ -71,18 +72,17 @@ To effectively use the allowlist with exact matching:
 1. **Specify commands**: Define the exact command string that you want to allow.
 2. **Include full paths**: If you want to allow a command only from a specific path, include the full path in the allowlist.
 3. **Audit regularly**: Review your allowlist frequently to ensure it only contains the commands you intend to allow.
-4. **Use HTTPS**: Use an HTTPS URL for your allowlist to prevent man-in-the-middle attacks.
-5. **Restrict edit access**: Ensure that only authorized users can edit the allowlist.
-6. **Validate entries**: Carefully review the allowlist to ensure only trusted commands are included.
-7. **Monitor installations**: Watch for rejected commands during extension installation, which might indicate attempted abuse.
+4. **Restrict edit access**: Ensure that only authorized users can edit the allowlist.
+5. **Validate entries**: Carefully review the allowlist to ensure only trusted commands are included.
+6. **Monitor installations**: Watch for rejected commands during extension installation, which might indicate attempted abuse.
 
 
 ## Troubleshooting
 
 If extensions are being rejected unexpectedly:
 
-1. Check if the `GOSLING_ALLOWLIST` environment variable is set correctly.
-2. Verify that the allowlist file is accessible from the server.
+1. Check if the `GOSLING_ALLOWLIST` environment variable is set correctly, with an `https://` URL.
+2. Verify that the allowlist file is accessible from the server. A `failed to fetch GOSLING_ALLOWLIST: …` error names the underlying connection or TLS problem, such as a refused connection or an untrusted certificate.
 3. Ensure the allowlist file is properly formatted YAML.
 4. Check [server logs](/docs/guides/logs) for any errors related to fetching or parsing the allowlist.
 5. Verify that the command in the extension installations exactly matches what's in the allowlist.

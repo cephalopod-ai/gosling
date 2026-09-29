@@ -105,6 +105,7 @@ impl SessionStorage {
             session_dir,
             owner_id: uuid::Uuid::new_v4().to_string(),
             active_tool_operations: std::sync::Mutex::new(HashSet::new()),
+            local_turn_claims: std::sync::Mutex::new(HashSet::new()),
             plan_updates,
             plan_source_hash_cache: std::sync::Mutex::new(std::collections::HashMap::new()),
             lease_releases_in_flight: tokio::sync::watch::channel(0).0,

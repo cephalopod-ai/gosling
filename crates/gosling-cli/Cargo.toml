@@ -24,7 +24,7 @@ gosling = { path = "../gosling", default-features = false }
 gosling-mcp = { path = "../gosling-mcp", default-features = false }
 gosling-providers = { path = "../gosling-providers", default-features = false }
 rmcp = { workspace = true }
-clap = { workspace = true }
+clap = { workspace = true, features = ["string"] }
 cliclack = { version = "0.5", default-features = false }
 console = { version = "0.16", default-features = false, features = ["std"] }
 dotenvy = { workspace = true }

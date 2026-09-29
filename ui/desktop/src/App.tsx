@@ -55,12 +55,29 @@ import { getInitialWorkingDir } from './utils/workingDir';
 import { usePageViewTracking } from './hooks/useAnalytics';
 import { trackErrorWithContext } from './utils/analytics';
 import { AppEvents } from './constants/events';
+import { defineMessages, useIntl } from './i18n';
+import type { CreateChatWindowRefusal } from './ipc/channels';
 import { WorkspaceProvider } from './contexts/WorkspaceContext';
 import {
   sessionExperienceFrom,
   type ActiveSessionView,
   type SessionExperience,
 } from './types/sessionExperience';
+
+const i18n = defineMessages({
+  newWindowFolderUnavailable: {
+    id: 'app.newWindowFolderUnavailable',
+    defaultMessage: 'The folder “{dir}” is missing or can’t be read, so the chat can’t open.',
+  },
+  newWindowFolderNotApproved: {
+    id: 'app.newWindowFolderNotApproved',
+    defaultMessage: 'Choose the folder “{dir}” again before starting a chat in it.',
+  },
+  newWindowFailed: {
+    id: 'app.newWindowFailed',
+    defaultMessage: 'Couldn’t open a new window: {error}',
+  },
+});
 
 function PageViewTracker() {
   usePageViewTracking();
@@ -255,6 +272,7 @@ const ExtensionsRoute = () => {
 };
 
 export function AppInner() {
+  const intl = useIntl();
   const [fatalError, setFatalError] = useState<string | null>(null);
 
   const nostrImportInFlight = useRef<string | null>(null);
@@ -494,6 +512,31 @@ export function AppInner() {
   }, []);
 
   useEffect(() => {
+    const handleChatWindowRefused = (
+      _event: IpcRendererEvent,
+      refusal: CreateChatWindowRefusal,
+      detail: string
+    ) => {
+      if (refusal === 'failed') {
+        toast.error(intl.formatMessage(i18n.newWindowFailed, { error: detail }));
+        return;
+      }
+      toast.error(
+        intl.formatMessage(
+          refusal === 'unavailable-directory'
+            ? i18n.newWindowFolderUnavailable
+            : i18n.newWindowFolderNotApproved,
+          { dir: detail }
+        )
+      );
+    };
+    window.electron.on('create-chat-window-refused', handleChatWindowRefused);
+    return () => {
+      window.electron.off('create-chat-window-refused', handleChatWindowRefused);
+    };
+  }, [intl]);
+
+  useEffect(() => {
     const handleSetView = (_event: IpcRendererEvent, ...args: unknown[]) => {
       const newView = args[0] as View;
       const section = args[1] as string | undefined;
@@ -567,10 +610,11 @@ export function AppInner() {
         toastClassName={() =>
           `relative min-h-16 mb-4 p-2 rounded-lg
                flex justify-between overflow-hidden cursor-pointer
+               max-w-full min-w-0 [overflow-wrap:anywhere]
                text-text-inverse bg-background-inverse
               `
         }
-        style={{ width: '450px' }}
+        style={{ width: '450px', maxWidth: 'calc(100vw - 2 * var(--toastify-toast-offset, 16px))' }}
         className="mt-6"
         position="top-right"
         autoClose={3000}

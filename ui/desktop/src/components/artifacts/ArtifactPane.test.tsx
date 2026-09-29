@@ -20,7 +20,7 @@ import {
   clearSelectedSessionInputs,
   getSelectedSessionInputs,
 } from '../../acp/sessionInputSelection';
-import { ArtifactPane } from './ArtifactPane';
+import { ArtifactPane, MARKDOWN_RENDER_CHAR_LIMIT } from './ArtifactPane';
 import { ARTIFACT_TIMESTAMPS_REFRESH_EVENT } from '../../types/artifactFileTimestamps';
 
 vi.mock('../../contexts/ArtifactRouterContext', () => ({ useArtifactRouter: vi.fn() }));
@@ -229,6 +229,121 @@ describe('ArtifactPane', () => {
     expect(window.electron.writeClipboardText).toHaveBeenCalledWith('/outputs/report.md');
   });
 
+  it('formats only a bounded prefix of a large Markdown file and offers the full text as plain text', async () => {
+    const content = `# Big report\n${`${'x'.repeat(69)}\n`.repeat(6000)}LAST-LINE-MARKER\n`;
+    readArtifactFile.mockResolvedValue({
+      content,
+      encoding: 'utf8',
+      error: null,
+      found: true,
+      filePath: '/outputs/report.md',
+      truncated: false,
+    });
+    render(
+      <IntlTestWrapper>
+        <ArtifactWorkbenchProvider>
+          <Harness />
+        </ArtifactWorkbenchProvider>
+      </IntlTestWrapper>
+    );
+    fireEvent.click(screen.getAllByRole('button', { name: 'Open file' })[0]);
+
+    await screen.findByRole('heading', { name: 'Big report' });
+    const formatted = document.querySelector('.prose');
+    expect(formatted?.textContent?.length).toBeLessThanOrEqual(MARKDOWN_RENDER_CHAR_LIMIT);
+    expect(formatted?.textContent).not.toContain('LAST-LINE-MARKER');
+    expect(
+      screen.getByText('This preview is truncated. Open the file for the complete output.')
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show as plain text' }));
+    const plainText = await screen.findByText(/LAST-LINE-MARKER/);
+    expect(plainText.tagName).toBe('PRE');
+    expect(plainText.textContent).toBe(content);
+    expect(document.querySelector('.prose')).toBeNull();
+    expect(
+      screen.queryByText('This preview is truncated. Open the file for the complete output.')
+    ).toBeNull();
+  });
+
+  it('formats a small Markdown file in full without a truncation notice', async () => {
+    readArtifactFile.mockResolvedValue({
+      content: '# Small report\n\nFirst paragraph.\n\nFINAL-PARAGRAPH-MARKER\n',
+      encoding: 'utf8',
+      error: null,
+      found: true,
+      filePath: '/outputs/report.md',
+      truncated: false,
+    });
+    render(
+      <IntlTestWrapper>
+        <ArtifactWorkbenchProvider>
+          <Harness />
+        </ArtifactWorkbenchProvider>
+      </IntlTestWrapper>
+    );
+    fireEvent.click(screen.getAllByRole('button', { name: 'Open file' })[0]);
+
+    expect(await screen.findByText('FINAL-PARAGRAPH-MARKER')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Small report' })).toBeInTheDocument();
+    expect(
+      screen.queryByText('This preview is truncated. Open the file for the complete output.')
+    ).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Show as plain text' })).toBeNull();
+  });
+
+  it('hides the output-history markers in the rendered Markdown preview', async () => {
+    const content =
+      '# Report\n\nBody text.\n\n<!-- gosling:output-history:start -->\n## Output contribution history\n\n| Revision | Agent |\n| --- | --- |\n| v1 | gosling |\n<!-- gosling:output-history:end -->\n';
+    readArtifactFile.mockResolvedValue({
+      content,
+      encoding: 'utf8',
+      error: null,
+      found: true,
+      filePath: '/outputs/report.md',
+      truncated: false,
+    });
+    render(
+      <IntlTestWrapper>
+        <ArtifactWorkbenchProvider>
+          <Harness />
+        </ArtifactWorkbenchProvider>
+      </IntlTestWrapper>
+    );
+    fireEvent.click(screen.getAllByRole('button', { name: 'Open file' })[0]);
+
+    await screen.findByRole('heading', { name: 'Output contribution history' });
+    const formatted = document.querySelector('.prose');
+    expect(formatted?.textContent).not.toContain('gosling:output-history');
+    expect(formatted?.querySelector('pre, code')).toBeNull();
+    expect(screen.getByRole('cell', { name: 'v1' })).toBeInTheDocument();
+  });
+
+  it('keeps output-history marker text that appears inside a fenced code block', async () => {
+    readArtifactFile.mockResolvedValue({
+      content:
+        '# Format notes\n\n```text\n<!-- gosling:output-history:start -->\n```\n\nFINAL-PARAGRAPH-MARKER\n',
+      encoding: 'utf8',
+      error: null,
+      found: true,
+      filePath: '/outputs/report.md',
+      truncated: false,
+    });
+    render(
+      <IntlTestWrapper>
+        <ArtifactWorkbenchProvider>
+          <Harness />
+        </ArtifactWorkbenchProvider>
+      </IntlTestWrapper>
+    );
+    fireEvent.click(screen.getAllByRole('button', { name: 'Open file' })[0]);
+
+    await screen.findByText('FINAL-PARAGRAPH-MARKER');
+    expect(document.querySelector('.prose')?.textContent).toContain(
+      '<!-- gosling:output-history:start -->'
+    );
+  });
+
   it('copies transient text with its original Markdown and Unicode', async () => {
     render(
       <IntlTestWrapper>
@@ -323,6 +438,171 @@ describe('ArtifactPane', () => {
       'title',
       'Copy contents is available for text documents'
     );
+  });
+
+  function renderFilePreview(filePath: string) {
+    function OpenPath() {
+      const { openFile } = useArtifactWorkbench();
+      return (
+        <>
+          <button type="button" onClick={() => openFile(filePath, '/outputs', 'workspace-1')}>
+            Open path
+          </button>
+          <ArtifactPane />
+        </>
+      );
+    }
+    render(
+      <IntlTestWrapper>
+        <ArtifactWorkbenchProvider>
+          <OpenPath />
+        </ArtifactWorkbenchProvider>
+      </IntlTestWrapper>
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Open path' }));
+  }
+
+  it('says a previewable file is empty instead of showing a blank preview', async () => {
+    readArtifactFile.mockResolvedValue({
+      content: '',
+      encoding: 'utf8',
+      error: null,
+      filePath: '/outputs/empty.md',
+      found: true,
+      missing: false,
+      sizeBytes: 0,
+      truncated: false,
+    });
+    renderFilePreview('/outputs/empty.md');
+
+    expect(await screen.findByText('File is empty')).toBeInTheDocument();
+  });
+
+  it('says a missing file no longer exists instead of showing the raw errno text', async () => {
+    readArtifactFile.mockResolvedValue({
+      content: '',
+      encoding: 'utf8',
+      error: "ENOENT: no such file or directory, stat '/outputs/gone.md'",
+      filePath: '/outputs/gone.md',
+      found: false,
+      missing: true,
+      sizeBytes: 0,
+      truncated: false,
+    });
+    renderFilePreview('/outputs/gone.md');
+
+    expect(await screen.findByText('File no longer exists')).toBeInTheDocument();
+    expect(screen.getByText('/outputs/gone.md', { selector: 'p' })).toBeInTheDocument();
+    expect(screen.queryByText(/ENOENT/)).toBeNull();
+  });
+
+  it('reports an image that cannot be decoded instead of a broken-image glyph', async () => {
+    readArtifactFile.mockResolvedValue({
+      content: window.btoa('this is not a png'),
+      encoding: 'base64',
+      error: null,
+      filePath: '/outputs/bad.png',
+      found: true,
+      missing: false,
+      sizeBytes: 17,
+      truncated: false,
+    });
+    renderFilePreview('/outputs/bad.png');
+
+    fireEvent.error(await screen.findByRole('img', { name: 'bad.png' }));
+    expect(await screen.findByText('Could not parse this file as an image.')).toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: 'bad.png' })).toBeNull();
+  });
+
+  it('reports malformed JSON while keeping the original text visible', async () => {
+    readArtifactFile.mockResolvedValue({
+      content: '{"broken": ',
+      encoding: 'utf8',
+      error: null,
+      filePath: '/outputs/broken.json',
+      found: true,
+      missing: false,
+      sizeBytes: 11,
+      truncated: false,
+    });
+    renderFilePreview('/outputs/broken.json');
+
+    expect(
+      await screen.findByText('Could not parse this file as JSON. Showing the original text.')
+    ).toBeInTheDocument();
+    expect(screen.getByText('{"broken":')).toBeInTheDocument();
+  });
+
+  it('names the malformed line of a JSON Lines file', async () => {
+    readArtifactFile.mockResolvedValue({
+      content: '{"a":1}\nnot json\n',
+      encoding: 'utf8',
+      error: null,
+      filePath: '/outputs/events.jsonl',
+      found: true,
+      missing: false,
+      sizeBytes: 17,
+      truncated: false,
+    });
+    renderFilePreview('/outputs/events.jsonl');
+
+    expect(
+      await screen.findByText('Could not parse line 2 as JSON. Showing the original text.')
+    ).toBeInTheDocument();
+  });
+
+  it('previews HTML without scripts and says that scripts are disabled', async () => {
+    readArtifactFile.mockResolvedValue({
+      content:
+        '<!doctype html><html><head><title>Page</title><script>document.title = "ran"</script></head><body onload="run()"><h1>DT06-HTML-OK</h1><p id="r">pending</p><script src="app.js"></script></body></html>',
+      encoding: 'utf8',
+      error: null,
+      filePath: '/outputs/page.html',
+      found: true,
+      missing: false,
+      sizeBytes: 200,
+      truncated: false,
+    });
+    renderFilePreview('/outputs/page.html');
+
+    const frame = await waitFor(() => {
+      const element = document.querySelector('iframe[title="page.html"]');
+      expect(element).not.toBeNull();
+      return element!;
+    });
+    expect(frame.getAttribute('sandbox')).toBe('');
+    const srcDoc = frame.getAttribute('srcdoc') ?? '';
+    expect(srcDoc).toContain('DT06-HTML-OK');
+    expect(srcDoc).toContain("script-src 'none'");
+    expect(srcDoc).not.toMatch(/<script|onload=/i);
+    expect(srcDoc.indexOf('Content-Security-Policy')).toBeLessThan(srcDoc.indexOf('<title>'));
+    expect(
+      screen.getByText(
+        'Scripts are disabled in this preview. Open the file externally to run them.'
+      )
+    ).toBeInTheDocument();
+  });
+
+  it('does not mention scripts for static HTML', async () => {
+    readArtifactFile.mockResolvedValue({
+      content: '<h1>Static</h1>',
+      encoding: 'utf8',
+      error: null,
+      filePath: '/outputs/static.html',
+      found: true,
+      missing: false,
+      sizeBytes: 15,
+      truncated: false,
+    });
+    renderFilePreview('/outputs/static.html');
+
+    const frame = await waitFor(() => {
+      const element = document.querySelector('iframe[title="static.html"]');
+      expect(element).not.toBeNull();
+      return element!;
+    });
+    expect(frame.getAttribute('srcdoc')).toContain('<h1>Static</h1>');
+    expect(screen.queryByText(/Scripts are disabled/)).toBeNull();
   });
 
   it('saves a full transient artifact through its originating workspace', async () => {
@@ -502,6 +782,53 @@ describe('ArtifactPane', () => {
     expect(screen.getByRole('checkbox', { name: 'Select analysis.py' })).toBeInTheDocument();
     expect(screen.queryByText('engine.rs')).not.toBeInTheDocument();
     expect(trashArtifactFiles).not.toHaveBeenCalled();
+  });
+
+  it('leads output rows with the file name and keeps the full path in the tooltip', async () => {
+    let setVisibleSession!: ReturnType<typeof useArtifactWorkbench>['setVisibleSession'];
+    function AbsoluteOutputs() {
+      setVisibleSession = useArtifactWorkbench().setVisibleSession;
+      return <ArtifactPane />;
+    }
+    const directory =
+      '/private/tmp/claude-501/-Users-eric-Work-vscode-forked-gosling/dirs/alpha-out';
+    readArtifactTitles.mockResolvedValue({ [`${directory}/dt06-report.md`]: 'Quarterly report' });
+    render(
+      <IntlTestWrapper>
+        <ArtifactWorkbenchProvider>
+          <AbsoluteOutputs />
+        </ArtifactWorkbenchProvider>
+      </IntlTestWrapper>
+    );
+    await act(async () =>
+      setVisibleSession(
+        'absolute-outputs',
+        ['dt06-data.json', 'dt06-report.md'].map((name) => ({
+          sessionId: 'absolute-outputs',
+          displayPath: `${directory}/${name}`,
+          resolvedPath: `${directory}/${name}`,
+          baseWorkingDir: '/workspace',
+          relation: 'created' as const,
+          provenance: 'built_in_tool' as const,
+          firstSeenAt: '2026-01-01T00:00:00Z',
+          lastSeenAt: '2026-01-01T00:00:00Z',
+        }))
+      )
+    );
+
+    const dataRow = screen.getByTitle(`${directory}/dt06-data.json`);
+    const [dataName, dataDetail] = dataRow.querySelectorAll('span > span');
+    expect(dataName.textContent).toBe('dt06-data.json');
+    expect(dataDetail.textContent).toBe(`created · built in tool · ${directory}`);
+    expect(screen.getByRole('checkbox', { name: 'Select dt06-data.json' })).toBeInTheDocument();
+
+    const reportRow = screen.getByTitle(`${directory}/dt06-report.md`);
+    await waitFor(() =>
+      expect(reportRow.querySelector('span > span')?.textContent).toBe('Quarterly report')
+    );
+    expect(reportRow.querySelectorAll('span > span')[1].textContent).toBe(
+      `dt06-report.md · created · ${directory}`
+    );
   });
 
   it('checks every output in inventories larger than the IPC batch limit', async () => {

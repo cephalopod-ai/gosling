@@ -37,6 +37,7 @@ describe('SessionActionsHeader workspace badge', () => {
         updatedAt: '2026-07-18T00:00:00Z',
         lastOpenedAt: '2026-07-18T00:00:00Z',
       },
+      workspaces: [],
     } as unknown as ReturnType<typeof useWorkspace>);
 
     render(<SessionActionsHeader session={session} onSessionChange={vi.fn()} />, {
@@ -49,10 +50,83 @@ describe('SessionActionsHeader workspace badge', () => {
     );
   });
 
+  it('names the pinned workspace by its current name after a rename and label reuse', () => {
+    vi.mocked(useWorkspace).mockReturnValue({
+      activeWorkspace: null,
+      workspaces: [
+        { workspace: { id: 'annual-meeting', name: 'Board Meeting' } },
+        { workspace: { id: 'personal', name: 'Annual Meeting' } },
+      ],
+    } as unknown as ReturnType<typeof useWorkspace>);
+
+    render(<SessionActionsHeader session={session} onSessionChange={vi.fn()} />, {
+      wrapper: IntlTestWrapper,
+    });
+
+    expect(screen.getByText('Board Meeting')).toHaveAttribute('title', 'Workspace: Board Meeting');
+    expect(screen.queryByText('Annual Meeting')).not.toBeInTheDocument();
+  });
+
+  it('marks the stored name when the pinned workspace was deleted', () => {
+    vi.mocked(useWorkspace).mockReturnValue({
+      activeWorkspace: null,
+      workspaces: [{ workspace: { id: 'personal', name: 'Personal' } }],
+    } as unknown as ReturnType<typeof useWorkspace>);
+
+    render(
+      <SessionActionsHeader
+        session={{ ...session, workspace_name: 'Annual Meeting (removed)' }}
+        onSessionChange={vi.fn()}
+      />,
+      { wrapper: IntlTestWrapper }
+    );
+    expect(screen.getByText('Annual Meeting (removed)')).toBeInTheDocument();
+  });
+
+  it('marks a workspace deleted while the chat is open', () => {
+    vi.mocked(useWorkspace).mockReturnValue({
+      activeWorkspace: null,
+      workspaces: [{ workspace: { id: 'personal', name: 'Personal' } }],
+    } as unknown as ReturnType<typeof useWorkspace>);
+
+    render(<SessionActionsHeader session={session} onSessionChange={vi.fn()} />, {
+      wrapper: IntlTestWrapper,
+    });
+
+    expect(screen.getByText('Annual Meeting (removed)')).toBeInTheDocument();
+  });
+
+  it('flows in the header row and lets the title and badges shrink instead of overlapping', () => {
+    vi.mocked(useWorkspace).mockReturnValue({
+      activeWorkspace: null,
+      workspaces: [],
+    } as unknown as ReturnType<typeof useWorkspace>);
+
+    render(
+      <SessionActionsHeader
+        session={{ ...session, credential_profile_name: 'G1 Fixture B' }}
+        onSessionChange={vi.fn()}
+      />,
+      { wrapper: IntlTestWrapper }
+    );
+
+    const trigger = screen.getByRole('button', { name: 'Session actions' });
+    const container = trigger.parentElement as HTMLElement;
+    expect(container).not.toHaveClass('absolute');
+    expect(container).not.toHaveClass('-translate-x-1/2');
+    expect(container).toHaveClass('min-w-0');
+    expect(trigger).toHaveClass('min-w-0', 'max-w-full');
+    expect(screen.getByText('Review packet')).toHaveClass('min-w-0', 'truncate');
+    for (const badge of [screen.getByText('Annual Meeting'), screen.getByText('G1 Fixture B')]) {
+      expect(badge).toHaveClass('min-w-0', 'truncate');
+    }
+  });
+
   it('opens the latest durable handoff checkpoint from session actions', async () => {
-    vi.mocked(useWorkspace).mockReturnValue({ activeWorkspace: null } as unknown as ReturnType<
-      typeof useWorkspace
-    >);
+    vi.mocked(useWorkspace).mockReturnValue({
+      activeWorkspace: null,
+      workspaces: [],
+    } as unknown as ReturnType<typeof useWorkspace>);
     readCheckpoint.mockResolvedValue({
       snapshotId: 'handoff-1',
       continuityClass: 'summarized_handoff',

@@ -43,7 +43,16 @@ impl Agent {
         // Loaded extensions live in a map, so their order is arbitrary; a
         // stable order keeps an unchanged set from rewriting the session.
         extensions.sort_by_key(|config| config.key());
-        let extensions_state = EnabledExtensionsState::new(extensions);
+        let config_keys = {
+            let tracked = self.config_extension_keys.lock().await;
+            extensions
+                .iter()
+                .map(ExtensionConfig::key)
+                .filter(|key| tracked.contains(key))
+                .collect()
+        };
+        let extensions_state =
+            EnabledExtensionsState::new(extensions).with_config_keys(config_keys);
         let value = extensions_state
             .to_value()
             .map_err(|e| anyhow!("Failed to serialize extension state: {}", e))?;
@@ -61,6 +70,12 @@ impl Agent {
         Ok(())
     }
 
+    /// Records which extensions came from the user's config, replacing any
+    /// earlier record; every other loaded extension is session-scoped.
+    pub async fn set_config_extension_keys(&self, keys: impl IntoIterator<Item = String>) {
+        *self.config_extension_keys.lock().await = keys.into_iter().collect();
+    }
+
     /// Load extensions from session into the agent
     /// Skips extensions that are already loaded
     /// Uses the session's working_dir for extension initialization
@@ -68,10 +83,18 @@ impl Agent {
         self: &Arc<Self>,
         session: &Session,
     ) -> Vec<ExtensionLoadResult> {
-        let mut enabled_configs = EnabledExtensionsState::extensions_or_default(
-            Some(&session.extension_data),
-            crate::config::Config::global(),
-        );
+        self.load_extensions_from_session_with_config(session, crate::config::Config::global())
+            .await
+    }
+
+    pub(crate) async fn load_extensions_from_session_with_config(
+        self: &Arc<Self>,
+        session: &Session,
+        config: &crate::config::Config,
+    ) -> Vec<ExtensionLoadResult> {
+        let resumed = EnabledExtensionsState::resume(Some(&session.extension_data), config);
+        self.set_config_extension_keys(resumed.config_keys).await;
+        let mut enabled_configs = resumed.extensions;
         // The planning extension is policy infrastructure, not user state. Drop
         // any serialized/configured lookalike and load the trusted in-process
         // definition independently.
@@ -150,15 +173,29 @@ impl Agent {
         if let Some(planning_result) = planning_result {
             results.insert(0, planning_result);
         }
+        results.extend(
+            resumed
+                .removed_from_config
+                .into_iter()
+                .map(|name| ExtensionLoadResult {
+                    error: Some(crate::session::removed_from_config_message(&name)),
+                    name,
+                    success: false,
+                }),
+        );
         results
     }
 
+    /// Adds a session-scoped extension: a resume restores it whatever the
+    /// user's config says later.
     pub async fn add_extension(
         &self,
         extension: ExtensionConfig,
         session_id: &str,
     ) -> ExtensionResult<()> {
+        let key = extension.key();
         self.start_extension(extension, session_id).await?;
+        self.config_extension_keys.lock().await.remove(&key);
 
         // Persist extension state after successful add
         self.persist_extension_state(session_id)
@@ -259,6 +296,13 @@ impl Agent {
 
         let results = futures::future::join_all(extension_futures).await;
 
+        {
+            let mut config_keys = self.config_extension_keys.lock().await;
+            for result in results.iter().filter(|result| result.success) {
+                config_keys.remove(&name_to_key(&result.name));
+            }
+        }
+
         if results.iter().any(|r| r.success) {
             self.persist_extension_state(session_id).await?;
         }
@@ -346,6 +390,10 @@ impl Agent {
         }
         self.extension_manager.remove_extension(name).await?;
         self.remove_frontend_extension(name).await;
+        self.config_extension_keys
+            .lock()
+            .await
+            .remove(&name_to_key(name));
 
         // Persist extension state after successful removal
         self.persist_extension_state(session_id)

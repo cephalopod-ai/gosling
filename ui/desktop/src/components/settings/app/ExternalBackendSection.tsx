@@ -142,7 +142,7 @@ export default function ExternalBackendSection() {
     }
   };
 
-  const saveConfig = async (newConfig: ExternalGoslingdConfig): Promise<void> => {
+  const persistConfig = async (newConfig: ExternalGoslingdConfig): Promise<void> => {
     setIsSaving(true);
     try {
       await window.electron.setSetting('externalGoslingd', newConfig);
@@ -166,6 +166,12 @@ export default function ExternalBackendSection() {
     }
   };
 
+  const saveConfig = async (newConfig: ExternalGoslingdConfig): Promise<void> => {
+    if (validateUrl(newConfig.url, newConfig.certFingerprint)) {
+      await persistConfig(newConfig);
+    }
+  };
+
   const updateField = <K extends keyof ExternalGoslingdConfig>(
     field: K,
     value: ExternalGoslingdConfig[K]
@@ -175,26 +181,27 @@ export default function ExternalBackendSection() {
     return newConfig;
   };
 
+  const handleEnabledChange = async (checked: boolean) => {
+    const newConfig = updateField('enabled', checked);
+    if (checked || validateUrl(newConfig.url, newConfig.certFingerprint)) {
+      await saveConfig(newConfig);
+      return;
+    }
+    // Turning the backend off must always work, but must not persist the invalid address
+    // that is still in the (now hidden) fields.
+    const saved = lastSavedConfigRef.current;
+    setUrlError(null);
+    await persistConfig({ ...newConfig, url: saved.url, certFingerprint: saved.certFingerprint });
+  };
+
   const handleUrlChange = (value: string) => {
     updateField('url', value);
     validateUrl(value);
   };
 
-  const handleUrlBlur = async () => {
-    if (validateUrl(config.url)) {
-      await saveConfig(config);
-    }
-  };
-
   const handleCertFingerprintChange = (value: string) => {
     updateField('certFingerprint', value);
     validateUrl(config.url, value);
-  };
-
-  const handleCertFingerprintBlur = async () => {
-    if (validateUrl(config.url)) {
-      await saveConfig(config);
-    }
   };
 
   return (
@@ -226,7 +233,7 @@ export default function ExternalBackendSection() {
             <div className="flex items-center">
               <Switch
                 checked={config.enabled}
-                onCheckedChange={(checked) => saveConfig(updateField('enabled', checked))}
+                onCheckedChange={handleEnabledChange}
                 disabled={isSaving}
                 variant="mono"
               />
@@ -245,7 +252,7 @@ export default function ExternalBackendSection() {
                   placeholder="http://127.0.0.1:3000"
                   value={config.url}
                   onChange={(e) => handleUrlChange(e.target.value)}
-                  onBlur={handleUrlBlur}
+                  onBlur={() => saveConfig(config)}
                   disabled={isSaving}
                   className={urlError ? 'border-red-500' : ''}
                 />
@@ -292,7 +299,7 @@ export default function ExternalBackendSection() {
                   placeholder={intl.formatMessage(i18n.certFingerprintPlaceholder)}
                   value={config.certFingerprint || ''}
                   onChange={(e) => handleCertFingerprintChange(e.target.value)}
-                  onBlur={handleCertFingerprintBlur}
+                  onBlur={() => saveConfig(config)}
                   disabled={isSaving}
                   className="font-mono text-xs"
                 />

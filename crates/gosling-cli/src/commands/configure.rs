@@ -61,11 +61,14 @@ pub async fn handle_configure() -> anyhow::Result<()> {
         );
     }
 
-    if !config.exists() {
-        handle_first_time_setup(config).await
-    } else {
-        handle_existing_config().await
-    }
+    crate::signal::cancellable_prompts(async {
+        if !config.exists() {
+            handle_first_time_setup(config).await
+        } else {
+            handle_existing_config().await
+        }
+    })
+    .await
 }
 
 #[cfg(feature = "telemetry")]

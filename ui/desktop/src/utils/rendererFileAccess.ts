@@ -48,7 +48,7 @@ function comparisonPath(filePath: string): string {
   return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
 }
 
-function isPathWithinRoot(targetPath: string, rootPath: string): boolean {
+export function isPathWithinRoot(targetPath: string, rootPath: string): boolean {
   const relative = path.relative(comparisonPath(rootPath), comparisonPath(targetPath));
   return (
     relative === '' ||

@@ -227,7 +227,7 @@ impl process_wrap::tokio::ChildWrapper for ExitStatusRecordingChild {
 
 pub(super) async fn child_process_client(
     mut command: Command,
-    timeout: &Option<u64>,
+    timeouts: ExtensionTimeouts,
     provider: SharedProvider,
     working_dir: &PathBuf,
     docker_container: Option<String>,
@@ -284,11 +284,10 @@ pub(super) async fn child_process_client(
         Ok::<String, std::io::Error>(String::from_utf8_lossy(&captured).into())
     });
 
-    let startup_timeout = Duration::from_secs(resolve_timeout(*timeout));
     let startup_began = std::time::Instant::now();
     let client_result = McpClient::connect_with_container(
         transport,
-        startup_timeout,
+        timeouts.mcp_client(),
         provider,
         docker_container,
         client_name,
@@ -303,7 +302,7 @@ pub(super) async fn child_process_client(
             Ok(client)
         }
         Err(error) => {
-            let timed_out = startup_began.elapsed() >= startup_timeout;
+            let timed_out = timeouts.startup_expired(startup_began);
             drop(startup_process_group);
             let stderr_content =
                 match tokio::time::timeout(Duration::from_secs(1), &mut stderr_task).await {
@@ -317,10 +316,7 @@ pub(super) async fn child_process_client(
                     }
                 };
             if timed_out {
-                return Err(ExtensionError::InitializeTimeout {
-                    seconds: startup_timeout.as_secs(),
-                    stderr: stderr_content,
-                });
+                return Err(timeouts.startup_timeout_error(stderr_content));
             }
             let exit_status = tokio::time::timeout(Duration::from_secs(1), exit_status)
                 .await

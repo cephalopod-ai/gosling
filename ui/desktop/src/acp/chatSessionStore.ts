@@ -80,9 +80,11 @@ export interface AcpChatPlanState {
 export interface AcpPromptError {
   message: string;
   connectionLost: boolean;
-  recovery?: 'inputs';
+  recovery?: 'inputs' | 'restore' | 'busy';
   /** The turn ended on a question to the user; nothing failed. */
   awaitingReply?: boolean;
+  /** Text of a message the backend refused, handed back to the composer. */
+  draft?: string;
 }
 
 type SnapshotListener = (snapshot: AcpChatSessionSnapshot) => void;

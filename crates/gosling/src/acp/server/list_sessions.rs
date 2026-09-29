@@ -2,6 +2,7 @@ use super::{build_session_info, meta_string, GoslingAcpAgent, ResultExt};
 use crate::session::session_manager::{
     SessionArchiveState, SessionListCursor, SessionListFilters, SessionListPageQuery, SessionType,
 };
+use crate::workspace::WorkspaceNames;
 use agent_client_protocol::schema::v1::{
     ListSessionsRequest, ListSessionsResponse, Meta, SessionInfo,
 };
@@ -233,6 +234,15 @@ fn encode_session_list_cursor(
 }
 
 impl GoslingAcpAgent {
+    /// An unreadable workspace store must not hide sessions, so their stored
+    /// names are shown instead.
+    pub(super) fn current_workspace_names(&self) -> WorkspaceNames {
+        self.workspace_service.names().unwrap_or_else(|error| {
+            tracing::warn!(%error, "could not read current workspace names");
+            WorkspaceNames::default()
+        })
+    }
+
     pub(super) async fn on_list_sessions(
         &self,
         req: ListSessionsRequest,
@@ -293,8 +303,15 @@ impl GoslingAcpAgent {
             .await
             .internal_err()?;
 
-        let session_infos: Vec<SessionInfo> =
-            page.sessions.into_iter().map(build_session_info).collect();
+        let workspace_names = self.current_workspace_names();
+        let session_infos: Vec<SessionInfo> = page
+            .sessions
+            .into_iter()
+            .map(|mut session| {
+                workspace_names.apply(&mut session);
+                build_session_info(session)
+            })
+            .collect();
         let next_cursor = page
             .next_cursor
             .as_ref()

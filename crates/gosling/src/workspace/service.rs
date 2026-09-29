@@ -39,6 +39,52 @@ pub struct PreparedWorkspaceSession {
     pub context: WorkspaceSessionContext,
 }
 
+const REMOVED_WORKSPACE_SUFFIX: &str = " (removed)";
+
+/// Current workspace names by ID. A session stores its workspace name as a
+/// creation-time snapshot, so a renamed workspace — or another workspace that
+/// later takes the old name — would otherwise be shown against the session.
+/// The default knows no store and leaves every snapshot as it is.
+#[derive(Debug, Default)]
+pub struct WorkspaceNames(Option<HashMap<String, String>>);
+
+impl WorkspaceNames {
+    /// Reads the store under `data_dir` without creating one.
+    pub fn load(data_dir: &Path) -> Result<Self> {
+        let store = WorkspaceStore::new(data_dir);
+        if !store.exists() {
+            return Ok(Self::default());
+        }
+        Ok(Self::from_document(store.load()?))
+    }
+
+    fn from_document(document: WorkspaceStoreDocument) -> Self {
+        Self(Some(
+            document
+                .workspaces
+                .into_iter()
+                .map(|workspace| (workspace.id, workspace.name))
+                .collect(),
+        ))
+    }
+
+    /// Replaces the session's snapshot with its workspace's current name. When
+    /// the workspace no longer exists the snapshot is kept but marked, so a
+    /// reused label never names a different workspace.
+    pub fn apply(&self, session: &mut crate::session::Session) {
+        let (Some(names), Some(workspace_id)) = (&self.0, session.workspace_id.as_deref()) else {
+            return;
+        };
+        session.workspace_name = match names.get(workspace_id) {
+            Some(name) => Some(name.clone()),
+            None => session
+                .workspace_name
+                .take()
+                .map(|snapshot| format!("{snapshot}{REMOVED_WORKSPACE_SUFFIX}")),
+        };
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct WorkspaceSessionLaunchOverrides {
     pub working_folder: Option<PathBuf>,
@@ -99,6 +145,10 @@ impl WorkspaceService {
             document.active_workspace_id,
             document.default_workspace_id,
         ))
+    }
+
+    pub fn names(&self) -> Result<WorkspaceNames> {
+        Ok(WorkspaceNames::from_document(self.store.load()?))
     }
 
     pub fn get(&self, workspace_id: &str) -> Result<Workspace> {
@@ -839,6 +889,23 @@ mod tests {
     use crate::workspace::{
         ProductOutputFolder, ProductType, WorkspaceFolder, WorkspaceThinkingEffort,
     };
+
+    #[test]
+    fn workspace_names_without_a_store_keep_session_snapshots() {
+        let data = tempfile::tempdir().unwrap();
+        let mut session = crate::session::Session {
+            workspace_id: Some("unknown".into()),
+            workspace_name: Some("Alpha".into()),
+            ..Default::default()
+        };
+
+        WorkspaceNames::load(data.path())
+            .unwrap()
+            .apply(&mut session);
+
+        assert_eq!(session.workspace_name.as_deref(), Some("Alpha"));
+        assert!(!data.path().join("workspaces").exists());
+    }
 
     fn mutation(root: &Path) -> WorkspaceMutation {
         WorkspaceMutation {

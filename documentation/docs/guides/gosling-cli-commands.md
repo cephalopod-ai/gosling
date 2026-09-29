@@ -77,7 +77,8 @@ gosling doctor
 ---
 
 #### version
-Check the current gosling version you have installed.
+Check the current gosling version you have installed. Prints the program name and version, for
+example `gosling 1.3.0`. `-V` is a short form.
 
 **Usage:**
 ```bash
@@ -216,7 +217,7 @@ Start or resume interactive chat sessions.
 **Basic Options:**
 - **`--session-id <session_id>`**: Specify a session by its ID (e.g., '20251108_1')
 - **`-n, --name <name>`**: Give the session a name
-- **`--path <path>`**: Legacy parameter for specifying session by file path
+- **`--path <path>`**: Legacy parameter that takes the session ID from the file name (`20250325_200615.jsonl` → `20250325_200615`). It does not read the file; to resume an exported session, [import it](#session-import-options) first
 - **`-r, --resume`**: Resume a previous session
 - **`--edit`**: Open the session's conversation in your editor (`$VISUAL` / `$EDITOR` / `vi`) as YAML. Edit, trim, or rewrite messages, then save and close to continue the session with the edited conversation. Must be used with `--resume`. Can be combined with `--fork` to create a new session from the edited result; the editor runs first, so if it fails or the YAML is invalid, no fork is created.
 - **`--fork`**: Create a new duplicate session with copied history, named `branch: <original name>` like a Desktop branch. Must be used with `--resume` and an interactive terminal. Provide `--name` or `--session-id` to fork a specific session. Otherwise, forks the most recent session. Non-interactive invocation exits before copying the source session.
@@ -239,8 +240,11 @@ gosling session -n my-project
 # Resume a previous session
 gosling session --resume -n my-project
 gosling session --resume --session-id 20251108_2
-gosling session --resume --path ./session.json    # exported session
-gosling session --resume --path ./session.jsonl   # legacy session storage
+gosling session --resume --path ./20251108_2.jsonl   # legacy: ID taken from the file name
+
+# Resume an exported session: import it, then resume the ID that import prints
+gosling session import ./session.json
+gosling session --resume --session-id <id printed by import>
 
 # Fork a specific session by name
 gosling session --resume --fork --name my-project
@@ -272,12 +276,12 @@ gosling session -n my-session --debug --max-turns 25
 ---
 
 #### session list [options]
-List all saved sessions.
+List all saved sessions: CLI chats, scheduled runs, and sessions started over ACP (`gosling acp`, `gosling serve`, editors). Internal subagent, hidden and terminal sessions are not listed. In JSON output, `session_type` says where each session came from (`user`, `scheduled` or `acp`). Sessions that never recorded a message (for example a chat closed before anything was sent) are not listed, the same rule ACP `session/list` uses; `session remove --session-id` or `--name` still removes them.
 
 **Options:**
 - **`-f, --format <format>`**: Specify output format (`text` or `json`). Default is `text`
 - **`--ascending`**: Sort sessions by date in ascending order (oldest first)
-- **`-w, --working_dir <path>`**: Filter sessions by working directory
+- **`-w, --working_dir <path>`**: Show only sessions whose working directory is `<path>` or a directory inside it (whole path components; a trailing slash is ignored)
 - **`-l, --limit <number>`**: Limit the number of results
 
 **Usage:**
@@ -306,8 +310,8 @@ Remove one or more saved sessions.
 **Options:**
 - **`--session-id <session_id>`**: Remove a specific session by its session ID
 - **`-n, --name <name>`**: Remove a specific session by its name
-- **`-r, --regex <pattern>`**: Remove sessions matching a regex pattern
-- **`--path <path>`**: Remove a specific session by its file path (legacy)
+- **`-r, --regex <pattern>`**: Remove every session whose session ID (for example `20251108_3`) matches the regex. Session names are not matched; use `--name` to remove a session by name. The pattern is not anchored, so add `^` and `$` to match whole IDs
+- **`--path <path>`**: Remove a specific session by its legacy file path; the session ID is taken from the file name (for example `/path/to/20251108_3.jsonl` removes `20251108_3`)
 - **`-y, --yes`**: Skip the confirmation prompt; required for non-interactive removal
 
 **Usage:**
@@ -321,11 +325,11 @@ gosling session remove --session-id 20251108_3
 # Remove a specific session by name
 gosling session remove -n my-project
 
-# Remove all sessions starting with "project-"
-gosling session remove -r "project-.*"
+# Remove all sessions whose ID starts with 20251108_ (started on 2025-11-08)
+gosling session remove -r "^20251108_"
 
-# Remove all sessions containing "migration"
-gosling session remove -r ".*migration.*"
+# Remove sessions 20251108_2 and 20251108_5
+gosling session remove -r "^20251108_(2|5)$"
 
 # Remove a named session from automation without prompting
 gosling session remove -n my-project --yes
@@ -404,6 +408,9 @@ working directory; gosling switches to that directory instead.
 # Import a gosling JSON export into the current directory's context
 gosling session import session-backup.json
 
+# Continue the imported session, using the ID that import printed
+gosling session --resume --session-id 20251108_7
+
 # Import a foreign transcript and pin the session to a specific directory
 gosling session import ~/transcripts/claude-code-run.jsonl --working-dir ~/projects/api
 
@@ -468,7 +475,9 @@ Generate a comprehensive diagnostics JSON report for troubleshooting issues with
 - **`--session-id <session_id>`**: Generate diagnostics for a specific session by ID
 - **`-n, --name <name>`**: Generate diagnostics for a specific session by name
 - **`--path <path>`**: Generate diagnostics for a specific session by file path (legacy)
-- **`-o, --output <file>`**: Save diagnostics report to a specific file path (default: `diagnostics_{session_id}.json`)
+- **`-o, --output <file>`**: Save diagnostics report to a specific file path (default: `diagnostics_{session_id}.json` in the current directory)
+
+Without `--session-id`, `--name` or `--path`, gosling prompts you to choose a session.
 
 **What's included:**
 - **System Information**: App version, operating system, architecture, and timestamp
@@ -639,6 +648,30 @@ This command is automatically invoked by ACP-compatible clients and is not typic
 
 ---
 
+#### shell-validate [options]
+Check a shell provisioning document against this installation's settings (workspaces, credential
+profiles, providers, extensions, skills) without starting a server. gosling prints a JSON report
+(`valid`, `issues`, `resolution`) and exits non-zero when the document is invalid. It does not create
+a `Default` workspace.
+
+**Options:**
+- **`--shell-id <ID>`**: Shell identity to validate as: 1-64 lowercase letters, digits, `-` or `_` (required)
+- **`--shell-display-name <NAME>`**: Display name for the shell identity (required)
+- **`--shell-version <VERSION>`**: Version string for the shell identity. Default is `1`
+- **`--shell-provisioning <PATH>`**: The provisioning document (JSON) to validate (required)
+- **`--with-builtin <NAME>`**: Builtin extensions the shell server would run with, as for `gosling serve --with-builtin`; comma-separated or repeated. Unknown names are reported as issues
+
+The document must contain an `identity` object, but the identity passed on the command line replaces
+it for validation.
+
+**Usage:**
+```bash
+gosling shell-validate --shell-id my_shell --shell-display-name "My Shell" \
+  --shell-provisioning ./shell.json --with-builtin developer
+```
+
+---
+
 #### review [range] [options]
 Review the current diff with gosling. `review` assembles a review request from the working tree (or
 an explicit diff range), discovers `**/.agents/checks/*.md` subagent reviewers and
@@ -658,7 +691,7 @@ those checks.
 - **`--checks-only`**: Skip the main correctness pass and run only the check subagents
 - **`--summary-only`**: Print only the diff summary
 - **`--severity <level>`**: Minimum severity to display. Default is `medium`; pass `low` to surface every finding
-- **`--dry-run`**: Print the assembled prompt and discovered checks without running the review
+- **`--dry-run`**: Print the prompts the review would send without running it: one main-pass prompt per touched file (none with `--checks-only`) and one prompt per check, each including `--instructions`. With `--no-orchestrate` (and without `--checks-only`) it prints the single assembled prompt
 - **`--no-orchestrate`**: Disable the parallel orchestrator and use the single-prompt delegation path
 - **`-q, --quiet`**: Suppress non-result output from the underlying agent
 

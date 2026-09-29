@@ -32,7 +32,7 @@ The supported command and security controls are:
 | `--port` | TCP port; defaults to `3284`. |
 | `--platform desktop` | Identifies requests as coming from gosling Desktop. |
 | `--tls` | Serves ACP over TLS. Without certificate paths, gosling creates or reuses a local self-signed certificate. |
-| `--tls-cert-path` and `--tls-key-path` | Use a specific PEM certificate and private key. Both are required together. |
+| `--tls-cert-path` and `--tls-key-path` | Use a specific PEM certificate and private key. Both are required together. The server refuses to start with an expired certificate and warns when the certificate is not valid yet. |
 | `GOSLING_SERVER__SECRET_KEY` | Requires the matching token on status and ACP connections. |
 | `--allowed-origin` | Replaces the default loopback CORS origins with one or more exact origins (`scheme://host[:port]`, or `null`/`file://`). Wildcards and values with a path, query or trailing slash are rejected at startup. Refused origins are logged as warnings. |
 
@@ -46,6 +46,12 @@ its `session/prompt` answer with `stopReason: cancelled`, and the turn is record
 accepting connections and waits up to 5 seconds for open ones to close before it exits. A server that
 was killed outright (`SIGKILL`, a crash) cannot do this; the next `gosling serve` or `gosling acp` on the
 same data directory records its unfinished turns as interrupted when it starts.
+
+Several connections can load the same session, but a session runs one prompt at a time. A
+`session/prompt` for a session whose prompt is running on another connection is refused with
+`-32600 Invalid request` (`session <id> already has a prompt running on another connection to this
+server`) and changes nothing. Updates from a prompt stream only to the connection that sent it; other
+connections see the new messages when they load the session again.
 
 ### Optional TLS
 

@@ -50,6 +50,7 @@ describe('artifactUtils', () => {
     const result = addSandboxCsp('<html><head><title>Output</title></head><body></body></html>');
     expect(result).toContain('Content-Security-Policy');
     expect(result).toContain("connect-src 'none'");
+    expect(result).toContain("script-src 'none'");
     expect(result.indexOf('Content-Security-Policy')).toBeLessThan(result.indexOf('<title>'));
   });
 

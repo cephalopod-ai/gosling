@@ -4,11 +4,22 @@
 
 import type { App, BrowserWindow as BrowserWindowType, IpcMain } from 'electron';
 import { BrowserWindow, Notification, shell } from 'electron';
+import fs from 'node:fs';
 import { desktopCommandChannels, rendererEventChannels } from '../ipc/channels';
-import type { CreateChatWindowOptions } from '../ipc/channels';
+import type { CreateChatWindowOptions, CreateChatWindowRefusal } from '../ipc/channels';
 import { errorMessage } from '../utils/conversionUtils';
 import type logger from '../utils/logger';
 import { normalizeWebUrl } from '../utils/urlSecurity';
+
+async function isReadableDirectory(dir: string): Promise<boolean> {
+  try {
+    if (!(await fs.promises.stat(dir)).isDirectory()) return false;
+    await fs.promises.access(dir, fs.constants.R_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 interface CreateChatOptions {
   initialMessage?: string;
@@ -66,12 +77,41 @@ export function registerAppIpcHandlers(
   targetIpcMain.on(
     desktopCommandChannels.createChatWindow,
     (event, options: CreateChatWindowOptions = {}) => {
+      const refuse = (refusal: CreateChatWindowRefusal, detail: string) => {
+        const senderWindow = BrowserWindow.fromWebContents(event.sender);
+        if (senderWindow && !senderWindow.isDestroyed()) {
+          senderWindow.webContents.send(
+            rendererEventChannels.createChatWindowRefused,
+            refusal,
+            detail
+          );
+        }
+      };
+
       void (async () => {
         const { query, dir, resumeSessionId, viewType } = options;
-        const resolvedDir =
-          typeof dir === 'string' && dir.trim()
-            ? await assertRendererFileAccess(event.sender.id, dir)
-            : firstGrantedRecentDirectory(event.sender.id);
+        let resolvedDir: string | undefined;
+        if (typeof dir === 'string' && dir.trim()) {
+          try {
+            resolvedDir = await assertRendererFileAccess(event.sender.id, dir);
+          } catch (error) {
+            log.warn('[Main] Rejected create-chat directory:', errorMessage(error));
+            if (!(await isReadableDirectory(dir))) {
+              refuse('unavailable-directory', dir);
+              return;
+            }
+            if (!resumeSessionId) {
+              refuse('unapproved-directory', dir);
+              return;
+            }
+            // The requested folder is only the renderer's word. A resumed chat loads its
+            // folders from the backend's session record by id, and the new window grants
+            // those itself, exactly as when the chat is opened in the current window.
+            resolvedDir = firstGrantedRecentDirectory(event.sender.id);
+          }
+        } else {
+          resolvedDir = firstGrantedRecentDirectory(event.sender.id);
+        }
 
         const isFromLauncher = query && !resumeSessionId && !viewType;
 
@@ -100,14 +140,8 @@ export function registerAppIpcHandlers(
           viewType,
         });
       })().catch((error) => {
-        log.warn('[Main] Rejected create-chat request:', errorMessage(error));
-        const senderWindow = BrowserWindow.fromWebContents(event.sender);
-        if (senderWindow && !senderWindow.isDestroyed()) {
-          senderWindow.webContents.send(
-            rendererEventChannels.fatalError,
-            'The selected working directory must be chosen or relinked before starting a chat.'
-          );
-        }
+        log.warn('[Main] Failed to open a chat window:', errorMessage(error));
+        refuse('failed', errorMessage(error));
       });
     }
   );

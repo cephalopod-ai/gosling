@@ -38,7 +38,7 @@ impl GoslingAcpAgent {
                 .await
                 .internal_err()?;
 
-            let gosling_session = self
+            let mut gosling_session = self
                 .prepare_session_for_activation(
                     new_session.clone(),
                     args.cwd.clone(),
@@ -60,6 +60,7 @@ impl GoslingAcpAgent {
             .await;
 
             let acp_session_id = SessionId::new(new_session_id.clone());
+            self.current_workspace_names().apply(&mut gosling_session);
             let mut meta = session_meta(&gosling_session);
             if let Ok(v) = serde_json::to_value(&extension_results) {
                 meta.insert("extensionResults".to_string(), v);

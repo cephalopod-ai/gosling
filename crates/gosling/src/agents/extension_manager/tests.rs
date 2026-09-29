@@ -1749,7 +1749,7 @@ async fn test_invalid_header_name_returns_config_error() {
 
     let result = create_streamable_http_client(
         "http://localhost:1",
-        None,
+        ExtensionTimeouts::resolve(None),
         &headers,
         "test-ext",
         None,
@@ -1785,7 +1785,7 @@ async fn test_invalid_header_value_returns_config_error() {
 
     let result = create_streamable_http_client(
         "http://localhost:1",
-        None,
+        ExtensionTimeouts::resolve(None),
         &headers,
         "test-ext",
         None,
@@ -1832,7 +1832,7 @@ async fn test_custom_headers_forwarded_to_http_extension() {
     // the outgoing HTTP request carried the custom header.
     let _ = create_streamable_http_client(
         &mock_server.uri(),
-        None,
+        ExtensionTimeouts::resolve(None),
         &headers,
         "test-ext",
         None,
@@ -1915,7 +1915,7 @@ async fn test_custom_headers_forwarded_oauth_path() {
     let _ = connect_with_auth(
         auth_manager,
         &mock_server.uri(),
-        Duration::from_secs(5),
+        ExtensionTimeouts::resolve(Some(5)),
         &headers,
         provider,
         "gosling-test".to_string(),
@@ -2103,7 +2103,7 @@ async fn abandoned_stdio_startup_kills_the_extension_process_group() {
 
     let startup = child_process_client(
         command,
-        &Some(60),
+        ExtensionTimeouts::resolve(Some(60)),
         provider,
         &working_dir,
         None,
@@ -2127,13 +2127,16 @@ async fn abandoned_stdio_startup_kills_the_extension_process_group() {
 }
 
 #[cfg(unix)]
-async fn start_stdio_script(script: &str, timeout_secs: u64) -> ExtensionResult<McpClient> {
+async fn start_stdio_script(
+    script: &str,
+    timeouts: ExtensionTimeouts,
+) -> ExtensionResult<McpClient> {
     let temp_dir = tempdir().unwrap();
     let mut command = Command::new("sh");
     command.arg("-c").arg(script);
     child_process_client(
         command,
-        &Some(timeout_secs),
+        timeouts,
         Arc::new(Mutex::new(None)),
         &temp_dir.path().to_path_buf(),
         None,
@@ -2149,7 +2152,12 @@ async fn start_stdio_script(script: &str, timeout_secs: u64) -> ExtensionResult<
 #[cfg(unix)]
 #[tokio::test]
 async fn stdio_startup_timeout_is_not_reported_as_process_exit() {
-    let Err(error) = start_stdio_script("echo still-starting >&2; exec sleep 60", 1).await else {
+    let Err(error) = start_stdio_script(
+        "echo still-starting >&2; exec sleep 60",
+        ExtensionTimeouts::new(crate::config::DEFAULT_EXTENSION_STARTUP_TIMEOUT, 1),
+    )
+    .await
+    else {
         panic!("a server that never initializes must not connect");
     };
 
@@ -2166,7 +2174,12 @@ async fn stdio_startup_timeout_is_not_reported_as_process_exit() {
 #[cfg(unix)]
 #[tokio::test]
 async fn stdio_process_that_exits_during_startup_is_reported_as_process_exit() {
-    let Err(error) = start_stdio_script("echo boom >&2; exit 3", 30).await else {
+    let Err(error) = start_stdio_script(
+        "echo boom >&2; exit 3",
+        ExtensionTimeouts::new(crate::config::DEFAULT_EXTENSION_STARTUP_TIMEOUT, 30),
+    )
+    .await
+    else {
         panic!("a server that exits must not connect");
     };
 
@@ -2183,7 +2196,12 @@ async fn stdio_process_that_exits_during_startup_is_reported_as_process_exit() {
 #[cfg(unix)]
 #[tokio::test]
 async fn stdio_process_that_exits_silently_reports_its_exit_status() {
-    let Err(error) = start_stdio_script("false", 30).await else {
+    let Err(error) = start_stdio_script(
+        "false",
+        ExtensionTimeouts::new(crate::config::DEFAULT_EXTENSION_STARTUP_TIMEOUT, 30),
+    )
+    .await
+    else {
         panic!("a server that exits must not connect");
     };
 
@@ -2201,9 +2219,144 @@ id=$(printf '%s' "$request" | sed 's/.*"id":\([0-9]*\).*/\1/')
 printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2025-03-26","capabilities":{},"serverInfo":{"name":"healthy","version":"1.0.0"}}}\n' "$id"
 exec sleep 30"#;
 
-    if let Err(error) = start_stdio_script(script, 10).await {
+    let started = std::time::Instant::now();
+    if let Err(error) = start_stdio_script(script, ExtensionTimeouts::new(1, 300)).await {
         panic!("a server that answers initialize must connect: {error}");
     }
+    assert!(started.elapsed() < Duration::from_secs(1));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn stdio_server_that_never_initializes_fails_at_the_startup_deadline() {
+    let startup = start_stdio_script(
+        "echo still-starting >&2; exec sleep 60",
+        ExtensionTimeouts::new(1, 300),
+    );
+    let Ok(result) = tokio::time::timeout(Duration::from_secs(10), startup).await else {
+        panic!("startup must end at the startup deadline, not the extension timeout");
+    };
+    let Err(error) = result else {
+        panic!("a server that never initializes must not connect");
+    };
+
+    let message = error.to_string();
+    assert!(
+        matches!(error, ExtensionError::InitializeTimeout { seconds: 1, .. }),
+        "{message}"
+    );
+    assert!(
+        message.contains("within 1s (GOSLING_EXTENSION_STARTUP_TIMEOUT)"),
+        "{message}"
+    );
+    assert!(message.contains("still-starting"), "{message}");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn smaller_extension_timeout_still_caps_stdio_startup() {
+    let Err(error) = start_stdio_script("exec sleep 60", ExtensionTimeouts::new(300, 1)).await
+    else {
+        panic!("a server that never initializes must not connect");
+    };
+
+    let message = error.to_string();
+    assert!(
+        matches!(error, ExtensionError::InitializeTimeout { seconds: 1, .. }),
+        "{message}"
+    );
+    assert!(
+        message.contains("within 1s (the extension's timeout)"),
+        "{message}"
+    );
+    assert!(!message.contains("stderr"), "{message}");
+}
+
+#[test]
+fn startup_deadline_is_the_smaller_of_the_setting_and_the_extension_timeout() {
+    let long_extension_timeout = ExtensionTimeouts::new(30, 300);
+    assert_eq!(long_extension_timeout.startup, Duration::from_secs(30));
+    assert_eq!(long_extension_timeout.request, Duration::from_secs(300));
+    assert_eq!(
+        long_extension_timeout.startup_limited_by,
+        STARTUP_TIMEOUT_SETTING
+    );
+
+    let short_extension_timeout = ExtensionTimeouts::new(30, 5);
+    assert_eq!(short_extension_timeout.startup, Duration::from_secs(5));
+    assert_eq!(short_extension_timeout.request, Duration::from_secs(5));
+    assert_eq!(
+        short_extension_timeout.startup_limited_by,
+        EXTENSION_TIMEOUT_SETTING
+    );
+}
+
+#[test]
+fn startup_timeout_setting_does_not_change_the_tool_call_timeout() {
+    let _guard = env_lock::lock_env([("GOSLING_EXTENSION_STARTUP_TIMEOUT", Some("7"))]);
+
+    let timeouts = ExtensionTimeouts::resolve(Some(300)).mcp_client();
+
+    assert_eq!(timeouts.startup, Duration::from_secs(7));
+    assert_eq!(timeouts.request, Duration::from_secs(300));
+}
+
+#[test]
+fn startup_timeout_defaults_to_thirty_seconds() {
+    let _guard = env_lock::lock_env([("GOSLING_EXTENSION_STARTUP_TIMEOUT", None::<&str>)]);
+
+    let timeouts = ExtensionTimeouts::resolve(Some(300));
+
+    assert_eq!(timeouts.startup, Duration::from_secs(30));
+    assert_eq!(timeouts.request, Duration::from_secs(300));
+}
+
+#[tokio::test]
+async fn http_server_that_never_answers_initialize_fails_at_the_startup_deadline() {
+    use wiremock::matchers::any;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let mock_server = MockServer::start().await;
+    Mock::given(any())
+        .respond_with(ResponseTemplate::new(200).set_delay(Duration::from_secs(60)))
+        .mount(&mock_server)
+        .await;
+    let temp_dir = tempdir().unwrap();
+    let uri = mock_server.uri();
+    let headers = HashMap::new();
+
+    let startup = create_streamable_http_client(
+        &uri,
+        ExtensionTimeouts::new(1, 300),
+        &headers,
+        "hanging",
+        None,
+        None,
+        Box::new(rmcp::transport::auth::InMemoryCredentialStore::new()),
+        Arc::new(Mutex::new(None)),
+        "gosling-test".to_string(),
+        GoslingMcpClientCapabilities {
+            mcpui: false,
+            host_info: None,
+        },
+        temp_dir.path(),
+    );
+    let Ok(result) = tokio::time::timeout(Duration::from_secs(10), startup).await else {
+        panic!("startup must end at the startup deadline, not the extension timeout");
+    };
+    let Err(error) = result else {
+        panic!("a server that never initializes must not connect");
+    };
+
+    let message = error.to_string();
+    assert!(
+        matches!(error, ExtensionError::InitializeTimeout { seconds: 1, .. }),
+        "{message}"
+    );
+    assert!(
+        message.contains("within 1s (GOSLING_EXTENSION_STARTUP_TIMEOUT)"),
+        "{message}"
+    );
 }
 
 #[tokio::test]
@@ -2218,7 +2371,7 @@ async fn refused_http_extension_names_the_url_and_the_cause() {
 
     let Err(error) = create_streamable_http_client(
         &uri,
-        Some(5),
+        ExtensionTimeouts::resolve(Some(5)),
         &HashMap::new(),
         "refused",
         None,

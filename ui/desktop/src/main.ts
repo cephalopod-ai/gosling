@@ -317,6 +317,10 @@ async function validateArtifactRoutingConfig(
   }
 
   const artifactFiles = [];
+  const approvedRoots = [
+    ...rendererFileRoots(webContentsId),
+    ...outputs.map((output) => output.path),
+  ];
   for (const artifactFile of config.artifactFiles ?? []) {
     if (
       typeof artifactFile !== 'string' ||
@@ -326,7 +330,10 @@ async function validateArtifactRoutingConfig(
       continue;
     }
     try {
-      const artifactPath = await resolveArtifactFileCapability(resolveRendererPath(artifactFile));
+      const artifactPath = await resolveArtifactFileCapability(
+        resolveRendererPath(artifactFile),
+        approvedRoots
+      );
       if (artifactPath) artifactFiles.push(artifactPath);
     } catch {
       continue;

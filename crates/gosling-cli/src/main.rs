@@ -1,5 +1,6 @@
 use anyhow::Result;
 use gosling_cli::cli::cli;
+use gosling_cli::signal::PromptCancelled;
 
 /// Enable ANSI/VT escape sequence processing on Windows Console Host.
 ///
@@ -44,7 +45,14 @@ fn main() -> Result<()> {
         })
         .map_err(|e| anyhow::anyhow!("Failed to spawn gosling-cli main thread: {}", e))?;
 
-    handle
+    let result = handle
         .join()
-        .map_err(|_| anyhow::anyhow!("gosling-cli main thread panicked"))?
+        .map_err(|_| anyhow::anyhow!("gosling-cli main thread panicked"))?;
+    if let Err(err) = &result {
+        if err.is::<PromptCancelled>() {
+            eprintln!("{err}");
+            std::process::exit(130);
+        }
+    }
+    result
 }

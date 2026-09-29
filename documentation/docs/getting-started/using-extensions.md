@@ -49,11 +49,13 @@ Platform extensions are built-in extensions that provide global features like co
 
   <TabItem value="cli" label="gosling CLI">
     
-    If you know the exact name of the extension you'd like to add, run:
+    If you know the exact name of the extension you'd like to add (for example, `planning`), enable it for a single session with:
 
     ```sh
-    gosling mcp {name}
+    gosling session --with-builtin {name}
     ```
+
+    Separate several names with commas. (`gosling mcp {name}` does something else: it runs a bundled MCP server on stdio.)
 
     To navigate through available extensions:
 
@@ -128,7 +130,7 @@ See available servers in the **[MCP Server Directory](https://www.pulsemcp.com/s
   3. Under `Extensions`, click `Add custom extension`.
   4. On the `Add custom extension` modal, enter the necessary details
      - If adding an environment variable, click `Add` button to the right of the variable
-     - The `Timeout` field lets you set how long gosling should wait for a tool call from this extension to complete
+     - The `Timeout` field lets you set how long gosling should wait for a tool call from this extension to complete. Startup is bounded separately by [`GOSLING_EXTENSION_STARTUP_TIMEOUT`](/docs/guides/environment-variables#tool-configuration) (30 seconds by default), or by this timeout if it is shorter
   5. Click `Add` button
   
   #### Example of adding the [Knowledge Graph Memory MCP Server](https://github.com/modelcontextprotocol/servers/tree/main/src/memory):
@@ -269,7 +271,7 @@ gosling://extension?cmd=<command>&arg=<argument>&id=<id>&name=<name>&description
 Required parameters:
 - `cmd`: The base command to run, one of `jbang`, `npx`, `uvx`, or `docker`
 - `arg`: (cmd only) Command arguments (can be repeated for multiple arguments: `&arg=...&arg=...`)
-- `timeout`: Maximum time (in seconds) to wait for extension responses
+- `timeout`: Maximum time (in seconds) to wait for a tool call to complete
 - `id`: Unique identifier for the extension
 - `name`: Display name for the extension
 - `description`: Brief description of the extension's functionality
@@ -290,7 +292,7 @@ gosling://extension?url=<remote-streamable-http-url>&type=streamable_http&id=<id
 Parameters:
 - `url`: The URL of the remote Streamable HTTP server
 - `type`: Must be set to `streamable_http` to specify the protocol type
-- `timeout`: Maximum time (in seconds) to wait for extension responses
+- `timeout`: Maximum time (in seconds) to wait for a tool call to complete
 - `id`: Unique identifier for the extension
 - `name`: Display name for the extension
 - `description`: Brief description of the extension's functionality

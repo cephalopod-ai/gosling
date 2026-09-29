@@ -190,6 +190,38 @@ fn resolve_check_model(check: &Check, opts: &ReviewOptions) -> Option<String> {
     opts.default_model.clone()
 }
 
+/// The prompt [`run_checks_in_parallel`] sends for `check`.
+pub(super) fn check_prompt(check: &Check, diff: &str, opts: &ReviewOptions) -> String {
+    build_check_prompt(
+        check,
+        diff,
+        opts.instructions.as_deref(),
+        check.resolved_turn_limit(opts.default_turn_limit),
+    )
+}
+
+/// The `(path, prompt)` pairs [`run_main_pass_in_parallel`] sends, one per touched file.
+pub(super) fn main_pass_prompts(
+    diff: &str,
+    base_prompt: &str,
+    opts: &ReviewOptions,
+) -> Vec<(String, String)> {
+    let max_turns = resolve_main_turn_limit(opts.default_turn_limit);
+    split_diff_by_file(diff)
+        .into_iter()
+        .map(|(path, file_diff)| {
+            let prompt = build_main_pass_prompt(
+                &path,
+                &file_diff,
+                base_prompt,
+                opts.instructions.as_deref(),
+                max_turns,
+            );
+            (path, prompt)
+        })
+        .collect()
+}
+
 /// Resolve the turn limit for a main-pass subprocess.
 ///
 /// Uses `gosling review --turn-limit` when set, otherwise
@@ -284,7 +316,7 @@ pub(super) async fn run_main_pass_in_parallel(
     opts: &ReviewOptions,
     workers: &ReviewWorkerPool,
 ) -> Vec<Finding> {
-    let per_file = split_diff_by_file(diff);
+    let per_file = main_pass_prompts(diff, base_prompt, opts);
     if per_file.is_empty() {
         return Vec::new();
     }
@@ -292,24 +324,15 @@ pub(super) async fn run_main_pass_in_parallel(
     let mut set: JoinSet<(usize, String, Result<Vec<RawFinding>>, bool)> = JoinSet::new();
     let max_turns = resolve_main_turn_limit(opts.default_turn_limit);
 
-    for (idx, (path, file_diff)) in per_file.iter().enumerate() {
+    for (idx, (path, prompt)) in per_file.iter().enumerate() {
         let workers = workers.clone();
         let path = path.clone();
-        let file_diff = file_diff.clone();
+        let prompt = prompt.clone();
         let provider = opts.provider.clone();
         let model = opts.default_model.clone();
         let quiet = opts.quiet;
-        let instructions = opts.instructions.clone();
-        let base_prompt = base_prompt.to_string();
 
         set.spawn(async move {
-            let prompt = build_main_pass_prompt(
-                &path,
-                &file_diff,
-                &base_prompt,
-                instructions.as_deref(),
-                max_turns,
-            );
             let label = format!("main:{path}");
             let result = run_subprocess_for_findings(
                 &workers,

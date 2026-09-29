@@ -2,6 +2,7 @@ use crate::config::paths::Paths;
 use anyhow::{bail, Context, Result};
 use rcgen::{CertificateParams, DnType, KeyPair, SanType};
 use std::path::Path;
+use x509_parser::time::ASN1Time;
 
 #[cfg(feature = "rustls-tls")]
 pub type TlsConfig = axum_server::tls_rustls::RustlsConfig;
@@ -54,6 +55,33 @@ fn sha256_fingerprint(der: &[u8]) -> String {
     }
 }
 
+// An expired certificate can never start working, so refuse it. A certificate that is not yet
+// valid is usually clock skew or a pre-issued renewal that becomes usable on its own, so only warn.
+fn check_certificate_validity(der: &[u8], cert_path: &Path, now: ASN1Time) -> Result<()> {
+    let (_, cert) = x509_parser::parse_x509_certificate(der).with_context(|| {
+        format!(
+            "invalid X.509 data in TLS certificate {}",
+            cert_path.display()
+        )
+    })?;
+    let validity = cert.validity();
+    if now > validity.not_after {
+        bail!(
+            "TLS certificate {} expired on {}; clients will reject it. Renew the certificate.",
+            cert_path.display(),
+            validity.not_after
+        );
+    }
+    if now < validity.not_before {
+        eprintln!(
+            "Warning: TLS certificate {} is not valid until {}; clients will reject it until then.",
+            cert_path.display(),
+            validity.not_before
+        );
+    }
+    Ok(())
+}
+
 pub async fn from_pem_files(cert_path: &Path, key_path: &Path) -> Result<TlsSetup> {
     let cert_pem = std::fs::read(cert_path)
         .with_context(|| format!("cannot read TLS certificate {}", cert_path.display()))?;
@@ -63,6 +91,7 @@ pub async fn from_pem_files(cert_path: &Path, key_path: &Path) -> Result<TlsSetu
     let der = pem::parse(&cert_pem)
         .with_context(|| format!("invalid PEM in TLS certificate {}", cert_path.display()))?
         .into_contents();
+    check_certificate_validity(&der, cert_path, ASN1Time::now())?;
     let fingerprint = sha256_fingerprint(&der);
     let load_context = || {
         format!(
@@ -91,11 +120,22 @@ pub async fn from_pem_files(cert_path: &Path, key_path: &Path) -> Result<TlsSetu
     })
 }
 
+const TLS_PATH_PAIR_REQUIREMENT: &str = "--tls-cert-path/GOSLING_TLS_CERT_PATH and \
+     --tls-key-path/GOSLING_TLS_KEY_PATH must both be set, or neither (to use a generated \
+     self-signed certificate).";
+
 pub async fn setup_tls(cert_path: Option<&str>, key_path: Option<&str>) -> Result<TlsSetup> {
     match (cert_path, key_path) {
         (Some(cert), Some(key)) => from_pem_files(Path::new(cert), Path::new(key)).await,
         (None, None) => self_signed_config().await,
-        _ => bail!("Both GOSLING_TLS_CERT_PATH and GOSLING_TLS_KEY_PATH must be set, or neither"),
+        (Some(_), None) => bail!(
+            "A TLS certificate path was given without a private key path. \
+             {TLS_PATH_PAIR_REQUIREMENT}"
+        ),
+        (None, Some(_)) => bail!(
+            "A TLS private key path was given without a certificate path. \
+             {TLS_PATH_PAIR_REQUIREMENT}"
+        ),
     }
 }
 
@@ -202,6 +242,69 @@ mod tests {
         std::fs::write(&cert_path, cert).unwrap();
         std::fs::write(&key_path, key).unwrap();
         (cert_path, key_path)
+    }
+
+    fn write_pair_valid_between(
+        dir: &Path,
+        not_before: (i32, u8, u8),
+        not_after: (i32, u8, u8),
+    ) -> (std::path::PathBuf, std::path::PathBuf) {
+        let mut params = CertificateParams::new(vec!["localhost".to_string()]).unwrap();
+        params.not_before = rcgen::date_time_ymd(not_before.0, not_before.1, not_before.2);
+        params.not_after = rcgen::date_time_ymd(not_after.0, not_after.1, not_after.2);
+        let key_pair = KeyPair::generate().unwrap();
+        let cert = params.self_signed(&key_pair).unwrap();
+        write_pair(dir, &cert.pem(), &key_pair.serialize_pem())
+    }
+
+    #[tokio::test]
+    async fn expired_certificate_is_refused_naming_its_expiry() {
+        let temp = tempfile::tempdir().unwrap();
+        let (cert_path, key_path) =
+            write_pair_valid_between(temp.path(), (2019, 1, 1), (2020, 1, 2));
+
+        let error = format!(
+            "{:#}",
+            from_pem_files(&cert_path, &key_path).await.err().unwrap()
+        );
+        assert!(
+            error.contains("expired on Jan  2 00:00:00 2020")
+                && error.contains(&cert_path.display().to_string()),
+            "{error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn not_yet_valid_certificate_still_loads() {
+        let temp = tempfile::tempdir().unwrap();
+        let (cert_path, key_path) =
+            write_pair_valid_between(temp.path(), (2200, 1, 1), (2201, 1, 1));
+
+        from_pem_files(&cert_path, &key_path).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn half_a_path_pair_names_the_flags_and_settings() {
+        for (cert, key, given) in [
+            (
+                Some("server.pem"),
+                None,
+                "certificate path was given without a private key",
+            ),
+            (
+                None,
+                Some("server.key"),
+                "private key path was given without a certificate",
+            ),
+        ] {
+            let error = format!("{:#}", setup_tls(cert, key).await.err().unwrap());
+            assert!(
+                error.contains(given)
+                    && error.contains("--tls-cert-path/GOSLING_TLS_CERT_PATH")
+                    && error.contains("--tls-key-path/GOSLING_TLS_KEY_PATH"),
+                "{error}"
+            );
+        }
     }
 
     #[tokio::test]

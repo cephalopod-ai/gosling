@@ -12,6 +12,27 @@ fn format_date(date: DateTime<chrono::Utc>) -> String {
     date.format("%Y-%m-%d %H:%M:%S").to_string()
 }
 
+// The session child has already reported its own error, so the parent only passes its exit
+// status on.
+fn run_session(command: &mut std::process::Command) -> Result<()> {
+    let status = command.status()?;
+    if !status.success() {
+        eprintln!("Failed to run gosling. Exit code: {:?}", status.code());
+        std::process::exit(status.code().unwrap_or(1));
+    }
+    Ok(())
+}
+
+fn ensure_selected_project_dir_exists(project_dir: &str) -> Result<()> {
+    if !Path::new(project_dir).exists() {
+        anyhow::bail!(
+            "Project directory '{}' no longer exists. Run 'gosling projects' again to pick another project.",
+            project_dir
+        );
+    }
+    Ok(())
+}
+
 /// Handle the default project command
 ///
 /// Offers options to resume the most recently accessed project
@@ -27,11 +48,7 @@ pub fn handle_project_default() -> Result<()> {
         println!("No previous projects found. Starting a new session in the current directory.");
         let mut command = std::process::Command::new(&gosling_bin);
         command.arg("session");
-        let status = command.status()?;
-
-        if !status.success() {
-            println!("Failed to run gosling. Exit code: {:?}", status.code());
-        }
+        run_session(&mut command)?;
         return Ok(());
     }
 
@@ -44,11 +61,10 @@ pub fn handle_project_default() -> Result<()> {
 
     // Check if the directory exists
     if !Path::new(project_dir).exists() {
-        println!(
-            "Most recent project directory '{}' no longer exists.",
+        anyhow::bail!(
+            "Most recent project directory '{}' no longer exists. Run 'gosling projects' to pick another project.",
             project_dir
         );
-        return Ok(());
     }
 
     // Format the path for display
@@ -116,12 +132,7 @@ pub fn handle_project_default() -> Result<()> {
                 println!("Resuming session: {}", id);
             }
 
-            // Execute the command
-            let status = command.status()?;
-
-            if !status.success() {
-                println!("Failed to run gosling. Exit code: {:?}", status.code());
-            }
+            run_session(&mut command)?;
         }
         "fresh" => {
             let _ = outro(format!(
@@ -136,12 +147,7 @@ pub fn handle_project_default() -> Result<()> {
             let mut command = std::process::Command::new(&gosling_bin);
             command.arg("session");
 
-            // Execute the command
-            let status = command.status()?;
-
-            if !status.success() {
-                println!("Failed to run gosling. Exit code: {:?}", status.code());
-            }
+            run_session(&mut command)?;
         }
         "new" => {
             let _ = outro("Starting a new session in the current directory");
@@ -150,12 +156,7 @@ pub fn handle_project_default() -> Result<()> {
             let mut command = std::process::Command::new(&gosling_bin);
             command.arg("session");
 
-            // Execute the command
-            let status = command.status()?;
-
-            if !status.success() {
-                println!("Failed to run gosling. Exit code: {:?}", status.code());
-            }
+            run_session(&mut command)?;
         }
         _ => {
             let _ = outro("Operation canceled");
@@ -281,14 +282,7 @@ pub fn handle_projects_interactive() -> Result<()> {
     let project = &projects[index - 1];
     let project_dir = &project.path;
 
-    // Check if the directory exists
-    if !Path::new(project_dir).exists() {
-        let _ = outro(format!(
-            "Project directory '{}' no longer exists.",
-            project_dir
-        ));
-        return Ok(());
-    }
+    ensure_selected_project_dir_exists(project_dir)?;
 
     // Ask if the user wants to resume the session or start a new one
     let session_id = project.last_session_id.clone();
@@ -331,12 +325,34 @@ pub fn handle_projects_interactive() -> Result<()> {
         println!("Starting new session");
     }
 
-    // Execute the command
-    let status = command.status()?;
-
-    if !status.success() {
-        println!("Failed to run gosling. Exit code: {:?}", status.code());
-    }
+    run_session(&mut command)?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_missing_selected_project_folder_is_an_error() {
+        let root = tempfile::TempDir::new().unwrap();
+        let gone = root.path().join("gone");
+        let err = ensure_selected_project_dir_exists(gone.to_str().unwrap()).unwrap_err();
+        let message = err.to_string();
+        assert!(
+            message.contains(&format!(
+                "Project directory '{}' no longer exists",
+                gone.display()
+            )),
+            "{message}"
+        );
+        assert!(message.contains("gosling projects"), "{message}");
+    }
+
+    #[test]
+    fn an_existing_selected_project_folder_is_accepted() {
+        let root = tempfile::TempDir::new().unwrap();
+        ensure_selected_project_dir_exists(root.path().to_str().unwrap()).unwrap();
+    }
 }

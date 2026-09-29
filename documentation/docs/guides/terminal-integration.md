@@ -46,7 +46,7 @@ source $gosling_term_init
 
 Add to `$PROFILE`:
 ```powershell
-Invoke-Expression (gosling term init powershell)
+Invoke-Expression (gosling term init powershell | Out-String)
 ```
 
 </TabItem>
@@ -110,7 +110,7 @@ source $gosling_term_init
 <TabItem value="powershell" label="PowerShell">
 
 ```powershell
-Invoke-Expression (gosling term init powershell --name my-project)
+Invoke-Expression (gosling term init powershell --name my-project | Out-String)
 ```
 
 </TabItem>
@@ -132,6 +132,8 @@ eval "$(gosling term init zsh --name auth-bug)"
 ## Default Handler
 
 Use `--default` if you want gosling to answer commands your shell cannot resolve.
+
+The bash handler uses `command_not_found_handle`, which needs bash 4.0 or newer. The `/bin/bash` that ships with macOS is 3.2 and ignores it, so `--default` has no effect there; use a newer bash (for example from Homebrew) or zsh. Fish and PowerShell do not support `--default`.
 
 <Tabs groupId="default-shells">
 <TabItem value="zsh" label="zsh" default>

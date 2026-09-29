@@ -391,6 +391,14 @@ fn handle_slash_command(input: &str) -> Option<InputResult> {
                 None
             }
         }
+        "/extension" => {
+            println!("Usage: /extension <command> (format: ENV1=val1 command args...)");
+            Some(InputResult::Retry)
+        }
+        "/builtin" => {
+            println!("Usage: /builtin <names> (comma-separated)");
+            Some(InputResult::Retry)
+        }
         s if s.starts_with(CMD_EXTENSION) => Some(InputResult::AddExtension(
             s.get(CMD_EXTENSION.len()..).unwrap_or("").to_string(),
         )),
@@ -880,6 +888,18 @@ mod tests {
         } else {
             panic!("Expected AddBuiltin");
         }
+    }
+
+    #[test]
+    fn test_extension_and_builtin_without_arguments_show_usage() {
+        for input in ["/extension", "  /extension   ", "/builtin", "/builtin  "] {
+            assert!(
+                matches!(handle_slash_command(input), Some(InputResult::Retry)),
+                "{input:?} should print its usage, not be an unknown command"
+            );
+        }
+        assert!(handle_slash_command("/extensionfoo").is_none());
+        assert!(handle_slash_command("/builtins").is_none());
     }
 
     // Test prompt with no arguments

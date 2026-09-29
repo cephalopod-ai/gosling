@@ -6,7 +6,7 @@ import { cn } from '../../../utils';
 import { Save, RotateCcw, FileText, Settings } from 'lucide-react';
 import { toastSuccess, toastError } from '../../../toasts';
 import { getUiNames, providerPrefixes } from '../../../utils/configUtils';
-import type { ConfigData, ConfigValue } from '../../../types/config';
+import type { ConfigData, ConfigObject, ConfigValue } from '../../../types/config';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../ui/card';
 import {
   Dialog,
@@ -44,6 +44,14 @@ const i18n = defineMessages({
   noSettings: {
     id: 'configSettings.noSettings',
     defaultMessage: 'No configuration settings found.',
+  },
+  saveValue: {
+    id: 'configSettings.saveValue',
+    defaultMessage: 'Save {name}',
+  },
+  editInConfigFile: {
+    id: 'configSettings.editInConfigFile',
+    defaultMessage: 'Edit this value in config.yaml.',
   },
   enterValue: {
     id: 'configSettings.enterValue',
@@ -86,6 +94,20 @@ const i18n = defineMessages({
     defaultMessage: 'All changes have been reverted',
   },
 });
+
+// Nested values are shown for reference only: this editor writes each row back as a
+// single string, which would replace the whole map or list.
+const isStructuredValue = (value: ConfigValue): value is ConfigValue[] | ConfigObject =>
+  typeof value === 'object' && value !== null;
+
+const SECRET_PROPERTY = /key|token|secret|password/i;
+
+const formatStructuredValue = (value: ConfigValue[] | ConfigObject) =>
+  JSON.stringify(
+    value,
+    (property, nested) => (SECRET_PROPERTY.test(property) ? '********' : nested),
+    2
+  );
 
 export default function ConfigSettings() {
   const intl = useIntl();
@@ -179,7 +201,8 @@ export default function ConfigSettings() {
     setIsModalOpen(open);
   };
 
-  const currentProvider = typedConfig.GOSLING_PROVIDER || '';
+  const currentProvider =
+    typeof typedConfig.GOSLING_PROVIDER === 'string' ? typedConfig.GOSLING_PROVIDER : '';
 
   const configEntries: [string, ConfigValue][] = useMemo(() => {
     const currentProviderPrefixes = providerPrefixes[currentProvider] || [];
@@ -244,35 +267,55 @@ export default function ConfigSettings() {
                 {configEntries.length === 0 ? (
                   <p className="text-text-secondary">{intl.formatMessage(i18n.noSettings)}</p>
                 ) : (
-                  configEntries.map(([key, _value]) => (
-                    <div key={key} className="grid grid-cols-[200px_1fr_auto] gap-3 items-center">
-                      <label className="text-sm font-medium text-text-primary" title={key}>
-                        {getUiNames(key)}
-                      </label>
-                      <Input
-                        value={String(configValues[key] || '')}
-                        onChange={(e) => handleChange(key, e.target.value)}
-                        className={cn(
-                          'text-text-primary border-border-primary hover:border-border-primary transition-colors',
-                          modifiedKeys.has(key) && 'border-blue-500 focus:ring-blue-500/20'
-                        )}
-                        placeholder={intl.formatMessage(i18n.enterValue, { name: getUiNames(key) })}
-                      />
-                      <Button
-                        onClick={() => handleSave(key)}
-                        disabled={!modifiedKeys.has(key) || saving === key}
-                        variant="ghost"
-                        size="sm"
-                        className="min-w-[60px]"
-                      >
-                        {saving === key ? (
-                          <span className="text-xs">{intl.formatMessage(i18n.saving)}</span>
-                        ) : (
-                          <Save className="h-4 w-4" />
-                        )}
-                      </Button>
-                    </div>
-                  ))
+                  configEntries.map(([key, value]) =>
+                    isStructuredValue(value) ? (
+                      <div key={key} className="grid grid-cols-[200px_1fr_auto] gap-3 items-start">
+                        <label className="text-sm font-medium text-text-primary" title={key}>
+                          {getUiNames(key)}
+                        </label>
+                        <div className="space-y-1">
+                          <pre className="max-h-40 overflow-auto rounded-md border border-border-primary bg-background-secondary px-3 py-2 text-xs text-text-primary">
+                            {formatStructuredValue(value)}
+                          </pre>
+                          <p className="text-xs text-text-secondary">
+                            {intl.formatMessage(i18n.editInConfigFile)}
+                          </p>
+                        </div>
+                        <div className="min-w-[60px]" />
+                      </div>
+                    ) : (
+                      <div key={key} className="grid grid-cols-[200px_1fr_auto] gap-3 items-center">
+                        <label className="text-sm font-medium text-text-primary" title={key}>
+                          {getUiNames(key)}
+                        </label>
+                        <Input
+                          value={String(configValues[key] || '')}
+                          onChange={(e) => handleChange(key, e.target.value)}
+                          className={cn(
+                            'text-text-primary border-border-primary hover:border-border-primary transition-colors',
+                            modifiedKeys.has(key) && 'border-blue-500 focus:ring-blue-500/20'
+                          )}
+                          placeholder={intl.formatMessage(i18n.enterValue, {
+                            name: getUiNames(key),
+                          })}
+                        />
+                        <Button
+                          onClick={() => handleSave(key)}
+                          disabled={!modifiedKeys.has(key) || saving === key}
+                          variant="ghost"
+                          size="sm"
+                          className="min-w-[60px]"
+                          aria-label={intl.formatMessage(i18n.saveValue, { name: getUiNames(key) })}
+                        >
+                          {saving === key ? (
+                            <span className="text-xs">{intl.formatMessage(i18n.saving)}</span>
+                          ) : (
+                            <Save className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
+                    )
+                  )
                 )}
               </div>
             </div>

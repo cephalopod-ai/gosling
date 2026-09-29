@@ -31,8 +31,9 @@ pub use diagnostics::{
     DiagnosticsTextFile, SystemInfo,
 };
 pub use extension_data::{
-    AcpPromptRunState, DeepResearchState, EnabledExtensionsState, ExtensionData, ExtensionState,
-    ShellSkillSelectionState, SystemPromptExtra, SystemPromptExtrasState, TodoState,
+    removed_from_config_message, AcpPromptRunState, DeepResearchState, EnabledExtensionsState,
+    ExtensionData, ExtensionState, ResumedExtensions, ShellSkillSelectionState, SystemPromptExtra,
+    SystemPromptExtrasState, TodoState,
 };
 pub use library::{
     NewSessionLibraryContent, SessionLibraryItem, SessionLibraryItemKind, SessionLibraryScope,
@@ -52,7 +53,7 @@ pub use session_manager::{
     SessionNameUpdate, SessionNotFound, SessionSummary, SessionSummaryFact, SessionSummaryStatus,
     SessionType, SessionUpdateBuilder, DEFAULT_SESSION_TAIL_LIMIT, MAX_SESSION_MESSAGE_PAGE_LIMIT,
 };
-pub(crate) use session_manager::{SkillScopeGate, ToolOperationStart};
+pub(crate) use session_manager::{LocalTurnClaim, SkillScopeGate, ToolOperationStart};
 pub use session_naming::branch_session_name;
 
 #[cfg(test)]

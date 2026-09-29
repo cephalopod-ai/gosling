@@ -992,6 +992,111 @@ async fn update_provider_propagates_active_mode() -> Result<()> {
     Ok(())
 }
 
+fn frontend_extension(name: &str) -> ExtensionConfig {
+    ExtensionConfig::Frontend {
+        name: name.to_string(),
+        description: String::new(),
+        tools: vec![],
+        instructions: None,
+        bundled: None,
+        available_tools: vec![],
+    }
+}
+
+// GSL-PT-20260927-C03: a config extension the user removed came back on resume.
+#[tokio::test]
+async fn resume_does_not_restore_a_config_extension_removed_from_the_config() -> Result<()> {
+    let temp_dir = tempfile::tempdir()?;
+    let config_path = temp_dir.path().join("config.yaml");
+    std::fs::write(
+        &config_path,
+        "extensions:\n  kept:\n    enabled: true\n    type: streamable_http\n    name: kept\n    uri: http://127.0.0.1:9/kept\n",
+    )?;
+    let config = Config::new_with_file_secrets(&config_path, temp_dir.path().join("secrets.yaml"))?;
+    let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
+    let session = session_manager
+        .create_session(
+            PathBuf::default(),
+            "removed-config-extension".to_string(),
+            SessionType::Hidden,
+            GoslingMode::Auto,
+        )
+        .await?;
+    let mut extension_data = session.extension_data.clone();
+    EnabledExtensionsState::new(vec![
+        frontend_extension("client-server"),
+        frontend_extension("gone"),
+        frontend_extension("kept"),
+    ])
+    .with_config_keys(vec!["gone".to_string(), "kept".to_string()])
+    .to_extension_data(&mut extension_data)?;
+    session_manager
+        .update(&session.id)
+        .extension_data(extension_data)
+        .apply()
+        .await?;
+    let saved = session_manager.get_session(&session.id, false).await?;
+
+    let agent = Arc::new(Agent::with_config(AgentConfig::new(
+        session_manager.clone(),
+        Arc::new(PermissionManager::new(temp_dir.path().to_path_buf())),
+        GoslingMode::Auto,
+        true,
+        GoslingPlatform::GoslingCli,
+    )));
+    let results = agent
+        .load_extensions_from_session_with_config(&saved, &config)
+        .await;
+
+    let gone = results
+        .iter()
+        .find(|result| result.name == "gone")
+        .expect("the removed extension is reported");
+    assert!(!gone.success);
+    assert_eq!(
+        gone.error.as_deref(),
+        Some("Extension 'gone' was removed from your configuration and was not loaded for this session.")
+    );
+    let mut loaded = agent.list_extensions().await;
+    loaded.sort();
+    assert_eq!(loaded, vec!["client-server", "kept"]);
+
+    agent.persist_extension_state(&session.id).await?;
+    let state = EnabledExtensionsState::from_extension_data(
+        &session_manager
+            .get_session(&session.id, false)
+            .await?
+            .extension_data,
+    )
+    .expect("state saved");
+    assert_eq!(state.config_keys, vec!["kept"]);
+    assert_eq!(
+        state
+            .extensions
+            .iter()
+            .map(|extension| extension.name())
+            .collect::<Vec<_>>(),
+        vec!["client-server", "kept"]
+    );
+
+    agent.remove_extension("kept", &session.id).await?;
+    agent
+        .add_extension(frontend_extension("kept"), &session.id)
+        .await?;
+    let state = EnabledExtensionsState::from_extension_data(
+        &session_manager
+            .get_session(&session.id, false)
+            .await?
+            .extension_data,
+    )
+    .expect("state saved");
+    assert!(
+        state.config_keys.is_empty(),
+        "an extension added in the session is session-scoped even under a config entry's name"
+    );
+    Ok(())
+}
+
 #[tokio::test]
 async fn starting_an_extension_leaves_saving_the_list_to_the_caller() -> Result<()> {
     let temp_dir = tempfile::tempdir()?;

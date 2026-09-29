@@ -471,7 +471,7 @@ impl GoslingAcpAgent {
             );
         }
 
-        let session = self
+        let mut session = self
             .session_manager
             .get_session(session_id, false)
             .await
@@ -479,6 +479,7 @@ impl GoslingAcpAgent {
                 agent_client_protocol::Error::resource_not_found(Some(session_id.to_string()))
                     .data(format!("Session not found: {}", session_id))
             })?;
+        self.current_workspace_names().apply(&mut session);
 
         let resume_integrity = if AcpPromptRunState::from_extension_data(&session.extension_data)
             .is_some_and(|state| state.has_terminal_outcome())

@@ -301,6 +301,7 @@ These variables control how gosling handles [tool execution](/docs/guides/managi
 | `GOSLING_CLI_MIN_PRIORITY` | Controls verbosity of [tool output](/docs/guides/managing-tools/adjust-tool-output) | Float between 0.0 and 1.0 | 0.0 |
 | `GOSLING_CLI_TOOL_PARAMS_TRUNCATION_MAX_LENGTH` | Maximum length for tool parameter values before truncation in CLI output (not in debug mode) | Integer | 40 |
 | `GOSLING_DEBUG` | Enables debug mode to show full tool parameters without truncation. Can also be toggled during a session using the `/r` [slash command](/docs/guides/gosling-cli-commands#slash-commands) | "1", "true" (case-insensitive) to enable | false |
+| `GOSLING_EXTENSION_STARTUP_TIMEOUT` | Longest time to wait for an MCP extension to finish starting (its `initialize` handshake) before the extension fails with an error naming this setting. An extension whose own `timeout` is shorter uses that instead. The extension `timeout` applies to tool calls only. | Integer seconds | 30 |
 | `GOSLING_SEARCH_PATHS` | Prepends additional directories to PATH for extension commands | JSON array of paths (for example, `["/usr/local/bin", "~/custom/bin"]`) | System PATH only |
 | `GOSLING_SKILL_CATALOGS` | Loads compiled external skill catalogs without bundling them into gosling | JSON array of catalog index paths | `[]` |
 | `GOSLING_TRUSTED_DIRS` | Folders that tools may read and write in every session without an approval prompt. Also editable in Settings → Chat → Trusted folders. A workspace folder marked read-only still blocks writes. | JSON array of paths (for example, `["~/Downloads", "~/Documents"]`) | `[]` |
@@ -317,6 +318,9 @@ export GOSLING_MODE="auto"
 export GOSLING_CODE_EXECUTION_RUNTIME=disabled
 export GOSLING_CLI_MIN_PRIORITY=0.2  # Show only medium and high importance output
 export GOSLING_CLI_TOOL_PARAMS_MAX_LENGTH=100  # Show up to 100 characters for tool parameters in CLI output
+
+# Give slow-starting extensions (for example a first `npx` download) more time to start
+export GOSLING_EXTENSION_STARTUP_TIMEOUT=120
 
 # Add custom tool directories for extensions
 export GOSLING_SEARCH_PATHS='["/usr/local/bin", "~/custom/tools", "/opt/homebrew/bin"]'

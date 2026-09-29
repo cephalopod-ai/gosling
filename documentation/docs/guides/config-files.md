@@ -175,7 +175,7 @@ extensions:
     display_name: "Name"      # Human-readable name (optional)
     enabled: true/false       # Whether the extension is active
     name: "extension_name"    # Internal name
-    timeout: 300              # Operation timeout in seconds
+    timeout: 300              # Tool-call timeout in seconds (also caps startup when below GOSLING_EXTENSION_STARTUP_TIMEOUT)
     type: "builtin"/"stdio"   # Extension type
     available_tools: []       # Filter to specific tools (empty = all)
     

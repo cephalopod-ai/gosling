@@ -112,11 +112,42 @@ where
 /// which runs as the connection's serving future.
 pub struct GoslingAgentConnection {
     server: Arc<crate::acp::server_factory::AcpServer>,
+    control: Arc<AgentConnectionControl>,
 }
 
 impl GoslingAgentConnection {
     pub fn new(server: Arc<crate::acp::server_factory::AcpServer>) -> Self {
-        Self { server }
+        Self::with_control(server, Arc::default())
+    }
+
+    pub(crate) fn with_control(
+        server: Arc<crate::acp::server_factory::AcpServer>,
+        control: Arc<AgentConnectionControl>,
+    ) -> Self {
+        Self { server, control }
+    }
+}
+
+/// Lets the HTTP transport see whether a connection's agent is running a
+/// prompt, and end a connection its client abandoned. Ending the serving
+/// future is how the upstream registry learns a connection is gone: it then
+/// drops the connection and closes its streams.
+#[derive(Default)]
+pub(crate) struct AgentConnectionControl {
+    agent: std::sync::OnceLock<std::sync::Weak<GoslingAcpAgent>>,
+    close: CancellationToken,
+}
+
+impl AgentConnectionControl {
+    pub(crate) fn is_running_prompt(&self) -> bool {
+        self.agent
+            .get()
+            .and_then(std::sync::Weak::upgrade)
+            .is_some_and(|agent| agent.has_active_prompt_runs())
+    }
+
+    pub(crate) fn close(&self) {
+        self.close.cancel();
     }
 }
 
@@ -126,13 +157,20 @@ impl agent_client_protocol::ConnectTo<Client> for GoslingAgentConnection {
         client: impl agent_client_protocol::ConnectTo<SacpAgent>,
     ) -> std::result::Result<(), agent_client_protocol::Error> {
         let agent = self.server.create_agent().await.internal_err()?;
+        let _ = self.control.agent.set(Arc::downgrade(&agent));
         let handler = GoslingAcpHandler { agent };
-        SacpAgent
+        let serve = SacpAgent
             .builder()
             .name("gosling-acp")
             .with_handler(handler)
-            .connect_to(client)
-            .await
+            .connect_to(client);
+        tokio::select! {
+            // A request that raced the close is dropped unhandled rather than
+            // started on a connection that is going away.
+            biased;
+            () = self.control.close.cancelled() => Ok(()),
+            result = serve => result,
+        }
     }
 }
 

@@ -269,6 +269,12 @@ export function artifactTitleFromPath(path: string): string {
   return parts[parts.length - 1] || path;
 }
 
+export function artifactDirectoryFromPath(path: string): string {
+  const separator = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+  if (separator < 0) return '';
+  return path.slice(0, separator) || path.slice(0, 1);
+}
+
 export function parseCsv(content: string, maxRows = 200, maxColumns = 50): string[][] {
   const rows: string[][] = [];
   let row: string[] = [];
@@ -309,9 +315,48 @@ export function parseCsv(content: string, maxRows = 200, maxColumns = 50): strin
   return rows;
 }
 
+const OUTPUT_HISTORY_MARKER_LINE = /^[ \t]*<!-- gosling:output-history:(?:start|end) -->[ \t]*\r?$/;
+
+// The backend brackets its contribution-history footer with HTML comments so it can find and
+// replace it later; they are bookkeeping, not content, and the Markdown renderer would otherwise
+// show them as code blocks.
+export function stripOutputHistoryMarkers(markdown: string): string {
+  let insideFence = false;
+  return markdown
+    .split('\n')
+    .filter((line) => {
+      if (/^\s*(```|~~~)/.test(line)) insideFence = !insideFence;
+      return insideFence || !OUTPUT_HISTORY_MARKER_LINE.test(line);
+    })
+    .join('\n');
+}
+
+// An about:srcdoc frame inherits the app page's CSP (script-src 'self'), so inline scripts can
+// never run in the preview. Running them safely needs a separate origin (a dedicated protocol or
+// session partition); until then scripts are removed so the preview is honest and quiet.
+export function withoutHtmlScripts(html: string): { html: string; removedScripts: boolean } {
+  const document = new DOMParser().parseFromString(html, 'text/html');
+  let removedScripts = false;
+  document.querySelectorAll('script').forEach((script) => {
+    script.remove();
+    removedScripts = true;
+  });
+  document.querySelectorAll('*').forEach((element) => {
+    for (const attribute of Array.from(element.attributes)) {
+      if (attribute.name.toLowerCase().startsWith('on')) {
+        element.removeAttribute(attribute.name);
+        removedScripts = true;
+      }
+    }
+  });
+  if (!removedScripts) return { html, removedScripts };
+  const doctype = document.doctype ? `<!doctype ${document.doctype.name}>` : '';
+  return { html: `${doctype}${document.documentElement.outerHTML}`, removedScripts };
+}
+
 export function addSandboxCsp(html: string): string {
   const policy =
-    "default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; script-src 'unsafe-inline' blob:; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
+    "default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; script-src 'none'; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
   const meta = `<meta http-equiv="Content-Security-Policy" content="${policy}">`;
   if (/<head[\s>]/i.test(html)) {
     return html.replace(/<head([^>]*)>/i, `<head$1>${meta}`);

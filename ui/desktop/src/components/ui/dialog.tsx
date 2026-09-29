@@ -48,13 +48,68 @@ const DialogOverlay = React.forwardRef<
 ));
 DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
+// A menu item that opens a dialog unmounts with its menu, so the control to
+// return to is the trigger the menu is labelled by.
+function resolveReturnFocusTarget(element: typeof document.activeElement): HTMLElement | null {
+  let target = element;
+  let menu = target?.closest('[role="menu"]') ?? null;
+  while (target && menu) {
+    const triggerId = menu.getAttribute('aria-labelledby');
+    target = triggerId ? document.getElementById(triggerId) : null;
+    menu = target?.closest('[role="menu"]') ?? null;
+  }
+  return target instanceof HTMLElement && target !== document.body ? target : null;
+}
+
+// Reads focus while the dialog is first rendered, before the commit that
+// mounts it can remove the opener (such as a closing menu's item).
+function ReturnFocusCapture({
+  targetRef,
+}: {
+  targetRef: React.MutableRefObject<HTMLElement | null>;
+}) {
+  const [target] = React.useState(() => resolveReturnFocusTarget(document.activeElement));
+  React.useEffect(() => {
+    targetRef.current = target;
+  }, [target, targetRef]);
+  return null;
+}
+
 function DialogContent({
   className,
   style,
   children,
+  onCloseAutoFocus,
+  onEscapeKeyDown,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content>) {
   const intl = useIntl();
+  const returnFocusRef = React.useRef<HTMLElement | null>(null);
+
+  // Radix only restores focus to a <DialogTrigger>; these dialogs are opened
+  // from state, so without this focus falls to <body> when they close.
+  const handleCloseAutoFocus = (event: Event) => {
+    onCloseAutoFocus?.(event);
+    const target = returnFocusRef.current;
+    returnFocusRef.current = null;
+    if (event.defaultPrevented || !target?.isConnected) return;
+    if (document.activeElement && document.activeElement !== document.body) return;
+    event.preventDefault();
+    target.focus();
+  };
+
+  // Radix hears Escape in the capture phase, before a combobox inside the dialog (react-select)
+  // can close its own popup, so an open dropdown would take the whole dialog down with it.
+  const handleEscapeKeyDown = (event: KeyboardEvent) => {
+    onEscapeKeyDown?.(event);
+    if (
+      event.target instanceof HTMLElement &&
+      event.target.closest('[role="combobox"][aria-expanded="true"]')
+    ) {
+      event.preventDefault();
+    }
+  };
+
   return (
     <DialogPortal data-slot="dialog-portal">
       <DialogOverlay />
@@ -65,8 +120,11 @@ function DialogContent({
           className
         )}
         style={{ zIndex: Z_INDEX.OVERLAY, ...style }}
+        onCloseAutoFocus={handleCloseAutoFocus}
+        onEscapeKeyDown={handleEscapeKeyDown}
         {...props}
       >
+        <ReturnFocusCapture targetRef={returnFocusRef} />
         {children}
         <DialogPrimitive.Close className="ring-offset-background p-1 hover:bg-background-secondary rounded-full focus:ring-ring data-[state=open]:bg-background-secondary transition-all duration-200 data-[state=open]:text-text-secondary absolute top-4 right-4 opacity-70 hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4">
           <XIcon />

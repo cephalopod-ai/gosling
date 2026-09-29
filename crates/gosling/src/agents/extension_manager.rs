@@ -47,7 +47,7 @@ use crate::action_required_manager::ActionRequiredManager;
 use crate::agents::extension::{Envs, ProcessExit};
 use crate::agents::extension_malware_check;
 use crate::agents::mcp_client::{
-    GoslingMcpClientCapabilities, GoslingMcpHostInfo, McpClient, McpClientTrait,
+    GoslingMcpClientCapabilities, GoslingMcpHostInfo, McpClient, McpClientTimeouts, McpClientTrait,
 };
 use crate::builtin_extension::get_builtin_extension;
 use crate::config::extensions::name_to_key;
@@ -122,6 +122,62 @@ fn resolve_timeout(timeout: Option<u64>) -> u64 {
             .get_gosling_default_extension_timeout()
             .unwrap_or(crate::config::DEFAULT_EXTENSION_TIMEOUT)
     })
+}
+
+const STARTUP_TIMEOUT_SETTING: &str = "GOSLING_EXTENSION_STARTUP_TIMEOUT";
+const EXTENSION_TIMEOUT_SETTING: &str = "the extension's timeout";
+
+/// An extension's `timeout` bounds its tool calls, while a separate, shorter
+/// deadline bounds its startup so a server that never answers `initialize`
+/// cannot hold session start for the full tool-call budget.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct ExtensionTimeouts {
+    startup: Duration,
+    startup_limited_by: &'static str,
+    request: Duration,
+}
+
+impl ExtensionTimeouts {
+    fn resolve(extension_timeout: Option<u64>) -> Self {
+        let startup_secs = Config::global()
+            .get_gosling_extension_startup_timeout()
+            .unwrap_or(crate::config::DEFAULT_EXTENSION_STARTUP_TIMEOUT);
+        Self::new(startup_secs, resolve_timeout(extension_timeout))
+    }
+
+    /// A per-extension timeout below the startup deadline still caps startup,
+    /// so separating the two never makes a failing extension slower to report.
+    pub(super) fn new(startup_secs: u64, extension_timeout_secs: u64) -> Self {
+        let (startup_secs, startup_limited_by) = if extension_timeout_secs < startup_secs {
+            (extension_timeout_secs, EXTENSION_TIMEOUT_SETTING)
+        } else {
+            (startup_secs, STARTUP_TIMEOUT_SETTING)
+        };
+        Self {
+            startup: Duration::from_secs(startup_secs),
+            startup_limited_by,
+            request: Duration::from_secs(extension_timeout_secs),
+        }
+    }
+
+    fn mcp_client(&self) -> McpClientTimeouts {
+        McpClientTimeouts {
+            startup: self.startup,
+            request: self.request,
+        }
+    }
+
+    fn startup_expired(&self, started: std::time::Instant) -> bool {
+        started.elapsed() >= self.startup
+    }
+
+    fn startup_timeout_error(&self, stderr: String) -> ExtensionError {
+        ExtensionError::InitializeTimeout {
+            seconds: self.startup.as_secs(),
+            limited_by: self.startup_limited_by,
+            stderr,
+        }
+    }
 }
 
 struct Extension {
@@ -433,7 +489,7 @@ impl ExtensionManager {
                 .await?;
                 create_streamable_http_client(
                     &resolved_uri,
-                    *timeout,
+                    ExtensionTimeouts::resolve(*timeout),
                     &resolved_headers,
                     name,
                     resolved_socket.as_deref(),
@@ -492,7 +548,7 @@ impl ExtensionManager {
                     (def.client_factory)(context)
                 } else {
                     // Builtin MCP server extension
-                    let timeout_secs = resolve_timeout(timeout);
+                    let timeouts = ExtensionTimeouts::resolve(timeout);
                     let extension_fn =
                         get_builtin_extension(normalized_name.as_str()).ok_or_else(|| {
                             ExtensionError::ConfigError(format!("Unknown extension: {}", name))
@@ -520,7 +576,7 @@ impl ExtensionManager {
 
                         let client = child_process_client(
                             command,
-                            &Some(timeout_secs),
+                            timeouts,
                             self.provider.clone(),
                             &effective_working_dir,
                             Some(container_id.to_string()),
@@ -537,7 +593,7 @@ impl ExtensionManager {
                         Box::new(
                             McpClient::connect(
                                 (client_read, client_write),
-                                Duration::from_secs(timeout_secs),
+                                timeouts.mcp_client(),
                                 self.provider.clone(),
                                 self.client_name.clone(),
                                 self.mcp_client_capabilities(),
@@ -619,7 +675,7 @@ impl ExtensionManager {
 
                 let client = child_process_client(
                     command,
-                    timeout,
+                    ExtensionTimeouts::resolve(*timeout),
                     self.provider.clone(),
                     &process_working_dir,
                     container.map(|c| c.id().to_string()),
@@ -657,7 +713,7 @@ impl ExtensionManager {
 
                 let client = child_process_client(
                     command,
-                    timeout,
+                    ExtensionTimeouts::resolve(*timeout),
                     self.provider.clone(),
                     &effective_working_dir,
                     container.map(|c| c.id().to_string()),

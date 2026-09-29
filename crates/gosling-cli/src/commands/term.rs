@@ -35,17 +35,26 @@ impl Shell {
             Shell::Powershell => &POWERSHELL_CONFIG,
         }
     }
+
+    fn quote(&self, word: &str) -> String {
+        match self {
+            Shell::Bash | Shell::Zsh => format!("'{}'", word.replace('\'', r"'\''")),
+            Shell::Fish => format!("'{}'", word.replace('\\', r"\\").replace('\'', r"\'")),
+            Shell::Nu => format!("\"{}\"", word.replace('\\', r"\\").replace('"', "\\\"")),
+            Shell::Powershell => format!("'{}'", word.replace('\'', "''")),
+        }
+    }
 }
 
 static BASH_CONFIG: ShellConfig = ShellConfig {
     script_template: r#"export AGENT_SESSION_ID="{session_id}"
-alias @gosling='{gosling_bin} term run'
-alias @g='{gosling_bin} term run'
+alias @gosling={gosling_run_alias}
+alias @g={gosling_run_alias}
 
 gosling_preexec() {
     [[ "$1" =~ ^gosling\ term ]] && return
     [[ "$1" =~ ^(@gosling|@g)($|[[:space:]]) ]] && return
-    ('{gosling_bin}' term log "$1" &) 2>/dev/null
+    ({gosling_bin} term log "$1" &) 2>/dev/null
 }
 
 if [[ -z "$gosling_preexec_installed" ]]; then
@@ -57,7 +66,7 @@ fi{command_not_found_handler}"#,
 
 command_not_found_handle() {
     echo "🪿 Command '$1' not found. Asking gosling..."
-    '{gosling_bin}' term run "$@"
+    {gosling_bin} term run "$@"
     return 0
 }"#,
     ),
@@ -65,13 +74,13 @@ command_not_found_handle() {
 
 static ZSH_CONFIG: ShellConfig = ShellConfig {
     script_template: r#"export AGENT_SESSION_ID="{session_id}"
-alias @gosling='{gosling_bin} term run'
-alias @g='{gosling_bin} term run'
+alias @gosling={gosling_run_alias}
+alias @g={gosling_run_alias}
 
 gosling_preexec() {
     [[ "$1" =~ ^gosling\ term ]] && return
     [[ "$1" =~ ^(@gosling|@g)($|[[:space:]]) ]] && return
-    ('{gosling_bin}' term log "$1" &) 2>/dev/null
+    ({gosling_bin} term log "$1" &) 2>/dev/null
 }
 
 autoload -Uz add-zsh-hook
@@ -81,7 +90,7 @@ add-zsh-hook preexec gosling_preexec{command_not_found_handler}"#,
 
 command_not_found_handler() {
     echo "🪿 Command '$1' not found. Asking gosling..."
-    '{gosling_bin}' term run "$@"
+    {gosling_bin} term run "$@"
     return 0
 }"#,
     ),
@@ -102,8 +111,8 @@ end"#,
 
 static NU_CONFIG: ShellConfig = ShellConfig {
     script_template: r#"$env.AGENT_SESSION_ID = "{session_id}"
-def --wrapped @gosling [...args] { run-external "{gosling_bin}" "term" "run" ...$args }
-def --wrapped @g [...args] { run-external "{gosling_bin}" "term" "run" ...$args }
+def --wrapped @gosling [...args] { run-external {gosling_bin} "term" "run" ...$args }
+def --wrapped @g [...args] { run-external {gosling_bin} "term" "run" ...$args }
 
 if (($env | get -o GOSLING_NU_PREEXEC_INSTALLED | default false) != true) {
     $env.GOSLING_NU_PREEXEC_INSTALLED = true
@@ -120,7 +129,7 @@ if (($env | get -o GOSLING_NU_PREEXEC_INSTALLED | default false) != true) {
             if ($line =~ '^(@gosling|@g)(\s|$)') {
                 return
             }
-            job spawn { run-external "{gosling_bin}" "term" "log" $line | complete | ignore } | ignore
+            job spawn { run-external {gosling_bin} "term" "log" $line | complete | ignore } | ignore
         }
     )
 }
@@ -130,7 +139,7 @@ if (($env | get -o GOSLING_NU_PREEXEC_INSTALLED | default false) != true) {
 $env.config.hooks.command_not_found = {|command_name|
     let prompt = (try { commandline | str trim } catch { $command_name })
     print $"🪿 Command '($command_name)' not found. Asking gosling..."
-    run-external "{gosling_bin}" "term" "run" $prompt | complete | ignore
+    run-external {gosling_bin} "term" "run" $prompt | complete | ignore
     null
 }"#,
     ),
@@ -138,17 +147,17 @@ $env.config.hooks.command_not_found = {|command_name|
 
 static POWERSHELL_CONFIG: ShellConfig = ShellConfig {
     script_template: r#"$env:AGENT_SESSION_ID = "{session_id}"
-function @gosling {{ & '{gosling_bin}' term run @args }}
-function @g {{ & '{gosling_bin}' term run @args }}
+function @gosling { & {gosling_bin} term run @args }
+function @g { & {gosling_bin} term run @args }
 
-Set-PSReadLineKeyHandler -Chord Enter -ScriptBlock {{
+Set-PSReadLineKeyHandler -Chord Enter -ScriptBlock {
     $line = $null
     [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$line, [ref]$null)
-    if ($line -notmatch '^gosling term' -and $line -notmatch '^(@gosling|@g)($|\s)') {{
-        Start-Job -ScriptBlock {{ & '{gosling_bin}' term log $using:line }} | Out-Null
-    }}
+    if ($line -notmatch '^gosling term' -and $line -notmatch '^(@gosling|@g)($|\s)') {
+        Start-Job -ScriptBlock { & {gosling_bin} term log $using:line } | Out-Null
+    }
     [Microsoft.PowerShell.PSConsoleReadLine]::AcceptLine()
-}}"#,
+}"#,
     command_not_found: None,
 };
 
@@ -159,10 +168,12 @@ fn render_term_init_script(
     with_command_not_found: bool,
 ) -> String {
     let config = shell.config();
+    let gosling_bin = shell.quote(gosling_bin);
+    let gosling_run_alias = shell.quote(&format!("{gosling_bin} term run"));
     let command_not_found_handler = if with_command_not_found {
         config
             .command_not_found
-            .map(|handler| handler.replace("{gosling_bin}", gosling_bin))
+            .map(|handler| handler.replace("{gosling_bin}", &gosling_bin))
             .unwrap_or_default()
     } else {
         String::new()
@@ -171,7 +182,8 @@ fn render_term_init_script(
     config
         .script_template
         .replace("{session_id}", session_id)
-        .replace("{gosling_bin}", gosling_bin)
+        .replace("{gosling_run_alias}", &gosling_run_alias)
+        .replace("{gosling_bin}", &gosling_bin)
         .replace("{command_not_found_handler}", &command_not_found_handler)
 }
 
@@ -414,5 +426,123 @@ mod tests {
         let script = render_term_init_script(Shell::Fish, "session-123", "/tmp/gosling", true);
 
         assert!(!script.contains("command_not_found"));
+    }
+
+    // GSL-PT-20260927-D15: a gosling binary path with spaces or quotes must reach the shell as
+    // one word.
+    #[cfg(unix)]
+    fn run_alias_in(shell: &str, args: &[&str]) -> Option<String> {
+        use std::os::unix::fs::PermissionsExt;
+
+        if !std::path::Path::new(shell).exists() {
+            return None;
+        }
+        let dir = tempfile::TempDir::new().unwrap();
+        let bin_dir = dir.path().join("bin dir's");
+        std::fs::create_dir(&bin_dir).unwrap();
+        let bin = bin_dir.join("gosling");
+        std::fs::write(
+            &bin,
+            "#!/bin/sh\n[ \"$2\" = run ] && echo \"ran: $*\"\nexit 0\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let kind = if shell.ends_with("zsh") {
+            Shell::Zsh
+        } else {
+            Shell::Bash
+        };
+        let script = render_term_init_script(kind, "session-123", bin.to_str().unwrap(), false);
+        let script_path = dir.path().join("init.sh");
+        std::fs::write(&script_path, script).unwrap();
+
+        let output = std::process::Command::new(shell)
+            .args(args)
+            .arg("-c")
+            .arg("shopt -s expand_aliases 2>/dev/null; eval \"$(cat \"$1\")\"; eval '@g hello world'")
+            .arg("sh")
+            .arg(&script_path)
+            .env("HOME", dir.path())
+            .stdin(std::process::Stdio::null())
+            .output()
+            .unwrap();
+        Some(format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        ))
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn bash_and_zsh_aliases_survive_spaces_and_quotes_in_the_binary_path() {
+        for (shell, args) in [
+            ("/bin/bash", &["--noprofile", "--norc"][..]),
+            ("/bin/zsh", &["-f"][..]),
+        ] {
+            let Some(output) = run_alias_in(shell, args) else {
+                continue;
+            };
+            assert!(
+                output.contains("ran: term run hello world"),
+                "{shell}: {output}"
+            );
+        }
+    }
+
+    #[test]
+    fn shell_scripts_quote_the_binary_path_as_one_word() {
+        let bin = "/opt/my tools/it's/gosling";
+
+        let bash = render_term_init_script(Shell::Bash, "s", bin, true);
+        assert!(
+            bash.contains(r#"alias @g=''\''/opt/my tools/it'\''\'\'''\''s/gosling'\'' term run'"#)
+        );
+        assert!(bash.contains(r#"('/opt/my tools/it'\''s/gosling' term log "$1" &)"#));
+        assert!(bash.contains(r#"    '/opt/my tools/it'\''s/gosling' term run "$@""#));
+
+        let nu =
+            render_term_init_script(Shell::Nu, "s", r#"C:\Program Files\"g"\gosling.exe"#, true);
+        assert!(nu.contains(
+            r#"run-external "C:\\Program Files\\\"g\"\\gosling.exe" "term" "run" ...$args"#
+        ));
+
+        let fish = render_term_init_script(Shell::Fish, "s", bin, false);
+        assert!(fish.contains(r#"function @g; '/opt/my tools/it\'s/gosling' term run $argv; end"#));
+
+        let powershell = render_term_init_script(Shell::Powershell, "s", bin, false);
+        assert!(powershell.contains("& '/opt/my tools/it''s/gosling' term run @args"));
+    }
+
+    // PowerShell treats `{ ... }` as a scriptblock literal, so a body written as
+    // `{{ & gosling ... }}` makes the function return an inner scriptblock instead of running
+    // gosling, and the Enter key handler would never call AcceptLine.
+    #[test]
+    fn powershell_script_uses_single_braces_for_blocks() {
+        let script = render_term_init_script(Shell::Powershell, "s-1", "/opt/gosling", false);
+
+        assert!(!script.contains("{{") && !script.contains("}}"), "{script}");
+        assert_eq!(
+            script.matches('{').count(),
+            script.matches('}').count(),
+            "{script}"
+        );
+        for line in [
+            "$env:AGENT_SESSION_ID = \"s-1\"",
+            "function @gosling { & '/opt/gosling' term run @args }",
+            "function @g { & '/opt/gosling' term run @args }",
+            "Set-PSReadLineKeyHandler -Chord Enter -ScriptBlock {",
+            "    if ($line -notmatch '^gosling term' -and $line -notmatch '^(@gosling|@g)($|\\s)') {",
+            "        Start-Job -ScriptBlock { & '/opt/gosling' term log $using:line } | Out-Null",
+            "    }",
+            "    [Microsoft.PowerShell.PSConsoleReadLine]::AcceptLine()",
+            "}",
+        ] {
+            assert!(
+                script.lines().any(|l| l == line),
+                "missing line {line:?} in:\n{script}"
+            );
+        }
     }
 }
