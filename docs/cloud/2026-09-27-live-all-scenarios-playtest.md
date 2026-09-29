@@ -309,7 +309,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | G106 | Unicode-equivalent workspace names are both accepted (NFC vs NFD) | open — queued R13b |
 | Low | G107 | Duplicate fails for a max-length (100-char) workspace name; over-length input silently truncated | open — queued R13b |
 | Low | G109 | Workspace warnings never name the folder they refer to | open — queued R13b |
-| Low | G110 | Symlinked output/primary folders that resolve outside the declared tree pass validation silently; the grant is on the resolved outside path while the UI shows the link path (suspicion) | open — queued R13b |
+| Low | G110 | Symlinked output/primary folders that resolve outside the declared tree pass validation silently; the grant is on the resolved outside path while the UI shows the link path (suspicion) | fixed (validation warning; grant unchanged) (R13b) |
 | Low | G111 | Hub uses stale workspace validation; failure only surfaces on submit with "Invalid params:" prefix | open — queued R13b |
 | Low | G112 | With the Inputs/Outputs pane open at 940px, the New Chat hub is crushed (workspace selector 18 px wide) | open — queued R13b |
 | Low | G113 | Renderer IPC listener leak warning after several chats (suspicion) | open — queued R13b |
@@ -327,7 +327,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | G203 | Malformed, empty and missing previewable outputs are not reported with a clear, bounded message | open — queued R13b |
 | Low | G204 | Markdown preview shows gosling's own output-history marker as a visible code block | open — queued R13b |
 | Low | G205 | Output rows show the absolute path truncated at the end, hiding the file name | open — queued R13b |
-| Low | G208 | An assistant reference to an in-workspace symlink grants the renderer read access to the outside-root target | open — queued R13b |
+| Low | G208 | An assistant reference to an in-workspace symlink grants the renderer read access to the outside-root target | fixed (R13b) |
 | Low | G209 | Two windows overwrite each other's persisted artifact tabs; tabs closed in one window come back after relaunch | open — queued R13b |
 | Low | G213 | External backend faults are indistinguishable and undetected while idle | open — queued R13b |
 | Low | G214 | An invalid external-backend URL is saved when the Secret field loses focus | open — queued R13b |
