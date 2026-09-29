@@ -143,26 +143,43 @@ pub struct RetryNotice {
     pub attempt: usize,
     pub max_retries: usize,
     pub delay: Duration,
-    pub rate_limited: bool,
+    pub reason: RetryReason,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RetryReason {
+    RateLimited,
+    /// The provider sent nothing for the client's stall timeout. The timeout
+    /// bounds one attempt, so without saying so a stalled provider looks like
+    /// a turn that ignores its configured timeout.
+    TimedOut,
+    Failed,
 }
 
 impl RetryNotice {
     fn new(error: &ProviderError, attempt: usize, max_retries: usize, delay: Duration) -> Self {
+        let reason = if matches!(error, ProviderError::RateLimitExceeded { .. }) {
+            RetryReason::RateLimited
+        } else if error.is_timeout() {
+            RetryReason::TimedOut
+        } else {
+            RetryReason::Failed
+        };
         Self {
             attempt,
             max_retries,
             delay,
-            rate_limited: matches!(error, ProviderError::RateLimitExceeded { .. }),
+            reason,
         }
     }
 }
 
 impl fmt::Display for RetryNotice {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let reason = if self.rate_limited {
-            "The provider is rate limiting requests"
-        } else {
-            "The provider request failed"
+        let reason = match self.reason {
+            RetryReason::RateLimited => "The provider is rate limiting requests",
+            RetryReason::TimedOut => "The provider request timed out",
+            RetryReason::Failed => "The provider request failed",
         };
         let seconds = self.delay.as_secs_f64().ceil() as u64;
         write!(
@@ -474,6 +491,23 @@ mod tests {
         assert_eq!(
             server_error.to_string(),
             "The provider request failed. Retrying in 2s (2/3)..."
+        );
+    }
+
+    #[test]
+    fn retry_notice_says_when_the_provider_timed_out() {
+        let stalled_stream = ProviderError::from_stream_error(anyhow::Error::from(
+            std::io::Error::from(std::io::ErrorKind::TimedOut),
+        ));
+        let refused = ProviderError::NetworkError("connection refused".into());
+
+        assert_eq!(
+            RetryNotice::new(&stalled_stream, 1, 3, Duration::from_secs(1)).to_string(),
+            "The provider request timed out. Retrying in 1s (1/3)..."
+        );
+        assert_eq!(
+            RetryNotice::new(&refused, 1, 3, Duration::from_secs(1)).to_string(),
+            "The provider request failed. Retrying in 1s (1/3)..."
         );
     }
 

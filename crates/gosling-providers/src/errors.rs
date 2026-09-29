@@ -123,13 +123,21 @@ impl ProviderError {
     pub fn from_stream_error(error: anyhow::Error) -> Self {
         match error.downcast() {
             Ok(provider_error) => provider_error,
-            Err(error) if is_timeout_in_chain(&error) => ProviderError::NetworkError(
-                "Stream timed out waiting for more data from the provider — check your network connection and try again.".to_string(),
-            ),
+            Err(error) if is_timeout_in_chain(&error) => {
+                ProviderError::NetworkError(STREAM_TIMED_OUT.to_string())
+            }
             Err(error) => ProviderError::stream_decode_error(error),
         }
     }
+
+    pub fn is_timeout(&self) -> bool {
+        matches!(self, ProviderError::NetworkError(message)
+            if message == REQUEST_TIMED_OUT || message == STREAM_TIMED_OUT)
+    }
 }
+
+const REQUEST_TIMED_OUT: &str = "Request timed out — check your network connection and try again.";
+const STREAM_TIMED_OUT: &str = "Stream timed out waiting for more data from the provider — check your network connection and try again.";
 
 /// A body read that exceeds the client timeout surfaces through the line
 /// decoder as `LinesCodecError::Io` wrapping `reqwest::Error`. Neither wrapper
@@ -164,7 +172,7 @@ fn is_network_error(err: &reqwest::Error) -> bool {
 fn provider_error_from_reqwest(error: &reqwest::Error) -> ProviderError {
     if is_network_error(error) {
         let msg = if error.is_timeout() {
-            "Request timed out — check your network connection and try again.".to_string()
+            REQUEST_TIMED_OUT.to_string()
         } else if error.is_connect() {
             if let Some(url) = error.url() {
                 if let Some(host) = url.host_str() {

@@ -32,8 +32,9 @@ When gosling sends your requests through one of these providers, the provider wi
 When a provider rejects a request as rate limited, gosling waits for the time the provider's
 `Retry-After` asks for (or a short backoff) and then retries. Before each wait the CLI, and ACP
 clients that accept gosling status notices, show a notice such as `The provider is rate limiting requests. Retrying in 45s (1/3)...`;
-other transient failures show `The provider request failed. Retrying in 2s (1/3)...`. You can cancel
-the turn during the wait.
+a request abandoned because the provider stopped sending data for its stall timeout (for example `OPENAI_TIMEOUT`) shows
+`The provider request timed out. Retrying in 2s (1/3)...`; other transient failures show
+`The provider request failed. Retrying in 2s (1/3)...`. You can cancel the turn during the wait.
 
 ## Configure Gosling's turn-level fallback
 
