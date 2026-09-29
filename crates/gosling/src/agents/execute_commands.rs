@@ -53,7 +53,7 @@ static COMMANDS: &[CommandDef] = &[
     },
     CommandDef {
         name: "skills",
-        description: "List installed skills and other available sources",
+        description: "List installed skills, or load one by name with /skills <name> [args]",
         handler: BuiltinCommand::Skills,
     },
     CommandDef {
@@ -167,7 +167,7 @@ impl Agent {
                     self.handle_compact_command(session_id, cancel_token).await
                 }
                 BuiltinCommand::Clear => self.handle_clear_command(session_id).await,
-                BuiltinCommand::Skills => self.handle_skills_command(session_id).await,
+                BuiltinCommand::Skills => self.handle_skills_command(params_str, session_id).await,
                 BuiltinCommand::Doctor => Ok(Some(crate::doctor::run(self, session_id).await?)),
                 BuiltinCommand::Goal => self.handle_goal_command(params_str).await,
                 BuiltinCommand::Grind => self.handle_grind_command(params_str).await,
@@ -265,7 +265,23 @@ impl Agent {
         Ok(Some(user_only_assistant_text("Conversation cleared")))
     }
 
-    async fn handle_skills_command(&self, session_id: &str) -> Result<Option<Message>> {
+    async fn handle_skills_command(
+        &self,
+        params_str: &str,
+        session_id: &str,
+    ) -> Result<Option<Message>> {
+        if !params_str.is_empty() {
+            let (name, args) = params_str
+                .split_once(char::is_whitespace)
+                .map(|(name, args)| (name, args.trim()))
+                .unwrap_or((params_str, ""));
+            return match self.handle_skill_command(name, args, session_id).await? {
+                Some(message) => Ok(Some(message)),
+                None => Ok(Some(Message::assistant().with_text(format!(
+                    "No skill named '{name}'. Run /skills to list installed skills."
+                )))),
+            };
+        }
         let working_dir = self
             .config
             .session_manager

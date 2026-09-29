@@ -38,7 +38,6 @@ pub enum InputResult {
     ToggleFullToolOutput,
     Edit(Option<String>),
     ListSkills,
-    LoadSkills(Vec<String>),
 }
 
 #[derive(Debug)]
@@ -454,8 +453,9 @@ fn handle_slash_command(input: &str) -> Option<InputResult> {
             if args.is_empty() {
                 Some(InputResult::ListSkills)
             } else {
-                let names: Vec<String> = args.split_whitespace().map(String::from).collect();
-                Some(InputResult::LoadSkills(names))
+                // The agent validates the name and loads it through the same
+                // path as a per-skill slash command, as it does for ACP clients.
+                Some(InputResult::Message(format!("{CMD_SKILLS} {args}")))
             }
         }
         s if s == CMD_SUMMARIZE_DEPRECATED => {
@@ -570,7 +570,7 @@ fn print_help() {
 /status - Show session status: model, provider, mode, and token usage.
 /edit [text] - Open your prompt editor to compose a message. Optionally pre-fill with text.
                Uses $GOSLING_PROMPT_EDITOR, $VISUAL, or $EDITOR (in that order).
-/skills - List available skills or enable skills by name (usage: /skills [<name>...])
+/skills - List available skills, or load one by name (usage: /skills [<name> [args]])
 /? or /help - Display this help message
 /clear - Clears the current chat history
 
@@ -1070,45 +1070,31 @@ mod tests {
 
     #[test]
     fn test_skill_command() {
-        // Test with a single skill name
-        let Some(InputResult::LoadSkills(names)) = handle_slash_command("/skills coding") else {
+        let Some(InputResult::Message(text)) = handle_slash_command("/skills coding") else {
             panic!(
-                "Expected LoadSkills, got {:?}",
+                "Expected Message, got {:?}",
                 handle_slash_command("/skills coding")
             );
         };
-        assert_eq!(names, vec!["coding"]);
+        assert_eq!(text, "/skills coding");
 
-        // Test with multiple skill names
-        let Some(InputResult::LoadSkills(names)) = handle_slash_command("/skills coding insight")
+        let Some(InputResult::Message(text)) = handle_slash_command("/skills  my-skill  review ")
         else {
             panic!(
-                "Expected LoadSkills, got {:?}",
-                handle_slash_command("/skills coding insight")
+                "Expected Message, got {:?}",
+                handle_slash_command("/skills  my-skill  review ")
             );
         };
-        assert_eq!(names, vec!["coding", "insight"]);
+        assert_eq!(text, "/skills my-skill  review");
 
-        // Test with extra whitespace
-        let Some(InputResult::LoadSkills(names)) = handle_slash_command("/skills  my-skill  ")
-        else {
-            panic!(
-                "Expected LoadSkills, got {:?}",
-                handle_slash_command("/skills  my-skill  ")
-            );
-        };
-        assert_eq!(names, vec!["my-skill"]);
-
-        // Test with no name: ListSkills
         assert!(matches!(
             handle_slash_command("/skills"),
             Some(InputResult::ListSkills)
         ));
-
-        // Test with only whitespace after /skills: ListSkills
         assert!(matches!(
             handle_slash_command("/skills   "),
             Some(InputResult::ListSkills)
         ));
+        assert!(handle_slash_command("/skillsextra").is_none());
     }
 }

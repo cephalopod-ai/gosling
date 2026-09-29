@@ -15,7 +15,7 @@ When a session starts, gosling adds any skills that it discovers to its instruct
   - "Follow the new-service skill to set up the auth service"
   - "Apply the deployment skill"
 
-You can also ask gosling what skills are available, or use the CLI `/skills` command to list available skills and load one or more by name (e.g. `/skills code-review edge-case-finder`).
+You can also ask gosling what skills are available, or use the `/skills` command to list available skills. `/skills <name> [args]` loads one skill by name, exactly like its own `/<name> [args]` command (e.g. `/skills code-review focus on error handling`). An unknown name is reported locally and nothing is sent to the model.
 
 For large catalogs, gosling exposes `find_skills` and advertises the searchable
 catalog instead of placing every skill description in the model prompt.
