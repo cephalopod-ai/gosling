@@ -27,7 +27,8 @@ import path from 'node:path';
 import os from 'node:os';
 import { spawn } from 'child_process';
 import 'dotenv/config';
-import { checkBackendStatus } from './backendStatus';
+import { getBackendStatus } from './backendStatus';
+import { backendStorageId } from './main/backendIdentity';
 import { startGoslingServe } from './goslingServe';
 import { GoslingServeLeaseRegistry, type GoslingServeLease } from './goslingServeLeaseRegistry';
 import { cleanupRecordedBackendProcesses } from './backendProcessRegistry';
@@ -41,7 +42,7 @@ import log from './utils/logger';
 import { ensureWinShims } from './utils/winShims';
 import { addRecentDir, loadRecentDirs } from './utils/recentDirs';
 import { errorMessage, formatErrorForLogging } from './utils/conversionUtils';
-import type { LegacySettings, Settings } from './utils/settings';
+import type { LegacySettings, PendingSessionRecovery, Settings } from './utils/settings';
 import { getKeyboardShortcuts, resolveStoredSettings } from './utils/settings';
 import * as crypto from 'crypto';
 import windowStateKeeper from 'electron-window-state';
@@ -87,7 +88,10 @@ import { registerSettingsIpcHandlers } from './main/settingsIpc';
 import { createWindowChrome } from './main/windowChrome';
 import { installApplicationMenu } from './main/applicationMenu';
 import { registerAppIpcHandlers } from './main/appIpc';
-import { SessionRecoveryRegistry } from './main/sessionRecoveryRegistry';
+import {
+  recoverySessionIdForBackend,
+  SessionRecoveryRegistry,
+} from './main/sessionRecoveryRegistry';
 
 function shouldSetupUpdater(): boolean {
   // Setup updater if either the flag is enabled OR dev updates are enabled
@@ -728,7 +732,7 @@ async function handleFileOpen(filePath: string) {
     rendererDirectoryGrants.grantSelectedPath(0, targetDir);
 
     // Create new window for the directory
-    const newWindow = await createChat(app, { dir: targetDir });
+    const newWindow = await createChat(app, { nativeDirectorySelection: targetDir });
 
     // Focus the new window
     if (newWindow) {
@@ -897,6 +901,20 @@ let appConfig = {
 };
 
 const windowMap = new Map<number, BrowserWindow>();
+const backendIdsByWindow = new Map<number, string>();
+
+function getWindowBackendId(externalBackend: ExternalBackend | null, workingDir: string): string {
+  return backendStorageId(
+    externalBackend
+      ? { kind: 'external', baseUrl: externalBackend.url }
+      : {
+          kind: 'local',
+          dataRoot: appConfig.GOSLING_PATH_ROOT
+            ? path.resolve(workingDir, appConfig.GOSLING_PATH_ROOT)
+            : app.getPath('userData'),
+        }
+  );
+}
 
 const goslingServeLeases = new GoslingServeLeaseRegistry(log);
 
@@ -950,8 +968,9 @@ interface CreateChatOptions {
   initialMessage?: string;
   initialMessageNoAutoSubmit?: boolean;
   dir?: string;
+  nativeDirectorySelection?: string;
   resumeSessionId?: string;
-  crashRecovery?: boolean;
+  recovery?: PendingSessionRecovery;
   viewType?: string;
 }
 
@@ -959,14 +978,8 @@ const createChat = async (
   app: App,
   options: CreateChatOptions = {}
 ): Promise<BrowserWindow | undefined> => {
-  const {
-    initialMessage,
-    initialMessageNoAutoSubmit,
-    dir,
-    resumeSessionId,
-    crashRecovery,
-    viewType,
-  } = options;
+  const { initialMessage, initialMessageNoAutoSubmit, recovery, viewType } = options;
+  const dir = options.nativeDirectorySelection ?? options.dir;
   const settings = getSettings();
 
   let externalBackend: ExternalBackend | null;
@@ -1049,20 +1062,19 @@ const createChat = async (
         );
       }
 
-      const externalBackendReady = await checkBackendStatus({
+      const externalBackendStatus = await getBackendStatus({
         baseUrl: externalBaseUrl,
         serverSecret,
         fetch: net.fetch as unknown as typeof globalThis.fetch,
       });
-      if (!externalBackendReady) {
+      if (!externalBackendStatus.ready) {
         externalCertificateTrust?.release();
         const canDisableExternalBackend = externalBackend.source === 'settings';
         const response = dialog.showMessageBoxSync({
           type: 'error',
-          title: 'External Backend Unreachable',
+          title: 'External Backend Connection Failed',
           message: `Could not connect to external backend at ${externalBaseUrl}`,
-          detail:
-            'The external backend must be running and the configured secret must match GOSLING_SERVER__SECRET_KEY on the server.',
+          detail: externalBackendStatus.detail,
           buttons: canDisableExternalBackend
             ? ['Disable External Backend & Retry', 'Quit']
             : ['Quit'],
@@ -1204,6 +1216,12 @@ const createChat = async (
 
   let mainWindowState: ReturnType<typeof windowStateKeeper>;
   let mainWindow: BrowserWindow;
+  const windowBackendId = getWindowBackendId(externalBackend, workingDir);
+  // Recheck after startup: disabling a failed external backend must not replay its session locally.
+  const resumeSessionId = recovery
+    ? recoverySessionIdForBackend(recovery, windowBackendId)
+    : options.resumeSessionId;
+  const crashRecovery = recovery !== undefined && resumeSessionId !== undefined;
   try {
     mainWindowState = windowStateKeeper({
       defaultWidth: 940,
@@ -1246,6 +1264,7 @@ const createChat = async (
             ...appConfig,
             GOSLING_LOCALE: getConfiguredGoslingLocale(),
             GOSLING_WORKING_DIR: workingDir,
+            GOSLING_BACKEND_ID: windowBackendId,
             REQUEST_DIR: dir,
             GOSLING_VERSION: version,
             SECURITY_ML_MODEL_MAPPING: process.env.SECURITY_ML_MODEL_MAPPING,
@@ -1257,7 +1276,14 @@ const createChat = async (
         partition: MAIN_WINDOW_SESSION_PARTITION,
       },
     });
-    rendererDirectoryGrants.grantSelectedPath(mainWindow.webContents.id, workingDir, false);
+    rendererDirectoryGrants.grantLaunchDirectory(mainWindow.webContents.id, workingDir);
+    if (options.nativeDirectorySelection) {
+      rendererDirectoryGrants.grantSelectedPath(
+        mainWindow.webContents.id,
+        options.nativeDirectorySelection,
+        false
+      );
+    }
     if (settings.archiveFolder) {
       try {
         rendererDirectoryGrants.grantSelectedPath(
@@ -1388,6 +1414,7 @@ const createChat = async (
   });
 
   const windowId = mainWindow.id;
+  backendIdsByWindow.set(windowId, windowBackendId);
   const webContentsId = mainWindow.webContents.id;
   mainWindow.webContents.once('destroyed', () => {
     artifactRoutingRegistry.clear(webContentsId);
@@ -1489,7 +1516,8 @@ const createChat = async (
   windowMap.set(windowId, mainWindow);
   if (crashRecovery && resumeSessionId) {
     const recovery = settings.pendingSessionRecoveries.find(
-      (candidate) => candidate.sessionId === resumeSessionId
+      (candidate) =>
+        candidate.sessionId === resumeSessionId && candidate.backendId === windowBackendId
     );
     if (recovery) {
       sessionRecoveryRegistry.attachPending(windowId, recovery);
@@ -1499,6 +1527,7 @@ const createChat = async (
   // Handle window closure
   mainWindow.on('closed', () => {
     windowMap.delete(windowId);
+    backendIdsByWindow.delete(windowId);
 
     pendingInitialMessages.delete(windowId);
     pendingInitialMessageNoAutoSubmit.delete(windowId);
@@ -1603,8 +1632,13 @@ registerSystemIpcHandlers(ipcMain, {
   focusWindow,
   activeWakelockSessionsByWindow,
   syncWindowPowerSaveBlocker,
-  setSessionRecoveryActive: (windowId, sessionId, workingDir, active) =>
-    sessionRecoveryRegistry.setActive(windowId, sessionId, workingDir, active),
+  setSessionRecoveryActive: (windowId, sessionId, workingDir, active) => {
+    const backendId = backendIdsByWindow.get(windowId);
+    return (
+      backendId !== undefined &&
+      sessionRecoveryRegistry.setActive(windowId, sessionId, workingDir, active, backendId)
+    );
+  },
 });
 
 registerFileIpcHandlers(ipcMain, {
@@ -1767,13 +1801,20 @@ async function appMain() {
   const { dirPath } = parseArgs();
 
   if (!openUrlHandledLaunch) {
-    const pendingRecoveries = settings.pendingSessionRecoveries;
+    let pendingRecoveries: PendingSessionRecovery[] = [];
+    try {
+      const externalBackend = getActiveExternalBackend(settings);
+      pendingRecoveries = sessionRecoveryRegistry.pendingForBackend((workingDir) =>
+        getWindowBackendId(externalBackend, workingDir)
+      );
+    } catch {
+      // The normal window startup below presents invalid backend settings without replaying work.
+    }
     if (pendingRecoveries.length > 0) {
       for (const recovery of pendingRecoveries) {
         await createChat(app, {
           dir: recovery.workingDir,
-          resumeSessionId: recovery.sessionId,
-          crashRecovery: true,
+          recovery,
         });
       }
     } else {

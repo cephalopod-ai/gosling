@@ -1,4 +1,5 @@
 import { v7 as uuidv7 } from 'uuid';
+import type { StopReason } from '@agentclientprotocol/sdk';
 import type { GoslingExtension, SessionArtifactDto } from '@repo-makeover/gosling-sdk';
 import { AppEvents } from '../constants/events';
 import { ChatState } from '../types/chatState';
@@ -60,7 +61,7 @@ export interface AcpSnapshotOptions {
 }
 
 export interface AcpSubmitMessageOptions extends AcpSnapshotOptions {
-  onFinish(error?: string): void | Promise<void>;
+  onFinish(error?: string, stopReason?: StopReason): void | Promise<void>;
   /** Preserve selected library inputs without appending them to this prompt. */
   includeSelectedSessionInputs?: boolean;
 }
@@ -380,12 +381,12 @@ async function submitMessage(
     if (finishPromptCancellation(sessionId, promptAttemptId)) {
       return;
     }
-    await acpPromptSession(sessionId, userMessage);
+    const response = await acpPromptSession(sessionId, userMessage);
     if (finishPromptCancellation(sessionId, promptAttemptId)) {
       return;
     }
     if (acpChatSessionActions.finishPromptAttemptIfCurrent(sessionId, promptAttemptId)) {
-      void options.onFinish();
+      void options.onFinish(undefined, response.stopReason);
     }
   } catch (error) {
     if (finishPromptCancellation(sessionId, promptAttemptId)) {
@@ -404,7 +405,7 @@ async function submitMessage(
       ];
       acpChatSessionActions.setMessages(sessionId, messages);
       if (acpChatSessionActions.finishPromptAttemptIfCurrent(sessionId, promptAttemptId)) {
-        void options.onFinish();
+        void options.onFinish(creditsExhaustedError.message);
       }
       return;
     }

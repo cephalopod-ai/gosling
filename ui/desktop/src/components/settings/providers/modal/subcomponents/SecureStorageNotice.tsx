@@ -3,19 +3,12 @@ import { defineMessages, useIntl } from '../../../../../i18n';
 
 const i18n = defineMessages({
   defaultMessage: {
-    id: 'secureStorageNotice.defaultMessage',
-    defaultMessage: 'Keys are stored securely in the keychain',
+    id: 'secureStorageNotice.configuredStorage',
+    defaultMessage:
+      'Keys use the backend’s configured credential storage. When keyring is disabled, secrets are stored in a plaintext file.',
   },
 });
 
-/**
- * SecureStorageNotice - A reusable component that displays a message about secure storage
- *
- * @param {Object} props - Component props
- * @param {string} [props.className] - Optional additional CSS classes
- * @param {string} [props.message] - Optional custom message (defaults to keys stored in .env)
- * @returns {JSX.Element} - The secure storage notice component
- */
 export function SecureStorageNotice({
   className = '',
   message,

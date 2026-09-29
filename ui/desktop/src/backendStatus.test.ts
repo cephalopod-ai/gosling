@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
-import { checkBackendStatus } from './backendStatus';
+import { checkBackendStatus, getBackendStatus } from './backendStatus';
 
 type FetchInput = Parameters<typeof globalThis.fetch>[0];
 type FetchInit = NonNullable<Parameters<typeof globalThis.fetch>[1]>;
@@ -23,6 +23,68 @@ const expectAbortSignal = (init?: FetchInit): FetchSignal => {
 };
 
 describe('checkBackendStatus', () => {
+  it.each([401, 403])(
+    'distinguishes HTTP %s authentication rejection without retrying',
+    async (status) => {
+      const fetch = vi.fn().mockResolvedValue(new Response(null, { status }));
+      const result = await getBackendStatus({
+        baseUrl: 'https://example.com',
+        serverSecret: 'test',
+        fetch,
+      });
+      expect(result).toEqual({
+        ready: false,
+        detail: expect.stringContaining('Authentication was rejected'),
+      });
+      expect(fetch).toHaveBeenCalledTimes(1);
+    }
+  );
+
+  it('distinguishes TLS failures without exposing raw error details', async () => {
+    const fetch = vi
+      .fn()
+      .mockRejectedValue(new Error('net::ERR_CERT_AUTHORITY_INVALID private-secret'));
+    const result = await getBackendStatus({
+      baseUrl: 'https://example.com',
+      serverSecret: 'private-secret',
+      fetch,
+    });
+    expect(result).toEqual({
+      ready: false,
+      detail: expect.stringContaining('TLS negotiation failed'),
+    });
+    expect(JSON.stringify(result)).not.toContain('private-secret');
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['network', 'status', 'acp'])('distinguishes a bounded %s failure', async (failure) => {
+    vi.useFakeTimers();
+    try {
+      const fetch = vi.fn(async (input: FetchInput) => {
+        if (failure === 'network') throw new Error('ECONNREFUSED');
+        return new Response(null, {
+          status: failure === 'status' || fetchInputUrl(input).endsWith('/acp') ? 404 : 200,
+        });
+      });
+      const pending = getBackendStatus({
+        baseUrl: 'http://127.0.0.1:4000',
+        serverSecret: 'test',
+        fetch,
+      });
+      await vi.advanceTimersByTimeAsync(31000);
+      expect(await pending).toEqual({
+        ready: false,
+        detail: expect.stringContaining(
+          failure === 'network'
+            ? 'did not respond'
+            : `${failure === 'status' ? 'status' : 'ACP'} endpoint returned HTTP 404`
+        ),
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('checks /status and validates the secret against /acp', async () => {
     const fetch = vi.fn(async (input: FetchInput, init?: FetchInit) => {
       const url = fetchInputUrl(input);

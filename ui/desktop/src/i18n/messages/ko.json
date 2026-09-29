@@ -122,9 +122,6 @@
   "chat.notification.taskComplete.body": {
     "defaultMessage": "Gosling에 다시 초점을 맞추려면 여기를 클릭하세요."
   },
-  "chat.notification.taskComplete.title": {
-    "defaultMessage": "gosling가 작업을 완료했습니다."
-  },
   "chatInput.contextWindow": {
     "defaultMessage": "컨텍스트 창"
   },
@@ -1843,9 +1840,6 @@
   },
   "searchBar.previous": {
     "defaultMessage": "이전 ({shortcut})"
-  },
-  "secureStorageNotice.defaultMessage": {
-    "defaultMessage": "키는 키체인에 안전하게 저장됩니다."
   },
   "securityToggle.apiTokenDescription": {
     "defaultMessage": "분류 서비스에 대한 인증 토큰"
@@ -4270,5 +4264,11 @@
   },
   "extensionMenu.failedToStart": {
     "defaultMessage": "Failed to start: {cause}"
+  },
+  "chat.notification.responseComplete.title": {
+    "defaultMessage": "Gosling finished responding."
+  },
+  "secureStorageNotice.configuredStorage": {
+    "defaultMessage": "Keys use the backend’s configured credential storage. When keyring is disabled, secrets are stored in a plaintext file."
   }
 }

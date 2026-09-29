@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
+import type { StopReason } from '@agentclientprotocol/sdk';
 import { defineMessages, useIntl } from '../i18n';
 import { AppEvents } from '../constants/events';
 import { ChatState } from '../types/chatState';
@@ -50,8 +51,8 @@ function isSlashCommand(message: string): boolean {
 
 const i18n = defineMessages({
   notificationTitle: {
-    id: 'chat.notification.taskComplete.title',
-    defaultMessage: 'Gosling finished the task.',
+    id: 'chat.notification.responseComplete.title',
+    defaultMessage: 'Gosling finished responding.',
   },
   notificationBody: {
     id: 'chat.notification.taskComplete.body',
@@ -126,9 +127,14 @@ export function useChatSession({
   }, [getCurrentSnapshot, sessionId]);
 
   const onFinish = useCallback(
-    async (error?: string): Promise<void> => {
+    async (error?: string, stopReason?: StopReason): Promise<void> => {
       const planStatus = getCurrentSnapshot()?.plan.snapshot?.plan.status;
-      if (!error && planStatus !== 'drafting' && planStatus !== 'awaiting_review') {
+      if (
+        !error &&
+        stopReason === 'end_turn' &&
+        planStatus !== 'drafting' &&
+        planStatus !== 'awaiting_review'
+      ) {
         try {
           const [notificationsEnabled, anyWindowFocused] = await Promise.all([
             window.electron.getSetting('enableNotifications'),

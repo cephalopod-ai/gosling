@@ -1,5 +1,5 @@
 import { act, render, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ArtifactWorkbenchProvider, useArtifactWorkbench } from './ArtifactWorkbenchContext';
 
 type Workbench = ReturnType<typeof useArtifactWorkbench>;
@@ -15,6 +15,72 @@ describe('ArtifactWorkbenchProvider', () => {
   beforeEach(() => {
     localStorage.clear();
     vi.mocked(window.electron.openArtifactFile).mockClear().mockResolvedValue(true);
+  });
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('isolates matching session IDs across backends, storage events and remounts', () => {
+    vi.stubGlobal('appConfig', { get: () => 'backend-a' });
+    const firstView = render(
+      <ArtifactWorkbenchProvider>
+        <Harness />
+      </ArtifactWorkbenchProvider>
+    );
+    const first = () => workbench;
+    act(() => first().setVisibleSession('same-id', []));
+    act(() => first().openFile('/a/report.md'));
+    const firstStorage = localStorage.getItem('gosling-artifact-workbench-v1:backend-a');
+    firstView.unmount();
+
+    vi.stubGlobal('appConfig', { get: () => 'backend-b' });
+    const secondView = render(
+      <ArtifactWorkbenchProvider>
+        <Harness />
+      </ArtifactWorkbenchProvider>
+    );
+    act(() => workbench.setVisibleSession('same-id', []));
+    expect(workbench.tabs).toEqual([]);
+    act(() =>
+      window.dispatchEvent(
+        new StorageEvent('storage', { key: 'gosling-artifact-workbench-v1:backend-a' })
+      )
+    );
+    expect(workbench.tabs).toEqual([]);
+    act(() => workbench.openFile('/b/report.md'));
+    expect(localStorage.getItem('gosling-artifact-workbench-v1:backend-a')).toBe(firstStorage);
+    secondView.unmount();
+
+    vi.stubGlobal('appConfig', { get: () => 'backend-a' });
+    render(
+      <ArtifactWorkbenchProvider>
+        <Harness />
+      </ArtifactWorkbenchProvider>
+    );
+    act(() => workbench.setVisibleSession('same-id', []));
+    expect(workbench.tabs.map((tab) => tab.source)).toEqual([
+      { type: 'file', path: '/a/report.md' },
+    ]);
+  });
+
+  it('preserves unscoped legacy tabs without assigning them to an unknown backend', () => {
+    const legacy = JSON.stringify({
+      sessions: {
+        'same-id': {
+          tabs: [{ id: 'old', kind: 'markdown', source: { type: 'file', path: '/old/report.md' } }],
+          activeTabId: 'old',
+        },
+      },
+    });
+    localStorage.setItem('gosling-artifact-workbench-v1', legacy);
+    vi.stubGlobal('appConfig', { get: () => 'backend-new' });
+    render(
+      <ArtifactWorkbenchProvider>
+        <Harness />
+      </ArtifactWorkbenchProvider>
+    );
+    act(() => workbench.setVisibleSession('same-id', []));
+    expect(workbench.tabs).toEqual([]);
+    expect(localStorage.getItem('gosling-artifact-workbench-v1')).toBe(legacy);
   });
 
   it('remembers the repository filter across sessions and remounts', () => {

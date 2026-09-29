@@ -105,6 +105,12 @@ export class RendererDirectoryGrantRegistry {
     return root;
   }
 
+  grantLaunchDirectory(webContentsId: number, directory: string): void {
+    const root = canonicalDirectory(directory);
+    // Startup's fallback working directory is not a native-picker approval of the whole home.
+    if (!isOverlyBroadRoot(root)) this.grantSelectedPath(webContentsId, root, false);
+  }
+
   /// Folders the user approved stay approved across restarts and windows.
   /// Scoping them to `webContentsId === 0` made the stored list inert for the UI,
   /// so every launch re-prompted for the same folders. `isOverlyBroadRoot` is what

@@ -66,6 +66,19 @@ describe('ArtifactPane', () => {
           type="button"
           onClick={() =>
             openContent({
+              title: 'diagram.svg',
+              content: '<svg xmlns="http://www.w3.org/2000/svg"><text>Résumé</text></svg>',
+              encoding: 'utf8',
+              mimeType: 'image/svg+xml',
+            })
+          }
+        >
+          Open SVG
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            openContent({
               title: 'Note',
               content: '# Note\n\nRésumé — 😀',
               encoding: 'utf8',
@@ -512,6 +525,33 @@ describe('ArtifactPane', () => {
     fireEvent.error(await screen.findByRole('img', { name: 'bad.png' }));
     expect(await screen.findByText('Could not parse this file as an image.')).toBeInTheDocument();
     expect(screen.queryByRole('img', { name: 'bad.png' })).toBeNull();
+  });
+
+  it('never assigns the previous text preview to an image URL when switching tabs', async () => {
+    const imageSource = vi.spyOn(window.HTMLImageElement.prototype, 'src', 'set');
+    try {
+      render(
+        <IntlTestWrapper>
+          <ArtifactWorkbenchProvider>
+            <Harness />
+          </ArtifactWorkbenchProvider>
+        </IntlTestWrapper>
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Open text' }));
+      await screen.findByText('Résumé — 😀');
+      fireEvent.click(screen.getByRole('button', { name: 'Open image' }));
+      await screen.findByRole('img', { name: 'hero.png' });
+      expect(imageSource.mock.calls.map(([src]) => src)).toEqual(['data:image/png;base64,AAEC']);
+
+      fireEvent.click(screen.getByRole('button', { name: 'Open SVG' }));
+      expect(await screen.findByRole('img', { name: 'diagram.svg' })).toHaveAttribute(
+        'src',
+        `data:image/svg+xml;charset=utf-8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg"><text>Résumé</text></svg>')}`
+      );
+      expect(imageSource.mock.calls).toHaveLength(2);
+    } finally {
+      imageSource.mockRestore();
+    }
   });
 
   it('reports malformed JSON while keeping the original text visible', async () => {

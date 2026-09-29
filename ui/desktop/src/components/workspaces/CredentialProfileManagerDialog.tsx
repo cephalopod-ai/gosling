@@ -226,7 +226,8 @@ export function CredentialProfileManagerDialog({
         <DialogHeader>
           <DialogTitle>Credential profiles</DialogTitle>
           <DialogDescription>
-            Profiles store metadata here and secret values in Gosling secure storage. Stored values
+            Profiles store metadata here and secret values in Gosling's configured credential
+            storage. When keyring is disabled, secrets are stored in a plaintext file. Stored values
             are never displayed again.
           </DialogDescription>
         </DialogHeader>

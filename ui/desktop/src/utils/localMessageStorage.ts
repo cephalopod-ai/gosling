@@ -1,3 +1,5 @@
+import { backendStorageKey } from './backendStorage';
+
 interface StoredMessage {
   content: string;
   timestamp: number;
@@ -10,7 +12,7 @@ const EXPIRY_DAYS = 30;
 export class LocalMessageStorage {
   private static getStoredMessages(): StoredMessage[] {
     try {
-      const stored = localStorage.getItem(STORAGE_KEY);
+      const stored = localStorage.getItem(backendStorageKey(STORAGE_KEY));
       if (!stored) return [];
 
       const messages = JSON.parse(stored) as StoredMessage[];
@@ -36,7 +38,7 @@ export class LocalMessageStorage {
 
   private static setStoredMessages(messages: StoredMessage[]) {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+      localStorage.setItem(backendStorageKey(STORAGE_KEY), JSON.stringify(messages));
     } catch (error) {
       console.error('Error saving message history:', error);
     }
@@ -71,6 +73,6 @@ export class LocalMessageStorage {
   }
 
   static clearHistory() {
-    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(backendStorageKey(STORAGE_KEY));
   }
 }

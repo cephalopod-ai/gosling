@@ -14,6 +14,8 @@ export type RecentModel = {
 export type CrashRecoveryPolicy = 'manual' | 'safe' | 'always';
 
 export interface PendingSessionRecovery {
+  // Missing only on legacy records whose owning backend cannot be established.
+  backendId?: string;
   sessionId: string;
   workingDir: string;
   startedAt: number;
@@ -259,7 +261,7 @@ function isArchivedSessionFiles(value: unknown): value is Record<string, string>
     entries.every(
       ([sessionId, filePath]) =>
         sessionId.length > 0 &&
-        sessionId.length <= 256 &&
+        sessionId.length <= 330 &&
         isBoundedString(filePath, MAX_PATH_LENGTH)
     )
   );
@@ -281,7 +283,11 @@ function isExternalGoslingdConfig(value: unknown): value is ExternalGoslingdConf
 function isPendingSessionRecovery(value: unknown): value is PendingSessionRecovery {
   if (!isPlainRecord(value)) return false;
   return (
-    Object.keys(value).every((key) => ['sessionId', 'workingDir', 'startedAt'].includes(key)) &&
+    Object.keys(value).every((key) =>
+      ['backendId', 'sessionId', 'workingDir', 'startedAt'].includes(key)
+    ) &&
+    (value.backendId === undefined ||
+      (isBoundedString(value.backendId, 80) && value.backendId.length > 0)) &&
     isBoundedString(value.sessionId, 256) &&
     value.sessionId.trim().length > 0 &&
     isBoundedString(value.workingDir, MAX_PATH_LENGTH) &&
@@ -297,7 +303,8 @@ function isPendingSessionRecoveries(value: unknown): value is PendingSessionReco
     Array.isArray(value) &&
     value.length <= MAX_PENDING_SESSION_RECOVERIES &&
     value.every(isPendingSessionRecovery) &&
-    new Set(value.map((recovery) => recovery.sessionId)).size === value.length
+    new Set(value.map((recovery) => JSON.stringify([recovery.backendId, recovery.sessionId])))
+      .size === value.length
   );
 }
 

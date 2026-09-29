@@ -142,8 +142,18 @@ real CLI-backed providers, and the keychain-enabled variants of SI-08/WS-02 were
 Repairs run on branch `claude/playtest-repair-20260927` (local, not pushed), in locality groups (R1a turn
 closure, R2 compaction, R3 repetition, R4 session store, R5 secrets/config, R6 permissions, …). The
 **Disposition** column of the register below reflects the branch state when this report was written; the
-repair record (`docs/logs/session/2026-09-27-live-playtest-repair-campaign.md`) has commits, tests and live
+repair record (`docs/logs/session/2026-09-27-playtest-repair-campaign.md`) has commits, tests and live
 replays per finding. Findings marked "open — queued" were not yet repaired.
+
+### 2026-09-29 continuation
+
+All eight remaining actionable Desktop findings (G115, G121, G134, G206, G210, G213, G215 and G216)
+now have source repairs and focused regression coverage. Browser replays cover idle
+disconnect/reconnect, same-ID backend preview isolation and repeated image/SVG tab switching. See the
+[continuation record](../logs/session/2026-09-29-remaining-playtest-repairs.md#resumed-desktop-backend-repairs).
+Native Electron startup fault dialogs, crash/relaunch recovery, folder-picker handoff and macOS
+notification delivery were not replayed. Those verification items and existing product decisions
+remain open; the original 127-card outcomes above remain historical.
 
 ## Recommended next pass
 
@@ -329,9 +339,9 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | G205 | Output rows show the absolute path truncated at the end, hiding the file name | fixed (R13b) |
 | Low | G208 | An assistant reference to an in-workspace symlink grants the renderer read access to the outside-root target | fixed (R13b) |
 | Low | G209 | Two windows overwrite each other's persisted artifact tabs; tabs closed in one window come back after relaunch | fixed (R13b) |
-| Low | G213 | External backend faults are indistinguishable and undetected while idle | open — queued R13b |
+| Low | G213 | External backend faults are indistinguishable and undetected while idle | repaired 2026-09-29 (R13b); regression/browser verified, native fault-dialog replay pending; see continuation record |
 | Low | G214 | An invalid external-backend URL is saved when the Secret field loses focus | fixed (R13b) |
-| Low | G215 | Desktop per-session state is keyed by session id only, so sessions of different backends share UI state | open — queued R13b |
+| Low | G215 | Desktop per-session state is keyed by session id only, so sessions of different backends share UI state | repaired 2026-09-29 (R13b); regression/browser verified, native crash-recovery replay pending; see continuation record |
 | Low | G217 | Copy/IPC failure toasts show Electron's internal "Error invoking remote method '…': Error:" prefix | fixed (R13b) |
 | Low | G218 | After a turn with more than 200 outputs, the live Outputs list and count silently stop at 200 | fixed (R13b) |
 | Low | G219 | Escape inside an open provider/model dropdown closes the entire model-switch dialog | fixed (R13b) |
@@ -354,14 +364,14 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Note | D22 | Headless resume from another directory permanently re-homes the session | documented (behaviour kept) (R4) |
 | Note | D23 | Session metadata changes on every no-op resume (updated_at, shuffled enabled_extensions) | fixed (R4) |
 | Note | D27 | Review discovers global checks from `$HOME` regardless of `GOSLING_PATH_ROOT`; `--summary-only` omits untracked files; scoped REVIEW.md mislabeled under `--check-scope` | fixed (R7) |
-| Note | G115 | "Gosling secure storage" wording when keyring is disabled (plaintext secrets.yaml) | open — queued R13b |
+| Note | G115 | "Gosling secure storage" wording when keyring is disabled (plaintext secrets.yaml) | fixed 2026-09-29 (R13b); conditional storage copy and synchronized catalogs; see continuation record |
 | Note | G118 | Skills tab in an isolated GOSLING_PATH_ROOT lists the operator's real skills | fixed (R7) |
-| Note | G121 | Duplicate element id / test id for the composer | open — queued R13b |
+| Note | G121 | Duplicate element id / test id for the composer | fixed 2026-09-29 (R13b); unique IDs, active selector/focus and preserved drafts regression-tested; see continuation record |
 | Note | G127 | Isolated Desktop instance lists and grants the operator's real Research Library | fixed (isolated path roots now own their default library) (R7) |
-| Note | G134 | Renderer asks for git-branch info on folders it was never granted (37 main-process errors); persisted grants contain only the operator's Research Library | open — queued R13b |
-| Note | G206 | Switching to an image/SVG tab logs `net::ERR_INVALID_URL` every time | open — queued R13b |
-| Note | G210 | The window's renderer roots include the whole home directory by default | open — queued R13b |
-| Note | G216 | "Gosling finished the task." is sent for turns that ended without success (suspicion) (suspicion) | open — queued R13b |
+| Note | G134 | Renderer asks for git-branch info on folders it was never granted (37 main-process errors); persisted grants contain only the operator's Research Library | fixed 2026-09-29 (R13b); denied optional probes return unavailable without Git execution or IPC rejection; regression-tested |
+| Note | G206 | Switching to an image/SVG tab logs `net::ERR_INVALID_URL` every time | fixed 2026-09-29 (R13b); tab-bound preview content and encoding; regressions plus nine browser image decodes passed |
+| Note | G210 | The window's renderer roots include the whole home directory by default | repaired 2026-09-29 (R13b); startup/native-selection regressions passed; native picker replay pending |
+| Note | G216 | "Gosling finished the task." is sent for turns that ended without success (suspicion) (suspicion) | repaired 2026-09-29 (R13b); credits/stop-reason defect confirmed and regression-tested; neutral response wording; macOS delivery replay pending |
 | Note | G220 | PermissionModal renders a `<button>` inside a `<button>` | fixed (Radix trigger delegates to the existing button) (R13b) |
 | Note | H08 | Note: InvalidParams feedback identifies the contract only if the extension's own message does | note (product question) |
 | Note | H09 | Note: `dummy` sentinel matching is trim-insensitive and shadows a genuine `dummy` agent | note (product question) |

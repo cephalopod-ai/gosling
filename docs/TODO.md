@@ -1,5 +1,39 @@
 # TODO
 
+## 2026-09-29 Desktop playtest repairs
+
+- [~] **GSL-PT-20260927-G213** — Repaired startup fault diagnostics and idle disconnect/reconnect
+      visibility. Automated regressions and a real WebSocket browser replay passed; native Electron
+      authentication/TLS/reachability dialogs still need replay.
+- [~] **GSL-PT-20260927-G215** — Repaired backend ownership of previews, workspace filters, composer
+      history, archive pointers/files and crash-recovery markers. Same-ID browser isolation and
+      ownership regressions passed; native crash/relaunch and disable-external-backend fallback
+      still need replay. Unowned legacy records are retained without automatic reassignment.
+- [x] **GSL-PT-20260927-G115** — Credential-profile and provider notices describe configured
+      keyring/plaintext storage without an unconditional security claim. Catalogs synchronized;
+      the two corrected messages use English fallback in other locales.
+- [x] **GSL-PT-20260927-G121** — Mounted composers have unique DOM IDs; only the active composer
+      exposes the shared test selector and receives automatic focus. Draft-preservation tests pass.
+- [x] **GSL-PT-20260927-G134** — Optional branch probes outside approved roots return unavailable
+      without spawning Git or generating rejected-IPC errors. Authorization regressions pass.
+- [x] **GSL-PT-20260927-G206** — Preview data is bound to the active tab/revision before rendering
+      media URLs; UTF-8 SVG uses the correct encoding. Three browser replay rounds decoded nine
+      images with no console errors or failed requests.
+- [~] **GSL-PT-20260927-G210** — Automatic startup grants exclude home/ancestor roots. Native folder
+      selections transfer their explicit approval to the new window. Registry and native-menu
+      handoff regressions pass; installed Electron startup/picker replay remains pending.
+- [~] **GSL-PT-20260927-G216** — Completion uses ACP stop reason and reports “finished responding,”
+      without claiming task success. Cancelled/refused/limited/error turns, including exhausted
+      credits, cannot trigger that notice. Regression matrix passes; macOS delivery replay remains.
+
+The [repair record](logs/session/2026-09-29-remaining-playtest-repairs.md#resumed-desktop-backend-repairs)
+contains validation and remaining limits. The [source register](cloud/2026-09-27-live-all-scenarios-playtest.md)
+now records repairs for all eight actionable Desktop findings. Native verification and the existing
+product decisions remain open. A relative `GOSLING_PATH_ROOT` combined with a session directory
+different from the backend's launch directory can prevent automatic recovery; ownership checks now refuse that
+ambiguous replay instead of resuming from a different store. Capturing the original backend launch
+directory is a follow-up.
+
 ## 2026-09-20 post-audit defect review and repair
 
 Review of the thirteen commits after the 2026-09-16 audits plus a full read of

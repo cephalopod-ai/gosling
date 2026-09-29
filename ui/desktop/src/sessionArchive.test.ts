@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ArchiveFolderNotConfiguredError,
   archiveSessionToConfiguredFolder,
@@ -20,6 +20,10 @@ vi.mock('./acp/sessions', () => ({
 type ArchivedSessionFiles = Record<string, string>;
 
 describe('sessionArchive', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
   let archiveFolder: string | null;
   let archivedSessionFiles: ArchivedSessionFiles;
   let setSettingMock: ReturnType<typeof vi.fn>;
@@ -81,6 +85,33 @@ describe('sessionArchive', () => {
     });
     expect(await getTrackedArchiveFile('session-1')).toBe(
       '/tmp/gosling-archives/2026-07-02T14-15-16-789Z-Roadmap-Draft-session-1.json'
+    );
+  });
+
+  it('does not replace or remove another backend archive with the same session ID', async () => {
+    let backendId = 'backend-a';
+    vi.stubGlobal('appConfig', { get: () => backendId });
+    const first = await archiveSessionToConfiguredFolder('session-1', 'Draft');
+    backendId = 'backend-b';
+    expect(await getTrackedArchiveFile('session-1')).toBeUndefined();
+    const second = await archiveSessionToConfiguredFolder('session-1', 'Draft');
+    expect(second.filePath).not.toBe(first.filePath);
+    expect(deleteFileMock).not.toHaveBeenCalled();
+    await removeTrackedArchiveFile('session-1');
+    expect(deleteFileMock).toHaveBeenCalledExactlyOnceWith(second.filePath);
+    backendId = 'backend-a';
+    expect(await getTrackedArchiveFile('session-1')).toBe(first.filePath);
+  });
+
+  it('does not lengthen archive basenames when the backend identity is present', async () => {
+    vi.stubGlobal('appConfig', { get: () => `external-${'a'.repeat(64)}` });
+    const sessionId = '6d6b98b0-120c-4e40-9ead-cf48d67a28bf';
+    const result = await archiveSessionToConfiguredFolder(sessionId, 'x'.repeat(130));
+    const basename = result.filePath.split('/').pop()!;
+    expect(new TextEncoder().encode(basename).length).toBeLessThanOrEqual(255);
+    expect(basename).toContain(sessionId);
+    expect(ensureDirectoryMock).toHaveBeenCalledWith(
+      `/tmp/gosling-archives/external-${'a'.repeat(64)}`
     );
   });
 

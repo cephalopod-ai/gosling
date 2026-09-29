@@ -476,7 +476,14 @@ function Preview({
     case 'image':
     case 'svg':
       return (
-        <ImagePreview src={`data:${mimeTypeForTab(tab)};base64,${data.content}`} alt={tab.title} />
+        <ImagePreview
+          src={
+            data.encoding === 'base64'
+              ? `data:${mimeTypeForTab(tab)};base64,${data.content}`
+              : `data:${mimeTypeForTab(tab)};charset=utf-8,${encodeURIComponent(data.content)}`
+          }
+          alt={tab.title}
+        />
       );
     case 'pdf':
       return (
@@ -537,8 +544,17 @@ export function ArtifactPane() {
   const [researchLibraryPath, setResearchLibraryPath] = useState<string | null>(null);
   const [researchLibraryLoading, setResearchLibraryLoading] = useState(false);
   const [researchLibraryError, setResearchLibraryError] = useState(false);
-  const [preview, setPreview] = useState<PreviewData | null>(null);
+  const [loadedPreview, setLoadedPreview] = useState<{
+    tab: ArtifactTab;
+    revision: number;
+    data: PreviewData;
+  } | null>(null);
   const [previewRevision, setPreviewRevision] = useState(0);
+  // Effects run after rendering; never feed the previous tab's text to a new media element.
+  const preview =
+    loadedPreview?.tab === activeTab && loadedPreview?.revision === previewRevision
+      ? loadedPreview.data
+      : null;
   const [plainTextMarkdownTabId, setPlainTextMarkdownTabId] = useState<string | null>(null);
   const [copyingContents, setCopyingContents] = useState(false);
   const [titleRefresh, setTitleRefresh] = useState(0);
@@ -806,9 +822,11 @@ export function ArtifactPane() {
       setLoading(false);
     }
     if (!activeTab) {
-      setPreview(null);
+      setLoadedPreview(null);
       return;
     }
+    const setPreview = (data: PreviewData) =>
+      setLoadedPreview({ tab: activeTab, revision: previewRevision, data });
     if (activeTab.source.type === 'content') {
       setPreview({
         content: activeTab.source.content,

@@ -143,6 +143,21 @@ session deliverable capabilities defined by ADR-0006/0013 authorize reads, revea
 opening. Session capabilities are taken from the current window's validated routing configuration;
 they are not retained as directory grants or as permanent picker grants.
 
+Automatic window-launch grants exclude the home directory, its ancestors and filesystem roots.
+An explicit native folder selection can approve such a root for the selected window; when the
+native menu or OS file-open action creates a window, the main process transfers that selection
+before renderer navigation. Broad roots remain transient. Optional Git branch indicators return
+unavailable for denied directories without running a subprocess. Preview content is bound to its
+active tab and load revision before it can supply a media URL.
+
+Desktop persistence also includes the owning backend in its namespace. The main process pins a
+non-secret identity from the external base URL or local store root for each window. Preview state,
+workspace filters, composer history and archive tracking use that identity; archive files sit in a
+backend-specific subdirectory of the configured archive folder. Crash-recovery markers carry the
+same owner and are rechecked against the actual backend before routing a resumed session, including
+after startup falls back from an external backend. Legacy records without an owner are retained but
+not automatically adopted or replayed. These namespaces do not grant file access.
+
 Outputs and Research Library lists also expose explicit single-file and batch Trash actions.
 The file IPC handler checks each path with the artifact guard, rejects directories and symbolic
 links, and returns per-file outcomes without falling back to permanent unlink. Desktop closes

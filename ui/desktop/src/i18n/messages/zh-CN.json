@@ -122,9 +122,6 @@
   "chat.notification.taskComplete.body": {
     "defaultMessage": "点击这里让 Gosling 窗口回到前台。"
   },
-  "chat.notification.taskComplete.title": {
-    "defaultMessage": "Gosling 完成任务了。"
-  },
   "chatInput.contextWindow": {
     "defaultMessage": "上下文窗口"
   },
@@ -1843,9 +1840,6 @@
   },
   "searchBar.previous": {
     "defaultMessage": "上一个（{shortcut}）"
-  },
-  "secureStorageNotice.defaultMessage": {
-    "defaultMessage": "密钥已安全地存储在系统密钥库中"
   },
   "securityToggle.apiTokenDescription": {
     "defaultMessage": "分类服务的认证令牌"
@@ -4270,5 +4264,11 @@
   },
   "extensionMenu.failedToStart": {
     "defaultMessage": "Failed to start: {cause}"
+  },
+  "chat.notification.responseComplete.title": {
+    "defaultMessage": "Gosling finished responding."
+  },
+  "secureStorageNotice.configuredStorage": {
+    "defaultMessage": "Keys use the backend’s configured credential storage. When keyring is disabled, secrets are stored in a plaintext file."
   }
 }

@@ -126,7 +126,9 @@ export function registerGitIpcHandlers(
   });
 
   targetIpcMain.handle(desktopCommandChannels.getGitBranchInfo, async (event, dir: string) => {
-    const authorizedDir = await assertRendererFileAccess(event.sender.id, dir);
+    // The optional indicator also mounts for unapproved recent/session folders.
+    const authorizedDir = await assertRendererFileAccess(event.sender.id, dir).catch(() => null);
+    if (!authorizedDir) return null;
     return await getGitBranchInfo(authorizedDir);
   });
 

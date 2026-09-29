@@ -461,11 +461,11 @@
   "chat.notification.planReady.title": {
     "defaultMessage": "Plan ready for review."
   },
+  "chat.notification.responseComplete.title": {
+    "defaultMessage": "Gosling finished responding."
+  },
   "chat.notification.taskComplete.body": {
     "defaultMessage": "Click here to bring Gosling back into focus."
-  },
-  "chat.notification.taskComplete.title": {
-    "defaultMessage": "Gosling finished the task."
   },
   "chatInput.attachFile": {
     "defaultMessage": "Attach file"
@@ -2876,8 +2876,8 @@
   "searchBar.previous": {
     "defaultMessage": "Previous ({shortcut})"
   },
-  "secureStorageNotice.defaultMessage": {
-    "defaultMessage": "Keys are stored securely in the keychain"
+  "secureStorageNotice.configuredStorage": {
+    "defaultMessage": "Keys use the backend’s configured credential storage. When keyring is disabled, secrets are stored in a plaintext file."
   },
   "securityToggle.apiTokenDescription": {
     "defaultMessage": "Authentication token for the classification service"

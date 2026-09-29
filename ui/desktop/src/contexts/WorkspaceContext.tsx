@@ -22,6 +22,7 @@ import {
   acpValidateWorkspace,
 } from '../acp/workspaces';
 import { workspaceErrorMessage } from '../utils/workspaceError';
+import { backendStorageKey } from '../utils/backendStorage';
 
 interface WorkspaceContextValue {
   workspaces: WorkspaceWithValidation[];
@@ -55,6 +56,7 @@ interface WorkspaceContextValue {
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
 
 export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
+  const [filterStorageKey] = useState(() => backendStorageKey('workspace_session_filter'));
   const [workspaces, setWorkspaces] = useState<WorkspaceWithValidation[]>([]);
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
   const [defaultWorkspaceId, setDefaultWorkspaceId] = useState<string | null>(null);
@@ -64,7 +66,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const [sessionWorkspaceFilterId, setSessionWorkspaceFilterIdState] = useState<
     string | null | undefined
   >(() => {
-    const stored = window.localStorage.getItem('workspace_session_filter');
+    const stored = window.localStorage.getItem(filterStorageKey);
     if (stored === null) return undefined;
     return stored === '__all__' ? null : stored;
   });
@@ -87,7 +89,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
             ? workspaceResponse.activeWorkspaceId
             : current;
         if (next !== current) {
-          window.localStorage.setItem('workspace_session_filter', next ?? '__all__');
+          window.localStorage.setItem(filterStorageKey, next ?? '__all__');
         }
         return next;
       });
@@ -98,7 +100,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [filterStorageKey]);
 
   useEffect(() => {
     void refreshWorkspaces();
@@ -114,10 +116,13 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     window.electron.broadcastWorkspaceChange();
   }, [refreshWorkspaces]);
 
-  const setSessionWorkspaceFilterId = useCallback((workspaceId: string | null) => {
-    setSessionWorkspaceFilterIdState(workspaceId);
-    window.localStorage.setItem('workspace_session_filter', workspaceId ?? '__all__');
-  }, []);
+  const setSessionWorkspaceFilterId = useCallback(
+    (workspaceId: string | null) => {
+      setSessionWorkspaceFilterIdState(workspaceId);
+      window.localStorage.setItem(filterStorageKey, workspaceId ?? '__all__');
+    },
+    [filterStorageKey]
+  );
 
   const createWorkspace = useCallback(
     async (workspace: WorkspaceMutation) => {

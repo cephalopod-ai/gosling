@@ -122,9 +122,6 @@
   "chat.notification.taskComplete.body": {
     "defaultMessage": "Nhấp vào đây để đưa Gosling trở lại tiêu điểm."
   },
-  "chat.notification.taskComplete.title": {
-    "defaultMessage": "Gosling đã hoàn thành tác vụ."
-  },
   "chatInput.contextWindow": {
     "defaultMessage": "Cửa sổ ngữ cảnh"
   },
@@ -1843,9 +1840,6 @@
   },
   "searchBar.previous": {
     "defaultMessage": "Trước đó ({shortcut})"
-  },
-  "secureStorageNotice.defaultMessage": {
-    "defaultMessage": "Khóa được lưu trữ an toàn trong keychain"
   },
   "securityToggle.apiTokenDescription": {
     "defaultMessage": "Mã thông báo xác thực cho dịch vụ phân loại"
@@ -4270,5 +4264,11 @@
   },
   "extensionMenu.failedToStart": {
     "defaultMessage": "Failed to start: {cause}"
+  },
+  "chat.notification.responseComplete.title": {
+    "defaultMessage": "Gosling finished responding."
+  },
+  "secureStorageNotice.configuredStorage": {
+    "defaultMessage": "Keys use the backend’s configured credential storage. When keyring is disabled, secrets are stored in a plaintext file."
   }
 }

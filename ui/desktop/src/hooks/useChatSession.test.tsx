@@ -6,6 +6,7 @@ import { IntlTestWrapper } from '../i18n/test-utils';
 import type { Message } from '../types/message';
 import type { Session } from '../types/session';
 import { useChatSession } from './useChatSession';
+import type { AcpSubmitMessageOptions } from '../acp/chatSessionController';
 import { acpSteerSession } from '../acp/prompt';
 import { resolveSessionLibraryInputs } from '../acp/sessionLibraryInputs';
 import {
@@ -327,16 +328,59 @@ describe('useChatSession history navigation', () => {
       await result.current.handleSubmit({ msg: 'Continue', images: [] });
     });
     const calls = mocks.submitMessage.mock.calls as unknown as Array<
-      [unknown, unknown, { onFinish(error?: string): Promise<void> }]
+      [unknown, unknown, AcpSubmitMessageOptions]
     >;
     const options = calls[calls.length - 1]?.[2];
     await act(async () => {
-      await options?.onFinish();
+      await options?.onFinish(undefined, 'end_turn');
     });
 
     expect(window.electron.showNotification).not.toHaveBeenCalled();
     expect(onStreamFinish).toHaveBeenCalledOnce();
   });
+
+  it.each([
+    { reason: 'end_turn', error: undefined, enabled: true, focused: false, notify: true },
+    { reason: 'cancelled', error: undefined, enabled: true, focused: false, notify: false },
+    { reason: 'refusal', error: undefined, enabled: true, focused: false, notify: false },
+    { reason: 'max_tokens', error: undefined, enabled: true, focused: false, notify: false },
+    { reason: 'max_turn_requests', error: undefined, enabled: true, focused: false, notify: false },
+    { reason: undefined, error: 'No credits remain', enabled: true, focused: false, notify: false },
+    { reason: 'end_turn', error: undefined, enabled: false, focused: false, notify: false },
+    { reason: 'end_turn', error: undefined, enabled: true, focused: true, notify: false },
+  ] as const)(
+    'handles $reason / error=$error / enabled=$enabled / focused=$focused honestly',
+    async ({ reason, error, enabled, focused, notify }) => {
+      vi.mocked(window.electron.getSetting).mockResolvedValue(enabled);
+      vi.mocked(window.electron.isAnyWindowFocused).mockResolvedValue(focused);
+      const onStreamFinish = vi.fn();
+      const { result } = renderHook(
+        () => useChatSession({ sessionId: SESSION_ID, onStreamFinish }),
+        {
+          wrapper: IntlTestWrapper,
+        }
+      );
+      await act(async () => {
+        await result.current.handleSubmit({ msg: 'Continue', images: [] });
+      });
+      const calls = mocks.submitMessage.mock.calls as unknown as Array<
+        [unknown, unknown, AcpSubmitMessageOptions]
+      >;
+      await act(async () => {
+        await calls[calls.length - 1][2].onFinish(error, reason);
+      });
+
+      expect(onStreamFinish).toHaveBeenCalledOnce();
+      if (notify) {
+        expect(window.electron.showNotification).toHaveBeenCalledExactlyOnceWith({
+          title: 'Gosling finished responding.',
+          body: 'Click here to bring Gosling back into focus.',
+        });
+      } else {
+        expect(window.electron.showNotification).not.toHaveBeenCalled();
+      }
+    }
+  );
 
   it('automatically continues a safely recoverable crashed prompt', async () => {
     vi.mocked(window.electron.getSetting).mockResolvedValueOnce('safe');

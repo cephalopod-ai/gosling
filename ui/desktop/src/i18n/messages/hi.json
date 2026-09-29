@@ -122,9 +122,6 @@
   "chat.notification.taskComplete.body": {
     "defaultMessage": "Gosling को फोकस में वापस लाने के लिए यहां क्लिक करें।"
   },
-  "chat.notification.taskComplete.title": {
-    "defaultMessage": "Gosling ने कार्य पूरा किया।"
-  },
   "chatInput.contextWindow": {
     "defaultMessage": "प्रसंग विंडो"
   },
@@ -1843,9 +1840,6 @@
   },
   "searchBar.previous": {
     "defaultMessage": "पिछला ({shortcut})"
-  },
-  "secureStorageNotice.defaultMessage": {
-    "defaultMessage": "चाभियाँ किचेन में सुरक्षित रूप से संग्रहीत होती हैं"
   },
   "securityToggle.apiTokenDescription": {
     "defaultMessage": "वर्गीकरण सेवा के लिए प्रमाणीकरण टोकन"
@@ -4270,5 +4264,11 @@
   },
   "extensionMenu.failedToStart": {
     "defaultMessage": "Failed to start: {cause}"
+  },
+  "chat.notification.responseComplete.title": {
+    "defaultMessage": "Gosling finished responding."
+  },
+  "secureStorageNotice.configuredStorage": {
+    "defaultMessage": "Keys use the backend’s configured credential storage. When keyring is disabled, secrets are stored in a plaintext file."
   }
 }

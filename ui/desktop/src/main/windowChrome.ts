@@ -21,6 +21,7 @@ interface LauncherConfig {
 
 interface CreateChatOptions {
   dir?: string;
+  nativeDirectorySelection?: string;
 }
 
 export interface WindowChromeDependencies {
@@ -309,7 +310,7 @@ export function createWindowChrome(dependencies: WindowChromeDependencies): Wind
       addRecentDir(dirToAdd);
       rendererDirectoryGrants.grantSelectedPath(currentWindow?.webContents.id ?? 0, dirToAdd);
 
-      await createChat(app, { dir: dirToAdd });
+      await createChat(app, { nativeDirectorySelection: dirToAdd });
     }
     return result;
   }

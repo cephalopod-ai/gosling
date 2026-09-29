@@ -1,4 +1,5 @@
 import { acpArchiveSession, acpExportSession } from './acp/sessions';
+import { backendStorageKey, getBackendStorageId } from './utils/backendStorage';
 
 const ARCHIVE_FILE_EXTENSION = '.json';
 const INVALID_FILE_NAME_CHARS = '<>:"/\\|?*';
@@ -53,7 +54,7 @@ export async function getArchiveFolder(): Promise<string | null> {
 
 export async function getTrackedArchiveFile(sessionId: string): Promise<string | undefined> {
   const files = await getTrackedArchiveFiles();
-  return files[sessionId];
+  return files[backendStorageKey(sessionId)];
 }
 
 export async function archiveSessionToConfiguredFolder(
@@ -66,15 +67,18 @@ export async function archiveSessionToConfiguredFolder(
   }
 
   const archivedAt = new Date().toISOString();
+  // A separate directory prevents collisions across backends without growing the basename.
+  const backendId = getBackendStorageId();
+  const destinationFolder = backendId ? joinPath(archiveFolder, backendId) : archiveFolder;
   const filePath = joinPath(
-    archiveFolder,
+    destinationFolder,
     `${archiveTimestampForFileName(archivedAt)}-${sanitizeFileNamePart(sessionName)}-${sessionId}${ARCHIVE_FILE_EXTENSION}`
   );
   const previousFilePath = await getTrackedArchiveFile(sessionId);
   const exportedSession = await acpExportSession(sessionId);
 
-  if (!(await window.electron.ensureDirectory(archiveFolder))) {
-    throw new Error(`Failed to create archive directory: ${archiveFolder}`);
+  if (!(await window.electron.ensureDirectory(destinationFolder))) {
+    throw new Error(`Failed to create archive directory: ${destinationFolder}`);
   }
   if (!(await window.electron.writeFile(filePath, exportedSession))) {
     throw new Error(`Failed to write archive file: ${filePath}`);
@@ -89,7 +93,7 @@ export async function archiveSessionToConfiguredFolder(
 
   const nextFiles = {
     ...(await getTrackedArchiveFiles()),
-    [sessionId]: filePath,
+    [backendStorageKey(sessionId)]: filePath,
   };
   await setTrackedArchiveFiles(nextFiles);
 
@@ -106,12 +110,13 @@ export async function removeTrackedArchiveFile(sessionId: string): Promise<{
   removed: boolean;
 }> {
   const trackedFiles = await getTrackedArchiveFiles();
-  const filePath = trackedFiles[sessionId];
+  const storageKey = backendStorageKey(sessionId);
+  const filePath = trackedFiles[storageKey];
   if (!filePath) {
     return { hadTrackedFile: false, removed: false };
   }
 
-  const { [sessionId]: _removed, ...remainingFiles } = trackedFiles;
+  const { [storageKey]: _removed, ...remainingFiles } = trackedFiles;
   await setTrackedArchiveFiles(remainingFiles);
 
   const removed = await window.electron.deleteFile(filePath);

@@ -1,6 +1,6 @@
 # Active TODO ledger
 
-Date: 2026-09-16
+Date: 2026-09-29 (focused Desktop-repair update; older evidence dates retained)
 
 [`docs/TODO.md`](../TODO.md) is the canonical backlog. This mirror contains
 only items that are still active, partial, blocked, or externally gated.
@@ -8,6 +8,10 @@ Completed work remains in the canonical backlog and session logs.
 
 | ID | Status | Priority | Area | Source | Opened | Last evidence | Exit criteria |
 |---|---|---|---|---|---|---|---|
+| GSL-PT-20260927-G213 | needs-verification | P3 | Desktop backend diagnostics | `docs/TODO.md` | 2026-09-27 | 2026-09-29 | Replay native startup authentication, TLS and reachability dialogs; source and browser disconnect/reconnect checks passed. |
+| GSL-PT-20260927-G215 | needs-verification | P3 | Desktop backend state | `docs/TODO.md` | 2026-09-27 | 2026-09-29 | Replay native crash/relaunch and external-backend-disable fallback; source and same-ID browser isolation checks passed. |
+| GSL-PT-20260927-G210 | needs-verification | P3 | Desktop startup grants | `docs/TODO.md` | 2026-09-27 | 2026-09-29 | Replay installed Desktop default startup and native home-folder selection into a new window; grant and handoff regressions passed. |
+| GSL-PT-20260927-G216 | needs-verification | P3 | Desktop notifications | `docs/TODO.md` | 2026-09-27 | 2026-09-29 | Replay macOS background completion/failed/cancelled/limited notifications; stop-reason and preference matrix passed. |
 | CMP-ORDER-001 | needs-verification | P1 | Session history | `docs/TODO.md` | 2026-09-16 | 2026-09-16 | Execute compaction round-trip and rollback regressions plus planning invalidation checks, then verify the installed app continues compacted tool history on the same model. |
 | WDS-GSL-002 | needs-verification | P1 | Workspace permissions | `docs/TODO.md` | 2026-09-16 | 2026-09-16 | Execute the read-only navigation/write-boundary regressions and verify the installed app permits reference diagnostics without repeated approval. |
 | AUD-DAT-001 | needs-decision | P0 | Context privacy | `docs/TODO.md` | 2026-09-13 | 2026-09-13 | Approve workspace-memory scope and migration semantics, then prove isolation and intended recall compatibility. |

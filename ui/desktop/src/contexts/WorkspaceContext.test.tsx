@@ -1,5 +1,5 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceMutation } from '@repo-makeover/gosling-sdk';
 import {
   acpCreateWorkspace,
@@ -50,6 +50,28 @@ function Probe({ onValue }: { onValue(value: ReturnType<typeof useWorkspace>): v
 }
 
 describe('WorkspaceContext', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('isolates a saved workspace filter from a different backend with matching IDs', async () => {
+    localStorage.setItem('workspace_session_filter:backend-a', '__all__');
+    localStorage.setItem('workspace_session_filter', '__all__');
+    vi.stubGlobal('appConfig', { get: () => 'backend-b' });
+    let context!: ReturnType<typeof useWorkspace>;
+    render(
+      <WorkspaceProvider>
+        <Probe
+          onValue={(value) => {
+            context = value;
+          }}
+        />
+      </WorkspaceProvider>
+    );
+    await screen.findByText('Project');
+    expect(context.sessionWorkspaceFilterId).toBe('workspace-1');
+    expect(localStorage.getItem('workspace_session_filter:backend-a')).toBe('__all__');
+    expect(localStorage.getItem('workspace_session_filter:backend-b')).toBe('workspace-1');
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     window.localStorage.clear();

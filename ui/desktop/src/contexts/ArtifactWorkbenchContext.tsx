@@ -19,6 +19,7 @@ import {
 } from '../components/artifacts/artifactUtils';
 import type { ArtifactTab } from '../components/artifacts/types';
 import { coalesceSessionArtifactAliases } from '../utils/sessionArtifactAliases';
+import { backendStorageKey } from '../utils/backendStorage';
 
 const STORAGE_KEY = 'gosling-artifact-workbench-v1';
 const DEFAULT_SESSION_ID = '__no_session__';
@@ -132,10 +133,10 @@ function adoptStoredSessionState(
   };
 }
 
-function loadPersistedWorkbench(): PersistedWorkbench {
+function loadPersistedWorkbench(storageKey: string): PersistedWorkbench {
   try {
     const parsed = JSON.parse(
-      localStorage.getItem(STORAGE_KEY) ?? '{}'
+      localStorage.getItem(storageKey) ?? '{}'
     ) as Partial<PersistedWorkbench>;
     const sessions = Object.fromEntries(
       Object.entries(parsed.sessions ?? {}).map(([sessionId, state]) => [
@@ -164,13 +165,14 @@ function loadPersistedWorkbench(): PersistedWorkbench {
 }
 
 export function ArtifactWorkbenchProvider({ children }: { children: React.ReactNode }) {
-  const [initial] = useState(loadPersistedWorkbench);
+  const [storageKey] = useState(() => backendStorageKey(STORAGE_KEY));
+  const [initial] = useState(() => loadPersistedWorkbench(storageKey));
   const [visibleSessionId, setVisibleSessionId] = useState(DEFAULT_SESSION_ID);
   const [artifactsBySession, setArtifactsBySession] = useState<
     Record<string, SessionArtifactDto[]>
   >({});
   const [sessions, setSessions] = useState(initial.sessions);
-  // Every window of the app shares this storage key. Session states this window last wrote or
+  // Windows on the same backend share this storage key. Session states this window last wrote or
   // adopted; only the ones it has changed since are written back, merged over what is stored,
   // so one window's save no longer restores tabs another window closed.
   const syncedSessionsRef = useRef(initial.sessions);
@@ -200,7 +202,7 @@ export function ArtifactWorkbenchProvider({ children }: { children: React.ReactN
     sessionsRef.current = sessions;
     const synced = syncedSessionsRef.current;
     const merged: Record<string, SessionPreviewState> = {
-      ...loadPersistedWorkbench().sessions,
+      ...loadPersistedWorkbench(storageKey).sessions,
       ...Object.fromEntries(
         Object.entries(sessions)
           .filter(([sessionId, state]) => synced[sessionId] !== state)
@@ -217,15 +219,15 @@ export function ArtifactWorkbenchProvider({ children }: { children: React.ReactN
       activeTabId: fallback.activeTabId,
       width,
     };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted));
-  }, [hideRepositoryFiles, isOpen, sessions, width]);
+    localStorage.setItem(storageKey, JSON.stringify(persisted));
+  }, [hideRepositoryFiles, isOpen, sessions, storageKey, width]);
 
   useEffect(() => {
     const adoptOtherWindowChanges = (event: StorageEvent) => {
-      if (event.key !== STORAGE_KEY) return;
+      if (event.key !== storageKey) return;
       const local = sessionsRef.current;
       const adopted = Object.fromEntries(
-        Object.entries(loadPersistedWorkbench().sessions)
+        Object.entries(loadPersistedWorkbench(storageKey).sessions)
           .filter(
             ([sessionId, stored]) =>
               !local[sessionId] || !sameStoredSessionState(local[sessionId], stored)
@@ -248,7 +250,7 @@ export function ArtifactWorkbenchProvider({ children }: { children: React.ReactN
     };
     window.addEventListener('storage', adoptOtherWindowChanges);
     return () => window.removeEventListener('storage', adoptOtherWindowChanges);
-  }, []);
+  }, [storageKey]);
 
   const updateCurrent = useCallback(
     (update: (state: SessionPreviewState) => SessionPreviewState) => {

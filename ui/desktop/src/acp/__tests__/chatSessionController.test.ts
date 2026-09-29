@@ -315,6 +315,43 @@ describe('acpChatSessionController.submitMessage', () => {
     vi.mocked(acpChatSessionActions.finishPromptAttemptIfCurrent).mockReturnValue(true);
   });
 
+  it.each(['end_turn', 'cancelled', 'refusal', 'max_tokens', 'max_turn_requests'] as const)(
+    'reports %s to the completion observer without changing prompt cleanup',
+    async (stopReason) => {
+      vi.mocked(acpPromptSession).mockResolvedValue({ stopReason });
+      const onFinish = vi.fn();
+
+      await acpChatSessionController.submitMessage(SESSION_ID, userMessage(), {
+        getCurrentSnapshot: () => snapshotWithActivePrompt(null),
+        onFinish,
+      });
+
+      expect(onFinish).toHaveBeenCalledExactlyOnceWith(undefined, stopReason);
+      expect(acpChatSessionActions.finishPromptAttemptIfCurrent).toHaveBeenCalledOnce();
+      expect(window.electron.setWakelockActive).toHaveBeenLastCalledWith(SESSION_ID, false);
+    }
+  );
+
+  it('reports exhausted credits as a failure while retaining the existing explanation', async () => {
+    vi.mocked(acpChatSessionActions.isCurrentPromptAttempt).mockReturnValue(true);
+    vi.mocked(acpPromptSession).mockRejectedValue({
+      message: 'No credits remain',
+      data: { reason: 'credits_exhausted' },
+    });
+    const onFinish = vi.fn();
+
+    await acpChatSessionController.submitMessage(SESSION_ID, userMessage(), {
+      getCurrentSnapshot: () => snapshotWithActivePrompt(null),
+      onFinish,
+    });
+
+    expect(onFinish).toHaveBeenCalledExactlyOnceWith('No credits remain');
+    expect(acpChatSessionActions.setMessages).toHaveBeenCalledWith(
+      SESSION_ID,
+      expect.arrayContaining([expect.objectContaining({ role: 'assistant' })])
+    );
+  });
+
   it('clears a pending cancellation barrier when the original prompt settles', async () => {
     vi.mocked(acpChatSessionActions.clearPromptCancellation).mockReturnValueOnce(
       snapshotWithActivePrompt(null)

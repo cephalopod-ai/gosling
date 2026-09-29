@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IntlTestWrapper } from '../i18n/test-utils';
 import { ChatState } from '../types/chatState';
@@ -66,6 +66,38 @@ describe('ChatInput attach button', () => {
     );
 
     expect(screen.getByRole('button', { name: 'Attach file' })).toBeInTheDocument();
+  });
+
+  it('keeps mounted composers distinct and exposes the selector only for the active one', async () => {
+    const inputs = (activeSession: string) => (
+      <TooltipProvider>
+        {['session-1', 'session-2'].map((sessionId) => (
+          <ChatInput
+            key={sessionId}
+            sessionId={sessionId}
+            inactive={sessionId !== activeSession}
+            initialValue={sessionId}
+            initialPrompt={sessionId}
+            handleSubmit={vi.fn()}
+            chatState={ChatState.Idle}
+            setView={vi.fn()}
+          />
+        ))}
+      </TooltipProvider>
+    );
+    const { rerender } = render(inputs('session-1'), { wrapper: IntlTestWrapper });
+    const ids = screen.getAllByRole('textbox').map((input) => input.id);
+    expect(new Set(ids).size).toBe(2);
+    expect(ids.every(Boolean)).toBe(true);
+    expect(screen.getByTestId('chat-input')).toHaveValue('session-1');
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+    expect(screen.getByTestId('chat-input')).toHaveFocus();
+    fireEvent.change(screen.getAllByRole('textbox')[1], { target: { value: 'retained draft' } });
+
+    rerender(inputs('session-2'));
+    expect(screen.getByTestId('chat-input')).toHaveValue('retained draft');
+    expect(screen.getByTestId('chat-input')).toHaveFocus();
+    expect(screen.getAllByRole('textbox').map((input) => input.id)).toEqual(ids);
   });
 });
 

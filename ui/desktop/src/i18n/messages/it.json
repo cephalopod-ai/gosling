@@ -122,9 +122,6 @@
   "chat.notification.taskComplete.body": {
     "defaultMessage": "Fai clic qui per riportare Gosling in primo piano."
   },
-  "chat.notification.taskComplete.title": {
-    "defaultMessage": "Gosling ha completato l'attività."
-  },
   "chatInput.contextWindow": {
     "defaultMessage": "Finestra di contesto"
   },
@@ -1843,9 +1840,6 @@
   },
   "searchBar.previous": {
     "defaultMessage": "Precedente ({shortcut})"
-  },
-  "secureStorageNotice.defaultMessage": {
-    "defaultMessage": "Le chiavi vengono archiviate in modo sicuro nel portachiavi"
   },
   "securityToggle.apiTokenDescription": {
     "defaultMessage": "Token di autenticazione per il servizio di classificazione"
@@ -4270,5 +4264,11 @@
   },
   "extensionMenu.failedToStart": {
     "defaultMessage": "Failed to start: {cause}"
+  },
+  "chat.notification.responseComplete.title": {
+    "defaultMessage": "Gosling finished responding."
+  },
+  "secureStorageNotice.configuredStorage": {
+    "defaultMessage": "Keys use the backend’s configured credential storage. When keyring is disabled, secrets are stored in a plaintext file."
   }
 }

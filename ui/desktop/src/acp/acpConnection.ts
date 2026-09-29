@@ -25,6 +25,29 @@ let clientPromise: Promise<InitializedAcpClient> | null = null;
 let resolvedClient: InitializedAcpClient | null = null;
 let nextConnectionGeneration = 1;
 
+export type AcpConnectionStatus =
+  | 'idle'
+  | 'connecting'
+  | 'connected'
+  | 'disconnected'
+  | 'reconnecting';
+let connectionStatus: AcpConnectionStatus = 'idle';
+const connectionListeners = new Set<() => void>();
+
+export function getAcpConnectionStatus(): AcpConnectionStatus {
+  return connectionStatus;
+}
+
+export function subscribeAcpConnectionStatus(listener: () => void): () => void {
+  connectionListeners.add(listener);
+  return () => connectionListeners.delete(listener);
+}
+
+function setConnectionStatus(status: AcpConnectionStatus): void {
+  connectionStatus = status;
+  for (const listener of connectionListeners) listener();
+}
+
 function createClientCallbacks(): () => GoslingClientCallbacks {
   return () => ({
     requestPermission: requestAcpPermission,
@@ -39,6 +62,7 @@ function monitorConnection(client: GoslingClient): void {
     if (resolvedClient?.client === client) {
       resolvedClient = null;
       clientPromise = null;
+      setConnectionStatus('disconnected');
     }
   };
 
@@ -132,14 +156,17 @@ async function getInitializedAcpClient(): Promise<InitializedAcpClient> {
   }
 
   if (!clientPromise) {
+    setConnectionStatus(connectionStatus === 'disconnected' ? 'reconnecting' : 'connecting');
     clientPromise = initializeConnection()
       .then((clientState) => {
         resolvedClient = clientState;
         monitorConnection(clientState.client);
+        setConnectionStatus('connected');
         return clientState;
       })
       .catch((error) => {
         clientPromise = null;
+        setConnectionStatus('disconnected');
         throw error;
       });
   }

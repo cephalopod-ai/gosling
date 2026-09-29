@@ -19,6 +19,11 @@ export interface CheckBackendStatusParams {
   options?: CheckServerStatusOptions;
 }
 
+export type BackendStatus = { ready: true } | { ready: false; detail: string };
+
+const UNREACHABLE_DETAIL =
+  'The backend did not respond. Check that it is running and that the URL and port are correct.';
+
 export const isFatalError = (line: string): boolean => {
   const fatalPatterns = [/panicked at/, /RUST_BACKTRACE/, /fatal error/i];
   return fatalPatterns.some((pattern) => pattern.test(line));
@@ -42,13 +47,13 @@ const fetchWithTimeout = async (
   }
 };
 
-export const checkBackendStatus = async ({
+export const getBackendStatus = async ({
   baseUrl,
   serverSecret,
   fetch,
   errorLog = [],
   options = {},
-}: CheckBackendStatusParams): Promise<boolean> => {
+}: CheckBackendStatusParams): Promise<BackendStatus> => {
   const deadline = Date.now() + HEALTHCHECK_TIMEOUT_MS;
   const statusUrl = statusHttpUrlFromHttpBase(baseUrl);
   const acpUrl = acpHttpUrlFromHttpBase(baseUrl);
@@ -58,10 +63,11 @@ export const checkBackendStatus = async ({
   });
 
   let attempt = 1;
+  let failureDetail = UNREACHABLE_DETAIL;
   while (Date.now() < deadline) {
     if (errorLog.some(isFatalError)) {
       options.onEvent?.('healthcheck_fatal_error', { attempt });
-      return false;
+      return { ready: false, detail: 'The backend stopped with a fatal error. Check its logs.' };
     }
 
     try {
@@ -70,6 +76,14 @@ export const checkBackendStatus = async ({
           'X-Secret-Key': serverSecret,
         },
       });
+      if (response.status === 401 || response.status === 403) {
+        options.onEvent?.('healthcheck_auth_failed', { attempt });
+        return {
+          ready: false,
+          detail:
+            'Authentication was rejected. Check the configured backend secret and access rules.',
+        };
+      }
       if (response.ok) {
         const authResponse = await fetchWithTimeout(fetch, acpUrl, {
           headers: {
@@ -79,15 +93,35 @@ export const checkBackendStatus = async ({
         // GET /acp without an SSE Accept header returns 406 after auth succeeds.
         if (authResponse.status === 406) {
           options.onEvent?.('healthcheck_success', { attempt });
-          return true;
+          return { ready: true };
         }
         if (authResponse.status === 401 || authResponse.status === 403) {
           options.onEvent?.('healthcheck_auth_failed', { attempt });
-          return false;
+          return {
+            ready: false,
+            detail:
+              'Authentication was rejected. Check the configured backend secret and access rules.',
+          };
         }
+        failureDetail = `The ACP endpoint returned HTTP ${authResponse.status}; expected HTTP 406. Check the backend base URL and ACP server version.`;
+      } else {
+        failureDetail = `The status endpoint returned HTTP ${response.status}. Check the backend base URL and server health.`;
       }
-    } catch {
-      // Retry until the backend is ready or the timeout expires.
+    } catch (error) {
+      // Electron reports TLS failures as network errors; expose the category, never raw details
+      // that may contain credentials or other server-supplied content.
+      if (
+        error instanceof Error &&
+        /certificate|\bTLS\b|\bSSL\b|ERR_CERT|ERR_SSL/i.test(error.message)
+      ) {
+        options.onEvent?.('healthcheck_tls_failed', { attempt });
+        return {
+          ready: false,
+          detail:
+            'TLS negotiation failed. Check the HTTPS URL, server certificate and configured fingerprint.',
+        };
+      }
+      failureDetail = UNREACHABLE_DETAIL;
     }
 
     await delay(HEALTHCHECK_INTERVAL_MS);
@@ -95,5 +129,8 @@ export const checkBackendStatus = async ({
   }
 
   options.onEvent?.('healthcheck_timeout', { timeoutMs: HEALTHCHECK_TIMEOUT_MS });
-  return false;
+  return { ready: false, detail: failureDetail };
 };
+
+export const checkBackendStatus = async (params: CheckBackendStatusParams): Promise<boolean> =>
+  (await getBackendStatus(params)).ready;

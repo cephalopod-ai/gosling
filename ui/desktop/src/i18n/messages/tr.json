@@ -122,9 +122,6 @@
   "chat.notification.taskComplete.body": {
     "defaultMessage": "Gosling'yi tekrar odağa almak için buraya tıklayın."
   },
-  "chat.notification.taskComplete.title": {
-    "defaultMessage": "Gosling görevi tamamladı."
-  },
   "chatInput.contextWindow": {
     "defaultMessage": "Bağlam penceresi"
   },
@@ -1843,9 +1840,6 @@
   },
   "searchBar.previous": {
     "defaultMessage": "Önceki ({shortcut})"
-  },
-  "secureStorageNotice.defaultMessage": {
-    "defaultMessage": "Anahtarlar anahtarlıkta güvenli bir şekilde saklanır"
   },
   "securityToggle.apiTokenDescription": {
     "defaultMessage": "Sınıflandırma hizmeti için kimlik doğrulama belirteci"
@@ -4270,5 +4264,11 @@
   },
   "extensionMenu.failedToStart": {
     "defaultMessage": "Failed to start: {cause}"
+  },
+  "chat.notification.responseComplete.title": {
+    "defaultMessage": "Gosling finished responding."
+  },
+  "secureStorageNotice.configuredStorage": {
+    "defaultMessage": "Keys use the backend’s configured credential storage. When keyring is disabled, secrets are stored in a plaintext file."
   }
 }

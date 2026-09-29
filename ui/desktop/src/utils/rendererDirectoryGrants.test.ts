@@ -87,12 +87,28 @@ describe('RendererDirectoryGrantRegistry', () => {
     const { approved, storePath } = fixture();
     const registry = new RendererDirectoryGrantRegistry(storePath);
 
-    registry.grantSelectedPath(10, approved, false);
+    registry.grantLaunchDirectory(10, approved);
     expect(registry.isGrantedDirectory(10, approved)).toBe(true);
     expect(registry.isGrantedDirectory(11, approved)).toBe(false);
     registry.clearTransient(10);
     expect(registry.isGrantedDirectory(10, approved)).toBe(false);
     expect(fs.existsSync(storePath)).toBe(false);
+  });
+
+  it('does not grant home or ancestor roots just because a window starts there', () => {
+    const { storePath } = fixture();
+    const registry = new RendererDirectoryGrantRegistry(storePath);
+    const home = fs.realpathSync.native(os.homedir());
+
+    for (const root of [home, path.dirname(home), path.parse(home).root]) {
+      registry.grantLaunchDirectory(10, root);
+    }
+    expect(registry.rootsFor(10)).toEqual([]);
+    expect(fs.existsSync(storePath)).toBe(false);
+
+    registry.grantSelectedPath(10, home);
+    expect(registry.isGrantedDirectory(10, home)).toBe(true);
+    expect(registry.rootsFor(11)).toEqual([]);
   });
 
   it('rejects symlink grant roots', () => {

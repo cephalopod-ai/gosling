@@ -1,5 +1,5 @@
 import { AppEvents } from '../constants/events';
-import React, { useRef, useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useRef, useState, useEffect, useMemo, useCallback, useId } from 'react';
 import { ArrowUp, ScrollText } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/Tooltip';
 import { Button } from './ui/button';
@@ -169,6 +169,7 @@ const i18n = defineMessages({
 
 interface ChatInputProps {
   sessionId: string | null;
+  inactive?: boolean;
   handleSubmit: (input: UserInput) => boolean | void | Promise<boolean | void>;
   chatState: ChatState;
   onStop?: () => void;
@@ -213,6 +214,7 @@ interface ChatInputProps {
 
 export default function ChatInput({
   sessionId,
+  inactive = false,
   handleSubmit,
   chatState = ChatState.Idle,
   onStop,
@@ -254,6 +256,9 @@ export default function ChatInput({
   allowEmptySubmit = false,
   planControl,
 }: ChatInputProps) {
+  const textareaId = useId();
+  const inactiveRef = useRef(inactive);
+  inactiveRef.current = inactive;
   const [_value, setValue] = useState(initialValue);
   const enterRunRef = useRef<EnterRun>(NO_ENTER_RUN);
   const [displayValue, setDisplayValue] = useState(initialValue); // For immediate visual feedback
@@ -588,10 +593,12 @@ export default function ChatInput({
     if (initialPrompt && messages.length === 0) {
       setDisplayValue(initialPrompt);
       setValue(initialPrompt);
-      setTimeout(() => {
-        textAreaRef.current?.focus();
+      const timeout = setTimeout(() => {
+        if (!inactiveRef.current) textAreaRef.current?.focus();
       }, 0);
+      return () => clearTimeout(timeout);
     }
+    return undefined;
   }, [initialPrompt, messages.length, textAreaRef]);
 
   const [isComposing, setIsComposing] = useState(false);
@@ -629,10 +636,10 @@ export default function ChatInput({
   };
 
   useEffect(() => {
-    if (textAreaRef.current) {
+    if (!inactive && textAreaRef.current) {
       textAreaRef.current.focus();
     }
-  }, [textAreaRef]);
+  }, [inactive, textAreaRef]);
 
   // Load providers and get current model's token limit
   const loadProviderDetails = async () => {
@@ -1592,9 +1599,9 @@ export default function ChatInput({
       <form onSubmit={onFormSubmit} className="relative">
         <div className="relative">
           <textarea
-            data-testid="chat-input"
-            autoFocus
-            id="dynamic-textarea"
+            data-testid={inactive ? undefined : 'chat-input'}
+            autoFocus={!inactive}
+            id={textareaId}
             placeholder={isRecording ? '' : getNavigationShortcutText(intl)}
             value={displayValue}
             onChange={handleChange}

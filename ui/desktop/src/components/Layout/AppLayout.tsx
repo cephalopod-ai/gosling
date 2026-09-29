@@ -19,6 +19,7 @@ import {
 } from '../../contexts/ArtifactWorkbenchContext';
 import { ArtifactPane } from '../artifacts/ArtifactPane';
 import { ArtifactRouterProvider } from '../../contexts/ArtifactRouterContext';
+import { BackendConnectionNotice } from '../BackendConnectionNotice';
 
 const i18n = defineMessages({
   openNavigation: {
@@ -142,12 +143,15 @@ const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions }) =
         </motion.div>
 
         {/* Main content — no border / no card; just flows on the canvas. */}
-        <div className="flex-1 overflow-hidden min-h-0 min-w-0">
-          <Outlet />
-          {/* Always render ChatSessionsContainer to keep SSE connections alive.
+        <div className="flex flex-col flex-1 overflow-hidden min-h-0 min-w-0">
+          <BackendConnectionNotice />
+          <div className="flex-1 overflow-hidden min-h-0">
+            <Outlet />
+            {/* Always render ChatSessionsContainer to keep SSE connections alive.
               When navigating away from /pair, hide it with CSS */}
-          <div className={isOnPairRoute ? 'contents' : 'hidden'}>
-            <ChatSessionsContainer setChat={setChat} activeSessions={activeSessions} />
+            <div className={isOnPairRoute ? 'contents' : 'hidden'}>
+              <ChatSessionsContainer setChat={setChat} activeSessions={activeSessions} />
+            </div>
           </div>
         </div>
 

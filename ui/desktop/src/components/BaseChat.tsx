@@ -1095,6 +1095,7 @@ export default function BaseChat({
           <ChatInput
             inputRef={chatInputRef}
             sessionId={sessionId}
+            inactive={!isActiveSession}
             handleSubmit={chatInputSubmit}
             chatState={chatState}
             onStop={stopStreaming}

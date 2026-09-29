@@ -67,6 +67,30 @@ describe('resolveStoredSettings', () => {
     }
   });
 
+  it('retains recovery ownership across restart and allows the same session ID on distinct backends', () => {
+    const markers = [
+      { backendId: 'backend-a', sessionId: 'same-id', workingDir: '/a', startedAt: 123 },
+      { backendId: 'backend-b', sessionId: 'same-id', workingDir: '/b', startedAt: 124 },
+    ];
+    expect(
+      resolveStoredSettings({ pendingSessionRecoveries: markers }).settings.pendingSessionRecoveries
+    ).toEqual(markers);
+    expect(
+      resolveStoredSettings({ pendingSessionRecoveries: [markers[0], markers[0]] }).settings
+        .pendingSessionRecoveries
+    ).toEqual([]);
+    expect(
+      resolveStoredSettings({ pendingSessionRecoveries: [{ ...markers[0], backendId: 42 }] })
+        .settings.pendingSessionRecoveries
+    ).toEqual([]);
+  });
+
+  it('accepts bounded backend-scoped archive tracking keys', () => {
+    const key = `${'s'.repeat(256)}:external-${'a'.repeat(64)}`;
+    expect(isSettingValue('archivedSessionFiles', { [key]: '/archives/a.json' })).toBe(true);
+    expect(isSettingValue('archivedSessionFiles', { [key + 'x']: '/archives/a.json' })).toBe(false);
+  });
+
   it('migrates the legacy externalGoosed key without retaining its secret', () => {
     const result = resolveStoredSettings({
       externalGoosed: {
