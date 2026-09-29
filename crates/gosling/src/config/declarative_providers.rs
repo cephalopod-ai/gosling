@@ -670,6 +670,11 @@ mod tests {
                 config.id()
             );
             assert!(!config.base_url.is_empty(), "{path} has an empty base_url");
+            assert!(
+                !config.display_name.contains("(d)"),
+                "{path} display_name carries the internal \"(d)\" marker: {}",
+                config.display_name
+            );
 
             if config.dynamic_models == Some(false) {
                 assert!(
