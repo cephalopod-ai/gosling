@@ -237,8 +237,8 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | A05 | Broken config.yaml: session/run say "Run 'gosling configure' first" but configure refuses to run | fixed (R5) |
 | Low | A07 | REPL silently discards input that arrives in the same burst as a submitting Enter | open — queued R8b |
 | Low | A09 | Opening a session with `--resume` and exiting without sending re-stamps `updated_at` | fixed (R4) |
-| Low | A10 | Provider picker shows a cryptic "Groq (d)" label | open — queued R9 |
-| Low | A11 | `gosling session export --help` documents resume semantics that don't apply | open — queued R8b |
+| Low | A10 | Provider picker shows a cryptic "Groq (d)" label | fixed (R9) |
+| Low | A11 | `gosling session export --help` documents resume semantics that don't apply | fixed (R8b) |
 | Low | A13 | `/model` switch injects a ~3 KB "Gosling session checkpoint" into the next prompt (even for an empty session) and the session title is generated from it | fixed (R9) |
 | Low | A14 | Documented slash commands without their argument are reported as "Unknown command" | open — queued R8b |
 | Low | A15 | Version/help text gaps: `--version` prints " 1.3.0" with no program name; undocumented `session diagnostics` and `shell-validate` options | open — queued R8b |
