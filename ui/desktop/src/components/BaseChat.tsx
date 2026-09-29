@@ -34,6 +34,7 @@ import { useAutoSubmit } from '../hooks/useAutoSubmit';
 import { Gosling } from './icons';
 import EnvironmentBadge from './GoslingSidebar/EnvironmentBadge';
 import SessionActionsHeader from './SessionActionsHeader';
+import { ChatHeaderBar } from './ChatHeaderBar';
 import SessionInfoSummary from './SessionInfoSummary';
 import WorkingDirectoriesMenu from './WorkingDirectoriesMenu';
 import { CredentialProfileSelector } from './bottom_menu/CredentialProfileSelector';
@@ -862,50 +863,57 @@ export default function BaseChat({
         {renderHeader && renderHeader()}
 
         <div className="flex flex-col flex-1 min-h-0 relative">
-          {/* Gosling watermark - top right */}
-          <div className="pointer-events-none absolute top-[14px] right-4 z-[60] flex flex-col items-end gap-2">
-            <div
-              className={cn(
-                'pointer-events-auto flex flex-row items-center gap-2',
-                !isArtifactWorkbenchOpen && 'mr-10'
-              )}
-            >
-              <a
-                href="https://github.com/cephalopod-ai/gosling"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="no-drag flex flex-row items-center gap-1 hover:opacity-80 transition-opacity"
-              >
-                <Gosling className="size-5 gosling-icon-animation" />
-                <span className="text-sm leading-none text-text-secondary -translate-y-px">
-                  gosling
-                </span>
-              </a>
-              <EnvironmentBadge className="translate-y-px" />
-              {(sessionExperience === 'research' || session?.research_library_path) && (
-                <span
-                  className="rounded-full border border-border-primary bg-background-secondary px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-text-secondary"
-                  data-session-tag="research"
+          <ChatHeaderBar
+            reserveNavToggle={isNavCollapsed}
+            title={<SessionActionsHeader session={session} onSessionChange={updateSession} />}
+            actions={
+              <>
+                <div
+                  className={cn(
+                    'pointer-events-auto flex min-w-0 max-w-full flex-row items-center gap-2',
+                    !isArtifactWorkbenchOpen && 'mr-10'
+                  )}
                 >
-                  {intl.formatMessage(i18n.researchBadge)}
-                </span>
-              )}
-              <WorkingDirectoriesMenu session={session} onSessionChange={updateSession} compact />
-              <CredentialProfileSelector
-                credentialProfileId={session?.credential_profile_id}
-                credentialProfileName={session?.credential_profile_name}
-                surface="header"
-              />
-            </div>
-            <RunStatusControl
-              status={runStatus}
-              onOpenTask={(taskId) => {
-                window.electron.createChatWindow({ resumeSessionId: taskId, viewType: 'pair' });
-              }}
-            />
-          </div>
-
-          <SessionActionsHeader session={session} onSessionChange={updateSession} />
+                  <a
+                    href="https://github.com/cephalopod-ai/gosling"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="no-drag flex shrink-0 flex-row items-center gap-1 hover:opacity-80 transition-opacity"
+                  >
+                    <Gosling className="size-5 gosling-icon-animation" />
+                    <span className="text-sm leading-none text-text-secondary -translate-y-px max-sm:hidden">
+                      gosling
+                    </span>
+                  </a>
+                  <EnvironmentBadge className="translate-y-px shrink-0" />
+                  {(sessionExperience === 'research' || session?.research_library_path) && (
+                    <span
+                      className="shrink-0 rounded-full border border-border-primary bg-background-secondary px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-text-secondary"
+                      data-session-tag="research"
+                    >
+                      {intl.formatMessage(i18n.researchBadge)}
+                    </span>
+                  )}
+                  <WorkingDirectoriesMenu
+                    session={session}
+                    onSessionChange={updateSession}
+                    compact
+                  />
+                  <CredentialProfileSelector
+                    credentialProfileId={session?.credential_profile_id}
+                    credentialProfileName={session?.credential_profile_name}
+                    surface="header"
+                  />
+                </div>
+                <RunStatusControl
+                  status={runStatus}
+                  onOpenTask={(taskId) => {
+                    window.electron.createChatWindow({ resumeSessionId: taskId, viewType: 'pair' });
+                  }}
+                />
+              </>
+            }
+          />
 
           <ScrollArea
             ref={scrollRef}

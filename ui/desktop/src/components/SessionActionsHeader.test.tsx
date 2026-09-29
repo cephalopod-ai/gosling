@@ -96,6 +96,32 @@ describe('SessionActionsHeader workspace badge', () => {
     expect(screen.getByText('Annual Meeting (removed)')).toBeInTheDocument();
   });
 
+  it('flows in the header row and lets the title and badges shrink instead of overlapping', () => {
+    vi.mocked(useWorkspace).mockReturnValue({
+      activeWorkspace: null,
+      workspaces: [],
+    } as unknown as ReturnType<typeof useWorkspace>);
+
+    render(
+      <SessionActionsHeader
+        session={{ ...session, credential_profile_name: 'G1 Fixture B' }}
+        onSessionChange={vi.fn()}
+      />,
+      { wrapper: IntlTestWrapper }
+    );
+
+    const trigger = screen.getByRole('button', { name: 'Session actions' });
+    const container = trigger.parentElement as HTMLElement;
+    expect(container).not.toHaveClass('absolute');
+    expect(container).not.toHaveClass('-translate-x-1/2');
+    expect(container).toHaveClass('min-w-0');
+    expect(trigger).toHaveClass('min-w-0', 'max-w-full');
+    expect(screen.getByText('Review packet')).toHaveClass('min-w-0', 'truncate');
+    for (const badge of [screen.getByText('Annual Meeting'), screen.getByText('G1 Fixture B')]) {
+      expect(badge).toHaveClass('min-w-0', 'truncate');
+    }
+  });
+
   it('opens the latest durable handoff checkpoint from session actions', async () => {
     vi.mocked(useWorkspace).mockReturnValue({
       activeWorkspace: null,

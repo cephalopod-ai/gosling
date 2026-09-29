@@ -572,24 +572,19 @@ export default function SessionActionsHeader({
 
   return (
     <>
-      <div
-        className={cn(
-          'no-drag absolute top-[14px] left-1/2 z-30 max-w-[min(36rem,calc(100vw-13rem))] -translate-x-1/2',
-          className
-        )}
-      >
+      <div className={cn('no-drag pointer-events-auto min-w-0 max-w-[36rem]', className)}>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              className="flex min-h-7 max-w-full items-center gap-1 rounded-md px-2.5 text-text-primary transition-colors hover:bg-background-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-active"
+              className="flex min-h-7 min-w-0 max-w-full items-center gap-1 rounded-md px-2.5 text-text-primary transition-colors hover:bg-background-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-active"
               aria-label={intl.formatMessage(i18n.actionsLabel)}
             >
-              <span className="truncate text-xs font-medium">{title}</span>
+              <span className="min-w-0 truncate text-xs font-medium">{title}</span>
               {workspaceName && (
                 <span
                   className={cn(
-                    'max-w-36 truncate rounded-full px-1.5 py-0.5 text-[10px]',
+                    'min-w-0 max-w-36 shrink-[3] truncate rounded-full px-1.5 py-0.5 text-[10px]',
                     workspaceMismatch
                       ? 'bg-amber-500/15 text-amber-700'
                       : 'bg-background-tertiary text-text-secondary'
@@ -605,7 +600,7 @@ export default function SessionActionsHeader({
               )}
               {session.credential_profile_name && (
                 <span
-                  className="max-w-36 truncate rounded-full bg-background-tertiary px-1.5 py-0.5 text-[10px] text-text-secondary"
+                  className="min-w-0 max-w-36 shrink-[3] truncate rounded-full bg-background-tertiary px-1.5 py-0.5 text-[10px] text-text-secondary"
                   title={`Credential: ${session.credential_profile_name}`}
                 >
                   {session.credential_profile_name}
@@ -613,18 +608,18 @@ export default function SessionActionsHeader({
               )}
               {session.imported_untrusted && (
                 <span
-                  className="flex items-center gap-1 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-700"
+                  className="flex min-w-0 shrink-[3] items-center gap-1 overflow-hidden rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-700"
                   title={
                     session.import_original_working_dir
                       ? `Imported messages are untrusted historical context. The transcript proposed ${session.import_original_working_dir}; this session uses the directory selected during import.`
                       : 'Imported messages are untrusted historical context; this session uses the working directory selected during import.'
                   }
                 >
-                  <ShieldAlert className="size-3" aria-hidden="true" />
-                  {intl.formatMessage(i18n.importedHistory)}
+                  <ShieldAlert className="size-3 shrink-0" aria-hidden="true" />
+                  <span className="truncate">{intl.formatMessage(i18n.importedHistory)}</span>
                 </span>
               )}
-              <ChevronDown className="size-3.5 text-text-secondary" />
+              <ChevronDown className="size-3.5 shrink-0 text-text-secondary" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="center" className="w-56">

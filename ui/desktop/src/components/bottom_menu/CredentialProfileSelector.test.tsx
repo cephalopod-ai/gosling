@@ -100,6 +100,21 @@ describe('CredentialProfileSelector', () => {
     );
   });
 
+  it('lets the header chip shrink and truncate in a narrow header row', () => {
+    render(
+      <CredentialProfileSelector
+        credentialProfileId="profile-1"
+        credentialProfileName="Team OpenAI"
+        surface="header"
+      />,
+      { wrapper: IntlTestWrapper }
+    );
+
+    const chip = screen.getByRole('button', { name: 'Credential for this chat: Team OpenAI' });
+    expect(chip).toHaveClass('min-w-0');
+    expect(screen.getByText('Team OpenAI')).toHaveClass('truncate');
+  });
+
   it('keeps the saved profile name visible when the pinned profile is unavailable', async () => {
     const user = userEvent.setup();
     vi.mocked(useWorkspace).mockReturnValue({
