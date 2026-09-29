@@ -267,7 +267,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | C22 | "Always Allow" grants survive replacing the server behind an extension name | fixed (R6) |
 | Low | C23 | Approval prompts do not show cwd or the persistence scope; ACP option names are raw ids | fixed (R6) |
 | Low | C24 | `gosling secret set` says it stored credentials in `config.yaml` | fixed (R5) |
-| Low | C25 | Workspace `defaultExtensions` accepts unknown names silently | open — queued R11 |
+| Low | C25 | Workspace `defaultExtensions` accepts unknown names silently | fixed (R11) |
 | Low | D02 | Open CLI session crashes with a raw FOREIGN KEY error after the session is removed elsewhere; typed prompt lost | fixed (R4) |
 | Low | D06 | Session exports write raw secrets from tool output (diagnostics redacts, export does not) | fixed (R5) |
 | Low | D09 | Session pickers are shuffled on every run; diagnostics/context-history picker says "Select a session to export:" | open — queued R8b |
