@@ -730,15 +730,15 @@ impl Config {
     }
 
     /// Returns the merged config behind an `Arc` so cache hits share the
-    /// snapshot instead of deep-cloning the whole mapping per lookup.
+    /// snapshot instead of deep-cloning the whole mapping per lookup. The cache
+    /// lock is held while reloading so concurrent first reads parse (and warn
+    /// about an unparsable file) once. (GSL-PT-20260927-F13)
     fn load(&self) -> Result<Arc<Mapping>, ConfigError> {
         let stamps: Vec<FileStamp> = self.config_paths.iter().map(|p| stamp_file(p)).collect();
-        {
-            let cache = lock_ignoring_poison(&self.param_cache);
-            if let Some(snapshot) = cache.as_ref() {
-                if snapshot.stamps == stamps {
-                    return Ok(Arc::clone(&snapshot.values));
-                }
+        let mut cache = lock_ignoring_poison(&self.param_cache);
+        if let Some(snapshot) = cache.as_ref() {
+            if snapshot.stamps == stamps {
+                return Ok(Arc::clone(&snapshot.values));
             }
         }
 
@@ -770,7 +770,7 @@ impl Config {
         crate::config::migrations::run_read_migrations(&mut merged);
 
         let merged = Arc::new(merged);
-        *lock_ignoring_poison(&self.param_cache) = Some(ConfigSnapshot {
+        *cache = Some(ConfigSnapshot {
             stamps,
             values: Arc::clone(&merged),
         });
