@@ -10,6 +10,7 @@ import { useChatContext } from '../../contexts/ChatContext';
 import { NavigationProvider, useNavigationContext } from './NavigationContext';
 import { Navigation } from './NavigationPanel';
 import { NAV_DIMENSIONS, Z_INDEX } from './constants';
+import { resolveArtifactPaneLayout } from './artifactPaneLayout';
 import { cn } from '../../utils';
 import type { ActiveSessionView } from '../../types/sessionExperience';
 import {
@@ -60,8 +61,21 @@ const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions }) =
     return () => window.electron.off('fullscreen-change', handler);
   }, [safeIsMacOS]);
 
+  const [windowWidth, setWindowWidth] = useState(() => window.innerWidth);
+  useEffect(() => {
+    const onResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
   const { isNavExpanded, setIsNavExpanded } = useNavigationContext();
   const artifactWorkbench = useArtifactWorkbench();
+  const paneLayout = resolveArtifactPaneLayout(
+    windowWidth,
+    isNavExpanded ? NAV_DIMENSIONS.NAV_WIDTH : 0,
+    artifactWorkbench.width
+  );
+  const isPaneOverlay = paneLayout.mode === 'overlay';
 
   if (!chatContext) {
     throw new Error('AppLayoutContent must be used within ChatProvider');
@@ -140,12 +154,19 @@ const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions }) =
 
         <motion.div
           initial={false}
-          animate={{ width: artifactWorkbench.isOpen ? artifactWorkbench.width : 0 }}
+          animate={{ width: artifactWorkbench.isOpen ? paneLayout.width : 0 }}
           transition={{ type: 'spring', stiffness: 400, damping: 40 }}
           style={{ zIndex: Z_INDEX.HEADER }}
-          className="relative flex-shrink-0 overflow-hidden h-full p-2 pl-0"
+          data-testid="artifact-pane-frame"
+          data-pane-mode={paneLayout.mode}
+          className={cn(
+            'flex-shrink-0 overflow-hidden h-full p-2',
+            isPaneOverlay
+              ? 'absolute inset-y-0 right-0 bg-background-primary shadow-xl'
+              : 'relative pl-0'
+          )}
         >
-          <div style={{ width: artifactWorkbench.width }} className="h-full">
+          <div style={{ width: paneLayout.width }} className="h-full">
             <ArtifactPane />
           </div>
         </motion.div>
