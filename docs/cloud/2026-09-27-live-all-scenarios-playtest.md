@@ -323,10 +323,10 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | G125 | Renderer CSP lists invalid IPv6 sources (console error on every page load) | open — queued R13b |
 | Low | G126 | Concurrent-turn rejection is shown as "Internal error / Task failed" with an unrelated recovery action, and the rejected text is lost | fixed (R13b) |
 | Low | G133 | A failing extension is reported only as "Failed to add extension" and is not flagged in the Extensions list | open — queued R11 |
-| Low | G202 | HTML artifact preview never runs its scripts: the app page's CSP blocks the inline scripts the preview sandbox is designed to allow | open — queued R13b |
-| Low | G203 | Malformed, empty and missing previewable outputs are not reported with a clear, bounded message | open — queued R13b |
-| Low | G204 | Markdown preview shows gosling's own output-history marker as a visible code block | open — queued R13b |
-| Low | G205 | Output rows show the absolute path truncated at the end, hiding the file name | open — queued R13b |
+| Low | G202 | HTML artifact preview never runs its scripts: the app page's CSP blocks the inline scripts the preview sandbox is designed to allow | fixed (scripts disabled with notice; running them needs a sandboxed preview scheme — follow-up) (R13b) |
+| Low | G203 | Malformed, empty and missing previewable outputs are not reported with a clear, bounded message | fixed (R13b) |
+| Low | G204 | Markdown preview shows gosling's own output-history marker as a visible code block | fixed (R13b) |
+| Low | G205 | Output rows show the absolute path truncated at the end, hiding the file name | fixed (R13b) |
 | Low | G208 | An assistant reference to an in-workspace symlink grants the renderer read access to the outside-root target | fixed (R13b) |
 | Low | G209 | Two windows overwrite each other's persisted artifact tabs; tabs closed in one window come back after relaunch | open — queued R13b |
 | Low | G213 | External backend faults are indistinguishable and undetected while idle | open — queued R13b |
@@ -344,7 +344,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | S09 | Markdown export includes hidden internal checkpoint messages | fixed (R9) |
 | Low | S10 | kill -9 mid-stream leaves the truncated reply stored as a normal, complete assistant message | fixed (R1a) |
 | Low | S12 | Corrupt config.yaml: `run`/`doctor` blame "No provider configured" | fixed (R5) |
-| Low | S16 | Empty sessions: listed by the CLI, hidden by ACP; a failed `run` leaves one behind | failed-start part fixed; listing parity queued (R4/R8b) |
+| Low | S16 | Empty sessions: listed by the CLI, hidden by ACP; a failed `run` leaves one behind | fixed (R8b) |
 | Note | A06 | (Suspicion, safety) A config.yaml parse failure silently drops `GOSLING_DISABLE_KEYRING: true` and re-enables the OS keychain (suspicion) | fixed (R5) |
 | Note | B16 | `run --resume` ignores provider/model env vars but `--provider/--model` permanently re-pin the session | note |
 | Note | B17 | ACP model options fall back to the static OpenAI catalogue when a custom host's `/models` fails; inventory says `stale: false` | note |
