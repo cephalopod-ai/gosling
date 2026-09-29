@@ -211,7 +211,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Medium | G105 | A chat's workspace label is a creation-time snapshot; after rename + name reuse it names a different workspace | fixed (R13b) |
 | Medium | G108 | Historical session with a moved working folder fails with "Invalid params: invalid directory path" and cannot be recovered by relinking | partial (named error + restore works; re-home of pinned chats needs product decision) (R13a) |
 | Medium | G122 | Quitting while a tool approval is pending leaves the tool "pending" forever; the next message silently re-submits the old request | fixed (R1a+R13a) |
-| Medium | G128 | Keyboard-only users cannot open existing chats, lose focus after dialogs, and get no focus ring on primary navigation | open — queued R13b |
+| Medium | G128 | Keyboard-only users cannot open existing chats, lose focus after dialogs, and get no focus ring on primary navigation | fixed (R13b) |
 | Medium | G129 | A reply interrupted by window close/quit is shown after relaunch as a normal complete message; the session stays "in_progress" | fixed (R1a+R13a) |
 | Medium | G131 | Invalid config values are invisible in Desktop; Configuration Editor shows "[object Object]" for providers | fixed (nested values read-only, invalid Max Turns shown; per-key config validation API is a follow-up) (R13b) |
 | Medium | G132 | Onboarding "OpenAI" API-key field shows the secret in clear text (and offers no host/base-path for "OpenAI compatible" endpoints) | fixed (R13a) |
@@ -256,7 +256,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | C07 | Duplicate plugin skill names are silently shadowed; precedence set by directory order | fixed (R11) |
 | Low | C09 | Subagent docs say delegates inherit parent extensions; code defaults ad-hoc delegates to none | fixed (docs) (R11) |
 | Low | C11 | Imported sessions silently run in `approve` mode; CLI denial names the wrong mode | fixed (R6) |
-| Low | C12 | `session import` announces a working directory before it knows the outcome; raw serde errors | open — queued R8b |
+| Low | C12 | `session import` announces a working directory before it knows the outcome; raw serde errors | fixed (R8b) |
 | Low | C13 | CLI resume rebinds an imported session's trusted working dir to the current directory | fixed (R4) |
 | Low | C15 | Session exports embed extension `--env` values; pasted secrets exported verbatim | fixed (R5) |
 | Low | C16 | Markdown export drops the tool-error flag | open — queued R8b |
@@ -274,7 +274,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | D10 | Ctrl-C in the `session remove` picker kills the process by SIGINT and leaves the cursor hidden | fixed (R8b) |
 | Low | D11 | `session export\|diagnostics\|context-history list` without an identifier outside a TTY: "Error: not connected", exit 0 | fixed (R8a) |
 | Low | D12 | `session remove -r` matches IDs only, but the CLI guide's example implies names | fixed (R8b) |
-| Low | D13 | Failed imports print "Imported session working directory: …" first; errors lack file/format context | open — queued R8b |
+| Low | D13 | Failed imports print "Imported session working directory: …" first; errors lack file/format context | fixed (R8b) |
 | Low | D14 | `gosling project` stops (exit 0) when the newest project is gone and hides child failures | open — queued R8b |
 | Low | D15 | `term init` aliases break when the gosling binary path contains a space | open — queued R8b |
 | Low | D16 | CLI guide's `--resume --path ./session.json  # exported session` does not work | fixed (R8b) |
@@ -286,7 +286,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | D26 | Default `review --dry-run` does not show what would run: `--checks-only` and `--instructions` produce byte-identical output that still announces a main pass | open — queued R8b |
 | Low | E08 | Nested hints are re-appended on every resume / `session/load` + access (unbounded duplication) | fixed (R7) |
 | Low | E09 | Unreadable or invalid-UTF-8 `AGENTS.md`/`.goslinghints` are dropped silently (warning only in the log file) | fixed (R7) |
-| Low | E10 | `run -i` reports every read failure as "Instruction file not found" | open — queued R8b |
+| Low | E10 | `run -i` reports every read failure as "Instruction file not found" | fixed (R8b) |
 | Low | E11 | Code-execution gate blames `GOSLING_CODE_EXECUTION_RUNTIME=disabled` when the variable is unset or invalid | fixed (R8a) |
 | Low | E12 | `run --no-session` banner still announces "● new session" with an ID that cannot be resumed | fixed (R8a) |
 | Low | E13 | Every CLI invocation, including `--help` and `--version`, creates a new log file in the state directory | fixed (R7) |
