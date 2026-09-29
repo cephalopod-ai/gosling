@@ -261,7 +261,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | C15 | Session exports embed extension `--env` values; pasted secrets exported verbatim | fixed (R5) |
 | Low | C16 | Markdown export drops the tool-error flag | open — queued R8b |
 | Low | C17 | CLI help/docs drift found while executing | open — queued R8b |
-| Low | C18 | `/skills <name>` differs by surface and never validates the name | open — queued R11 |
+| Low | C18 | `/skills <name>` differs by surface and never validates the name | fixed (R11) |
 | Low | C19 | Extension failure messages are noisy and lose the cause; no health state in listings | open — queued R11 |
 | Low | C21 | `mcp remove` leaves the extension's secrets in `secrets.yaml` | fixed (per-extension secrets) (R5) |
 | Low | C22 | "Always Allow" grants survive replacing the server behind an extension name | fixed (R6) |
