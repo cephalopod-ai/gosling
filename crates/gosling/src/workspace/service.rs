@@ -7,7 +7,7 @@ use super::{
 use anyhow::{anyhow, bail, Context, Result};
 use chrono::Utc;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use tokio::sync::Mutex;
 use tracing::warn;
@@ -90,10 +90,7 @@ impl WorkspaceService {
             .iter()
             .cloned()
             .map(|workspace| WorkspaceWithValidation {
-                validation: validate_workspace_mutation(
-                    &WorkspaceMutation::from(&workspace),
-                    &profiles,
-                ),
+                validation: validate_for_client(&WorkspaceMutation::from(&workspace), &profiles),
                 workspace,
             })
             .collect();
@@ -115,7 +112,7 @@ impl WorkspaceService {
 
     pub fn validate(&self, workspace: &WorkspaceMutation) -> Result<WorkspaceValidationReport> {
         let document = self.store.load()?;
-        Ok(validate_workspace_mutation(
+        Ok(validate_for_client(
             workspace,
             &super::credentials::effective_profiles(&document),
         ))
@@ -428,6 +425,36 @@ impl WorkspaceService {
         }
         rendered
     }
+}
+
+fn validate_for_client(
+    workspace: &WorkspaceMutation,
+    profiles: &[super::CredentialProfile],
+) -> WorkspaceValidationReport {
+    let mut report = validate_workspace_mutation(workspace, profiles);
+    if workspace.default_extensions.is_some() {
+        super::validation::validate_default_extensions(
+            workspace,
+            &installed_extension_names(Path::new(&workspace.working_folder)),
+            &mut report,
+        );
+    }
+    report
+}
+
+/// Every name a workspace pin can match at session start: configured extensions in
+/// any enabled state (the editor offers globally disabled ones too) and the MCP
+/// servers of plugins enabled for the workspace's working folder.
+fn installed_extension_names(working_folder: &Path) -> HashSet<String> {
+    crate::config::extensions::get_all_extensions()
+        .into_iter()
+        .map(|entry| entry.config.name())
+        .chain(
+            crate::plugins::mcp_servers::enabled_plugin_mcp_servers(Some(working_folder))
+                .into_iter()
+                .map(|extension| extension.name()),
+        )
+        .collect()
 }
 
 fn add_session_folder_root(

@@ -23,6 +23,13 @@ impl HandleDispatchFrom<Client> for GoslingAcpHandler {
             // connection; the result is ignored on later requests.
             let _ = agent.client_cx.set(cx.clone());
 
+            if let Dispatch::Request(request, _) = &message {
+                if let Err(error) = agent.ensure_initialized_for(&request.method) {
+                    message.respond_with_error(error, cx)?;
+                    return Ok(Handled::Yes);
+                }
+            }
+
             // InitializeRequest runs inline: it sets connection-scoped state
             // (client fs/terminal capabilities) that later handlers read with
             // defaults, so a pipelined NewSessionRequest must not race ahead of it.
@@ -34,8 +41,18 @@ impl HandleDispatchFrom<Client> for GoslingAcpHandler {
                 )
                 .await
                 .if_request(
-                    |_req: AuthenticateRequest, responder: Responder<AuthenticateResponse>| async {
-                        responder.respond(AuthenticateResponse::new())
+                    |req: AuthenticateRequest, responder: Responder<AuthenticateResponse>| async move {
+                        if req.method_id.0.as_ref() == initialization::GOSLING_PROVIDER_AUTH_METHOD {
+                            responder.respond(AuthenticateResponse::new())
+                        } else {
+                            responder.respond_with_error(
+                                agent_client_protocol::Error::invalid_params().data(format!(
+                                    "Unknown auth method '{}'; this agent offers '{}'",
+                                    req.method_id.0,
+                                    initialization::GOSLING_PROVIDER_AUTH_METHOD
+                                )),
+                            )
+                        }
                     },
                 )
                 .await

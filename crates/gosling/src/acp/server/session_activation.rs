@@ -22,7 +22,7 @@ impl GoslingAcpAgent {
                 rehydrate_configured_envs(&mut extension, &configured);
                 push_or_replace_extension(&mut extensions, extension);
             }
-        } else if mcp_servers.is_empty() {
+        } else {
             for extension in get_enabled_extensions_with_config_for_cwd(config, project_root) {
                 push_or_replace_extension(&mut extensions, extension);
             }
@@ -31,15 +31,19 @@ impl GoslingAcpAgent {
             {
                 push_or_replace_extension(&mut extensions, extension);
             }
-        } else {
-            let configured = get_enabled_extensions_with_config_for_cwd(config, project_root);
+            // Client servers are added alongside gosling's own extensions; on a
+            // name collision gosling keeps its own configuration (documented in
+            // guides/acp-clients.md).
             for mcp_server in mcp_servers {
-                let mut extension =
-                    mcp_server_to_extension_config(mcp_server).map_err(|message| {
-                        agent_client_protocol::Error::invalid_params().data(message)
-                    })?;
-                rehydrate_configured_envs(&mut extension, &configured);
-                push_or_replace_extension(&mut extensions, extension);
+                let extension = mcp_server_to_extension_config(mcp_server).map_err(|message| {
+                    agent_client_protocol::Error::invalid_params().data(message)
+                })?;
+                if !extensions
+                    .iter()
+                    .any(|existing| existing.name() == extension.name())
+                {
+                    extensions.push(extension);
+                }
             }
         }
 

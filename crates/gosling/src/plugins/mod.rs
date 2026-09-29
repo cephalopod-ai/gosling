@@ -3,6 +3,8 @@ pub mod formats;
 pub mod mcp_servers;
 
 use crate::config::paths::Paths;
+use crate::skills::admission::SkillSourceKind;
+use crate::skills::DiscoveredSkill;
 use crate::subprocess::SubprocessExt;
 use anyhow::{anyhow, bail, Result};
 use chrono::{DateTime, Duration, Utc};
@@ -44,6 +46,7 @@ pub struct PluginInstall {
     pub source: String,
     pub directory: PathBuf,
     pub skills: Vec<ImportedSkill>,
+    pub warnings: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -79,7 +82,7 @@ struct InstallMetadata {
     last_update_check: Option<DateTime<Utc>>,
 }
 
-pub fn installed_plugin_skill_dirs() -> Vec<PathBuf> {
+pub fn installed_plugin_skill_dirs(project_root: Option<&Path>) -> Vec<PathBuf> {
     let plugins_dir = plugin_install_dir();
     for update in auto_update_plugins_at_root(Utc::now(), &plugins_dir) {
         if let Err(err) = update.result {
@@ -90,16 +93,31 @@ pub fn installed_plugin_skill_dirs() -> Vec<PathBuf> {
         }
     }
 
-    let entries = match fs::read_dir(plugins_dir) {
-        Ok(entries) => entries,
+    let plugin_dirs: Vec<PathBuf> = match fs::read_dir(plugins_dir) {
+        Ok(entries) => entries.flatten().map(|entry| entry.path()).collect(),
         Err(_) => return Vec::new(),
     };
 
+    let enabled_roots: HashSet<PathBuf> = discovery::discover_enabled_plugins(project_root)
+        .into_iter()
+        .map(|plugin| plugin.root)
+        .collect();
+
+    enabled_plugin_skill_dirs(plugin_dirs, &enabled_roots)
+}
+
+/// Skill discovery keeps the first skill it finds for each name, so plugins are
+/// ordered by name to make the winner between two plugins deterministic.
+fn enabled_plugin_skill_dirs(
+    mut plugin_dirs: Vec<PathBuf>,
+    enabled_roots: &HashSet<PathBuf>,
+) -> Vec<PathBuf> {
+    plugin_dirs.sort();
     let mut seen = HashSet::new();
-    entries
-        .flatten()
-        .flat_map(|entry| {
-            let plugin_dir = entry.path();
+    plugin_dirs
+        .into_iter()
+        .filter(|plugin_dir| enabled_roots.contains(plugin_dir))
+        .flat_map(|plugin_dir| {
             let default_skills_dir = plugin_dir.join("skills");
             let mut skill_dirs = Vec::new();
             if default_skills_dir.is_dir() {
@@ -116,7 +134,127 @@ pub fn install_plugin_with_options(
     source: &str,
     options: PluginInstallOptions,
 ) -> Result<PluginInstall> {
-    install_plugin_with_options_at_root(source, options, &plugin_install_dir())
+    let existing_skills = skills_visible_from_current_dir();
+    let mut install = install_plugin_with_options_at_root(source, options, &plugin_install_dir())?;
+    install.warnings.extend(skill_shadowing_warnings(
+        &install,
+        &existing_skills,
+        &plugin_install_dir(),
+    ));
+    Ok(install)
+}
+
+fn skills_visible_from_current_dir() -> Vec<DiscoveredSkill> {
+    crate::skills::discover_skills_with_origin(std::env::current_dir().ok().as_deref())
+}
+
+/// Describes how the plugin's skills interact with skills discovered before it
+/// was installed, following discovery precedence: project, configured catalog
+/// and user skills win over plugin skills, plugins are ordered by name, and
+/// plugin skills win over built-in skills.
+fn skill_shadowing_warnings(
+    install: &PluginInstall,
+    existing_skills: &[DiscoveredSkill],
+    plugins_root: &Path,
+) -> Vec<String> {
+    install
+        .skills
+        .iter()
+        .filter_map(|skill| {
+            let existing = existing_skills.iter().find(|existing| {
+                existing.entry.name == skill.name
+                    && !Path::new(&existing.entry.path).starts_with(&install.directory)
+            })?;
+            let name = &skill.name;
+            let shadowed_by = |kind: &str| {
+                format!(
+                    "Skill '{name}' is shadowed by the {kind} skill at {}, which takes \
+                     precedence over plugin skills.",
+                    existing.entry.path
+                )
+            };
+            Some(match existing.origin.kind {
+                SkillSourceKind::Plugin => {
+                    let other_plugin = Path::new(&existing.entry.path)
+                        .strip_prefix(plugins_root)
+                        .ok()
+                        .and_then(|relative| relative.components().next())
+                        .map(|component| component.as_os_str().to_string_lossy().into_owned())
+                        .unwrap_or_else(|| existing.entry.path.clone());
+                    if other_plugin.as_str() < install.name.as_str() {
+                        format!(
+                            "Skill '{name}' is also provided by plugin '{other_plugin}', which \
+                             takes precedence because plugins are ordered by name."
+                        )
+                    } else {
+                        format!(
+                            "Skill '{name}' is also provided by plugin '{other_plugin}'; this \
+                             plugin's skill takes precedence because plugins are ordered by name."
+                        )
+                    }
+                }
+                SkillSourceKind::Builtin => {
+                    format!("Skill '{name}' replaces the built-in skill with the same name.")
+                }
+                SkillSourceKind::Project => shadowed_by("project"),
+                SkillSourceKind::User => shadowed_by("user"),
+                SkillSourceKind::ConfiguredCatalog => shadowed_by("configured catalog"),
+            })
+        })
+        .collect()
+}
+
+/// `skills` must list each name's copies in discovery order. Discovery loads
+/// only the first copy, so only that one is reported as imported.
+pub(in crate::plugins) fn keep_first_skill_per_name(
+    plugin_directory: &Path,
+    skills: Vec<ImportedSkill>,
+) -> (Vec<ImportedSkill>, Vec<String>) {
+    let relative = |skill: &ImportedSkill| {
+        skill
+            .directory
+            .strip_prefix(plugin_directory)
+            .unwrap_or(&skill.directory)
+            .display()
+            .to_string()
+    };
+
+    let mut kept: Vec<ImportedSkill> = Vec::new();
+    let mut duplicates: Vec<(String, Vec<String>)> = Vec::new();
+    for skill in skills {
+        let Some(first) = kept.iter().find(|kept| kept.name == skill.name) else {
+            kept.push(skill);
+            continue;
+        };
+        match duplicates.iter_mut().find(|(name, _)| *name == skill.name) {
+            Some((_, directories)) => directories.push(relative(&skill)),
+            None => duplicates.push((skill.name.clone(), vec![relative(first), relative(&skill)])),
+        }
+    }
+
+    let warnings = duplicates
+        .into_iter()
+        .map(|(name, directories)| {
+            format!(
+                "Skill '{name}' is defined more than once in this plugin ({}); only {} is loaded.",
+                directories.join(", "),
+                directories[0]
+            )
+        })
+        .collect();
+    (kept, warnings)
+}
+
+pub(in crate::plugins) fn sorted_subdirectories(directory: &Path) -> Result<Vec<PathBuf>> {
+    let mut subdirectories = Vec::new();
+    for entry in fs::read_dir(directory)? {
+        let path = entry?.path();
+        if path.is_dir() {
+            subdirectories.push(path);
+        }
+    }
+    subdirectories.sort();
+    Ok(subdirectories)
 }
 
 fn install_plugin_with_options_at_root(
@@ -142,7 +280,14 @@ fn install_plugin_with_options_at_root(
 }
 
 pub fn update_plugin(name: &str) -> Result<PluginInstall> {
-    update_plugin_at_root(Utc::now(), &plugin_install_dir(), name)
+    let existing_skills = skills_visible_from_current_dir();
+    let mut install = update_plugin_at_root(Utc::now(), &plugin_install_dir(), name)?;
+    install.warnings.extend(skill_shadowing_warnings(
+        &install,
+        &existing_skills,
+        &plugin_install_dir(),
+    ));
+    Ok(install)
 }
 
 fn auto_update_plugins_at_root(
@@ -677,6 +822,155 @@ mod tests {
         );
         assert!(in_use.is_dir(), "a live owner's staging dir must be kept");
         assert!(unrelated.is_dir(), "unrelated directories must be kept");
+    }
+
+    #[test]
+    fn plugin_skill_dirs_follow_plugin_name_order() {
+        let plugins_dir = tempfile::tempdir().unwrap();
+        let names = ["zeta", "gem-dup2", "alpha", "gem-dup1", "mid"];
+        let plugin_dirs: Vec<PathBuf> = names
+            .iter()
+            .map(|name| {
+                let dir = plugins_dir.path().join(name);
+                fs::create_dir_all(dir.join("skills")).unwrap();
+                dir
+            })
+            .collect();
+        let enabled_roots: HashSet<PathBuf> = plugin_dirs.iter().cloned().collect();
+
+        let skill_dirs = enabled_plugin_skill_dirs(plugin_dirs, &enabled_roots);
+
+        let expected: Vec<PathBuf> = ["alpha", "gem-dup1", "gem-dup2", "mid", "zeta"]
+            .iter()
+            .map(|name| plugins_dir.path().join(name).join("skills"))
+            .collect();
+        assert_eq!(skill_dirs, expected);
+    }
+
+    fn discovered(name: &str, path: &Path, kind: SkillSourceKind) -> DiscoveredSkill {
+        DiscoveredSkill {
+            entry: gosling_sdk_types::custom_requests::SourceEntry {
+                source_type: gosling_sdk_types::custom_requests::SourceType::Skill,
+                name: name.to_string(),
+                description: String::new(),
+                content: String::new(),
+                path: path.to_string_lossy().into_owned(),
+                global: true,
+                writable: true,
+                supporting_files: Vec::new(),
+                properties: Default::default(),
+            },
+            origin: crate::skills::admission::SkillOrigin::new(kind),
+        }
+    }
+
+    fn installed_gemini(plugins_root: &Path, name: &str, skills: &[&str]) -> PluginInstall {
+        let directory = plugins_root.join(name);
+        PluginInstall {
+            name: name.to_string(),
+            version: "1.0.0".to_string(),
+            format: PluginFormat::Gemini,
+            source: "https://example.invalid/plugin.git".to_string(),
+            skills: skills
+                .iter()
+                .map(|skill| ImportedSkill {
+                    name: skill.to_string(),
+                    directory: directory.join("skills").join(skill),
+                })
+                .collect(),
+            directory,
+            warnings: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn install_warns_which_plugin_wins_a_shared_skill_name() {
+        let plugins_root = Path::new("/home/u/.agents/plugins");
+        let existing = [discovered(
+            "dupskill",
+            &plugins_root.join("gem-dup1/skills/dupskill"),
+            SkillSourceKind::Plugin,
+        )];
+
+        let later = installed_gemini(plugins_root, "gem-dup2", &["dupskill"]);
+        assert_eq!(
+            skill_shadowing_warnings(&later, &existing, plugins_root),
+            vec![
+                "Skill 'dupskill' is also provided by plugin 'gem-dup1', which takes precedence \
+                 because plugins are ordered by name."
+                    .to_string()
+            ]
+        );
+
+        let earlier = installed_gemini(plugins_root, "gem-dup0", &["dupskill"]);
+        assert_eq!(
+            skill_shadowing_warnings(&earlier, &existing, plugins_root),
+            vec![
+                "Skill 'dupskill' is also provided by plugin 'gem-dup1'; this plugin's skill \
+                 takes precedence because plugins are ordered by name."
+                    .to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn install_warns_when_user_project_or_builtin_skill_shares_a_name() {
+        let plugins_root = Path::new("/home/u/.agents/plugins");
+        let existing = [
+            discovered(
+                "user-one",
+                Path::new("/home/u/.agents/skills/user-one"),
+                SkillSourceKind::User,
+            ),
+            discovered(
+                "proj-one",
+                Path::new("/work/.agents/skills/proj-one"),
+                SkillSourceKind::Project,
+            ),
+            discovered(
+                "builtin-one",
+                Path::new("builtin://skills/builtin-one"),
+                SkillSourceKind::Builtin,
+            ),
+        ];
+        let install = installed_gemini(
+            plugins_root,
+            "gem",
+            &["user-one", "proj-one", "builtin-one"],
+        );
+
+        assert_eq!(
+            skill_shadowing_warnings(&install, &existing, plugins_root),
+            vec![
+                "Skill 'user-one' is shadowed by the user skill at \
+                 /home/u/.agents/skills/user-one, which takes precedence over plugin skills."
+                    .to_string(),
+                "Skill 'proj-one' is shadowed by the project skill at \
+                 /work/.agents/skills/proj-one, which takes precedence over plugin skills."
+                    .to_string(),
+                "Skill 'builtin-one' replaces the built-in skill with the same name.".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn install_without_shared_skill_names_has_no_warnings() {
+        let plugins_root = Path::new("/home/u/.agents/plugins");
+        let existing = [
+            discovered(
+                "other",
+                &plugins_root.join("other-plugin/skills/other"),
+                SkillSourceKind::Plugin,
+            ),
+            discovered(
+                "audit",
+                &plugins_root.join("gem/skills/audit"),
+                SkillSourceKind::Plugin,
+            ),
+        ];
+        let install = installed_gemini(plugins_root, "gem", &["audit", "review"]);
+
+        assert!(skill_shadowing_warnings(&install, &existing, plugins_root).is_empty());
     }
 
     #[test]

@@ -15,7 +15,7 @@ When a session starts, gosling adds any skills that it discovers to its instruct
   - "Follow the new-service skill to set up the auth service"
   - "Apply the deployment skill"
 
-You can also ask gosling what skills are available, or use the CLI `/skills` command to list available skills and load one or more by name (e.g. `/skills code-review edge-case-finder`).
+You can also ask gosling what skills are available, or use the `/skills` command to list available skills. `/skills <name> [args]` loads one skill by name, exactly like its own `/<name> [args]` command (e.g. `/skills code-review focus on error handling`). An unknown name is reported locally and nothing is sent to the model.
 
 For large catalogs, gosling exposes `find_skills` and advertises the searchable
 catalog instead of placing every skill description in the model prompt.
@@ -96,6 +96,16 @@ When reviewing code, check each of these areas:
 ## Skills from Plugins
 
 Skills can also come from installed [plugins](/docs/guides/context-engineering/plugins). Plugin-provided skills are discovered at session startup and work like other skills. For Open Plugins, skill names are namespaced with the plugin name, such as `my-plugin:review`. Use that full name when explicitly loading a plugin-provided skill.
+
+When more than one skill has the same name, gosling loads only one of them:
+
+1. Project skills win over configured catalog skills, which win over user skills.
+2. User skills win over plugin skills.
+3. Between plugins, the plugin whose name sorts first wins.
+4. Plugin skills win over built-in skills.
+5. Within a single skills directory, the skill whose directory path sorts first wins.
+
+`gosling plugin install` and `gosling plugin update` print a warning when an imported skill name is already in use, and say which skill is loaded.
 
 ## Supporting Files
 

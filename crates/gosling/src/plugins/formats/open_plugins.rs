@@ -1,9 +1,9 @@
 //! Open Plugins format adapter (<https://open-plugins.com>).
 
 use crate::plugins::{
-    collect_skill_candidate, copy_dir_all, staging_dir_in, write_install_metadata,
-    FormatNotSupported, ImportedSkill, PluginFormat, PluginInstall, PluginInstallOptions,
-    SkillCandidate,
+    collect_skill_candidate, copy_dir_all, keep_first_skill_per_name, sorted_subdirectories,
+    staging_dir_in, write_install_metadata, FormatNotSupported, ImportedSkill, PluginFormat,
+    PluginInstall, PluginInstallOptions, SkillCandidate,
 };
 use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Utc};
@@ -114,6 +114,7 @@ fn install_from_manifest(
     fs::rename(&staged, &destination)?;
 
     imported_skills.sort_by(|a, b| a.name.cmp(&b.name));
+    let (imported_skills, warnings) = keep_first_skill_per_name(&destination, imported_skills);
 
     Ok(PluginInstall {
         name: plugin_name,
@@ -122,6 +123,7 @@ fn install_from_manifest(
         source: source.to_string(),
         directory: destination,
         skills: imported_skills,
+        warnings,
     })
 }
 
@@ -419,12 +421,8 @@ fn collect_skill_candidates(
 
     collect_skill_candidate(plugin_dir, skill_root, skills)?;
 
-    for entry in fs::read_dir(skill_root)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.is_dir() {
-            collect_skill_candidate(plugin_dir, &path, skills)?;
-        }
+    for path in sorted_subdirectories(skill_root)? {
+        collect_skill_candidate(plugin_dir, &path, skills)?;
     }
 
     Ok(())
@@ -538,6 +536,81 @@ mod tests {
                 .unwrap()
                 .contains("name: test-plugin:audit")
         );
+    }
+
+    fn write_skill(repo: &Path, relative_dir: &str, name: &str) {
+        let skill_dir = repo.join(relative_dir);
+        fs::create_dir_all(&skill_dir).unwrap();
+        fs::write(
+            skill_dir.join("SKILL.md"),
+            format!("---\nname: {name}\ndescription: Skill in {relative_dir}\n---\nBody."),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn duplicate_skill_names_in_one_plugin_are_listed_once() {
+        let install_root = tempfile::tempdir().unwrap();
+        let repo = tempfile::tempdir().unwrap();
+        fs::write(
+            repo.path().join("plugin.json"),
+            r#"{"name":"pt-dupinner","version":"1.0.0"}"#,
+        )
+        .unwrap();
+        for dir in ["skills/d", "skills/b", "skills/a", "skills/c"] {
+            write_skill(repo.path(), dir, "same");
+        }
+
+        let installed = install_from_manifest(
+            "https://example.invalid/pt-dupinner.git",
+            repo.path(),
+            install_root.path(),
+            &PluginInstallOptions::default(),
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(
+            installed.skills,
+            vec![ImportedSkill {
+                name: "pt-dupinner:same".to_string(),
+                directory: installed.directory.join("skills/a"),
+            }]
+        );
+        assert_eq!(
+            installed.warnings,
+            vec![
+                "Skill 'pt-dupinner:same' is defined more than once in this plugin \
+                 (skills/a, skills/b, skills/c, skills/d); only skills/a is loaded."
+                    .to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn unique_skill_names_install_without_warnings() {
+        let install_root = tempfile::tempdir().unwrap();
+        let repo = tempfile::tempdir().unwrap();
+        fs::write(
+            repo.path().join("plugin.json"),
+            r#"{"name":"pt-unique","version":"1.0.0"}"#,
+        )
+        .unwrap();
+        write_skill(repo.path(), "skills/review", "review");
+        write_skill(repo.path(), "skills/audit", "audit");
+
+        let installed = install_from_manifest(
+            "https://example.invalid/pt-unique.git",
+            repo.path(),
+            install_root.path(),
+            &PluginInstallOptions::default(),
+            None,
+        )
+        .unwrap();
+
+        let names: Vec<&str> = installed.skills.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, vec!["pt-unique:audit", "pt-unique:review"]);
+        assert!(installed.warnings.is_empty(), "{:?}", installed.warnings);
     }
 
     #[cfg(unix)]

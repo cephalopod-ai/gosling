@@ -59,10 +59,18 @@ fn discover_enabled_plugins_with_config(
     project_root: Option<&Path>,
     config: &Config,
 ) -> Vec<DiscoveredPlugin> {
-    let scoped_settings = load_all_settings(project_root);
+    discover_enabled_plugins_with_user_settings(project_root, config, user_settings_path())
+}
+
+fn discover_enabled_plugins_with_user_settings(
+    project_root: Option<&Path>,
+    config: &Config,
+    user_settings: Option<PathBuf>,
+) -> Vec<DiscoveredPlugin> {
+    let scoped_settings = load_all_settings(user_settings, project_root);
     let mut found: HashMap<String, DiscoveredPlugin> = HashMap::new();
 
-    if let Some(root) = project_root {
+    if let Some(root) = project_root.filter(|root| !is_user_plugin_dir(&project_plugin_dir(root))) {
         for (name, root) in list_dir_children(&project_plugin_dir(root)) {
             found.entry(name.clone()).or_insert(DiscoveredPlugin {
                 name,
@@ -178,7 +186,7 @@ pub fn trust_project(project_root: &Path) -> anyhow::Result<Vec<String>> {
 }
 
 fn trust_project_with_config(project_root: &Path, config: &Config) -> anyhow::Result<Vec<String>> {
-    let scoped_settings = load_all_settings(Some(project_root));
+    let scoped_settings = load_all_settings(user_settings_path(), Some(project_root));
     let discovered = list_dir_children(&project_plugin_dir(project_root));
     let mut entries: HashMap<String, PluginConfigEntry> =
         config.get_param(PLUGINS_CONFIG_KEY).unwrap_or_default();
@@ -238,6 +246,15 @@ fn project_plugin_dir(project_root: &Path) -> PathBuf {
     project_root.join(".agents").join("plugins")
 }
 
+/// A session started in the home directory sees the user install dir as its
+/// project plugin dir; those plugins are user-installed, not repo-shipped.
+fn is_user_plugin_dir(dir: &Path) -> bool {
+    match (dir.canonicalize(), plugin_install_dir().canonicalize()) {
+        (Ok(dir), Ok(user_dir)) => dir == user_dir,
+        _ => false,
+    }
+}
+
 fn list_dir_children(dir: &Path) -> Vec<(String, PathBuf)> {
     let entries = match std::fs::read_dir(dir) {
         Ok(e) => e,
@@ -256,9 +273,12 @@ fn list_dir_children(dir: &Path) -> Vec<(String, PathBuf)> {
         .collect()
 }
 
-fn load_all_settings(project_root: Option<&Path>) -> Vec<(SettingsScope, PluginSettings)> {
+fn load_all_settings(
+    user_settings: Option<PathBuf>,
+    project_root: Option<&Path>,
+) -> Vec<(SettingsScope, PluginSettings)> {
     let mut paths: Vec<(SettingsScope, PathBuf)> = Vec::new();
-    if let Some(path) = user_settings_path() {
+    if let Some(path) = user_settings {
         paths.push((SettingsScope::User, path));
     }
     if let Some(root) = project_root {
@@ -506,14 +526,20 @@ mod tests {
         let cfg_dir = tempfile::tempdir().unwrap();
         let config = test_config(cfg_dir.path());
 
-        let prev = std::env::var("GOSLING_PATH_ROOT").ok();
-        unsafe { std::env::set_var("GOSLING_PATH_ROOT", fake_home.path()) };
+        // Pass the user settings file directly: pointing GOSLING_PATH_ROOT at
+        // the fake home raced every parallel test that reads user settings.
         trust_project_with_config(project, &config).unwrap();
-        let found = discover_enabled_plugins_with_config(Some(project), &config);
-        match prev {
-            Some(v) => unsafe { std::env::set_var("GOSLING_PATH_ROOT", v) },
-            None => unsafe { std::env::remove_var("GOSLING_PATH_ROOT") },
-        }
+        let found = discover_enabled_plugins_with_user_settings(
+            Some(project),
+            &config,
+            Some(
+                fake_home
+                    .path()
+                    .join(".config")
+                    .join("gosling")
+                    .join("settings.json"),
+            ),
+        );
 
         assert!(
             found.iter().any(|p| p.name == "demo"),

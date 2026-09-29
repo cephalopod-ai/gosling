@@ -222,7 +222,7 @@ fn inferred_discoverable_skill_root(path: &Path) -> Option<PathBuf> {
         global_roots.push(home.join(".claude").join("skills"));
         global_roots.push(home.join(".config").join("agents").join("skills"));
     }
-    global_roots.extend(installed_plugin_skill_dirs());
+    global_roots.extend(installed_plugin_skill_dirs(None));
 
     for root in global_roots {
         let canonical_root = canonicalize_or_original(&root);
@@ -342,7 +342,7 @@ fn project_skill_dirs(working_dir: Option<&Path>) -> Vec<PathBuf> {
     dirs
 }
 
-fn global_skill_dirs() -> Vec<(PathBuf, SkillSourceKind)> {
+fn global_skill_dirs(working_dir: Option<&Path>) -> Vec<(PathBuf, SkillSourceKind)> {
     let mut skill_dirs = Vec::new();
     let home = Paths::home_dir();
     if let Some(h) = home.as_ref() {
@@ -358,7 +358,7 @@ fn global_skill_dirs() -> Vec<(PathBuf, SkillSourceKind)> {
     }
 
     skill_dirs.extend(
-        installed_plugin_skill_dirs()
+        installed_plugin_skill_dirs(working_dir)
             .into_iter()
             .map(|dir| (dir, SkillSourceKind::Plugin)),
     );
@@ -461,6 +461,9 @@ fn scan_skills_from_dir(dir: &Path, global: bool, seen: &mut HashSet<String>) ->
             }
         },
     );
+    // Only the first skill found for a name is kept, so the winner must not
+    // depend on filesystem enumeration order.
+    skill_files.sort_by(|a, b| a.parent().cmp(&b.parent()));
 
     let mut sources = Vec::new();
     for skill_file in skill_files {
@@ -622,7 +625,7 @@ pub(crate) fn discover_skills_with_origin(working_dir: Option<&Path>) -> Vec<Dis
         }
     }
 
-    for (dir, kind) in global_skill_dirs() {
+    for (dir, kind) in global_skill_dirs(working_dir) {
         for entry in scan_skills_from_dir(&dir, true, &mut seen) {
             sources.push(DiscoveredSkill {
                 entry,
@@ -698,6 +701,25 @@ mod tests {
                 json!(["component", "from", "to"]),
             )]),
         }
+    }
+
+    #[test]
+    fn duplicate_names_in_one_directory_resolve_to_the_first_skill_directory_by_path() {
+        let root = tempfile::tempdir().unwrap();
+        for dir in ["h", "c", "f", "a", "g", "b", "e", "d"] {
+            let skill_dir = root.path().join(dir);
+            std::fs::create_dir_all(&skill_dir).unwrap();
+            std::fs::write(
+                skill_dir.join("SKILL.md"),
+                format!("---\nname: same\ndescription: {dir}\n---\nBody."),
+            )
+            .unwrap();
+        }
+
+        let found = scan_skills_from_dir(root.path(), true, &mut HashSet::new());
+
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].description, "a");
     }
 
     #[test]

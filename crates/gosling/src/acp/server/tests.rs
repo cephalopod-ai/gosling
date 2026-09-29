@@ -514,6 +514,29 @@ fn test_summarize_tool_call_with_path() {
     );
 }
 
+// GSL-PT-20260927-H07: delegate titles echoed `null`, blank, and ignored
+// placeholder `source` values.
+#[test]
+fn test_summarize_tool_call_skips_empty_and_placeholder_delegate_sources() {
+    let title = |args: serde_json::Value| summarize_tool_call("delegate", Some(&args));
+
+    assert_eq!(title(serde_json::json!({"source": null})), "delegate");
+    assert_eq!(title(serde_json::json!({"source": "  "})), "delegate");
+    assert_eq!(
+        title(serde_json::json!({
+            "source": "dummy",
+            "instructions": "Research retries",
+            "provider": "openai",
+            "model": "gpt-5.1"
+        })),
+        "delegate"
+    );
+    assert_eq!(
+        title(serde_json::json!({"source": "researcher"})),
+        "delegate · researcher"
+    );
+}
+
 #[test]
 fn test_summarize_tool_call_with_command() {
     let args = serde_json::json!({"command": "cargo build"});

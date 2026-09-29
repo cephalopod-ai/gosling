@@ -187,13 +187,13 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Medium | B11 | Malformed-stream errors echo raw provider lines unredacted (incl. bearer/API-key-like strings) into the error, session history and log | fixed (R5) |
 | Medium | B18 | CLI cost line shows only the last request's cost without saying so; `--stats` silently ignored with json/stream-json | fixed (R8a) |
 | Medium | B21 | Rejected Copilot token refresh surfaces as "failed to get api info after 3 attempts" + "Please retry"; no re-auth request | fixed (R9) |
-| Medium | C01 | ACP client `mcpServers` replace all of gosling's configured extensions | open — queued R10 |
-| Medium | C02 | A hanging MCP extension blocks session start for 300 s with no feedback (run/ACP) | open — queued R11 |
-| Medium | C03 | Removed MCP extensions come back when an older session is resumed/loaded | open — queued R11 |
+| Medium | C01 | ACP client `mcpServers` replace all of gosling's configured extensions | fixed (R10) |
+| Medium | C02 | A hanging MCP extension blocks session start for 300 s with no feedback (run/ACP) | deferred (product decision: startup vs tool-call timeout) (R11) |
+| Medium | C03 | Removed MCP extensions come back when an older session is resumed/loaded | deferred (product decision: record extension origin in session state) (R11) |
 | Medium | C05 | Skill discovery ignores `GOSLING_PATH_ROOT` and reads/writes HOME-based skill dirs | fixed (R7) |
-| Medium | C06 | `disabledPlugins` does not disable an installed plugin's skills | open — queued R11 |
-| Medium | C08 | ACP: parallel subagents' tool activity is attributed to the first delegate call | open — queued R11 |
-| Medium | C10 | A stalled provider stream inside a synchronous subagent blocks the parent indefinitely | open — queued R11 |
+| Medium | C06 | `disabledPlugins` does not disable an installed plugin's skills | fixed (R11) |
+| Medium | C08 | ACP: parallel subagents' tool activity is attributed to the first delegate call | fixed (R11) |
+| Medium | C10 | A stalled provider stream inside a synchronous subagent blocks the parent indefinitely | fixed (docs: real 30-min sync delegate limit; timeout path tested) (R11) |
 | Medium | C14 | No guard against opening a store written by a newer schema (downgrade not blocked) | fixed (R4) |
 | Medium | D03 | Failed `--fork --edit` leaves an orphan fork with the source's name that then hijacks `--resume` | fixed (R4) |
 | Medium | D04 | `--edit` with invalid YAML discards the user's edits without naming or keeping the temp file; wrong "failed to launch" wording | open — queued R8b |
@@ -223,7 +223,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Medium | H01 | Repeated identical failing tool calls are denied but the turn never ends before 1000 turns | fixed (R3) |
 | Medium | H02 | Delegate launch failures are not remembered: alternate `source` retries all execute and the next valid shape launches | deferred (product decision) (R3) |
 | Medium | H03 | CLI shows nothing for failed (`isError`) tool results; failures look like successes | fixed (R8a) |
-| Medium | H04 | External-tool ACP delegate in Chat mode: a self-executed tool is reported as "Tool call was denied." and the agent's answer is dropped | open — queued R11 |
+| Medium | H04 | External-tool ACP delegate in Chat mode: a self-executed tool is reported as "Tool call was denied." and the agent's answer is dropped | fixed (true reason reported; answer still withheld by design) (R11) |
 | Medium | H05 | ACP cancel is not honoured while the prompt waits on storage; latency equals the remaining lock hold | fixed (R1b) |
 | Medium | S03 | `--max-tool-repetitions` denies repeats but never ends the turn (1000 provider calls) | fixed (R3) |
 | Medium | S04 | A one-off `GOSLING_CONTEXT_LIMIT` is frozen into a resumed session forever | fixed (R2) |
@@ -252,22 +252,22 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | B14 | CLI output hygiene (cosmetic) | fixed (typed-input echo deferred: needs design) (R8a) |
 | Low | B15 | stream-json on provider failure has no terminal `error`/`complete` event | fixed (R8a) |
 | Low | B19 | Reduction validation differs between CLI and ACP; out-of-range CLI warning does not state the fallback | fixed (R2) |
-| Low | C04 | Hidden host-policy `planning` extension is offered in `configure`/`mcp list`; enabling it warns on every session | open — queued R11 |
-| Low | C07 | Duplicate plugin skill names are silently shadowed; precedence set by directory order | open — queued R11 |
-| Low | C09 | Subagent docs say delegates inherit parent extensions; code defaults ad-hoc delegates to none | open — queued R11 |
+| Low | C04 | Hidden host-policy `planning` extension is offered in `configure`/`mcp list`; enabling it warns on every session | fixed (R11) |
+| Low | C07 | Duplicate plugin skill names are silently shadowed; precedence set by directory order | fixed (R11) |
+| Low | C09 | Subagent docs say delegates inherit parent extensions; code defaults ad-hoc delegates to none | fixed (docs) (R11) |
 | Low | C11 | Imported sessions silently run in `approve` mode; CLI denial names the wrong mode | fixed (R6) |
 | Low | C12 | `session import` announces a working directory before it knows the outcome; raw serde errors | open — queued R8b |
 | Low | C13 | CLI resume rebinds an imported session's trusted working dir to the current directory | fixed (R4) |
 | Low | C15 | Session exports embed extension `--env` values; pasted secrets exported verbatim | fixed (R5) |
 | Low | C16 | Markdown export drops the tool-error flag | open — queued R8b |
 | Low | C17 | CLI help/docs drift found while executing | open — queued R8b |
-| Low | C18 | `/skills <name>` differs by surface and never validates the name | open — queued R11 |
-| Low | C19 | Extension failure messages are noisy and lose the cause; no health state in listings | open — queued R11 |
+| Low | C18 | `/skills <name>` differs by surface and never validates the name | fixed (R11) |
+| Low | C19 | Extension failure messages are noisy and lose the cause; no health state in listings | fixed (messages; listing health state is a follow-up) (R11) |
 | Low | C21 | `mcp remove` leaves the extension's secrets in `secrets.yaml` | fixed (per-extension secrets) (R5) |
 | Low | C22 | "Always Allow" grants survive replacing the server behind an extension name | fixed (R6) |
 | Low | C23 | Approval prompts do not show cwd or the persistence scope; ACP option names are raw ids | fixed (R6) |
 | Low | C24 | `gosling secret set` says it stored credentials in `config.yaml` | fixed (R5) |
-| Low | C25 | Workspace `defaultExtensions` accepts unknown names silently | open — queued R11 |
+| Low | C25 | Workspace `defaultExtensions` accepts unknown names silently | fixed (R11) |
 | Low | D02 | Open CLI session crashes with a raw FOREIGN KEY error after the session is removed elsewhere; typed prompt lost | fixed (R4) |
 | Low | D06 | Session exports write raw secrets from tool output (diagnostics redacts, export does not) | fixed (R5) |
 | Low | D09 | Session pickers are shuffled on every run; diagnostics/context-history picker says "Select a session to export:" | open — queued R8b |
@@ -293,18 +293,18 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | E14 | Session-start errors go to stdout (rc 1), unlike other CLI errors | fixed (R8a) |
 | Low | E15 | Context-file documentation disagrees with runtime (default order, fallback text) | fixed (R7) |
 | Low | F02 | `run --output-format json\|stream-json`: startup failures are printed as human text on stdout | fixed (R8a) |
-| Low | F03 | `gosling serve` is silent on the console and its log misreports failed starts | open — queued R10 |
+| Low | F03 | `gosling serve` is silent on the console and its log misreports failed starts | fixed (R10) |
 | Low | F04 | WebSocket closes never carry a server close frame (client always sees 1006) | upstream crate (agent-client-protocol-http) |
 | Low | F05 | `--allowed-origin` accepts values that can never match and gives no diagnostics for rejections | open — queued R10 |
 | Low | F06 | TLS startup validation/messaging gaps | open — queued R10 |
 | Low | F07 | Structurally invalid requests get -32700 Parse error with id:null | upstream crate (agent-client-protocol) |
-| Low | F08 | `session/prompt` with an empty prompt array sends the model a fabricated "Hello" | open — queued R10 |
+| Low | F08 | `session/prompt` with an empty prompt array sends the model a fabricated "Hello" | fixed (R10) |
 | Low | F09 | Streamable-HTTP connections that never open a stream or DELETE are never reaped (suspicion) | open — queued R10 |
 | Low | F11 | Losing the turn lease does not stop the in-flight provider call; the revoked turn lingers until the provider returns | fixed (R1b) |
 | Low | F12 | Two connections can drive one session; the owner gets no updates and a misleading refusal | open — queued R10 |
-| Low | F13 | ACP reports provider/config problems as generic -32603 "Internal error" | open — queued R10 |
-| Low | F16 | The protocol-version gate is advisory on stdio and WebSocket | open — queued R10 |
-| Low | F17 | Advertised capabilities do not match what is callable | open — queued R10 |
+| Low | F13 | ACP reports provider/config problems as generic -32603 "Internal error" | fixed (R10) |
+| Low | F16 | The protocol-version gate is advisory on stdio and WebSocket | fixed (R10) |
+| Low | F17 | Advertised capabilities do not match what is callable | fixed (R10) |
 | Low | G103 | Chat header labels overlap at the default 940px window (and all narrower widths) | open — queued R13b |
 | Low | G106 | Unicode-equivalent workspace names are both accepted (NFC vs NFD) | open — queued R13b |
 | Low | G107 | Duplicate fails for a max-length (100-char) workspace name; over-length input silently truncated | open — queued R13b |
@@ -336,7 +336,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | G218 | After a turn with more than 200 outputs, the live Outputs list and count silently stop at 200 | open — queued R13b |
 | Low | G219 | Escape inside an open provider/model dropdown closes the entire model-switch dialog | open — queued R13b |
 | Low | H06 | After a normal exit all session data lives only in `sessions.db-wal`; `sessions.db` is an empty 4 KB file | fixed (R4) |
-| Low | H07 | Delegate activity title echoes the raw `source` argument (`null`, blanks, normalized sentinel) | open — queued R11 |
+| Low | H07 | Delegate activity title echoes the raw `source` argument (`null`, blanks, normalized sentinel) | fixed (R11) |
 | Low | S01 | Stale turn-lease rows left by concurrent `gosling run` processes | fixed (R4) |
 | Low | S02 | Interactive type-ahead under load: Enter becomes a newline, a later `/exit` is sent to the model | open — queued R8b |
 | Low | S05 | `session -r --history` renders at ~32 ms per message (6.7 s for 206 messages) | open — queued R8b |

@@ -51,6 +51,7 @@ pub struct SubagentRunParams {
     pub cancellation_token: Option<CancellationToken>,
     pub on_message: Option<OnMessageCallback>,
     pub notification_tx: Option<tokio::sync::mpsc::UnboundedSender<ServerNotification>>,
+    pub parent_tool_request_id: Option<String>,
 }
 
 pub async fn run_subagent_task(params: SubagentRunParams) -> Result<String, anyhow::Error> {
@@ -172,6 +173,7 @@ fn get_agent_messages(params: SubagentRunParams) -> AgentMessagesFuture {
             cancellation_token,
             on_message,
             notification_tx,
+            parent_tool_request_id,
             ..
         } = params;
 
@@ -246,7 +248,11 @@ fn get_agent_messages(params: SubagentRunParams) -> AgentMessagesFuture {
                     }
                     if let Some(ref tx) = notification_tx {
                         for content in &msg.content {
-                            if let Some(notif) = create_tool_notification(content, &session_id) {
+                            if let Some(notif) = create_tool_notification(
+                                content,
+                                &session_id,
+                                parent_tool_request_id.as_deref(),
+                            ) {
                                 if tx.send(notif).is_err() {
                                     debug!(
                                         "Notification receiver dropped for subagent {}",
@@ -333,28 +339,34 @@ async fn build_subagent_prompt(
     .map_err(|e| anyhow!("Failed to render subagent system prompt: {}", e))
 }
 
+/// `parent_tool_request_id` names the delegate call that owns the subagent. Every concurrent
+/// tool stream of the parent receives the summon client's broadcast, so this is what lets the
+/// parent attach the notification to the right delegate call.
 pub fn create_tool_notification(
     content: &MessageContent,
     subagent_id: &str,
+    parent_tool_request_id: Option<&str>,
 ) -> Option<ServerNotification> {
     if let MessageContent::ToolRequest(req) = content {
         let tool_call = req.tool_call.as_ref().ok()?;
 
+        let mut data = serde_json::json!({
+            "type": SUBAGENT_TOOL_REQUEST_TYPE,
+            "subagent_id": subagent_id,
+            "tool_request_id": req.id,
+            "tool_call": {
+                "name": tool_call.name,
+                "arguments": tool_call.arguments
+            }
+        });
+        if let Some(parent_tool_request_id) = parent_tool_request_id {
+            data["parent_tool_request_id"] = parent_tool_request_id.into();
+        }
+
         Some(ServerNotification::LoggingMessageNotification(
             Notification::new(
-                LoggingMessageNotificationParam::new(
-                    LoggingLevel::Info,
-                    serde_json::json!({
-                        "type": SUBAGENT_TOOL_REQUEST_TYPE,
-                        "subagent_id": subagent_id,
-                        "tool_request_id": req.id,
-                        "tool_call": {
-                            "name": tool_call.name,
-                            "arguments": tool_call.arguments
-                        }
-                    }),
-                )
-                .with_logger(format!("subagent:{}", subagent_id)),
+                LoggingMessageNotificationParam::new(LoggingLevel::Info, data)
+                    .with_logger(format!("subagent:{}", subagent_id)),
             ),
         ))
     } else {
@@ -364,6 +376,7 @@ pub fn create_tool_notification(
 
 pub(crate) fn should_forward_subagent_tool_notification(
     seen: &mut HashSet<(String, String)>,
+    request_id: &str,
     notification: &ServerNotification,
 ) -> bool {
     let ServerNotification::LoggingMessageNotification(notification) = notification else {
@@ -381,6 +394,13 @@ pub(crate) fn should_forward_subagent_tool_notification(
     let Some(tool_request_id) = data.get("tool_request_id").and_then(|value| value.as_str()) else {
         return true;
     };
+    if data
+        .get("parent_tool_request_id")
+        .and_then(|value| value.as_str())
+        .is_some_and(|owner| owner != request_id)
+    {
+        return false;
+    }
     seen.insert((subagent_id.to_string(), tool_request_id.to_string()))
 }
 
@@ -401,7 +421,7 @@ mod tests {
             .with_arguments(json!({"command": "ls"}).as_object().unwrap().clone());
         let content = MessageContent::tool_request("req1", Ok(tool_call));
         let notification =
-            create_tool_notification(&content, "session_1").expect("expected notification");
+            create_tool_notification(&content, "session_1", None).expect("expected notification");
 
         let ServerNotification::LoggingMessageNotification(log_notif) = notification else {
             panic!("expected logging notification");
@@ -436,7 +456,42 @@ mod tests {
     #[test]
     fn create_tool_notification_ignores_non_tool_request() {
         let content = MessageContent::text("hello");
-        assert!(create_tool_notification(&content, "session_1").is_none());
+        assert!(create_tool_notification(&content, "session_1", None).is_none());
+    }
+
+    #[test]
+    fn owned_subagent_tool_notification_is_forwarded_only_by_its_delegate_call() {
+        let tool_call = CallToolRequestParams::new("developer__write".to_string());
+        let notification = create_tool_notification(
+            &MessageContent::tool_request("req1", Ok(tool_call)),
+            "session_1",
+            Some("delegate_1"),
+        )
+        .unwrap();
+        let ServerNotification::LoggingMessageNotification(log_notif) = &notification else {
+            panic!("expected logging notification");
+        };
+        assert_eq!(
+            log_notif.params.data["parent_tool_request_id"],
+            json!("delegate_1")
+        );
+        let mut seen = HashSet::new();
+
+        assert!(!should_forward_subagent_tool_notification(
+            &mut seen,
+            "delegate_0",
+            &notification
+        ));
+        assert!(should_forward_subagent_tool_notification(
+            &mut seen,
+            "delegate_1",
+            &notification
+        ));
+        assert!(!should_forward_subagent_tool_notification(
+            &mut seen,
+            "delegate_1",
+            &notification
+        ));
     }
 
     #[test]
@@ -446,21 +501,25 @@ mod tests {
         let first = create_tool_notification(
             &MessageContent::tool_request("req1", Ok(tool_call.clone())),
             "session_1",
+            None,
         )
         .unwrap();
         let second = create_tool_notification(
             &MessageContent::tool_request("req2", Ok(tool_call)),
             "session_1",
+            None,
         )
         .unwrap();
         let mut seen = HashSet::new();
 
-        assert!(should_forward_subagent_tool_notification(&mut seen, &first));
+        assert!(should_forward_subagent_tool_notification(
+            &mut seen, "delegate", &first
+        ));
         assert!(!should_forward_subagent_tool_notification(
-            &mut seen, &first
+            &mut seen, "delegate", &first
         ));
         assert!(should_forward_subagent_tool_notification(
-            &mut seen, &second
+            &mut seen, "delegate", &second
         ));
     }
 

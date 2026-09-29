@@ -1106,6 +1106,134 @@ fn test_custom_get_extensions() {
 
 #[test]
 #[serial]
+fn test_workspace_default_extensions_report_unknown_names_on_create_and_update() {
+    let config_key = "test-workspace-pinned-extension";
+    let _guard = env_lock::lock_env([("EXTENSIONS", None::<&str>)]);
+    write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
+    let working_folder = tempfile::tempdir().unwrap();
+    let output_folder = working_folder.path().join("outputs");
+    std::fs::create_dir_all(&output_folder).unwrap();
+
+    run_test(async move {
+        let openai = OpenAiFixture::new(vec![], Arc::new(EnforceSessionId::default())).await;
+        let conn = AcpServerConnection::new(TestConnectionConfig::default(), openai).await;
+
+        send_custom(
+            conn.cx(),
+            "_gosling/unstable/config/extensions/add",
+            serde_json::json!({
+                "enabled": true,
+                "extension": {
+                    "type": "mcp",
+                    "description": "Pinned by a workspace",
+                    "server": {
+                        "type": "stdio",
+                        "name": config_key,
+                        "command": "test-command",
+                        "args": [],
+                        "env": []
+                    }
+                }
+            }),
+        )
+        .await
+        .expect("configured extension should be added");
+
+        let mutation = |default_extensions: serde_json::Value| {
+            serde_json::json!({
+                "name": "Pinned extensions",
+                "workingFolder": working_folder.path(),
+                "productOutputFolders": [{
+                    "id": "outputs",
+                    "label": "Outputs",
+                    "path": output_folder,
+                    "productTypes": ["document"],
+                    "isDefault": true,
+                    "createIfMissing": false
+                }],
+                "defaultExtensions": default_extensions
+            })
+        };
+        let unknown_extension_targets = |response: &serde_json::Value| -> Vec<String> {
+            response["validation"]["issues"]
+                .as_array()
+                .expect("validation issues should be an array")
+                .iter()
+                .filter(|issue| issue["code"] == "unknown_extension")
+                .map(|issue| {
+                    assert_eq!(issue["severity"], "warning", "{issue}");
+                    issue["targetId"].as_str().unwrap().to_string()
+                })
+                .collect()
+        };
+
+        let created = send_custom(
+            conn.cx(),
+            "_gosling/unstable/workspaces/create",
+            serde_json::json!({
+                "workspace": mutation(serde_json::json!([config_key, "developer", "nope-ext"]))
+            }),
+        )
+        .await
+        .expect("workspace with an unknown default extension is still created");
+        assert_eq!(unknown_extension_targets(&created), vec!["nope-ext"]);
+        assert_eq!(created["validation"]["validForSession"], true);
+        let workspace_id = created["workspace"]["id"].as_str().unwrap().to_string();
+
+        let updated = send_custom(
+            conn.cx(),
+            "_gosling/unstable/workspaces/update",
+            serde_json::json!({
+                "workspaceId": workspace_id,
+                "workspace": mutation(serde_json::json!([config_key, "typo-ext"]))
+            }),
+        )
+        .await
+        .expect("workspace update should succeed");
+        assert_eq!(unknown_extension_targets(&updated), vec!["typo-ext"]);
+
+        let configured_only = send_custom(
+            conn.cx(),
+            "_gosling/unstable/workspaces/update",
+            serde_json::json!({
+                "workspaceId": workspace_id,
+                "workspace": mutation(serde_json::json!([config_key]))
+            }),
+        )
+        .await
+        .expect("workspace update should succeed");
+        assert!(
+            unknown_extension_targets(&configured_only).is_empty(),
+            "{configured_only}"
+        );
+
+        let listed = send_custom(
+            conn.cx(),
+            "_gosling/unstable/workspaces/list",
+            serde_json::json!({}),
+        )
+        .await
+        .expect("workspace list should succeed");
+        let listed_workspace = listed["workspaces"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["workspace"]["id"] == workspace_id.as_str())
+            .expect("updated workspace should be listed");
+        assert!(unknown_extension_targets(listed_workspace).is_empty());
+
+        send_custom(
+            conn.cx(),
+            "_gosling/unstable/config/extensions/remove",
+            serde_json::json!({ "configKey": config_key }),
+        )
+        .await
+        .expect("configured extension should be removed");
+    });
+}
+
+#[test]
+#[serial]
 fn test_custom_session_extensions_add_list_remove() {
     let extension_name = "summarize";
     let _guard = env_lock::lock_env([("EXTENSIONS", None::<&str>)]);

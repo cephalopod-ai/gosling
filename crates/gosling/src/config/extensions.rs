@@ -113,10 +113,15 @@ pub fn name_to_key(name: &str) -> String {
     result.to_lowercase()
 }
 
+/// The host loads the planning extension itself and refuses any configured
+/// copy, so a saved `planning` entry can only be listed, toggled, and then fail
+/// to start on every session.
 pub(crate) fn is_extension_available(config: &ExtensionConfig) -> bool {
     match config {
         ExtensionConfig::Platform { name, .. } => {
-            crate::agents::extension::PLATFORM_EXTENSIONS.contains_key(name_to_key(name).as_str())
+            let key = name_to_key(name);
+            key != crate::agents::interaction_policy::PLANNING_EXTENSION_NAME
+                && PLATFORM_EXTENSIONS.contains_key(key.as_str())
         }
         _ => true,
     }
@@ -1187,6 +1192,62 @@ extensions:
 
         assert_eq!(configured_enabled_state(&config, "summarize"), Some(false));
         assert!(!is_builtin_disabled_by_user(&config, "summarize"));
+    }
+
+    #[test]
+    fn test_host_policy_planning_extension_is_not_listed_or_toggleable() {
+        let (config, _config_file, _secrets_file) = test_config("");
+
+        let listed = get_extensions_map_with_config(&config);
+        assert!(!listed.contains_key(crate::agents::interaction_policy::PLANNING_EXTENSION_NAME));
+        assert!(listed.contains_key("summarize"));
+
+        assert!(!set_extension_enabled_with_config(
+            &config,
+            crate::agents::interaction_policy::PLANNING_EXTENSION_NAME,
+            true
+        )
+        .unwrap());
+        assert!(set_extension_enabled_with_config(&config, "summarize", true).unwrap());
+        assert_eq!(configured_enabled_state(&config, "summarize"), Some(true));
+    }
+
+    #[test]
+    fn test_previously_enabled_planning_entry_is_not_started_for_new_sessions() {
+        let (config, _config_file, _secrets_file) = test_config(
+            r#"
+extensions:
+  planning:
+    enabled: true
+    type: platform
+    name: planning
+    description: Bounded workspace inspection and persisted plan lifecycle tools
+    display_name: Planning
+    bundled: true
+    available_tools: []
+  summarize:
+    enabled: true
+    type: platform
+    name: summarize
+    description: Load files/directories and get an LLM summary in a single call
+    display_name: Summarize
+    bundled: true
+    available_tools: []
+"#,
+        );
+
+        let enabled_keys = get_enabled_extensions_with_config(&config)
+            .into_iter()
+            .filter(is_extension_available)
+            .map(|extension| extension.key())
+            .collect::<Vec<_>>();
+        assert!(!enabled_keys
+            .iter()
+            .any(|key| key == crate::agents::interaction_policy::PLANNING_EXTENSION_NAME));
+        assert!(enabled_keys.iter().any(|key| key == "summarize"));
+
+        let on_disk = read_extensions(&config);
+        assert!(on_disk.contains_key(crate::agents::interaction_policy::PLANNING_EXTENSION_NAME));
     }
 
     #[test]

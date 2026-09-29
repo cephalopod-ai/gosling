@@ -1,7 +1,7 @@
 use crate::plugins::{
-    collect_skill_candidate, copy_dir_all, staging_dir_in, write_install_metadata,
-    FormatNotSupported, ImportedSkill, PluginFormat, PluginInstall, PluginInstallOptions,
-    SkillCandidate,
+    collect_skill_candidate, copy_dir_all, keep_first_skill_per_name, sorted_subdirectories,
+    staging_dir_in, write_install_metadata, FormatNotSupported, ImportedSkill, PluginFormat,
+    PluginInstall, PluginInstallOptions, SkillCandidate,
 };
 use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Utc};
@@ -64,19 +64,25 @@ pub(in crate::plugins) fn try_install_from_manifest_at_root(
     )?;
     fs::rename(&staged, &destination)?;
 
-    Ok(PluginInstall {
-        name: manifest.name,
-        version: manifest.version,
-        format: PluginFormat::Gemini,
-        source: source.to_string(),
-        directory: destination.clone(),
-        skills: skills
+    let (skills, warnings) = keep_first_skill_per_name(
+        &destination,
+        skills
             .into_iter()
             .map(|skill| ImportedSkill {
                 name: skill.name,
                 directory: destination.join(skill.relative_directory),
             })
             .collect(),
+    );
+
+    Ok(PluginInstall {
+        name: manifest.name,
+        version: manifest.version,
+        format: PluginFormat::Gemini,
+        source: source.to_string(),
+        directory: destination,
+        skills,
+        warnings,
     })
 }
 
@@ -107,12 +113,8 @@ fn find_skills(extension_dir: &Path) -> Result<Vec<SkillCandidate>> {
     let mut skills = Vec::new();
     collect_skill_candidate(extension_dir, &skills_dir, &mut skills)?;
 
-    for entry in fs::read_dir(&skills_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.is_dir() {
-            collect_skill_candidate(extension_dir, &path, &mut skills)?;
-        }
+    for path in sorted_subdirectories(&skills_dir)? {
+        collect_skill_candidate(extension_dir, &path, &mut skills)?;
     }
 
     skills.sort_by(|a, b| a.name.cmp(&b.name));
@@ -153,12 +155,52 @@ mod tests {
         assert_eq!(installed.version, "1.0.0");
         assert_eq!(installed.skills.len(), 1);
         assert_eq!(installed.skills[0].name, "audit");
+        assert!(installed.warnings.is_empty());
         assert!(installed.directory.join(MANIFEST).is_file());
         assert!(installed
             .directory
             .join(crate::plugins::INSTALL_METADATA)
             .is_file());
         assert_eq!(installed.directory, install_root.path().join("test-plugin"));
+    }
+
+    #[test]
+    fn duplicate_skill_names_in_one_extension_are_listed_once() {
+        let install_root = tempfile::tempdir().unwrap();
+        let repo = tempfile::tempdir().unwrap();
+        fs::write(
+            repo.path().join(MANIFEST),
+            r#"{"name":"gem-dup","version":"1.0.0"}"#,
+        )
+        .unwrap();
+        for dir in ["d", "b", "a", "c"] {
+            let skill_dir = repo.path().join("skills").join(dir);
+            fs::create_dir_all(&skill_dir).unwrap();
+            fs::write(
+                skill_dir.join("SKILL.md"),
+                format!("---\nname: dupskill\ndescription: Skill {dir}\n---\nBody."),
+            )
+            .unwrap();
+        }
+
+        let installed = try_install_from_manifest_at_root(
+            "https://example.invalid/gem-dup.git",
+            repo.path(),
+            install_root.path(),
+            &PluginInstallOptions::default(),
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(
+            installed.skills,
+            vec![ImportedSkill {
+                name: "dupskill".to_string(),
+                directory: installed.directory.join("skills/a"),
+            }]
+        );
+        assert_eq!(installed.warnings.len(), 1, "{:?}", installed.warnings);
+        assert!(installed.warnings[0].contains("(skills/a, skills/b, skills/c, skills/d)"));
     }
 
     #[cfg(unix)]

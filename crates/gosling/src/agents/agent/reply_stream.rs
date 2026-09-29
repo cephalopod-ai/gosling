@@ -902,6 +902,7 @@ impl Agent {
                                                             ToolStreamItem::Message(msg) => {
                                                                 if crate::agents::subagent_handler::should_forward_subagent_tool_notification(
                                                                     &mut seen_subagent_tool_notifications,
+                                                                    &request_id,
                                                                     &msg,
                                                                 ) {
                                                                     yield AgentEvent::McpNotification((request_id, msg));
@@ -1702,21 +1703,87 @@ mod tests {
         let notification = create_tool_notification(
             &MessageContent::tool_request("subagent-request", Ok(tool_call)),
             "subagent-session",
+            None,
         )
         .unwrap();
         let tool_streams = (0..3)
-            .map(|_| stream::iter(vec![ToolStreamItem::<()>::Message(notification.clone())]))
+            .map(|index| {
+                let request_id = format!("delegate_{index}");
+                stream::iter(vec![ToolStreamItem::<()>::Message(notification.clone())])
+                    .map(move |item| (request_id.clone(), item))
+            })
             .collect::<Vec<_>>();
         let mut combined = stream::select_all(tool_streams);
         let mut seen = HashSet::new();
         let mut forwarded = 0;
 
-        while let Some(ToolStreamItem::Message(notification)) = combined.next().await {
-            if should_forward_subagent_tool_notification(&mut seen, &notification) {
+        while let Some((request_id, ToolStreamItem::Message(notification))) = combined.next().await
+        {
+            if should_forward_subagent_tool_notification(&mut seen, &request_id, &notification) {
                 forwarded += 1;
             }
         }
 
         assert_eq!(forwarded, 1);
+    }
+
+    #[tokio::test]
+    async fn concurrent_delegate_streams_forward_each_subagent_notification_under_its_own_delegate()
+    {
+        let owned_notifications = ["w.txt", "x.txt", "y.txt", "z.txt"]
+            .iter()
+            .enumerate()
+            .map(|(index, path)| {
+                let tool_call = CallToolRequestParams::new("developer__write".to_string())
+                    .with_arguments(
+                        serde_json::json!({ "path": path })
+                            .as_object()
+                            .unwrap()
+                            .clone(),
+                    );
+                create_tool_notification(
+                    &MessageContent::tool_request("subagent-write", Ok(tool_call)),
+                    &format!("subagent-{index}"),
+                    Some(&format!("delegate_{index}")),
+                )
+                .unwrap()
+            })
+            .collect::<Vec<_>>();
+        let tool_streams = (0..owned_notifications.len())
+            .map(|index| {
+                let request_id = format!("delegate_{index}");
+                let broadcast = owned_notifications
+                    .iter()
+                    .cloned()
+                    .map(ToolStreamItem::<()>::Message)
+                    .collect::<Vec<_>>();
+                stream::iter(broadcast).map(move |item| (request_id.clone(), item))
+            })
+            .collect::<Vec<_>>();
+        let mut combined = stream::select_all(tool_streams);
+        let mut seen = HashSet::new();
+        let mut forwarded = Vec::new();
+
+        while let Some((request_id, ToolStreamItem::Message(notification))) = combined.next().await
+        {
+            if should_forward_subagent_tool_notification(&mut seen, &request_id, &notification) {
+                let rmcp::model::ServerNotification::LoggingMessageNotification(log) = notification
+                else {
+                    panic!("expected logging notification");
+                };
+                forwarded.push((request_id, log.params.data["subagent_id"].clone()));
+            }
+        }
+        forwarded.sort_by(|a, b| a.0.cmp(&b.0));
+
+        assert_eq!(
+            forwarded,
+            (0..owned_notifications.len())
+                .map(|index| (
+                    format!("delegate_{index}"),
+                    serde_json::json!(format!("subagent-{index}"))
+                ))
+                .collect::<Vec<_>>()
+        );
     }
 }

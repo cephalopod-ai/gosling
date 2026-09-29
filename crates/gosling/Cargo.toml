@@ -171,7 +171,7 @@ shell-words = { workspace = true }
 gosling-acp-macros = { path = "../gosling-acp-macros", default-features = false }
 tower-http = { workspace = true, features = ["cors"] }
 tracing-appender = { workspace = true }
-process-wrap = { version = "9", default-features = false, features = ["process-session", "std"] }
+process-wrap = { version = "9", default-features = false, features = ["process-session", "std", "tokio1"] }
 nostr = { version = "0.45", default-features = false, features = ["nip44", "os-rng", "std"], optional = true }
 nostr-sdk = { version = "0.45", default-features = false, optional = true }
 rustls = { workspace = true, optional = true }

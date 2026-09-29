@@ -6,9 +6,11 @@ use crate::config::permission::PermissionLevel;
 use crate::config::Config;
 use rmcp::model::Tool;
 use rmcp::service::ClientInitializeError;
+use rmcp::transport::streamable_http_client::StreamableHttpError;
 use rmcp::ServiceError as ClientError;
 use serde::Deserializer;
 use serde::{Deserialize, Serialize};
+use std::process::ExitStatus;
 use thiserror::Error;
 use tracing::warn;
 use utoipa::ToSchema;
@@ -18,22 +20,86 @@ pub use crate::agents::platform_extensions::{
 };
 
 #[derive(Error, Debug)]
-#[error("process quit before initialization ({source}): stderr = {stderr}")]
 pub struct ProcessExit {
     stderr: String,
+    exit_status: Option<ExitStatus>,
     #[source]
     source: ClientInitializeError,
 }
 
 impl ProcessExit {
-    pub fn new<T>(stderr: T, source: ClientInitializeError) -> Self
+    pub fn new<T>(stderr: T, exit_status: Option<ExitStatus>, source: ClientInitializeError) -> Self
     where
         T: Into<String>,
     {
         ProcessExit {
             stderr: stderr.into(),
+            exit_status,
             source,
         }
+    }
+}
+
+impl std::fmt::Display for ProcessExit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("process quit before initialization")?;
+        if let Some(exit_status) = self.exit_status {
+            write!(f, " with {exit_status}")?;
+        }
+        write!(f, " ({})", describe_initialize_error(&self.source))?;
+        let stderr = self.stderr.trim_end();
+        if !stderr.is_empty() {
+            write!(f, ": stderr = {stderr}")?;
+        }
+        Ok(())
+    }
+}
+
+/// rmcp renders transport failures with the transport's Rust type name and keeps
+/// the HTTP client's error out of the `source()` chain, which hides causes such
+/// as "connection refused"; describe the failed step and its root cause instead.
+fn describe_initialize_error(error: &ClientInitializeError) -> String {
+    let ClientInitializeError::TransportError { error, context } = error else {
+        return error.to_string();
+    };
+    let cause = describe_error_chain(transport_client_error(error.error.as_ref()));
+    format!("could not {context}: {cause}")
+}
+
+fn transport_client_error<'a>(
+    error: &'a (dyn std::error::Error + Send + Sync + 'static),
+) -> &'a (dyn std::error::Error + 'static) {
+    if let Some(StreamableHttpError::Client(client_error)) =
+        error.downcast_ref::<StreamableHttpError<reqwest::Error>>()
+    {
+        return client_error;
+    }
+    #[cfg(unix)]
+    if let Some(StreamableHttpError::Client(client_error)) = error
+        .downcast_ref::<StreamableHttpError<rmcp::transport::common::unix_socket::UnixSocketError>>(
+        )
+    {
+        return client_error;
+    }
+    error
+}
+
+fn describe_error_chain(error: &(dyn std::error::Error + 'static)) -> String {
+    let messages: Vec<String> = std::iter::successors(Some(error), |error| error.source())
+        .map(ToString::to_string)
+        .collect();
+    let last = messages.len() - 1;
+    // Wrapper layers often repeat their cause verbatim ("Io error: <cause>"), so
+    // lead with the first layer that adds information of its own.
+    let headline = messages
+        .windows(2)
+        .position(|pair| !pair[0].contains(&pair[1]))
+        .unwrap_or(last);
+    let root_cause = &messages[last];
+    if messages[headline].contains(root_cause.as_str()) {
+        messages[headline].clone()
+    } else {
+        format!("{}: {root_cause}", messages[headline])
     }
 }
 
@@ -50,7 +116,7 @@ pub enum ExtensionError {
     TaskJoinError(#[from] tokio::task::JoinError),
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
-    #[error("failed to initialize MCP client: {0}")]
+    #[error("failed to initialize MCP client: {}", describe_initialize_error(.0))]
     InitializeError(#[from] ClientInitializeError),
     #[error("{0}")]
     ProcessExit(#[from] ProcessExit),

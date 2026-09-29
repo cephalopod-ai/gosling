@@ -36,17 +36,39 @@ fn tool_state_hash(
     Ok(blake3::hash(&state).to_hex().to_string())
 }
 
+/// Reads skip a config file that fails to parse, so a missing provider or model
+/// is that file's fault when it has a parse error. Otherwise the client is sent
+/// to the `gosling-provider` auth method that `initialize` advertises.
+fn unconfigured_provider_error(
+    config: &Config,
+    error: crate::config::ConfigError,
+) -> agent_client_protocol::Error {
+    let (mut response, message) = match config.check_write_config_parses() {
+        Err(parse_error) => (
+            agent_client_protocol::Error::internal_error(),
+            format!(
+                "Gosling config {} could not be parsed ({parse_error}). Fix or move the file",
+                config.path()
+            ),
+        ),
+        Ok(()) => (
+            agent_client_protocol::Error::auth_required(),
+            "No AI provider is configured. Authenticate with the `gosling-provider` method or run `gosling configure`".to_string(),
+        ),
+    };
+    response.message = message;
+    response.data(error.to_string())
+}
+
 pub(super) fn resolve_default_provider_model_config(
     config: &Config,
 ) -> Result<(String, gosling_providers::model::ModelConfig), agent_client_protocol::Error> {
-    let resolved_provider = config.get_gosling_provider().map_err(|error| {
-        agent_client_protocol::Error::internal_error()
-            .data(format!("Failed to resolve provider: {}", error))
-    })?;
-    let resolved_model = config.get_gosling_model().map_err(|error| {
-        agent_client_protocol::Error::internal_error()
-            .data(format!("Failed to resolve model: {}", error))
-    })?;
+    let resolved_provider = config
+        .get_gosling_provider()
+        .map_err(|error| unconfigured_provider_error(config, error))?;
+    let resolved_model = config
+        .get_gosling_model()
+        .map_err(|error| unconfigured_provider_error(config, error))?;
     let resolved_model_config =
         crate::model_config::model_config_from_user_config(&resolved_provider, &resolved_model)
             .map_err(|error| {
@@ -668,5 +690,56 @@ impl GoslingAcpAgent {
             )));
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use agent_client_protocol::ErrorCode;
+
+    fn config_with(contents: Option<&str>) -> (tempfile::TempDir, Config) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(CONFIG_YAML_NAME);
+        if let Some(contents) = contents {
+            std::fs::write(&path, contents).unwrap();
+        }
+        let config = Config::new(&path, "gosling-test").unwrap();
+        (dir, config)
+    }
+
+    #[test]
+    fn unconfigured_provider_is_auth_required() {
+        let (_dir, config) = config_with(None);
+        let error = resolve_default_provider_model_config(&config).unwrap_err();
+        assert_eq!(error.code, ErrorCode::AuthRequired, "{error:?}");
+        assert!(error.message.contains("gosling-provider"), "{error:?}");
+        assert!(error.message.contains("gosling configure"), "{error:?}");
+        assert_eq!(
+            error.data,
+            Some(serde_json::json!(
+                "Configuration value not found: GOSLING_PROVIDER"
+            ))
+        );
+    }
+
+    #[test]
+    fn unparsable_config_error_names_the_parse_problem() {
+        let (_dir, config) = config_with(Some(
+            "GOSLING_PROVIDER: openai\nGOSLING_MODEL: gpt-4o\nbroken: [unclosed\n  - : :\n",
+        ));
+        let error = resolve_default_provider_model_config(&config).unwrap_err();
+        assert_eq!(error.code, ErrorCode::InternalError, "{error:?}");
+        assert!(error.message.contains(&config.path()), "{error:?}");
+        assert!(error.message.contains("could not be parsed"), "{error:?}");
+        assert!(error.message.contains("line "), "{error:?}");
+    }
+
+    #[test]
+    fn configured_provider_and_model_resolve() {
+        let (_dir, config) = config_with(Some("GOSLING_PROVIDER: openai\nGOSLING_MODEL: gpt-4o\n"));
+        let (provider, model_config) = resolve_default_provider_model_config(&config).unwrap();
+        assert_eq!(provider, "openai");
+        assert_eq!(model_config.model_name, "gpt-4o");
     }
 }

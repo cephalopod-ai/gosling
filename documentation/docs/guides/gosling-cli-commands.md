@@ -770,7 +770,7 @@ Once you're in an interactive session (via `gosling session` or `gosling run --i
 - **`/prompts [--extension <name>]`** - List all available prompts, optionally filtered by extension
 - **`/compact`** - Compact and summarize the current conversation to reduce context length while preserving key information
 - **`/r`** - Toggle full tool output display (show complete tool parameters without truncation)
-- **`/skills`** - List available skills
+- **`/skills [<name> [args]]`** - List available skills, or load one by name (same as `/<name> [args]`); unknown names are reported without contacting the model
 - **`/status`** - Show the session's provider, model, mode, token usage, context usage, and any open plan
 - **`/t`** - Toggle between `light`, `dark`, and `ansi` themes. [More info](#themes).
 - **`/t <name>`** - Set theme directly (light, dark, ansi)

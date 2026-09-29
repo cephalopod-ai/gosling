@@ -63,11 +63,12 @@ use agent_client_protocol::schema::v1::{
     LoadSessionResponse, McpCapabilities, McpServer, Meta, NewSessionRequest, NewSessionResponse,
     PermissionOption, PermissionOptionKind, PromptCapabilities, PromptRequest, PromptResponse,
     RequestPermissionOutcome, RequestPermissionRequest, ResourceLink, SessionCapabilities,
-    SessionCloseCapabilities, SessionConfigOption, SessionId, SessionInfoUpdate,
-    SessionListCapabilities, SessionNotification, SessionUpdate, SetSessionConfigOptionRequest,
-    SetSessionConfigOptionResponse, SetSessionModeRequest, SetSessionModeResponse, StopReason,
-    TextContent, TextResourceContents, ToolCall, ToolCallContent, ToolCallId, ToolCallLocation,
-    ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind, Usage, UsageUpdate,
+    SessionCloseCapabilities, SessionConfigOption, SessionForkCapabilities, SessionId,
+    SessionInfoUpdate, SessionListCapabilities, SessionNotification, SessionUpdate,
+    SetSessionConfigOptionRequest, SetSessionConfigOptionResponse, SetSessionModeRequest,
+    SetSessionModeResponse, StopReason, TextContent, TextResourceContents, ToolCall,
+    ToolCallContent, ToolCallId, ToolCallLocation, ToolCallStatus, ToolCallUpdate,
+    ToolCallUpdateFields, ToolKind, Usage, UsageUpdate,
 };
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::util::MatchDispatchFrom;
@@ -306,6 +307,7 @@ pub struct GoslingAcpAgent {
     client_supports_gosling_custom_notifications: OnceCell<bool>,
     use_login_shell_path: OnceCell<bool>,
     client_cx: OnceCell<ConnectionTo<Client>>,
+    client_initialized: std::sync::atomic::AtomicBool,
     config_dir: std::path::PathBuf,
     session_manager: Arc<SessionManager>,
     permission_manager: Arc<PermissionManager>,
@@ -523,6 +525,7 @@ impl GoslingAcpAgent {
                 client_supports_gosling_custom_notifications: OnceCell::new(),
                 use_login_shell_path: OnceCell::new(),
                 client_cx: OnceCell::new(),
+                client_initialized: std::sync::atomic::AtomicBool::new(false),
                 config_dir: options.config_dir,
                 session_manager,
                 permission_manager,

@@ -634,6 +634,7 @@ impl Provider for AcpProvider {
         Ok(Box::pin(try_stream! {
             let mut suppress_text = false;
             let mut rejected_tool_calls: HashSet<String> = HashSet::new();
+            let mut chat_mode_tool_titles: HashMap<String, String> = HashMap::new();
             // Stable id+timestamp per contiguous run so Desktop coalesces chunks into one bubble.
             let mut text_run: Option<(String, i64)> = None;
             let mut thought_run: Option<(String, i64)> = None;
@@ -666,6 +667,7 @@ impl Provider for AcpProvider {
                         thought_run = None;
                         if reject_all_tools {
                             suppress_text = true;
+                            chat_mode_tool_titles.insert(id.clone(), name);
                             rejected_tool_calls.insert(id);
                         } else {
                             let mut params = CallToolRequestParams::new(name);
@@ -703,8 +705,13 @@ impl Provider for AcpProvider {
                             // modes a tool_request WAS emitted, so pair it with an error
                             // tool_response so downstream consumers see the rejection.
                             if reject_all_tools {
-                                let message = Message::assistant()
-                                    .with_text("Tool call was denied.");
+                                let title = chat_mode_tool_titles.remove(&id).unwrap_or_default();
+                                let message = if is_error {
+                                    Message::assistant().with_text("Tool call was denied.")
+                                } else {
+                                    Message::assistant()
+                                        .with_text(chat_mode_self_executed_tool_notice(&title))
+                                };
                                 yield (Some(message), None);
                             } else {
                                 let denial = vec![RmcpContent::text("Tool call was denied.")];
@@ -1847,6 +1854,20 @@ fn resolve_mode(
     }
 }
 
+/// Chat mode keeps withholding the agent's text after a tool starts, because that text may
+/// be built from tool output gosling never authorized; the notice names the real reason.
+fn chat_mode_self_executed_tool_notice(title: &str) -> String {
+    let tool = if title.trim().is_empty() {
+        String::new()
+    } else {
+        format!(" ({})", title.trim())
+    };
+    format!(
+        "Chat-mode policy violation: the external agent ran a tool on its own{tool} outside \
+         gosling's control, so its answer was withheld."
+    )
+}
+
 fn saved_permission_decision(
     manager: &PermissionManager,
     provider_name: &str,
@@ -2204,6 +2225,70 @@ mod tests {
             content.get("sections"),
             Some(&ElicitationContentValue::StringArray(vec!["Intro".into()]))
         );
+    }
+
+    async fn chat_mode_transcript_for_self_run_tool(is_error: bool) -> Vec<Message> {
+        use futures::StreamExt;
+
+        let (tx, mut rx) = mpsc::channel(4);
+        let (provider, model) = test_provider_with_tx(Some(tx));
+        *provider.gosling_mode.lock().unwrap() = GoslingMode::Chat;
+        let messages = vec![Message::user().with_text("External seat: research")];
+        let stream = provider.stream(&model, "", &messages, &[]).await.unwrap();
+
+        let Some(ClientRequest::Prompt { response_tx, .. }) = rx.recv().await else {
+            panic!("expected a prompt request");
+        };
+        let output =
+            ToolCallContent::from(ContentBlock::Text(TextContent::new("EXTERNAL-TOOL-OUTPUT")));
+        for update in [
+            AcpUpdate::ToolCallStart {
+                id: "ext-t1".to_string(),
+                name: "Read notes.txt".to_string(),
+                kind: ToolKind::Read,
+                raw_input: None,
+            },
+            AcpUpdate::ToolCallComplete {
+                id: "ext-t1".to_string(),
+                raw_output: None,
+                content: Some(vec![output]),
+                is_error,
+            },
+            AcpUpdate::Text("ACP_PEER_OK mode=chat".to_string()),
+            AcpUpdate::Complete(StopReason::EndTurn, None),
+        ] {
+            response_tx.send(update).await.unwrap();
+        }
+        drop(response_tx);
+
+        stream
+            .filter_map(|item| async move { item.unwrap().0 })
+            .collect()
+            .await
+    }
+
+    #[tokio::test]
+    async fn chat_mode_self_run_completed_tool_is_reported_as_policy_violation_not_denial() {
+        let transcript = chat_mode_transcript_for_self_run_tool(false).await;
+
+        let texts: Vec<String> = transcript.iter().map(|m| m.as_concat_text()).collect();
+        assert_eq!(
+            texts,
+            vec![
+                "Chat-mode policy violation: the external agent ran a tool on its own \
+                 (Read notes.txt) outside gosling's control, so its answer was withheld."
+                    .to_string()
+            ]
+        );
+        assert!(transcript.iter().all(|m| m.role == Role::Assistant));
+    }
+
+    #[tokio::test]
+    async fn chat_mode_self_run_failed_tool_is_still_reported_as_denied() {
+        let transcript = chat_mode_transcript_for_self_run_tool(true).await;
+
+        let texts: Vec<String> = transcript.iter().map(|m| m.as_concat_text()).collect();
+        assert_eq!(texts, vec!["Tool call was denied.".to_string()]);
     }
 
     #[test]

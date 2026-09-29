@@ -3426,7 +3426,7 @@ export type WorkspaceIssue = {
     path?: string | null;
 };
 
-export type WorkspaceIssueCode = 'missing_folder' | 'not_directory' | 'inaccessible_folder' | 'relative_path' | 'path_traversal' | 'duplicate_path' | 'missing_primary_folder' | 'missing_credential_profile' | 'credential_needs_authentication' | 'invalid_credential_binding' | 'missing_output_folder' | 'invalid_output_configuration' | 'unsupported_schema_version' | 'secret_field_rejected';
+export type WorkspaceIssueCode = 'missing_folder' | 'not_directory' | 'inaccessible_folder' | 'relative_path' | 'path_traversal' | 'duplicate_path' | 'missing_primary_folder' | 'missing_credential_profile' | 'credential_needs_authentication' | 'invalid_credential_binding' | 'missing_output_folder' | 'invalid_output_configuration' | 'unsupported_schema_version' | 'secret_field_rejected' | 'unknown_extension';
 
 export type WorkspaceIssueSeverity = 'warning' | 'error';
 

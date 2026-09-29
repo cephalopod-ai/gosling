@@ -3077,7 +3077,8 @@ export const zWorkspaceIssueCode = z.enum([
     'missing_output_folder',
     'invalid_output_configuration',
     'unsupported_schema_version',
-    'secret_field_rejected'
+    'secret_field_rejected',
+    'unknown_extension'
 ]);
 
 export const zWorkspaceIssueSeverity = z.enum(['warning', 'error']);

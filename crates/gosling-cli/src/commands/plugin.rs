@@ -75,4 +75,8 @@ fn print_plugin_install(install: &gosling::plugins::PluginInstall) {
             println!("    - {}", skill.name);
         }
     }
+
+    for warning in &install.warnings {
+        eprintln!("{} {warning}", style("Warning:").yellow());
+    }
 }

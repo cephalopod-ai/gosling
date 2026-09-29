@@ -114,6 +114,7 @@ pub async fn connect_operator_stdio_client(
             })
         }
         Err(error) => {
+            let exit_status = child.try_wait().ok().flatten();
             let _ = child.start_kill();
             let _ = tokio::time::timeout(Duration::from_secs(1), child.wait()).await;
             let stderr_content =
@@ -127,7 +128,7 @@ pub async fn connect_operator_stdio_client(
                         String::new()
                     }
                 };
-            Err(ProcessExit::new(stderr_content, error).into())
+            Err(ProcessExit::new(stderr_content, exit_status, error).into())
         }
     }
 }

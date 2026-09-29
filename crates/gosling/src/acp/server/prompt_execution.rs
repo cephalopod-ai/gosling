@@ -313,6 +313,13 @@ impl GoslingAcpAgent {
     ) -> Result<PromptResponse, agent_client_protocol::Error> {
         // The ACP session_id IS the thread ID.
         let session_id = args.session_id.0.to_string();
+        // An empty prompt (or one with only unsupported blocks) used to reach
+        // the provider as a placeholder "Hello" turn.
+        let user_message = Self::convert_acp_prompt_to_message(&args.prompt);
+        if user_message.content.is_empty() {
+            return Err(agent_client_protocol::Error::invalid_params()
+                .data("prompt must contain at least one supported content block"));
+        }
         let sid = sid_short(&session_id);
         let t_start = std::time::Instant::now();
         let research_run_started_at = chrono::Utc::now() - chrono::Duration::seconds(1);
@@ -365,7 +372,6 @@ impl GoslingAcpAgent {
             Some(Ok(())) => {}
         }
 
-        let user_message = Self::convert_acp_prompt_to_message(&args.prompt);
         let (compacted_context, tail_limit) = {
             let sessions = self.sessions.lock().await;
             sessions

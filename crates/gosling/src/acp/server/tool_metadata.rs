@@ -193,9 +193,13 @@ pub(super) fn summarize_tool_call(
             "path", "file", "command", "query", "url", "uri", "name", "pattern", "source",
         ];
         for key in &keys {
+            if *key == "source" && is_ignored_delegate_source(obj) {
+                continue;
+            }
             if let Some(v) = obj.get(*key) {
                 let s = match v {
-                    serde_json::Value::String(s) => s.clone(),
+                    serde_json::Value::Null => continue,
+                    serde_json::Value::String(s) => s.trim().to_string(),
                     other => other.to_string(),
                 };
                 if !s.is_empty() {
@@ -214,6 +218,21 @@ pub(super) fn summarize_tool_call(
         Some(d) => format!("{base} · {d}"),
         None => base,
     }
+}
+
+/// Mirrors `DelegateParams::normalize`: an ad-hoc delegate may carry a
+/// placeholder `source: "dummy"` that is ignored, so it must not read as a
+/// named-source launch in the title.
+fn is_ignored_delegate_source(args: &serde_json::Map<String, serde_json::Value>) -> bool {
+    let present = |key: &str| {
+        args.get(key)
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|value| !value.trim().is_empty())
+    };
+    args.get("source").and_then(serde_json::Value::as_str) == Some("dummy")
+        && present("instructions")
+        && present("provider")
+        && present("model")
 }
 
 pub(super) fn tool_call_identity_meta(tool_request: &ToolRequest) -> Option<Meta> {

@@ -109,6 +109,7 @@ impl SummonClient {
     pub(super) async fn handle_delegate(
         &self,
         session_id: &str,
+        tool_call_request_id: Option<&str>,
         arguments: Option<JsonObject>,
         cancellation_token: CancellationToken,
     ) -> Result<CallToolResult, String> {
@@ -167,6 +168,7 @@ impl SummonClient {
         );
 
         let subagent_session_id = subagent_session.id.clone();
+        let parent_tool_request_id = tool_call_request_id.map(str::to_string);
 
         // The delegate runs on its own task so a timeout can cancel it
         // cooperatively and then reclaim the tool call. Awaiting the future
@@ -190,6 +192,7 @@ impl SummonClient {
                 cancellation_token: Some(run_token),
                 on_message: None,
                 notification_tx: Some(notif_tx),
+                parent_tool_request_id,
             })
             .await
         });

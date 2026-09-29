@@ -718,10 +718,6 @@ impl CliSession {
                     }
                 }
             }
-            InputResult::LoadSkills(names) => {
-                history.save(editor);
-                self.handle_load_skills(&names).await?;
-            }
             InputResult::ListSkills => {
                 history.save(editor);
                 self.handle_list_skills().await?;
@@ -1265,28 +1261,6 @@ impl CliSession {
             &Message::assistant().with_text("Chat context cleared.\n"),
             self.debug,
         );
-        Ok(())
-    }
-
-    async fn handle_load_skills(&mut self, names: &[String]) -> Result<()> {
-        // NOTE: We don't validate the skill names here because the load_skill tool will
-        // handle that and provide feedback to the user if any skill names are invalid.
-        let message = format!(
-            "Use the load_skill tool to load the following skills: {}.",
-            names
-                .iter()
-                .map(|n| format!("\"{}\"", n))
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
-        self.push_message(Message::user().with_text(&message));
-        output::show_thinking();
-        let result = self
-            .process_agent_response(true, CancellationToken::default())
-            .await;
-        output::hide_thinking();
-        result?;
-
         Ok(())
     }
 
