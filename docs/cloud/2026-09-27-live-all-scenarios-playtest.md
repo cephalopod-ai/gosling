@@ -295,7 +295,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | F02 | `run --output-format json\|stream-json`: startup failures are printed as human text on stdout | fixed (R8a) |
 | Low | F03 | `gosling serve` is silent on the console and its log misreports failed starts | fixed (R10) |
 | Low | F04 | WebSocket closes never carry a server close frame (client always sees 1006) | upstream crate (agent-client-protocol-http) |
-| Low | F05 | `--allowed-origin` accepts values that can never match and gives no diagnostics for rejections | open — queued R10 |
+| Low | F05 | `--allowed-origin` accepts values that can never match and gives no diagnostics for rejections | fixed (R10) |
 | Low | F06 | TLS startup validation/messaging gaps | open — queued R10 |
 | Low | F07 | Structurally invalid requests get -32700 Parse error with id:null | upstream crate (agent-client-protocol) |
 | Low | F08 | `session/prompt` with an empty prompt array sends the model a fabricated "Hello" | fixed (R10) |
