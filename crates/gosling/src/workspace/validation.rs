@@ -166,6 +166,39 @@ pub fn validate_workspace_mutation(
     }
 }
 
+/// Session start keeps only the pinned names (plus platform tools), so a name that
+/// matches no installed extension silently starts chats without that MCP server.
+/// This is a warning, not an error: an extension uninstalled after it was pinned
+/// must not make the workspace impossible to save or open.
+pub(super) fn validate_default_extensions(
+    workspace: &WorkspaceMutation,
+    known_extension_names: &HashSet<String>,
+    report: &mut WorkspaceValidationReport,
+) {
+    let Some(pinned) = &workspace.default_extensions else {
+        return;
+    };
+    let mut reported = HashSet::new();
+    for name in pinned.iter().map(|name| name.trim()) {
+        let is_platform = crate::agents::extension::PLATFORM_EXTENSIONS
+            .contains_key(crate::config::extensions::name_to_key(name).as_str());
+        if name.is_empty()
+            || is_platform
+            || known_extension_names.contains(name)
+            || !reported.insert(name)
+        {
+            continue;
+        }
+        report.issues.push(issue(
+            WorkspaceIssueCode::UnknownExtension,
+            WorkspaceIssueSeverity::Warning,
+            "default extension is not installed; new chats in this workspace will start without it",
+            Some(name.to_string()),
+            None,
+        ));
+    }
+}
+
 fn validate_path(
     raw: &str,
     required: bool,
@@ -469,5 +502,51 @@ mod tests {
             issue.code == WorkspaceIssueCode::CredentialNeedsAuthentication
                 && issue.severity == WorkspaceIssueSeverity::Warning
         }));
+    }
+
+    fn unknown_extension_targets(
+        default_extensions: Option<Vec<&str>>,
+        known: &[&str],
+    ) -> Vec<String> {
+        let mutation = WorkspaceMutation {
+            default_extensions: default_extensions
+                .map(|names| names.into_iter().map(str::to_string).collect()),
+            ..WorkspaceMutation::default()
+        };
+        let known = known.iter().map(|name| name.to_string()).collect();
+        let mut report = WorkspaceValidationReport {
+            valid_for_session: true,
+            ..WorkspaceValidationReport::default()
+        };
+
+        validate_default_extensions(&mutation, &known, &mut report);
+
+        assert!(report.valid_for_session);
+        assert!(report
+            .issues
+            .iter()
+            .all(|issue| issue.severity == WorkspaceIssueSeverity::Warning));
+        report
+            .issues
+            .into_iter()
+            .map(|issue| issue.target_id.unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn unknown_default_extension_is_reported_once() {
+        assert_eq!(
+            unknown_extension_targets(Some(vec!["muninn", "nope-ext", " nope-ext "]), &["muninn"]),
+            vec!["nope-ext"]
+        );
+    }
+
+    #[test]
+    fn configured_and_platform_default_extensions_are_not_reported() {
+        assert!(
+            unknown_extension_targets(Some(vec!["muninn", "developer"]), &["muninn"]).is_empty()
+        );
+        assert!(unknown_extension_targets(Some(vec![]), &[]).is_empty());
+        assert!(unknown_extension_targets(None, &[]).is_empty());
     }
 }

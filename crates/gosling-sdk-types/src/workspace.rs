@@ -116,6 +116,7 @@ pub enum WorkspaceIssueCode {
     InvalidOutputConfiguration,
     UnsupportedSchemaVersion,
     SecretFieldRejected,
+    UnknownExtension,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
