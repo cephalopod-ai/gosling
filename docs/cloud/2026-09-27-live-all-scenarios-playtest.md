@@ -243,7 +243,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | A14 | Documented slash commands without their argument are reported as "Unknown command" | fixed (R8b) |
 | Low | A15 | Version/help text gaps: `--version` prints " 1.3.0" with no program name; undocumented `session diagnostics` and `shell-validate` options | fixed (R8b) |
 | Low | A18 | Tool output and the following assistant text are printed with no separator (text and quiet modes) | fixed (R8a) |
-| Low | A19 | Hidden internal subcommands leak into shell completion and typo suggestions | open — queued R8b |
+| Low | A19 | Hidden internal subcommands leak into shell completion and typo suggestions | fixed (R8b) |
 | Low | A20 | (exploratory) `gosling secret` reports the wrong storage location and "removes" servers that don't exist | fixed (R5) |
 | Low | A21 | (exploratory) `shell-validate` has side effects and accepts unknown builtins | fixed (R7) |
 | Low | B07 | CLI stdout keeps the retracted partial attempt (text/-q/stream-json) | fixed (R1b) |
@@ -275,15 +275,15 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | D11 | `session export\|diagnostics\|context-history list` without an identifier outside a TTY: "Error: not connected", exit 0 | fixed (R8a) |
 | Low | D12 | `session remove -r` matches IDs only, but the CLI guide's example implies names | fixed (R8b) |
 | Low | D13 | Failed imports print "Imported session working directory: …" first; errors lack file/format context | fixed (R8b) |
-| Low | D14 | `gosling project` stops (exit 0) when the newest project is gone and hides child failures | open — queued R8b |
-| Low | D15 | `term init` aliases break when the gosling binary path contains a space | open — queued R8b |
+| Low | D14 | `gosling project` stops (exit 0) when the newest project is gone and hides child failures | fixed (R8b) |
+| Low | D15 | `term init` aliases break when the gosling binary path contains a space | fixed (R8b) |
 | Low | D16 | CLI guide's `--resume --path ./session.json  # exported session` does not work | fixed (R8b) |
 | Low | D17 | Forks lose their lineage (auto-renamed, banner says "resuming", no forked-from metadata) | fixed (cheap parts) (R4) |
 | Low | D18 | Typeahead during interactive startup is not submitted; later lines (even `/exit`) are merged into one prompt | open — queued R8b |
 | Low | D19 | `session list --format xml` silently falls back to text (exit 0) (suspicion) | fixed (R8b) |
 | Low | D24 | Import de-duplication blocks importing new turns of a grown transcript | note (product question) |
 | Low | D25 | `gosling tui` with non-interactive stdin renders a frame, then dumps an Ink/React stack trace | open — queued R8b |
-| Low | D26 | Default `review --dry-run` does not show what would run: `--checks-only` and `--instructions` produce byte-identical output that still announces a main pass | open — queued R8b |
+| Low | D26 | Default `review --dry-run` does not show what would run: `--checks-only` and `--instructions` produce byte-identical output that still announces a main pass | fixed (R8b) |
 | Low | E08 | Nested hints are re-appended on every resume / `session/load` + access (unbounded duplication) | fixed (R7) |
 | Low | E09 | Unreadable or invalid-UTF-8 `AGENTS.md`/`.goslinghints` are dropped silently (warning only in the log file) | fixed (R7) |
 | Low | E10 | `run -i` reports every read failure as "Instruction file not found" | fixed (R8b) |
