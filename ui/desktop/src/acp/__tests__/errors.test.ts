@@ -4,6 +4,7 @@ import {
   describeAcpError,
   isAcpAwaitingReplyError,
   isAcpConnectionClosedError,
+  isAcpSessionArchivedError,
   parseAcpCreditsExhaustedError,
   parseAcpPlanError,
   parseAcpLibraryError,
@@ -35,6 +36,37 @@ describe('isAcpAwaitingReplyError', () => {
     ).toBe(false);
     expect(isAcpAwaitingReplyError({ code: -32603, message: 'x', data: 'plain text' })).toBe(false);
     expect(isAcpAwaitingReplyError(new Error('boom'))).toBe(false);
+  });
+});
+
+describe('isAcpSessionArchivedError', () => {
+  it('recognises a prompt refused because the session is archived', () => {
+    expect(
+      isAcpSessionArchivedError({
+        code: -32600,
+        message: 'session s1 is archived; restore it to continue',
+        data: { reason: 'session_archived', sessionId: 's1' },
+      })
+    ).toBe(true);
+    expect(
+      isAcpSessionArchivedError({
+        error: { code: -32600, message: 'x', data: { reason: 'session_archived' } },
+      })
+    ).toBe(true);
+  });
+
+  it('does not match other errors', () => {
+    expect(
+      isAcpSessionArchivedError({
+        code: -32603,
+        message: 'x',
+        data: { reason: 'deep_research_awaiting_reply' },
+      })
+    ).toBe(false);
+    expect(
+      isAcpSessionArchivedError({ code: -32600, message: 'x', data: 'session_archived' })
+    ).toBe(false);
+    expect(isAcpSessionArchivedError(new Error('session is archived'))).toBe(false);
   });
 });
 

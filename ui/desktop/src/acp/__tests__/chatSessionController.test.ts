@@ -362,6 +362,42 @@ describe('acpChatSessionController.submitMessage', () => {
     expect(onFinish).toHaveBeenCalledWith('Submit error: ACP connection closed');
   });
 
+  it('offers restore when the backend refuses a prompt to an archived session', async () => {
+    vi.mocked(acpChatSessionStore.getSnapshot).mockReturnValue({
+      ...snapshotWithActivePrompt(null),
+      session: loadedSession(),
+    });
+    vi.mocked(acpPromptSession).mockRejectedValue({
+      code: -32600,
+      message: `session ${SESSION_ID} is archived; restore it to continue`,
+      data: {
+        reason: 'session_archived',
+        message: `session ${SESSION_ID} is archived; restore it to continue`,
+        sessionId: SESSION_ID,
+      },
+    });
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const onFinish = vi.fn();
+
+    await acpChatSessionController.submitMessage(SESSION_ID, userMessage(), {
+      getCurrentSnapshot: () => snapshotWithActivePrompt(null),
+      onFinish,
+    });
+
+    expect(acpChatSessionActions.finishPromptAttemptIfCurrent).toHaveBeenCalledWith(
+      SESSION_ID,
+      expect.any(String),
+      {
+        message: 'This chat is archived. Restore it to continue.',
+        connectionLost: false,
+        recovery: 'restore',
+      }
+    );
+    expect(onFinish).toHaveBeenCalledWith('This chat is archived. Restore it to continue.');
+    expect(consoleError).not.toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
   it('clears the recovery marker after a terminal prompt result', async () => {
     vi.mocked(acpChatSessionStore.getSnapshot).mockReturnValue({
       ...snapshotWithActivePrompt(null),

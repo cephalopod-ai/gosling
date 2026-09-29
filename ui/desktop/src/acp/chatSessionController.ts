@@ -23,6 +23,7 @@ import {
   parseAcpLibraryError,
   type AcpCreditsExhaustedError,
   isAcpAwaitingReplyError,
+  isAcpSessionArchivedError,
 } from './errors';
 import { cancelAcpPermissionRequestsForSession } from './permissionRequests';
 import { acpCancelPrompt, acpPromptSession } from './prompt';
@@ -398,19 +399,26 @@ async function submitMessage(
     }
 
     const awaitingReply = isAcpAwaitingReplyError(error);
-    if (!awaitingReply) {
+    const sessionArchived = isAcpSessionArchivedError(error);
+    if (!awaitingReply && !sessionArchived) {
       console.error('Failed to submit ACP prompt:', error);
     }
     const submitError = awaitingReply
       ? { message: '', connectionLost: false, awaitingReply: true }
-      : {
-          message: preparingInputs
-            ? 'Could not attach inputs: ' +
-              (parseAcpLibraryError(error)?.message ?? describeAcpError(error))
-            : 'Submit error: ' + describeAcpError(error),
-          connectionLost: isAcpConnectionClosedError(error),
-          ...(preparingInputs ? { recovery: 'inputs' as const } : {}),
-        };
+      : sessionArchived
+        ? {
+            message: 'This chat is archived. Restore it to continue.',
+            connectionLost: false,
+            recovery: 'restore' as const,
+          }
+        : {
+            message: preparingInputs
+              ? 'Could not attach inputs: ' +
+                (parseAcpLibraryError(error)?.message ?? describeAcpError(error))
+              : 'Submit error: ' + describeAcpError(error),
+            connectionLost: isAcpConnectionClosedError(error),
+            ...(preparingInputs ? { recovery: 'inputs' as const } : {}),
+          };
     preserveRecoveryMarker = submitError.connectionLost;
     if (
       acpChatSessionActions.finishPromptAttemptIfCurrent(sessionId, promptAttemptId, submitError)

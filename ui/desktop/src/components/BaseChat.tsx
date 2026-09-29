@@ -20,7 +20,8 @@ import { getMotionAwareScrollBehavior } from '../utils/motion';
 import { useChatSession } from '../hooks/useChatSession';
 import { useRunStatus } from '../hooks/useRunStatus';
 import { RunStatusControl } from './RunStatusControl';
-import { acpSetSessionMode, acpUpdateWorkingDir } from '../acp/sessions';
+import { acpSetSessionMode, acpUnarchiveSession, acpUpdateWorkingDir } from '../acp/sessions';
+import { toast } from 'react-toastify';
 import type { GoslingMode } from '../types/session';
 import { useNavigation } from '../hooks/useNavigation';
 import {
@@ -118,6 +119,23 @@ const i18n = defineMessages({
   retryInputs: {
     id: 'baseChat.retryInputs',
     defaultMessage: 'Retry with current inputs',
+  },
+  sessionArchived: {
+    id: 'baseChat.sessionArchived',
+    defaultMessage: 'This chat is archived',
+  },
+  sessionArchivedBody: {
+    id: 'baseChat.sessionArchivedBody',
+    defaultMessage:
+      'It was archived, possibly in another window, so your message was not sent. Restore the chat to send it.',
+  },
+  restoreArchivedAndSend: {
+    id: 'baseChat.restoreArchivedAndSend',
+    defaultMessage: 'Restore and send',
+  },
+  restoreArchivedFailed: {
+    id: 'baseChat.restoreArchivedFailed',
+    defaultMessage: 'Could not restore this chat: {error}',
   },
   researchBadge: {
     id: 'baseChat.researchBadge',
@@ -342,6 +360,24 @@ export default function BaseChat({
     },
     [handleSubmit]
   );
+
+  const [restoringArchivedSession, setRestoringArchivedSession] = useState(false);
+  const restoreArchivedSessionAndSend = useCallback(async () => {
+    setRestoringArchivedSession(true);
+    try {
+      await acpUnarchiveSession(sessionId);
+      window.dispatchEvent(
+        new CustomEvent(AppEvents.SESSION_UNARCHIVED, { detail: { sessionId } })
+      );
+      await handleSubmit({ msg: '', images: [] });
+    } catch (error) {
+      toast.error(
+        intl.formatMessage(i18n.restoreArchivedFailed, { error: describeAcpError(error) })
+      );
+    } finally {
+      setRestoringArchivedSession(false);
+    }
+  }, [handleSubmit, intl, sessionId]);
 
   const sessionModel = session?.model_config?.model_name ?? null;
   const sessionProvider = session?.provider_name ?? null;
@@ -957,9 +993,11 @@ export default function BaseChat({
                     ? i18n.awaitingReply
                     : promptError?.connectionLost
                       ? i18n.connectionInterrupted
-                      : promptError
-                        ? i18n.taskFailed
-                        : i18n.taskInterrupted
+                      : promptError?.recovery === 'restore'
+                        ? i18n.sessionArchived
+                        : promptError
+                          ? i18n.taskFailed
+                          : i18n.taskInterrupted
                 )}
               </p>
               <p className="mt-1 text-xs text-text-secondary">
@@ -967,7 +1005,9 @@ export default function BaseChat({
                   ? intl.formatMessage(i18n.awaitingReplyBody)
                   : promptError?.connectionLost
                     ? intl.formatMessage(i18n.connectionInterruptedBody)
-                    : promptError?.message || intl.formatMessage(i18n.taskInterruptedBody)}
+                    : promptError?.recovery === 'restore'
+                      ? intl.formatMessage(i18n.sessionArchivedBody)
+                      : promptError?.message || intl.formatMessage(i18n.taskInterruptedBody)}
               </p>
             </div>
             {promptError?.connectionLost ? (
@@ -977,6 +1017,15 @@ export default function BaseChat({
                 className="shrink-0 rounded-md border border-border-primary px-3 py-1.5 text-sm hover:bg-background-secondary"
               >
                 {intl.formatMessage(i18n.reconnect)}
+              </button>
+            ) : promptError?.recovery === 'restore' ? (
+              <button
+                type="button"
+                disabled={restoringArchivedSession || chatState !== ChatState.Idle}
+                onClick={() => void restoreArchivedSessionAndSend()}
+                className="max-w-64 shrink-0 rounded-md border border-border-primary px-3 py-1.5 text-sm hover:bg-background-secondary disabled:opacity-50"
+              >
+                {intl.formatMessage(i18n.restoreArchivedAndSend)}
               </button>
             ) : promptError?.recovery === 'inputs' ? (
               <button

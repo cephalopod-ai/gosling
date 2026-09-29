@@ -56,6 +56,18 @@ export function isAcpAwaitingReplyError(error: unknown): boolean {
   );
 }
 
+const SESSION_ARCHIVED_REASON = 'session_archived';
+
+/** The backend refused input because the session was archived, possibly from another window. */
+export function isAcpSessionArchivedError(error: unknown): boolean {
+  const jsonRpcError = asAcpJsonRpcError(error);
+  return (
+    jsonRpcError !== null &&
+    isRecord(jsonRpcError.data) &&
+    jsonRpcError.data.reason === SESSION_ARCHIVED_REASON
+  );
+}
+
 /**
  * Renders an ACP JSON-RPC error the way the Rust `Display for Error` impl does:
  * the message, plus the `data` payload (often the real underlying cause, e.g. an
