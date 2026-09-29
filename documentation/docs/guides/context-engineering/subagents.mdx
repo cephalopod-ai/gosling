@@ -204,7 +204,7 @@ Subagents use the following pre-configured settings, but you can override any de
 |-----------|---------|------------------|
 | **Max Turns** | 25 | Use natural language or set `GOSLING_SUBAGENT_MAX_TURNS` |
 | **Timeout** | 30 minutes for a foreground subagent | Set `GOSLING_SYNC_DELEGATE_TIMEOUT_SECS` (`0` removes the limit); a prompt cannot change it |
-| **Extensions** | Inherited from parent | Specify which extensions to use in your prompt |
+| **Extensions** | None for an ad-hoc subagent; a named agent's own capability policy | Name the extensions it needs in your prompt (chosen from the main session's) |
 | **Return Mode** | All subagent information provided in main session | Specify how much detail you want in your prompt |
 
 When a foreground subagent reaches the timeout, gosling cancels it and returns an error to the main session that names the subagent's session, so you can read what it finished. The task is not retried automatically. Background subagents (`async: true`) have no overall timeout: each `load` call waits up to 5 minutes for a running task, then reports that it is still running so you can wait again or cancel it.
@@ -230,7 +230,9 @@ You can override any default by including the setting in your natural language r
 
 ### Extension Control
 
-Control which tools and capabilities subagents can access. By default, subagents inherit all extensions from your main session, but you can restrict access for security, focus or performance.
+Control which tools and capabilities subagents can access. An ad-hoc subagent starts with no extensions: gosling only gives it the extensions named for it, and only ones already enabled in your main session. A subagent run from a named agent gets that agent's declared capabilities, and a list given for it can only narrow them. The subagent's result begins with the extensions it was actually given (for example `[Resolved delegate authority: extensions = developer]`), so you can check what it could use.
+
+If a subagent reports that no matching tool exists, ask for it again with the extension it needs, such as "use a subagent with the developer extension".
 
 :::note Summon Extension
 The `delegate` and `load` tools are provided by the `summon` platform extension, which is enabled by default.
@@ -268,7 +270,7 @@ Subagents have access to these safe operations:
 
 - **Extension discovery**: Search for available extensions to understand what tools are available
 - **Resource access**: Read and list resources from enabled extensions for context
-- **Extension tools**: Use tools from extensions inherited from the parent session
+- **Extension tools**: Use tools from the extensions granted to it, which are always a subset of the parent session's
 
 ### Restricted Operations
 
