@@ -437,7 +437,7 @@ An imported session starts in Manual Approval (`approve`) mode with tools restri
 
     </TabItem>
     <TabItem value="cli" label="gosling CLI">
-        Export sessions for backup, sharing, migration, or documentation purposes. You can export as JSON files to preserve complete session data including conversation history, metadata, and settings, or as Markdown files to get a formatted, readable version of the conversation. Secrets are replaced with `[REDACTED]` unless you pass `--no-redact`.
+        Export sessions for backup, sharing, migration, or documentation purposes. You can export as JSON files to preserve complete session data including conversation history, metadata, and settings, or as Markdown files to get a formatted, readable version of the conversation. Markdown export shows only the messages you see in the chat; internal messages such as model-switch checkpoints and compaction summaries are kept in JSON exports only. Secrets are replaced with `[REDACTED]` unless you pass `--no-redact`.
 
         From your terminal, run the [`session export`](/docs/guides/gosling-cli-commands#session-export-options) subcommand:
         
