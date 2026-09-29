@@ -513,7 +513,8 @@ enum SessionCommand {
             short,
             long,
             help = "Output format (text, json)",
-            default_value = "text"
+            default_value = "text",
+            value_parser = clap::builder::PossibleValuesParser::new(["text", "json"])
         )]
         format: String,
 
@@ -570,7 +571,8 @@ enum SessionCommand {
             long = "format",
             value_name = "FORMAT",
             help = "Output format (markdown, json, yaml)",
-            default_value = "markdown"
+            default_value = "markdown",
+            value_parser = clap::builder::PossibleValuesParser::new(["markdown", "json", "yaml"])
         )]
         format: String,
 
@@ -645,7 +647,12 @@ enum ContextHistoryCommand {
         before: Option<u64>,
         #[arg(long, help = "Include snapshots past their retention date")]
         include_expired: bool,
-        #[arg(long, default_value = "text", help = "Output format (text, json)")]
+        #[arg(
+            long,
+            default_value = "text",
+            help = "Output format (text, json)",
+            value_parser = clap::builder::PossibleValuesParser::new(["text", "json"])
+        )]
         format: String,
     },
     #[command(about = "Show one saved compaction snapshot")]
@@ -657,7 +664,8 @@ enum ContextHistoryCommand {
         #[arg(
             long,
             default_value = "markdown",
-            help = "Output format (markdown, json)"
+            help = "Output format (markdown, json)",
+            value_parser = clap::builder::PossibleValuesParser::new(["markdown", "json"])
         )]
         format: String,
     },
@@ -669,7 +677,12 @@ enum ContextHistoryCommand {
         generation: Option<u64>,
         #[arg(short, long)]
         output: Option<PathBuf>,
-        #[arg(long, default_value = "json", help = "Output format (json, markdown)")]
+        #[arg(
+            long,
+            default_value = "json",
+            help = "Output format (json, markdown)",
+            value_parser = clap::builder::PossibleValuesParser::new(["json", "markdown"])
+        )]
         format: String,
         #[arg(short = 'y', long, help = "Acknowledge the sensitive-data warning")]
         yes: bool,
