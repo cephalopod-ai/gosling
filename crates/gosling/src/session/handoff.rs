@@ -1010,6 +1010,13 @@ impl<'a> SessionHandoffBuilder<'a> {
         let first_row_id = rows.first().map(|(row_id, _)| *row_id);
         let covered_through_row_id = rows.last().map(|(row_id, _)| *row_id);
         let (continuity_class, delivery_strategy) = delivery_plan(target_capabilities);
+        // With no history there is nothing to carry over: a checkpoint would
+        // only put its boilerplate in front of the operator's first prompt.
+        let delivery_strategy = if total_message_count == 0 {
+            HandoffDeliveryStrategyDto::NewContext
+        } else {
+            delivery_strategy
+        };
         let mut truncations = Vec::new();
         let uncovered_message_count =
             total_message_count.saturating_sub(summary_covered + rows.len());

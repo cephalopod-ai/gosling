@@ -48,7 +48,7 @@ use crate::session::extension_data::ExtensionData;
 use crate::session::extension_data::{EnabledExtensionsState, ExtensionState};
 use crate::session::library::{NewSessionLibraryContent, SessionLibraryItem, SessionLibraryScope};
 use crate::session::session_naming::{
-    generate_session_name, MSG_COUNT_FOR_SESSION_NAME_GENERATION,
+    generate_session_name, is_operator_message, MSG_COUNT_FOR_SESSION_NAME_GENERATION,
 };
 use crate::utils::sanitize_unicode_tags;
 use crate::workspace::WorkspaceSessionContext;
@@ -1471,7 +1471,7 @@ impl SessionManager {
         let user_message_count = conversation
             .messages()
             .iter()
-            .filter(|m| matches!(m.role, Role::User))
+            .filter(|m| is_operator_message(m))
             .count();
 
         if user_message_count <= MSG_COUNT_FOR_SESSION_NAME_GENERATION {

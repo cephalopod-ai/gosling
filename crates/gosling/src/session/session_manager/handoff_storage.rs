@@ -4,7 +4,7 @@ use chrono::Utc;
 use gosling_providers::conversation::token_usage::Usage;
 use gosling_providers::model::ModelConfig;
 use gosling_sdk_types::session_handoff::{
-    SessionContinuityClassDto, SessionHandoffSnapshotV1Dto, SessionHandoffStatusDto,
+    HandoffDeliveryStrategyDto, SessionHandoffSnapshotV1Dto, SessionHandoffStatusDto,
 };
 use sqlx::{Sqlite, Transaction};
 
@@ -215,7 +215,7 @@ impl SessionStorage {
         );
 
         let current_context_tokens =
-            if snapshot.continuity_class == SessionContinuityClassDto::NewContextOnly {
+            if snapshot.delivery_strategy == HandoffDeliveryStrategyDto::NewContext {
                 0
             } else {
                 i32::try_from(snapshot.coverage.estimated_tokens).unwrap_or(i32::MAX)
