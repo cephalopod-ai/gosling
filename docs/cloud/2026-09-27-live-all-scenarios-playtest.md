@@ -233,7 +233,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Medium | S18 | Corrupt permission.yaml: CLI/ACP panic, serve hangs `initialize`, `doctor` stays green, denials mislead | fixed (R6) |
 | Medium | S20 | Subdirectory AGENTS.md from any touched directory (including ignored ones) is injected into the user turn | fixed (R7) |
 | Low | A02 | Unknown provider from `GOSLING_PROVIDER` env is reported as "No model configured" | open — queued R8b |
-| Low | A04 | Ctrl-C in `gosling configure` leaves the terminal cursor hidden | open — queued R8b |
+| Low | A04 | Ctrl-C in `gosling configure` leaves the terminal cursor hidden | fixed (R8b) |
 | Low | A05 | Broken config.yaml: session/run say "Run 'gosling configure' first" but configure refuses to run | fixed (R5) |
 | Low | A07 | REPL silently discards input that arrives in the same burst as a submitting Enter | open — queued R8b |
 | Low | A09 | Opening a session with `--resume` and exiting without sending re-stamps `updated_at` | fixed (R4) |
@@ -270,8 +270,8 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | C25 | Workspace `defaultExtensions` accepts unknown names silently | fixed (R11) |
 | Low | D02 | Open CLI session crashes with a raw FOREIGN KEY error after the session is removed elsewhere; typed prompt lost | fixed (R4) |
 | Low | D06 | Session exports write raw secrets from tool output (diagnostics redacts, export does not) | fixed (R5) |
-| Low | D09 | Session pickers are shuffled on every run; diagnostics/context-history picker says "Select a session to export:" | open — queued R8b |
-| Low | D10 | Ctrl-C in the `session remove` picker kills the process by SIGINT and leaves the cursor hidden | open — queued R8b |
+| Low | D09 | Session pickers are shuffled on every run; diagnostics/context-history picker says "Select a session to export:" | fixed (R8b) |
+| Low | D10 | Ctrl-C in the `session remove` picker kills the process by SIGINT and leaves the cursor hidden | fixed (R8b) |
 | Low | D11 | `session export\|diagnostics\|context-history list` without an identifier outside a TTY: "Error: not connected", exit 0 | fixed (R8a) |
 | Low | D12 | `session remove -r` matches IDs only, but the CLI guide's example implies names | fixed (R8b) |
 | Low | D13 | Failed imports print "Imported session working directory: …" first; errors lack file/format context | open — queued R8b |
