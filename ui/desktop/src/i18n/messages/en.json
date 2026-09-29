@@ -227,6 +227,9 @@
   "artifactPane.sessionScope": {
     "defaultMessage": "Session"
   },
+  "artifactPane.showAsPlainText": {
+    "defaultMessage": "Show as plain text"
+  },
   "artifactPane.truncated": {
     "defaultMessage": "Truncated"
   },

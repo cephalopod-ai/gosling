@@ -20,7 +20,7 @@ import {
   clearSelectedSessionInputs,
   getSelectedSessionInputs,
 } from '../../acp/sessionInputSelection';
-import { ArtifactPane } from './ArtifactPane';
+import { ArtifactPane, MARKDOWN_RENDER_CHAR_LIMIT } from './ArtifactPane';
 import { ARTIFACT_TIMESTAMPS_REFRESH_EVENT } from '../../types/artifactFileTimestamps';
 
 vi.mock('../../contexts/ArtifactRouterContext', () => ({ useArtifactRouter: vi.fn() }));
@@ -227,6 +227,69 @@ describe('ArtifactPane', () => {
     expect(window.electron.writeClipboardText).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Copy path' }));
     expect(window.electron.writeClipboardText).toHaveBeenCalledWith('/outputs/report.md');
+  });
+
+  it('formats only a bounded prefix of a large Markdown file and offers the full text as plain text', async () => {
+    const content = `# Big report\n${`${'x'.repeat(69)}\n`.repeat(6000)}LAST-LINE-MARKER\n`;
+    readArtifactFile.mockResolvedValue({
+      content,
+      encoding: 'utf8',
+      error: null,
+      found: true,
+      filePath: '/outputs/report.md',
+      truncated: false,
+    });
+    render(
+      <IntlTestWrapper>
+        <ArtifactWorkbenchProvider>
+          <Harness />
+        </ArtifactWorkbenchProvider>
+      </IntlTestWrapper>
+    );
+    fireEvent.click(screen.getAllByRole('button', { name: 'Open file' })[0]);
+
+    await screen.findByRole('heading', { name: 'Big report' });
+    const formatted = document.querySelector('.prose');
+    expect(formatted?.textContent?.length).toBeLessThanOrEqual(MARKDOWN_RENDER_CHAR_LIMIT);
+    expect(formatted?.textContent).not.toContain('LAST-LINE-MARKER');
+    expect(
+      screen.getByText('This preview is truncated. Open the file for the complete output.')
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show as plain text' }));
+    const plainText = await screen.findByText(/LAST-LINE-MARKER/);
+    expect(plainText.tagName).toBe('PRE');
+    expect(plainText.textContent).toBe(content);
+    expect(document.querySelector('.prose')).toBeNull();
+    expect(
+      screen.queryByText('This preview is truncated. Open the file for the complete output.')
+    ).toBeNull();
+  });
+
+  it('formats a small Markdown file in full without a truncation notice', async () => {
+    readArtifactFile.mockResolvedValue({
+      content: '# Small report\n\nFirst paragraph.\n\nFINAL-PARAGRAPH-MARKER\n',
+      encoding: 'utf8',
+      error: null,
+      found: true,
+      filePath: '/outputs/report.md',
+      truncated: false,
+    });
+    render(
+      <IntlTestWrapper>
+        <ArtifactWorkbenchProvider>
+          <Harness />
+        </ArtifactWorkbenchProvider>
+      </IntlTestWrapper>
+    );
+    fireEvent.click(screen.getAllByRole('button', { name: 'Open file' })[0]);
+
+    expect(await screen.findByText('FINAL-PARAGRAPH-MARKER')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Small report' })).toBeInTheDocument();
+    expect(
+      screen.queryByText('This preview is truncated. Open the file for the complete output.')
+    ).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Show as plain text' })).toBeNull();
   });
 
   it('copies transient text with its original Markdown and Unicode', async () => {

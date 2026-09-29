@@ -98,6 +98,7 @@ const i18n = defineMessages({
     id: 'artifactPane.previewTruncated',
     defaultMessage: 'This preview is truncated. Open the file for the complete output.',
   },
+  showAsPlainText: { id: 'artifactPane.showAsPlainText', defaultMessage: 'Show as plain text' },
   unsupported: {
     id: 'artifactPane.unsupported',
     defaultMessage: 'This file type does not have an in-app preview yet.',
@@ -191,6 +192,20 @@ interface PreviewData {
 const ARTIFACT_ACCESS_RETRY_COUNT = 3;
 const ARTIFACT_ACCESS_RETRY_DELAY_MS = 100;
 
+// Markdown parsing runs synchronously on the renderer thread and grows superlinearly with long
+// runs of lines (a 2 MiB file blocked the window for 15+ s), so only a prefix is formatted.
+export const MARKDOWN_RENDER_CHAR_LIMIT = 128 * 1024;
+
+function exceedsMarkdownRenderLimit(content: string): boolean {
+  return content.length > MARKDOWN_RENDER_CHAR_LIMIT;
+}
+
+function markdownRenderPrefix(content: string): string {
+  if (!exceedsMarkdownRenderLimit(content)) return content;
+  const lastLineEnd = content.lastIndexOf('\n', MARKDOWN_RENDER_CHAR_LIMIT);
+  return content.slice(0, lastLineEnd > 0 ? lastLineEnd : MARKDOWN_RENDER_CHAR_LIMIT);
+}
+
 function isRetryableArtifactAccessError(error: string | null): boolean {
   return error?.includes('Renderer file access denied for path outside approved roots') ?? false;
 }
@@ -281,10 +296,12 @@ function InputIcon({ kind }: { kind: ShellLibraryItemSummary['kind'] }) {
 function Preview({
   tab,
   data,
+  markdownAsText,
   onGrantAccess,
 }: {
   tab: ArtifactTab;
   data: PreviewData;
+  markdownAsText: boolean;
   onGrantAccess: () => void;
 }) {
   const intl = useIntl();
@@ -319,9 +336,16 @@ function Preview({
 
   switch (tab.kind) {
     case 'markdown':
+      if (markdownAsText) {
+        return (
+          <pre className="whitespace-pre-wrap break-words font-mono text-xs p-4">
+            {data.content}
+          </pre>
+        );
+      }
       return (
         <div className="p-5">
-          <MarkdownContent content={data.content} />
+          <MarkdownContent content={markdownRenderPrefix(data.content)} />
         </div>
       );
     case 'csv':
@@ -412,6 +436,7 @@ export function ArtifactPane() {
   const [researchLibraryError, setResearchLibraryError] = useState(false);
   const [preview, setPreview] = useState<PreviewData | null>(null);
   const [previewRevision, setPreviewRevision] = useState(0);
+  const [plainTextMarkdownTabId, setPlainTextMarkdownTabId] = useState<string | null>(null);
   const [copyingContents, setCopyingContents] = useState(false);
   const [titleRefresh, setTitleRefresh] = useState(0);
   const [artifactCapabilityRevision, setArtifactCapabilityRevision] = useState(0);
@@ -774,9 +799,19 @@ export function ArtifactPane() {
   const selectedArtifactPath =
     activeTab?.source.type === 'file' ? activeTab.source.path : undefined;
 
+  const markdownAsText = activeTab !== null && plainTextMarkdownTabId === activeTab.id;
+  const markdownRenderCapped =
+    activeTab?.kind === 'markdown' &&
+    !markdownAsText &&
+    !!preview &&
+    !preview.error &&
+    exceedsMarkdownRenderLimit(preview.content);
+
   const artifactStatus = (displayPath: string): { text: string; blocked: boolean } | null => {
     if (displayPath !== selectedArtifactPath || !preview) return null;
-    if (preview.truncated) return { text: intl.formatMessage(i18n.truncated), blocked: false };
+    if (preview.truncated || markdownRenderCapped) {
+      return { text: intl.formatMessage(i18n.truncated), blocked: false };
+    }
     if (!preview.error) return null;
     const blocked = !/not found|no such file|missing/i.test(preview.error);
     return { text: intl.formatMessage(blocked ? i18n.blocked : i18n.missing), blocked };
@@ -1268,17 +1303,34 @@ export function ArtifactPane() {
               </div>
             ) : (
               <>
-                {preview.truncated &&
+                {((preview.truncated &&
                   activeTab.kind !== 'html' &&
                   activeTab.kind !== 'image' &&
                   activeTab.kind !== 'pdf' &&
-                  activeTab.kind !== 'svg' && (
-                    <div className="m-3 flex items-center gap-2 rounded-md border border-border-primary px-3 py-2 text-xs text-text-secondary">
-                      <AlertTriangle className="h-4 w-4" />
+                  activeTab.kind !== 'svg') ||
+                  markdownRenderCapped) && (
+                  <div className="m-3 flex items-center gap-2 rounded-md border border-border-primary px-3 py-2 text-xs text-text-secondary">
+                    <AlertTriangle className="h-4 w-4 shrink-0" />
+                    <span className="min-w-0 flex-1">
                       {intl.formatMessage(i18n.previewTruncated)}
-                    </div>
-                  )}
-                <Preview tab={activeTab} data={preview} onGrantAccess={() => void chooseFile()} />
+                    </span>
+                    {markdownRenderCapped && (
+                      <Button
+                        variant="outline"
+                        size="xs"
+                        onClick={() => setPlainTextMarkdownTabId(activeTab.id)}
+                      >
+                        {intl.formatMessage(i18n.showAsPlainText)}
+                      </Button>
+                    )}
+                  </div>
+                )}
+                <Preview
+                  tab={activeTab}
+                  data={preview}
+                  markdownAsText={markdownAsText}
+                  onGrantAccess={() => void chooseFile()}
+                />
               </>
             )}
           </div>

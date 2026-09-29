@@ -4195,5 +4195,8 @@
   },
   "conversationLimitsDropdown.invalidMaxTurns": {
     "defaultMessage": "config.yaml has an invalid Max Turns value: \"{value}\". Gosling uses the default ({fallback}) until you enter a whole number."
+  },
+  "artifactPane.showAsPlainText": {
+    "defaultMessage": "Show as plain text"
   }
 }
