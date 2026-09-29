@@ -159,6 +159,10 @@ export class RendererAccessController {
     }
 
     const artifactFiles = [];
+    const approvedRoots = [
+      ...this.directoryGrants.rootsFor(webContentsId),
+      ...outputs.map((output) => output.path),
+    ];
     for (const artifactFile of config.artifactFiles ?? []) {
       if (
         typeof artifactFile !== 'string' ||
@@ -168,7 +172,10 @@ export class RendererAccessController {
         continue;
       }
       try {
-        const artifactPath = await resolveArtifactFileCapability(resolveRendererPath(artifactFile));
+        const artifactPath = await resolveArtifactFileCapability(
+          resolveRendererPath(artifactFile),
+          approvedRoots
+        );
         if (artifactPath) artifactFiles.push(artifactPath);
       } catch {
         continue;

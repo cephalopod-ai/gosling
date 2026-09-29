@@ -293,8 +293,6 @@ export function registerFileIpcHandlers(
           filePath,
           baseDirectory
         );
-        const stats = await fs.stat(resolvedPath);
-        if (!stats.isFile()) throw new Error('The selected output is not a file');
         const extension = path.extname(resolvedPath).toLowerCase();
         const binaryExtensions = new Set([
           '.gif',
@@ -306,10 +304,17 @@ export function registerFileIpcHandlers(
           '.webp',
         ]);
         const previewLimit = binaryExtensions.has(extension) ? 20 * 1024 * 1024 : 2 * 1024 * 1024;
-        const bytesToRead = Math.min(stats.size, previewLimit);
-        const handle = await fs.open(resolvedPath, 'r');
-        const buffer = Buffer.alloc(bytesToRead);
+        const handle = await fs.open(
+          resolvedPath,
+          constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK
+        );
+        let stats;
+        let buffer;
         try {
+          stats = await handle.stat();
+          if (!stats.isFile()) throw new Error('The selected output is not a file');
+          const bytesToRead = Math.min(stats.size, previewLimit);
+          buffer = Buffer.alloc(bytesToRead);
           await handle.read(buffer, 0, bytesToRead, 0);
         } finally {
           await handle.close();

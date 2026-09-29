@@ -186,7 +186,10 @@ tab through the same Electron authorization boundary used by **Reveal**, **Open 
 can be previewed directly through an exact-file capability. A file outside the session's approved
 roots or validated workspace outputs remains blocked unless you
 explicitly select it with the file picker; code, configuration (including `.env`), and MCP/tool
-metadata never receive that automatic capability.
+metadata never receive that automatic capability. Access is checked against the file a path
+really resolves to: a symbolic link inside the workspace whose target lies outside the approved
+roots and outputs is listed but not granted, so its preview and **Copy contents** report it as
+outside the approved roots.
 
 The session's own working directories — the primary folder and any additional folder, including
 one chosen from the recent list rather than the picker — are readable in the pane without a

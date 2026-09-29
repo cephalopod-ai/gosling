@@ -505,6 +505,72 @@ describe('live main artifact authorization', () => {
     expect(await publish([source, directory])).toBe(false);
   });
 
+  it('does not grant the outside target of a workspace symlink named in the session inventory', async () => {
+    const { invoke, publish, reportPath, launchRoot } = await createMainFileIpc();
+    const outsideRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'gosling-outside-secret-'));
+    temporaryDirectories.push(outsideRoot);
+    const secret = path.join(outsideRoot, 'outside-note.md');
+    await fs.writeFile(secret, 'OUTSIDE-ROOT-MARKER');
+    const fileLink = path.join(launchRoot, 'link-note.md');
+    await fs.symlink(secret, fileLink);
+    const directoryLink = path.join(launchRoot, 'linked-dir');
+    await fs.symlink(outsideRoot, directoryLink);
+
+    expect(await publish([fileLink, path.join(directoryLink, 'outside-note.md')])).toBe(false);
+    for (const filePath of [secret, fileLink, path.join(directoryLink, 'outside-note.md')]) {
+      expect(await invoke('read-artifact-file', 7, filePath)).toMatchObject({
+        content: '',
+        error: expect.stringContaining('outside approved roots'),
+      });
+      await expect(invoke('copy-artifact-contents', 7, filePath)).rejects.toThrow(
+        'outside approved roots'
+      );
+    }
+
+    expect(await publish([reportPath, fileLink])).toBe(true);
+    expect(await invoke('read-artifact-file', 7, reportPath)).toMatchObject({ error: null });
+    expect(await invoke('read-artifact-file', 7, fileLink)).toMatchObject({
+      error: expect.stringContaining('outside approved roots'),
+    });
+    expect(clipboard.writeText).not.toHaveBeenCalled();
+  });
+
+  it('keeps granting a workspace symlink whose target stays inside the approved roots', async () => {
+    const { invoke, publish, launchRoot } = await createMainFileIpc();
+    const inside = path.join(launchRoot, 'real-note.md');
+    await fs.writeFile(inside, 'inside');
+    const link = path.join(launchRoot, 'link-note.md');
+    await fs.symlink(inside, link);
+    expect(await publish([link])).toBe(true);
+    expect(await invoke('read-artifact-file', 7, link)).toMatchObject({
+      content: 'inside',
+      error: null,
+    });
+  });
+
+  it('reads the authorized file without following a symlink swapped in after the check', async () => {
+    const { invoke, publish, reportPath, outputRoot } = await createMainFileIpc();
+    await publish([reportPath]);
+    const secret = path.join(outputRoot, 'private.md');
+    await fs.writeFile(secret, 'SWAPPED-SECRET-MARKER');
+    const canonicalReport = await fs.realpath(reportPath);
+    const originalOpen = fs.open.bind(fs);
+    const open = vi.spyOn(fs, 'open').mockImplementation(async (filePath, ...rest) => {
+      if (filePath === canonicalReport) {
+        await fs.unlink(canonicalReport);
+        await fs.symlink(secret, canonicalReport);
+      }
+      return originalOpen(filePath, ...rest);
+    });
+    try {
+      const result = await invoke('read-artifact-file', 7, reportPath);
+      expect(result).toMatchObject({ found: false, content: '' });
+      expect(JSON.stringify(result)).not.toContain('SWAPPED-SECRET-MARKER');
+    } finally {
+      open.mockRestore();
+    }
+  });
+
   it('rejects a symlink retargeted after validation and preserves ordinary directory access', async () => {
     const { invoke, publish, reportPath, outputRoot, launchRoot } = await createMainFileIpc();
     await publish([reportPath]);
