@@ -197,6 +197,23 @@ fn session_activity_at(session: &Session) -> chrono::DateTime<chrono::Utc> {
     session.last_message_at.unwrap_or(session.updated_at)
 }
 
+/// `session list -w` matches the directory itself and anything inside it, by
+/// whole path components: a substring match leaked sibling directories such
+/// as `proj-b` for `proj`. The canonical form is also tried so `/tmp/x`
+/// still matches sessions recorded under `/private/tmp/x`.
+fn working_dir_filter_roots(dir: &Path) -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    if let Ok(absolute) = std::path::absolute(dir) {
+        roots.push(absolute);
+    }
+    if let Ok(canonical) = dir.canonicalize() {
+        if !roots.contains(&canonical) {
+            roots.push(canonical);
+        }
+    }
+    roots
+}
+
 pub async fn handle_session_list(
     format: String,
     ascending: bool,
@@ -206,14 +223,9 @@ pub async fn handle_session_list(
     let session_manager = SessionManager::instance();
     let mut sessions = session_manager.list_sessions().await?;
 
-    if let Some(ref pat) = working_dir {
-        let pat_lower = pat.to_string_lossy().to_lowercase();
-        sessions.retain(|s| {
-            s.working_dir
-                .to_string_lossy()
-                .to_lowercase()
-                .contains(&pat_lower)
-        });
+    if let Some(ref dir) = working_dir {
+        let roots = working_dir_filter_roots(dir);
+        sessions.retain(|s| roots.iter().any(|root| s.working_dir.starts_with(root)));
     }
 
     if ascending {
@@ -919,6 +931,38 @@ mod session_export_tests {
             .await
             .unwrap()
             .contains("plan_history_v1"));
+    }
+
+    // GSL-PT-20260927-D07: `-w proj` also listed `proj-b ünï space`, `-w proj/`
+    // listed nothing, and the match ignored case.
+    #[test]
+    fn working_dir_filter_matches_whole_path_components() {
+        let root = tempfile::tempdir().unwrap();
+        let proj = root.path().join("proj");
+        let sibling = root.path().join("proj-b ünï space");
+        std::fs::create_dir_all(proj.join("nested")).unwrap();
+        std::fs::create_dir_all(&sibling).unwrap();
+        let matches = |filter: &Path, session_dir: &Path| {
+            let session_dir = session_dir.canonicalize().unwrap();
+            working_dir_filter_roots(filter)
+                .iter()
+                .any(|root| session_dir.starts_with(root))
+        };
+
+        let with_slash = PathBuf::from(format!("{}/", proj.display()));
+        for filter in [proj.as_path(), with_slash.as_path()] {
+            assert!(matches(filter, &proj), "{}", filter.display());
+            assert!(
+                matches(filter, &proj.join("nested")),
+                "{}",
+                filter.display()
+            );
+            assert!(!matches(filter, &sibling), "{}", filter.display());
+        }
+        let upper = root.path().join("PROJ");
+        if !upper.exists() {
+            assert!(!matches(&upper, &proj));
+        }
     }
 
     #[test]

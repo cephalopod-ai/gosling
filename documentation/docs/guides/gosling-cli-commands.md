@@ -277,7 +277,7 @@ List all saved sessions.
 **Options:**
 - **`-f, --format <format>`**: Specify output format (`text` or `json`). Default is `text`
 - **`--ascending`**: Sort sessions by date in ascending order (oldest first)
-- **`-w, --working_dir <path>`**: Filter sessions by working directory
+- **`-w, --working_dir <path>`**: Show only sessions whose working directory is `<path>` or a directory inside it (whole path components; a trailing slash is ignored)
 - **`-l, --limit <number>`**: Limit the number of results
 
 **Usage:**
