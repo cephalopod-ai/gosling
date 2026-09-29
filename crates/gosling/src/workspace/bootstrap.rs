@@ -126,8 +126,9 @@ impl WorkspaceService {
                 }) {
                     bail!("workspace template references an unknown credential profile");
                 }
+                let name_key = super::service::name_key(&mutation.name);
                 if document.workspaces.iter().any(|workspace| {
-                    workspace.id == id || workspace.name.eq_ignore_ascii_case(&mutation.name)
+                    workspace.id == id || super::service::name_key(&workspace.name) == name_key
                 }) {
                     bail!("workspace template ID or name is already in use");
                 }

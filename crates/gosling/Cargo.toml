@@ -199,6 +199,7 @@ office_oxide = "0.1.8"
 zip.workspace = true
 tree-sitter = "0.26"
 tree-sitter-bash = "0.25"
+unicode-normalization = { version = "0.1.22", default-features = false, features = ["std"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winapi = { workspace = true }

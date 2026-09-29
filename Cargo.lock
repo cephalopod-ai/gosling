@@ -4144,6 +4144,7 @@ dependencies = [
  "tracing-subscriber",
  "tree-sitter",
  "tree-sitter-bash",
+ "unicode-normalization",
  "url",
  "urlencoding",
  "utoipa 4.2.3",
