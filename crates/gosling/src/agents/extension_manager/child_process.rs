@@ -157,6 +157,74 @@ impl Drop for StartupProcessGroup {
     }
 }
 
+/// rmcp owns and reaps the child, so the exit status of a server that dies
+/// during startup is only observable by wrapping the child it waits on.
+#[derive(Debug)]
+struct RecordExitStatus(Option<tokio::sync::oneshot::Sender<std::process::ExitStatus>>);
+
+impl process_wrap::tokio::CommandWrapper for RecordExitStatus {
+    fn wrap_child(
+        &mut self,
+        child: Box<dyn process_wrap::tokio::ChildWrapper>,
+        _core: &process_wrap::tokio::CommandWrap,
+    ) -> std::io::Result<Box<dyn process_wrap::tokio::ChildWrapper>> {
+        Ok(Box::new(ExitStatusRecordingChild {
+            inner: child,
+            exit_status: self.0.take(),
+        }))
+    }
+}
+
+#[derive(Debug)]
+struct ExitStatusRecordingChild {
+    inner: Box<dyn process_wrap::tokio::ChildWrapper>,
+    exit_status: Option<tokio::sync::oneshot::Sender<std::process::ExitStatus>>,
+}
+
+impl ExitStatusRecordingChild {
+    fn record(&mut self, status: std::process::ExitStatus) {
+        if let Some(sender) = self.exit_status.take() {
+            let _ = sender.send(status);
+        }
+    }
+}
+
+impl process_wrap::tokio::ChildWrapper for ExitStatusRecordingChild {
+    fn inner(&self) -> &dyn process_wrap::tokio::ChildWrapper {
+        self.inner.as_ref()
+    }
+
+    fn inner_mut(&mut self) -> &mut dyn process_wrap::tokio::ChildWrapper {
+        self.inner.as_mut()
+    }
+
+    fn into_inner(self: Box<Self>) -> Box<dyn process_wrap::tokio::ChildWrapper> {
+        self.inner
+    }
+
+    fn try_wait(&mut self) -> std::io::Result<Option<std::process::ExitStatus>> {
+        let status = self.inner.try_wait()?;
+        if let Some(status) = status {
+            self.record(status);
+        }
+        Ok(status)
+    }
+
+    fn wait(
+        &mut self,
+    ) -> Pin<
+        Box<
+            dyn std::future::Future<Output = std::io::Result<std::process::ExitStatus>> + Send + '_,
+        >,
+    > {
+        Box::pin(async move {
+            let status = self.inner.wait().await?;
+            self.record(status);
+            Ok(status)
+        })
+    }
+}
+
 pub(super) async fn child_process_client(
     mut command: Command,
     timeout: &Option<u64>,
@@ -182,6 +250,9 @@ pub(super) async fn child_process_client(
         );
     }
 
+    let (exit_status_sender, exit_status) = tokio::sync::oneshot::channel();
+    let mut command = process_wrap::tokio::CommandWrap::from(command);
+    command.wrap(RecordExitStatus(Some(exit_status_sender)));
     let (transport, mut stderr) = TokioChildProcess::builder(command)
         .stderr(Stdio::piped())
         .spawn()?;
@@ -251,7 +322,11 @@ pub(super) async fn child_process_client(
                     stderr: stderr_content,
                 });
             }
-            Err(ProcessExit::new(stderr_content, error).into())
+            let exit_status = tokio::time::timeout(Duration::from_secs(1), exit_status)
+                .await
+                .ok()
+                .and_then(Result::ok);
+            Err(ProcessExit::new(stderr_content, exit_status, error).into())
         }
     }
 }

@@ -2177,4 +2177,81 @@ async fn stdio_process_that_exits_during_startup_is_reported_as_process_exit() {
         "{message}"
     );
     assert!(message.contains("boom"), "{message}");
+    assert!(message.contains("exit status: 3"), "{message}");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn stdio_process_that_exits_silently_reports_its_exit_status() {
+    let Err(error) = start_stdio_script("false", 30).await else {
+        panic!("a server that exits must not connect");
+    };
+
+    let message = error.to_string();
+    assert!(matches!(error, ExtensionError::ProcessExit(_)), "{message}");
+    assert!(message.contains("exit status: 1"), "{message}");
+    assert!(!message.contains("stderr"), "{message}");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn stdio_server_that_completes_initialize_still_connects() {
+    let script = r#"read -r request
+id=$(printf '%s' "$request" | sed 's/.*"id":\([0-9]*\).*/\1/')
+printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2025-03-26","capabilities":{},"serverInfo":{"name":"healthy","version":"1.0.0"}}}\n' "$id"
+exec sleep 30"#;
+
+    if let Err(error) = start_stdio_script(script, 10).await {
+        panic!("a server that answers initialize must connect: {error}");
+    }
+}
+
+#[tokio::test]
+async fn refused_http_extension_names_the_url_and_the_cause() {
+    let closed_port = std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let uri = format!("http://127.0.0.1:{closed_port}/mcp-does-not-exist");
+    let temp_dir = tempdir().unwrap();
+
+    let Err(error) = create_streamable_http_client(
+        &uri,
+        Some(5),
+        &HashMap::new(),
+        "refused",
+        None,
+        None,
+        Box::new(rmcp::transport::auth::InMemoryCredentialStore::new()),
+        Arc::new(Mutex::new(None)),
+        "gosling-test".to_string(),
+        GoslingMcpClientCapabilities {
+            mcpui: false,
+            host_info: None,
+        },
+        temp_dir.path(),
+    )
+    .await
+    else {
+        panic!("a closed port must not connect");
+    };
+
+    let message = error.to_string();
+    assert!(message.to_lowercase().contains("refused"), "{message}");
+    assert!(message.contains(&uri), "{message}");
+    assert!(!message.contains("rmcp::"), "{message}");
+    assert!(!message.contains("reqwest::"), "{message}");
+}
+
+#[test]
+fn initialize_errors_without_a_transport_cause_keep_their_message() {
+    let error = ExtensionError::InitializeError(ClientInitializeError::ConnectionClosed(
+        "initialize response".to_string(),
+    ));
+
+    assert_eq!(
+        error.to_string(),
+        "failed to initialize MCP client: connection closed: initialize response"
+    );
 }
