@@ -1765,6 +1765,8 @@ async fn handle_serve_command(args: ServeCommandArgs) -> Result<()> {
     );
 
     let config = Config::global();
+    let tls_cert_from_flag = tls_cert_path.is_some();
+    let tls_key_from_flag = tls_key_path.is_some();
     let tls_cert_path =
         tls_cert_path.or_else(|| config.get_param::<String>("GOSLING_TLS_CERT_PATH").ok());
     let tls_key_path =
@@ -1792,11 +1794,20 @@ async fn handle_serve_command(args: ServeCommandArgs) -> Result<()> {
     if tls {
         #[cfg(any(feature = "rustls-tls", feature = "native-tls"))]
         {
+            let tls_path_sources = if tls_cert_path.is_some() && tls_key_path.is_some() {
+                mixed_tls_path_sources(tls_cert_from_flag, tls_key_from_flag)
+            } else {
+                None
+            };
             let tls_setup = gosling::acp::transport::tls::setup_tls(
                 tls_cert_path.as_deref(),
                 tls_key_path.as_deref(),
             )
-            .await?;
+            .await
+            .map_err(|error| match tls_path_sources {
+                Some(sources) => error.context(sources),
+                None => error,
+            })?;
             info!("Starting ACP server on https://{}", addr);
             let shutdown_handle = axum_server::Handle::new();
             let signal_handle = shutdown_handle.clone();
@@ -1824,7 +1835,12 @@ async fn handle_serve_command(args: ServeCommandArgs) -> Result<()> {
 
         #[cfg(not(any(feature = "rustls-tls", feature = "native-tls")))]
         {
-            let _ = (tls_cert_path, tls_key_path);
+            let _ = (
+                tls_cert_path,
+                tls_key_path,
+                tls_cert_from_flag,
+                tls_key_from_flag,
+            );
             anyhow::bail!(
                 "TLS was requested but no TLS backend is enabled. \
                  Enable the `rustls-tls` or `native-tls` feature."
@@ -1871,6 +1887,23 @@ fn is_exact_origin(origin: &str) -> bool {
         && url.fragment().is_none()
         && matches!(url.path(), "" | "/")
         && !origin.ends_with('/')
+}
+
+// The certificate and key paths fall back to settings independently, so a flag can end up
+// paired with a stale setting; say so when loading the pair fails.
+#[cfg(any(feature = "rustls-tls", feature = "native-tls"))]
+fn mixed_tls_path_sources(cert_from_flag: bool, key_from_flag: bool) -> Option<&'static str> {
+    match (cert_from_flag, key_from_flag) {
+        (true, false) => Some(
+            "the TLS certificate path came from --tls-cert-path but the private key path came \
+             from GOSLING_TLS_KEY_PATH (environment or config)",
+        ),
+        (false, true) => Some(
+            "the TLS private key path came from --tls-key-path but the certificate path came \
+             from GOSLING_TLS_CERT_PATH (environment or config)",
+        ),
+        _ => None,
+    }
 }
 
 /// `gosling serve` logs only to its log file, so a failed start must name the
@@ -2748,6 +2781,19 @@ pub async fn cli() -> anyhow::Result<()> {
 mod tests {
     use super::*;
     use gosling::conversation::message::Message;
+
+    #[cfg(any(feature = "rustls-tls", feature = "native-tls"))]
+    #[test]
+    fn mixed_tls_path_sources_names_where_each_path_came_from() {
+        let cert_flag = mixed_tls_path_sources(true, false).unwrap();
+        assert!(
+            cert_flag.contains("--tls-cert-path") && cert_flag.contains("GOSLING_TLS_KEY_PATH")
+        );
+        let key_flag = mixed_tls_path_sources(false, true).unwrap();
+        assert!(key_flag.contains("--tls-key-path") && key_flag.contains("GOSLING_TLS_CERT_PATH"));
+        assert_eq!(mixed_tls_path_sources(true, true), None);
+        assert_eq!(mixed_tls_path_sources(false, false), None);
+    }
 
     async fn named_source_session(manager: &SessionManager, dir: &std::path::Path) -> String {
         let source = manager

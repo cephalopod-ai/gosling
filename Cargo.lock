@@ -4153,6 +4153,7 @@ dependencies = [
  "which 8.0.3",
  "winapi",
  "wiremock",
+ "x509-parser",
  "zip",
 ]
 
