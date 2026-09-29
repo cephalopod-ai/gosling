@@ -254,7 +254,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | B19 | Reduction validation differs between CLI and ACP; out-of-range CLI warning does not state the fallback | fixed (R2) |
 | Low | C04 | Hidden host-policy `planning` extension is offered in `configure`/`mcp list`; enabling it warns on every session | open — queued R11 |
 | Low | C07 | Duplicate plugin skill names are silently shadowed; precedence set by directory order | open — queued R11 |
-| Low | C09 | Subagent docs say delegates inherit parent extensions; code defaults ad-hoc delegates to none | open — queued R11 |
+| Low | C09 | Subagent docs say delegates inherit parent extensions; code defaults ad-hoc delegates to none | fixed (docs) (R11) |
 | Low | C11 | Imported sessions silently run in `approve` mode; CLI denial names the wrong mode | fixed (R6) |
 | Low | C12 | `session import` announces a working directory before it knows the outcome; raw serde errors | open — queued R8b |
 | Low | C13 | CLI resume rebinds an imported session's trusted working dir to the current directory | fixed (R4) |
