@@ -142,7 +142,7 @@ pub struct Identifier {
         long,
         value_name = "NAME",
         help = "Name for the chat session (e.g., 'project-x')",
-        long_help = "Specify a name for your chat session. When used with --resume, will resume this specific session if it exists."
+        long_help = "Select a session by name. When starting a chat, names the new session, or picks the session to resume when combined with --resume."
     )]
     pub name: Option<String>,
 
@@ -151,7 +151,7 @@ pub struct Identifier {
         alias = "id",
         value_name = "SESSION_ID",
         help = "Session ID (e.g., '20250921_143022')",
-        long_help = "Specify a session ID to resume. Requires --resume."
+        long_help = "Select a session by ID. When starting a chat, this only works together with --resume."
     )]
     pub session_id: Option<String>,
 
@@ -2983,6 +2983,24 @@ mod tests {
         assert!(script.contains("module completions"));
         assert!(script.contains("export extern gosling"));
         assert!(script.contains("export use completions *"));
+    }
+
+    // GSL-PT-20260927-A11: the shared session selector told `session export`
+    // users that --session-id "Requires --resume", an option export lacks.
+    #[test]
+    fn session_selector_help_does_not_require_resume_outside_chat_starts() {
+        let mut cmd = Cli::command();
+        let session = cmd.find_subcommand_mut("session").expect("session command");
+        let export = session
+            .find_subcommand_mut("export")
+            .expect("export command");
+        let mut buffer = Vec::new();
+
+        export.write_long_help(&mut buffer).expect("write help");
+
+        let help = String::from_utf8(buffer).expect("utf8");
+        assert!(!help.contains("Requires --resume"), "{help}");
+        assert!(help.contains("Select a session by ID"), "{help}");
     }
 
     #[test]
