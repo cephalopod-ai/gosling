@@ -341,7 +341,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | S02 | Interactive type-ahead under load: Enter becomes a newline, a later `/exit` is sent to the model | open — queued R8b |
 | Low | S05 | `session -r --history` renders at ~32 ms per message (6.7 s for 206 messages) | open — queued R8b |
 | Low | S08 | `/model` typed during a stream queues, and every switch persists a hidden checkpoint | open — queued R9 |
-| Low | S09 | Markdown export includes hidden internal checkpoint messages | open — queued R9 |
+| Low | S09 | Markdown export includes hidden internal checkpoint messages | fixed (R9) |
 | Low | S10 | kill -9 mid-stream leaves the truncated reply stored as a normal, complete assistant message | fixed (R1a) |
 | Low | S12 | Corrupt config.yaml: `run`/`doctor` blame "No provider configured" | fixed (R5) |
 | Low | S16 | Empty sessions: listed by the CLI, hidden by ACP; a failed `run` leaves one behind | failed-start part fixed; listing parity queued (R4/R8b) |
