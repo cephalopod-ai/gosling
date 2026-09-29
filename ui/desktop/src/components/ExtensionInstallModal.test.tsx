@@ -18,7 +18,6 @@ const mockElectron = {
   getAllowedExtensions: vi.fn(),
   logInfo: vi.fn(),
   on: vi.fn(),
-  off: vi.fn(),
 };
 
 (window as any).electron = mockElectron;

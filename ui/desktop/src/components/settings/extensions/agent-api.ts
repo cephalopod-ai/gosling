@@ -1,11 +1,15 @@
 import { toastService } from '../../../toasts';
 import type { ExtensionConfig } from '../../../types/extensions';
 import { addSessionExtension, removeSessionExtension } from '../../../acp/session-extensions';
-import { errorMessage } from '../../../utils/conversionUtils';
+import { describeAcpCause } from '../../../acp/errors';
 import {
   createExtensionRecoverHints,
   formatExtensionErrorMessage,
 } from '../../../utils/extensionErrorUtils';
+import {
+  clearExtensionFailure,
+  recordExtensionFailure,
+} from '../../../utils/extensionLoadFailures';
 
 export async function addToAgent(
   extensionConfig: ExtensionConfig,
@@ -22,6 +26,7 @@ export async function addToAgent(
 
   try {
     await addSessionExtension(sessionId, extensionConfig);
+    clearExtensionFailure(sessionId, extensionName);
     if (showToast) {
       toastService.dismiss(toastId);
       toastService.success({
@@ -30,9 +35,10 @@ export async function addToAgent(
       });
     }
   } catch (error) {
+    const errMsg = describeAcpCause(error);
+    recordExtensionFailure(sessionId, extensionName, errMsg);
     if (showToast) {
       toastService.dismiss(toastId);
-      const errMsg = errorMessage(error);
       const recoverHints = createExtensionRecoverHints(errMsg);
       const msg = formatExtensionErrorMessage(errMsg, 'Failed to add extension');
       toastService.error({
@@ -60,6 +66,7 @@ export async function removeFromAgent(
 
   try {
     await removeSessionExtension(sessionId, extensionName);
+    clearExtensionFailure(sessionId, extensionName);
 
     if (showToast) {
       toastService.dismiss(toastId);
@@ -71,7 +78,7 @@ export async function removeFromAgent(
   } catch (error) {
     if (showToast) {
       toastService.dismiss(toastId);
-      const errMsg = errorMessage(error);
+      const errMsg = describeAcpCause(error);
       const msg = formatExtensionErrorMessage(errMsg, 'Failed to remove extension');
       toastService.error({
         title: extensionName,

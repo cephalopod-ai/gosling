@@ -6,6 +6,10 @@ import { FixedExtensionEntry } from '../../../ConfigContext';
 import { getSubtitle, getFriendlyTitle } from './ExtensionList';
 import { Card, CardHeader, CardTitle, CardContent, CardAction } from '../../../ui/card';
 import { defineMessages, useIntl } from '../../../../i18n';
+import {
+  extensionFailureKey,
+  useCurrentSessionExtensionLoadFailures,
+} from '../../../../utils/extensionLoadFailures';
 
 const i18n = defineMessages({
   configureExtension: {
@@ -15,6 +19,10 @@ const i18n = defineMessages({
   toggleExtension: {
     id: 'extensionItem.toggleExtension',
     defaultMessage: 'Toggle {name} extension On or Off',
+  },
+  failedInCurrentChat: {
+    id: 'extensionItem.failedInCurrentChat',
+    defaultMessage: 'Failed to start in the current chat: {cause}',
   },
 });
 
@@ -32,6 +40,9 @@ export default function ExtensionItem({
   isStatic,
 }: ExtensionItemProps) {
   const intl = useIntl();
+  const loadFailure = useCurrentSessionExtensionLoadFailures().get(
+    extensionFailureKey(extension.name)
+  );
   // Add local state to track the visual toggle state
   const [visuallyEnabled, setVisuallyEnabled] = useState(extension.enabled);
   // Track if we're in the process of toggling
@@ -119,6 +130,11 @@ export default function ExtensionItem({
       </CardHeader>
       <CardContent className="px-4 overflow-hidden text-sm break-words text-text-secondary">
         {renderSubtitle()}
+        {loadFailure && (
+          <p className="mt-2 text-xs text-text-danger line-clamp-3" title={loadFailure}>
+            {intl.formatMessage(i18n.failedInCurrentChat, { cause: loadFailure })}
+          </p>
+        )}
       </CardContent>
     </Card>
   );

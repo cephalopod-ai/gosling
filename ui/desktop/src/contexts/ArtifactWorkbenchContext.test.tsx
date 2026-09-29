@@ -395,4 +395,86 @@ describe('ArtifactWorkbenchProvider', () => {
     act(() => finishDeletion([artifact.resolvedPath]));
     expect(workbench.artifacts).toEqual([regenerated]);
   });
+
+  describe('two windows sharing the stored tabs', () => {
+    const STORAGE_KEY = 'gosling-artifact-workbench-v1';
+    const fileTab = (id: string, path: string) => ({
+      id,
+      kind: 'markdown',
+      source: { type: 'file', path, baseDirectory: '/workspace' },
+      title: path,
+    });
+    const storedTabPaths = (sessionId: string): string[] =>
+      JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}').sessions[sessionId].tabs.map(
+        (tab: { source: { path: string } }) => tab.source.path
+      );
+
+    let first: Workbench;
+    let second: Workbench;
+    function FirstWindow() {
+      first = useArtifactWorkbench();
+      return null;
+    }
+    function SecondWindow() {
+      second = useArtifactWorkbench();
+      return null;
+    }
+
+    beforeEach(() => {
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({
+          isOpen: true,
+          width: 480,
+          sessions: {
+            'session-1': {
+              activeTabId: 'report',
+              deletedArtifacts: {},
+              tabs: [fileTab('report', 'report.md'), fileTab('data', 'data.md')],
+            },
+            'session-2': {
+              activeTabId: 'beta',
+              deletedArtifacts: {},
+              tabs: [fileTab('beta', 'beta.md')],
+            },
+          },
+        })
+      );
+      render(
+        <>
+          <ArtifactWorkbenchProvider>
+            <FirstWindow />
+          </ArtifactWorkbenchProvider>
+          <ArtifactWorkbenchProvider>
+            <SecondWindow />
+          </ArtifactWorkbenchProvider>
+        </>
+      );
+      act(() => first.setVisibleSession('session-2', []));
+      act(() => second.setVisibleSession('session-1', []));
+    });
+
+    it("keeps a tab closed in one window when the other window saves its own chat's tabs", () => {
+      act(() => second.closeTab('report'));
+      expect(storedTabPaths('session-1')).toEqual(['data.md']);
+
+      act(() => first.openFile('notes.md', '/workspace'));
+
+      expect(storedTabPaths('session-1')).toEqual(['data.md']);
+      expect(storedTabPaths('session-2')).toEqual(['beta.md', 'notes.md']);
+    });
+
+    it("shows the other window's closed tab as closed and does not restore it on the next save", () => {
+      act(() => second.closeTab('report'));
+      act(() => {
+        window.dispatchEvent(new StorageEvent('storage', { key: STORAGE_KEY }));
+      });
+
+      act(() => first.setVisibleSession('session-1', []));
+      expect(first.tabs.map((tab) => tab.id)).toEqual(['data']);
+
+      act(() => first.setActiveTabId('data'));
+      expect(storedTabPaths('session-1')).toEqual(['data.md']);
+    });
+  });
 });

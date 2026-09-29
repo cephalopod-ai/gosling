@@ -1370,6 +1370,9 @@
   "extensionItem.configureExtension": {
     "defaultMessage": "Configure {name} Extension"
   },
+  "extensionItem.failedInCurrentChat": {
+    "defaultMessage": "Failed to start in the current chat: {cause}"
+  },
   "extensionItem.toggleExtension": {
     "defaultMessage": "Toggle {name} extension On or Off"
   },
@@ -1384,6 +1387,9 @@
   },
   "extensionList.noExtensions": {
     "defaultMessage": "No extensions available"
+  },
+  "extensionMenu.failedToStart": {
+    "defaultMessage": "Failed to start: {cause}"
   },
   "extensionModal.cancel": {
     "defaultMessage": "Cancel"

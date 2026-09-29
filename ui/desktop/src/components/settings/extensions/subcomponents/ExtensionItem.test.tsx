@@ -1,5 +1,16 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, type RenderOptions, screen, fireEvent, waitFor } from '@testing-library/react';
+import {
+  act,
+  render,
+  type RenderOptions,
+  screen,
+  fireEvent,
+  waitFor,
+} from '@testing-library/react';
+import {
+  recordExtensionLoadResults,
+  setCurrentExtensionSession,
+} from '../../../../utils/extensionLoadFailures';
 import ExtensionItem from './ExtensionItem';
 import { IntlTestWrapper } from '../../../../i18n/test-utils';
 import type { FixedExtensionEntry } from '../../../ConfigContext';
@@ -43,5 +54,24 @@ describe('ExtensionItem', () => {
     await waitFor(() => {
       expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'true');
     });
+  });
+
+  it('flags an extension that failed to start in the current chat, with its cause', () => {
+    renderWithIntl(<ExtensionItem extension={makeExtension(true)} onToggle={vi.fn()} />);
+    expect(screen.queryByText(/Failed to start in the current chat/)).not.toBeInTheDocument();
+
+    act(() => {
+      recordExtensionLoadResults('chat-with-broken-developer', [
+        { name: 'developer', success: false, error: 'process quit with exit status: 1' },
+      ]);
+      setCurrentExtensionSession('chat-with-broken-developer');
+    });
+
+    expect(
+      screen.getByText('Failed to start in the current chat: process quit with exit status: 1')
+    ).toBeInTheDocument();
+
+    act(() => setCurrentExtensionSession('a-chat-without-failures'));
+    expect(screen.queryByText(/Failed to start in the current chat/)).not.toBeInTheDocument();
   });
 });

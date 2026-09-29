@@ -37,7 +37,6 @@ describe('AppLayout outputs pane', () => {
       platform: 'darwin',
       getIsFullScreen: vi.fn().mockResolvedValue(false),
       on: vi.fn(),
-      off: vi.fn(),
     } as unknown as typeof window.electron;
   });
 

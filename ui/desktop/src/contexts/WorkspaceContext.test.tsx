@@ -56,7 +56,6 @@ describe('WorkspaceContext', () => {
     Object.assign(window.electron, {
       broadcastWorkspaceChange: vi.fn(),
       on: vi.fn(),
-      off: vi.fn(),
     });
     vi.mocked(acpListWorkspaces).mockResolvedValue({
       workspaces: [

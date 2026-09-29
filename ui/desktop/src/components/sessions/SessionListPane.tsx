@@ -519,10 +519,10 @@ export default function SessionListPane({ mode, isActive, onSelectSession }: Ses
     };
 
     window.addEventListener('keydown', handleKeyDown);
-    window.electron.on('find-command', focusSearch);
+    const stopFindCommand = window.electron.on('find-command', focusSearch);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
-      window.electron.off('find-command', focusSearch);
+      stopFindCommand();
     };
   }, [focusSearch, isActive]);
 

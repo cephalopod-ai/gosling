@@ -5,6 +5,15 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '../ui/dr
 import { Input } from '../ui/input';
 import { Switch } from '../ui/switch';
 import { formatExtensionName } from '../settings/extensions/subcomponents/ExtensionList';
+import { defineMessages, useIntl } from '../../i18n';
+import { extensionFailureKey, type ExtensionLoadFailures } from '../../utils/extensionLoadFailures';
+
+const i18n = defineMessages({
+  failedToStart: {
+    id: 'extensionMenu.failedToStart',
+    defaultMessage: 'Failed to start: {cause}',
+  },
+});
 
 interface ExtensionMenuProps {
   extensions: FixedExtensionEntry[];
@@ -17,6 +26,7 @@ interface ExtensionMenuProps {
   isTransitioning: boolean;
   isSortPending: boolean;
   togglingExtensionName: string | null;
+  loadFailures?: ExtensionLoadFailures;
   onToggle: (extension: FixedExtensionEntry) => void;
   onClose?: () => void;
 }
@@ -32,9 +42,11 @@ export function ExtensionMenu({
   isTransitioning,
   isSortPending,
   togglingExtensionName,
+  loadFailures,
   onToggle,
   onClose,
 }: ExtensionMenuProps) {
+  const intl = useIntl();
   const [searchQuery, setSearchQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
 
@@ -110,6 +122,7 @@ export function ExtensionMenu({
           ) : (
             sortedExtensions.map((extension) => {
               const isToggling = togglingExtensionName === extension.name;
+              const loadFailure = loadFailures?.get(extensionFailureKey(extension.name));
               return (
                 <div
                   key={extension.name}
@@ -119,8 +132,15 @@ export function ExtensionMenu({
                   onClick={() => !isToggling && onToggle(extension)}
                   title={extension.description || extension.name}
                 >
-                  <div className="text-sm font-medium text-text-primary">
-                    {formatExtensionName(extension.name)}
+                  <div className="min-w-0 flex-1 pr-2">
+                    <div className="text-sm font-medium text-text-primary">
+                      {formatExtensionName(extension.name)}
+                    </div>
+                    {loadFailure && (
+                      <div className="text-xs text-text-danger truncate" title={loadFailure}>
+                        {intl.formatMessage(i18n.failedToStart, { cause: loadFailure })}
+                      </div>
+                    )}
                   </div>
                   <div onClick={(e) => e.stopPropagation()}>
                     <Switch

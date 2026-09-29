@@ -133,10 +133,7 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
       }
     };
 
-    window.electron.on('theme-changed', handleThemeChanged);
-    return () => {
-      window.electron.off('theme-changed', handleThemeChanged);
-    };
+    return window.electron.on('theme-changed', handleThemeChanged);
   }, []);
 
   // Apply theme class and CSS tokens whenever resolvedTheme changes
