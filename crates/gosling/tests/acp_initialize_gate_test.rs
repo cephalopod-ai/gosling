@@ -6,7 +6,8 @@
 mod common_tests;
 
 use agent_client_protocol::schema::v1::{
-    ContentBlock, InitializeRequest, NewSessionRequest, PromptRequest, TextContent,
+    AuthenticateRequest, ContentBlock, InitializeRequest, NewSessionRequest, PromptRequest,
+    TextContent,
 };
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{Agent, Client, ConnectionTo, ErrorCode};
@@ -128,5 +129,38 @@ fn session_new_succeeds_once_initialize_negotiates_the_latest_version() {
         initialize(&cx, ProtocolVersion::LATEST).await.unwrap();
         let session_id = new_session(&cx, &cwd).await.unwrap();
         assert!(!session_id.is_empty());
+    });
+}
+
+// GSL-PT-20260927-F17: session/fork worked but was not advertised, and
+// authenticate accepted any method id.
+#[test]
+fn advertised_capabilities_match_what_is_callable() {
+    with_raw_connection(|cx, _cwd| async move {
+        let response = cx
+            .send_request(InitializeRequest::new(ProtocolVersion::LATEST))
+            .block_task()
+            .await
+            .unwrap();
+        assert!(
+            response
+                .agent_capabilities
+                .session_capabilities
+                .fork
+                .is_some(),
+            "session/fork is callable"
+        );
+        assert!(!response.agent_capabilities.prompt_capabilities.audio);
+
+        cx.send_request(AuthenticateRequest::new("gosling-provider"))
+            .block_task()
+            .await
+            .unwrap();
+        let error = cx
+            .send_request(AuthenticateRequest::new("not-a-method"))
+            .block_task()
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, ErrorCode::InvalidParams);
     });
 }

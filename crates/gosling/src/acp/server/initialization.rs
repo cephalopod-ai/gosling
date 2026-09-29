@@ -99,6 +99,8 @@ fn shell_capabilities_meta(shell_runtime: &ShellRuntime) -> Meta {
     )])
 }
 
+pub(super) const GOSLING_PROVIDER_AUTH_METHOD: &str = "gosling-provider";
+
 impl GoslingAcpAgent {
     /// Every request except `initialize` needs a successfully negotiated protocol version on this
     /// connection, mirroring the Streamable-HTTP transport, which never issues a connection id
@@ -210,7 +212,8 @@ impl GoslingAcpAgent {
             .session_capabilities(
                 SessionCapabilities::new()
                     .list(SessionListCapabilities::new())
-                    .close(SessionCloseCapabilities::new()),
+                    .close(SessionCloseCapabilities::new())
+                    .fork(SessionForkCapabilities::new()),
             )
             .prompt_capabilities(
                 PromptCapabilities::new()
@@ -228,7 +231,7 @@ impl GoslingAcpAgent {
             .agent_info(Implementation::new("gosling", env!("CARGO_PKG_VERSION")))
             .agent_capabilities(capabilities)
             .auth_methods(vec![AuthMethod::Agent(
-                AuthMethodAgent::new("gosling-provider", "Configure Provider")
+                AuthMethodAgent::new(GOSLING_PROVIDER_AUTH_METHOD, "Configure Provider")
                     .description("Run `gosling configure` to set up your AI provider and API key"),
             )]))
     }

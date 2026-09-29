@@ -41,8 +41,18 @@ impl HandleDispatchFrom<Client> for GoslingAcpHandler {
                 )
                 .await
                 .if_request(
-                    |_req: AuthenticateRequest, responder: Responder<AuthenticateResponse>| async {
-                        responder.respond(AuthenticateResponse::new())
+                    |req: AuthenticateRequest, responder: Responder<AuthenticateResponse>| async move {
+                        if req.method_id.0.as_ref() == initialization::GOSLING_PROVIDER_AUTH_METHOD {
+                            responder.respond(AuthenticateResponse::new())
+                        } else {
+                            responder.respond_with_error(
+                                agent_client_protocol::Error::invalid_params().data(format!(
+                                    "Unknown auth method '{}'; this agent offers '{}'",
+                                    req.method_id.0,
+                                    initialization::GOSLING_PROVIDER_AUTH_METHOD
+                                )),
+                            )
+                        }
                     },
                 )
                 .await
