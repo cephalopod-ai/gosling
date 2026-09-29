@@ -232,7 +232,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Medium | S13 | Corrupt config.yaml silently drops `GOSLING_DISABLE_KEYRING: true` (keyring re-enabled) (suspicion) | fixed (R5) |
 | Medium | S18 | Corrupt permission.yaml: CLI/ACP panic, serve hangs `initialize`, `doctor` stays green, denials mislead | fixed (R6) |
 | Medium | S20 | Subdirectory AGENTS.md from any touched directory (including ignored ones) is injected into the user turn | fixed (R7) |
-| Low | A02 | Unknown provider from `GOSLING_PROVIDER` env is reported as "No model configured" | open — queued R8b |
+| Low | A02 | Unknown provider from `GOSLING_PROVIDER` env is reported as "No model configured" | fixed (R8b) |
 | Low | A04 | Ctrl-C in `gosling configure` leaves the terminal cursor hidden | fixed (R8b) |
 | Low | A05 | Broken config.yaml: session/run say "Run 'gosling configure' first" but configure refuses to run | fixed (R5) |
 | Low | A07 | REPL silently discards input that arrives in the same burst as a submitting Enter | open — queued R8b |
@@ -240,7 +240,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | A10 | Provider picker shows a cryptic "Groq (d)" label | fixed (R9) |
 | Low | A11 | `gosling session export --help` documents resume semantics that don't apply | fixed (R8b) |
 | Low | A13 | `/model` switch injects a ~3 KB "Gosling session checkpoint" into the next prompt (even for an empty session) and the session title is generated from it | fixed (R9) |
-| Low | A14 | Documented slash commands without their argument are reported as "Unknown command" | open — queued R8b |
+| Low | A14 | Documented slash commands without their argument are reported as "Unknown command" | fixed (R8b) |
 | Low | A15 | Version/help text gaps: `--version` prints " 1.3.0" with no program name; undocumented `session diagnostics` and `shell-validate` options | fixed (R8b) |
 | Low | A18 | Tool output and the following assistant text are printed with no separator (text and quiet modes) | fixed (R8a) |
 | Low | A19 | Hidden internal subcommands leak into shell completion and typo suggestions | open — queued R8b |
@@ -259,7 +259,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | C12 | `session import` announces a working directory before it knows the outcome; raw serde errors | fixed (R8b) |
 | Low | C13 | CLI resume rebinds an imported session's trusted working dir to the current directory | fixed (R4) |
 | Low | C15 | Session exports embed extension `--env` values; pasted secrets exported verbatim | fixed (R5) |
-| Low | C16 | Markdown export drops the tool-error flag | open — queued R8b |
+| Low | C16 | Markdown export drops the tool-error flag | fixed (R8b) |
 | Low | C17 | CLI help/docs drift found while executing | open — queued R8b |
 | Low | C18 | `/skills <name>` differs by surface and never validates the name | fixed (R11) |
 | Low | C19 | Extension failure messages are noisy and lose the cause; no health state in listings | fixed (messages; listing health state is a follow-up) (R11) |
