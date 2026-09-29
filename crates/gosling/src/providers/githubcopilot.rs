@@ -97,6 +97,19 @@ enum SignIn {
     Never,
 }
 
+/// A 401/403 from the token exchange means the stored GitHub sign-in itself is
+/// no longer accepted, so retrying cannot help; only a new sign-in can.
+fn rejected_sign_in_status(err: &anyhow::Error) -> Option<reqwest::StatusCode> {
+    err.downcast_ref::<reqwest::Error>()
+        .and_then(reqwest::Error::status)
+        .filter(|status| {
+            matches!(
+                *status,
+                reqwest::StatusCode::UNAUTHORIZED | reqwest::StatusCode::FORBIDDEN
+            )
+        })
+}
+
 fn normalize_host(host: &str) -> String {
     let host = host.trim_end_matches('/');
     let host = host.strip_prefix("https://").unwrap_or(host);
@@ -382,6 +395,11 @@ impl GithubCopilotProvider {
                     ));
                 }
                 Err(err) => {
+                    if let Some(status) = rejected_sign_in_status(&err) {
+                        return Err(ProviderError::Authentication(format!(
+                            "GitHub Copilot rejected the saved GitHub sign-in ({status}); run `gosling configure` and select GitHub Copilot to sign in again"
+                        )));
+                    }
                     tracing::warn!("failed to refresh api info: {}", err);
                     continue;
                 }
@@ -1077,6 +1095,72 @@ mod tests {
         assert!(
             error.contains("failed to get api info after 3 attempts"),
             "{error}"
+        );
+        server.verify().await;
+    }
+
+    async fn provider_with_stored_sign_in_and_token_status(
+        server: &wiremock::MockServer,
+        cache_dir: &std::path::Path,
+        status: u16,
+        expected_exchanges: u64,
+    ) -> GithubCopilotProvider {
+        use wiremock::matchers::{method, path};
+        mount_failing_device_code(server, 0).await;
+        wiremock::Mock::given(method("GET"))
+            .and(path("/copilot_internal/v2/token"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(status)
+                    .set_body_json(json!({"message": "Bad credentials"})),
+            )
+            .expect(expected_exchanges)
+            .mount(server)
+            .await;
+        Config::global()
+            .set_secret(TEST_TOKEN_SECRET_KEY, &"ghu_rejected".to_string())
+            .unwrap();
+        provider_against(server, cache_dir)
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn a_rejected_sign_in_asks_for_reauthentication_once() {
+        for (status, reason) in [(401, "401 Unauthorized"), (403, "403 Forbidden")] {
+            let root = tempfile::tempdir().unwrap();
+            let root_path = root.path().to_string_lossy().to_string();
+            let _env = env_lock::lock_env([("GOSLING_PATH_ROOT", Some(root_path.as_str()))]);
+            let server = wiremock::MockServer::start().await;
+            let provider =
+                provider_with_stored_sign_in_and_token_status(&server, root.path(), status, 1)
+                    .await;
+
+            let error = provider.get_api_info(SignIn::Allowed).await.unwrap_err();
+
+            assert_eq!(
+                error,
+                ProviderError::Authentication(format!(
+                    "GitHub Copilot rejected the saved GitHub sign-in ({reason}); run `gosling configure` and select GitHub Copilot to sign in again"
+                ))
+            );
+            server.verify().await;
+        }
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn a_failing_token_exchange_is_still_retried() {
+        let root = tempfile::tempdir().unwrap();
+        let root_path = root.path().to_string_lossy().to_string();
+        let _env = env_lock::lock_env([("GOSLING_PATH_ROOT", Some(root_path.as_str()))]);
+        let server = wiremock::MockServer::start().await;
+        let provider =
+            provider_with_stored_sign_in_and_token_status(&server, root.path(), 500, 3).await;
+
+        let error = provider.get_api_info(SignIn::Allowed).await.unwrap_err();
+
+        assert_eq!(
+            error,
+            ProviderError::ExecutionError("failed to get api info after 3 attempts".to_string())
         );
         server.verify().await;
     }
