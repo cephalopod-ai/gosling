@@ -4264,5 +4264,11 @@
   },
   "keyboardShortcuts.resetToDefault": {
     "defaultMessage": "Reset"
+  },
+  "extensionItem.failedInCurrentChat": {
+    "defaultMessage": "Failed to start in the current chat: {cause}"
+  },
+  "extensionMenu.failedToStart": {
+    "defaultMessage": "Failed to start: {cause}"
   }
 }

@@ -8,6 +8,7 @@ import { getSessionExtensions as getAcpSessionExtensions } from '../../acp/sessi
 import { addToAgent, removeFromAgent } from '../settings/extensions/agent-api';
 import { defineMessages, useIntl } from '../../i18n';
 import { AppEvents } from '../../constants/events';
+import { useExtensionLoadFailures } from '../../utils/extensionLoadFailures';
 import { ExtensionMenu } from './ExtensionMenu';
 import {
   isNextChatExtensionSelected,
@@ -243,6 +244,7 @@ function SessionExtensionsMenu({ sessionId }: { sessionId: string }) {
   const [isSessionExtensionsLoaded, setIsSessionExtensionsLoaded] = useState(false);
   const latestSessionIdRef = useRef(sessionId);
   const { extensionsList: allExtensions } = useConfig();
+  const loadFailures = useExtensionLoadFailures(sessionId);
   const {
     isTransitioning,
     isSortPending,
@@ -386,6 +388,7 @@ function SessionExtensionsMenu({ sessionId }: { sessionId: string }) {
       isTransitioning={isTransitioning}
       isSortPending={isSortPending}
       togglingExtensionName={togglingExtensionName}
+      loadFailures={loadFailures}
       onToggle={handleToggle}
     />
   );

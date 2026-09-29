@@ -128,6 +128,18 @@ export function describeAcpRejection(error: unknown): string {
   return describeAcpError(error);
 }
 
+/**
+ * The cause alone when the backend put it in a string `data` (the server's `internal_err`
+ * does), without the generic JSON-RPC label; otherwise describeAcpError.
+ */
+export function describeAcpCause(error: unknown): string {
+  const jsonRpcError = asAcpJsonRpcError(error);
+  if (jsonRpcError && typeof jsonRpcError.data === 'string' && jsonRpcError.data.trim()) {
+    return jsonRpcError.data;
+  }
+  return describeAcpError(error);
+}
+
 export function isAcpConnectionClosedError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : asErrorMessage(error);
   return /ACP connection closed|ACP WebSocket connection failed|WebSocket.*(?:closed|reset|failed)|Not connected/i.test(

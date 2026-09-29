@@ -5,7 +5,7 @@
 import type { ExtensionLoadResult } from '../types/extensions';
 import { toastService, ExtensionLoadingStatus } from '../toasts';
 
-export const MAX_ERROR_MESSAGE_LENGTH = 70;
+export const MAX_ERROR_MESSAGE_LENGTH = 200;
 
 /**
  * Creates recovery hints for the "Ask gosling" feature when extension loading fails
@@ -20,16 +20,21 @@ export function createExtensionRecoverHints(errorMsg: string): string {
 }
 
 /**
- * Formats an error message for display, truncating long messages with a fallback
- * @param errorMsg - The full error message
- * @param fallback - The fallback message to show if the error is too long
- * @returns The formatted error message
+ * The cause shown in a toast: the backend's message, shortened when long (the full text stays
+ * available through Copy error). Replacing long messages with the fallback hid every real cause,
+ * since the backend's start-up errors name the command or URL and the reason.
  */
 export function formatExtensionErrorMessage(
   errorMsg: string,
   fallback: string = 'Failed to add extension'
 ): string {
-  return errorMsg.length < MAX_ERROR_MESSAGE_LENGTH ? errorMsg : fallback;
+  const message = errorMsg.trim();
+  if (!message) {
+    return fallback;
+  }
+  return message.length <= MAX_ERROR_MESSAGE_LENGTH
+    ? message
+    : `${message.slice(0, MAX_ERROR_MESSAGE_LENGTH - 1).trimEnd()}…`;
 }
 
 /**

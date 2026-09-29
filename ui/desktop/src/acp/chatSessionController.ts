@@ -5,6 +5,10 @@ import { ChatState } from '../types/chatState';
 import type { Session } from '../types/session';
 import { showExtensionLoadResults } from '../utils/extensionErrorUtils';
 import {
+  recordExtensionLoadResults,
+  setCurrentExtensionSession,
+} from '../utils/extensionLoadFailures';
+import {
   createUserMessage,
   getPendingToolConfirmationIds,
   getTextAndImageContent,
@@ -168,6 +172,8 @@ async function createSession(
   }
 
   showExtensionLoadResults(meta.extensionResults);
+  recordExtensionLoadResults(sessionId, meta.extensionResults);
+  setCurrentExtensionSession(sessionId);
   window.dispatchEvent(
     new CustomEvent(AppEvents.SESSION_EXTENSIONS_LOADED, { detail: { sessionId } })
   );
@@ -218,6 +224,7 @@ async function loadSessionSnapshot(
     connectionGeneration !== null &&
     cached.connectionGeneration === connectionGeneration
   ) {
+    setCurrentExtensionSession(sessionId);
     window.dispatchEvent(
       new CustomEvent(AppEvents.SESSION_EXTENSIONS_LOADED, { detail: { sessionId } })
     );
@@ -249,6 +256,8 @@ async function loadSessionSnapshot(
     }
 
     showExtensionLoadResults(meta.extensionResults);
+    recordExtensionLoadResults(sessionId, meta.extensionResults);
+    setCurrentExtensionSession(sessionId);
     window.dispatchEvent(
       new CustomEvent(AppEvents.SESSION_EXTENSIONS_LOADED, { detail: { sessionId } })
     );
