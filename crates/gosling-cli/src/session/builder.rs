@@ -15,9 +15,9 @@ use gosling::config::{
 use gosling::model_config::model_config_from_user_config;
 use gosling::providers::create;
 use gosling::session::session_manager::SessionType;
-use gosling::session::{EnabledExtensionsState, SessionNotFound};
+use gosling::session::{removed_from_config_message, EnabledExtensionsState, SessionNotFound};
 use rustyline::EditMode;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 use std::process;
 use std::sync::Arc;
 use tokio::task::JoinSet;
@@ -568,23 +568,38 @@ async fn collect_extension_configs(
     session_config: &SessionBuilderConfig,
     session_id: &str,
 ) -> Result<Vec<ExtensionConfig>, ExtensionError> {
-    let configured_extensions: Vec<ExtensionConfig> = if session_config.resume {
-        EnabledExtensionsState::for_session(
-            &agent.config.session_manager,
-            session_id,
-            Config::global(),
-        )
-        .await
-    } else if session_config.no_profile {
-        Vec::new()
-    } else if let Ok(cwd) = std::env::current_dir() {
-        resolve_extensions_for_new_session_for_cwd(None, &cwd)
-    } else {
-        // Can't determine the session's cwd (e.g. it was deleted out from under
-        // the process) - fall back to the cwd-agnostic behavior rather than
-        // guessing, so activation-scoped extensions just aren't excluded.
-        resolve_extensions_for_new_session(None)
-    };
+    let (configured_extensions, mut config_keys): (Vec<ExtensionConfig>, HashSet<String>) =
+        if session_config.resume {
+            let resumed = EnabledExtensionsState::for_session(
+                &agent.config.session_manager,
+                session_id,
+                Config::global(),
+            )
+            .await;
+            for name in &resumed.removed_from_config {
+                eprintln!(
+                    "{}",
+                    style(format!("Warning: {}", removed_from_config_message(name))).yellow()
+                );
+            }
+            (
+                resumed.extensions,
+                resumed.config_keys.into_iter().collect(),
+            )
+        } else if session_config.no_profile {
+            (Vec::new(), HashSet::new())
+        } else {
+            let configured = if let Ok(cwd) = std::env::current_dir() {
+                resolve_extensions_for_new_session_for_cwd(None, &cwd)
+            } else {
+                // Can't determine the session's cwd (e.g. it was deleted out from under
+                // the process) - fall back to the cwd-agnostic behavior rather than
+                // guessing, so activation-scoped extensions just aren't excluded.
+                resolve_extensions_for_new_session(None)
+            };
+            let config_keys = configured.iter().map(ExtensionConfig::key).collect();
+            (configured, config_keys)
+        };
 
     let cli_flag_extensions = parse_cli_flag_extensions(
         &session_config.extensions,
@@ -608,15 +623,21 @@ async fn collect_extension_configs(
         }
     }
 
-    let mut all: Vec<ExtensionConfig> = configured_extensions;
+    let mut session_scoped: Vec<ExtensionConfig> = Vec::new();
     if !session_config.no_profile && !session_config.resume {
         let project_root = std::env::current_dir().ok();
-        all.extend(gosling::plugins::mcp_servers::enabled_plugin_mcp_servers(
+        session_scoped.extend(gosling::plugins::mcp_servers::enabled_plugin_mcp_servers(
             project_root.as_deref(),
         ));
     }
-    all.extend(cli_flag_extensions.into_iter().map(|(_, cfg)| cfg));
+    session_scoped.extend(cli_flag_extensions.into_iter().map(|(_, cfg)| cfg));
+    for extension in &session_scoped {
+        config_keys.remove(&extension.key());
+    }
+    agent.set_config_extension_keys(config_keys).await;
 
+    let mut all: Vec<ExtensionConfig> = configured_extensions;
+    all.extend(session_scoped);
     Ok(all)
 }
 

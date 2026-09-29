@@ -3,7 +3,7 @@
 //! Maintainers: keep public paths and shared state here while delegating cohesive behavior.
 //! Clients: agent construction, events, streams, and public methods remain stable.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
@@ -434,6 +434,9 @@ pub struct Agent {
 
     pub extension_manager: Arc<ExtensionManager>,
     pub(super) frontend_extensions: Mutex<HashMap<String, ExtensionConfig>>,
+    /// Keys of the loaded extensions that came from the user's config; saved
+    /// with the session so a resume can tell them from session-scoped ones.
+    pub(super) config_extension_keys: Mutex<HashSet<String>>,
     pub(super) frontend_tools: Mutex<HashMap<String, FrontendTool>>,
     pub(super) frontend_instructions: Mutex<Option<String>>,
     pub(super) prompt_manager: Mutex<PromptManager>,
@@ -647,6 +650,7 @@ impl Agent {
                 code_execution_runtime,
             )),
             frontend_extensions: Mutex::new(HashMap::new()),
+            config_extension_keys: Mutex::new(HashSet::new()),
             frontend_tools: Mutex::new(HashMap::new()),
             frontend_instructions: Mutex::new(None),
             prompt_manager: Mutex::new(PromptManager::new()),

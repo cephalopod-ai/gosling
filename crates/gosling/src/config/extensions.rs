@@ -5,6 +5,7 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use serde_yaml::Mapping;
+use std::collections::HashSet;
 use std::path::Path;
 use std::sync::{LazyLock, Mutex, MutexGuard, PoisonError};
 use tracing::{info, warn};
@@ -444,6 +445,29 @@ pub fn get_all_extensions() -> Vec<ExtensionEntry> {
 pub fn get_all_extension_names() -> Vec<String> {
     let extensions = get_extensions_map();
     extensions.keys().cloned().collect()
+}
+
+/// Keys of every entry in the config's `extensions` map, enabled or not, or
+/// `None` when the map cannot be read: a config that fails to parse must not
+/// look like one whose extensions were all removed.
+pub fn configured_extension_keys(config: &Config) -> Option<HashSet<String>> {
+    let raw: Mapping = match config.get_param(EXTENSIONS_CONFIG_KEY) {
+        Ok(raw) => raw,
+        Err(ConfigError::NotFound(_)) => Mapping::default(),
+        Err(_) => return None,
+    };
+    let mut keys = HashSet::new();
+    for (key, value) in &raw {
+        let Some(key) = key.as_str() else {
+            continue;
+        };
+        keys.insert(key.to_string());
+        keys.insert(name_to_key(key));
+        if let Ok(entry) = serde_yaml::from_value::<ExtensionEntry>(value.clone()) {
+            keys.insert(entry.config.key());
+        }
+    }
+    Some(keys)
 }
 
 pub fn is_extension_enabled(key: &str) -> bool {

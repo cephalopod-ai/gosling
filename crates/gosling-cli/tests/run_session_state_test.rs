@@ -385,6 +385,79 @@ fn resuming_from_another_directory_moves_the_session_to_it() {
     assert_eq!(env.export(&id)["working_dir"], dir_b.to_str().unwrap());
 }
 
+fn saved_extensions(env: &Env, session_id: &str) -> serde_json::Value {
+    let exported = env.export(session_id);
+    exported["extension_data"]["enabled_extensions.v0"].clone()
+}
+
+// GSL-PT-20260927-C03: an extension removed from the config came back when a
+// session created before the removal was resumed.
+#[test]
+fn resume_leaves_out_an_extension_removed_from_the_config() {
+    let env = Env::new();
+    let config_path = env.root.path().join("config").join("config.yaml");
+    let base_config = "GOSLING_PROVIDER: openai\nGOSLING_MODEL: gpt-4o\n";
+    std::fs::write(
+        &config_path,
+        format!(
+            "{base_config}extensions:\n  autovisualiser:\n    enabled: true\n    type: builtin\n    name: autovisualiser\n    description: Charts\n"
+        ),
+    )
+    .unwrap();
+    let cwd = env.root.path().canonicalize().unwrap();
+
+    let created = env.run_ok(
+        &cwd,
+        &[
+            "run",
+            "-n",
+            "c03",
+            "--with-builtin",
+            "computercontroller",
+            "-t",
+            "hi",
+        ],
+    );
+    let id = banner_session_id(&created);
+    let saved = saved_extensions(&env, &id);
+    let config_keys = saved["config_keys"].as_array().cloned().unwrap_or_default();
+    assert!(
+        config_keys.iter().any(|key| key == "autovisualiser"),
+        "{saved}"
+    );
+    assert!(
+        !config_keys.iter().any(|key| key == "computercontroller"),
+        "{saved}"
+    );
+
+    std::fs::write(&config_path, base_config).unwrap();
+    let resumed = env.run_ok(&cwd, &["run", "-r", "-n", "c03", "-t", "again"]);
+
+    let stderr = String::from_utf8_lossy(&resumed.stderr);
+    assert!(
+        stderr.contains(
+            "Extension 'autovisualiser' was removed from your configuration and was not loaded for this session."
+        ),
+        "{stderr}"
+    );
+    assert_eq!(
+        stderr
+            .matches("was removed from your configuration")
+            .count(),
+        1,
+        "{stderr}"
+    );
+    let saved = saved_extensions(&env, &id);
+    let names: Vec<&str> = saved["extensions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|extension| extension["name"].as_str())
+        .collect();
+    assert!(!names.contains(&"autovisualiser"), "{saved}");
+    assert!(names.contains(&"computercontroller"), "{saved}");
+}
+
 #[test]
 fn resuming_a_restricted_session_elsewhere_keeps_its_working_directory() {
     let env = Env::new();

@@ -1072,6 +1072,91 @@ fn test_prompt_end_usage_update_reports_the_last_provider_request() {
     });
 }
 
+// GSL-PT-20260927-C03: an extension removed from the config came back when a
+// session created before the removal was loaded.
+#[test]
+fn test_load_session_leaves_out_a_config_extension_removed_since_the_session_was_created() {
+    run_test(async {
+        let configured_server = McpFixture::new(Arc::new(IgnoreSessionId)).await;
+        let client_server = McpFixture::new(Arc::new(IgnoreSessionId)).await;
+        let data_root = tempfile::tempdir().unwrap();
+        let removable_yaml = format!(
+            "  removable:\n    enabled: true\n    type: streamable_http\n    name: removable\n    description: Removable\n    uri: \"{}\"\n",
+            configured_server.url
+        );
+        write_configured_extensions(
+            data_root.path(),
+            &format!("{CONFIGURED_DEVELOPER_YAML}{removable_yaml}"),
+        );
+        let openai = OpenAiFixture::new(vec![], AcpServerConnection::expected_session_id()).await;
+        let mut creating_conn = AcpServerConnection::new(
+            TestConnectionConfig {
+                data_root: data_root.path().to_path_buf(),
+                mcp_servers: vec![McpServer::Http(McpServerHttp::new(
+                    "client-server",
+                    &client_server.url,
+                ))],
+                ..Default::default()
+            },
+            openai,
+        )
+        .await;
+        let SessionData {
+            session: _created_session,
+            ..
+        } = creating_conn.new_session().await.unwrap();
+        let stored = SessionManager::new(data_root.path().to_path_buf())
+            .list_all_sessions()
+            .await
+            .unwrap()
+            .remove(0);
+        let created = session_extension_names(&creating_conn, &stored.id).await;
+        assert!(
+            created.contains("removable") && created.contains("client-server"),
+            "{created:?}"
+        );
+
+        write_configured_extensions(data_root.path(), CONFIGURED_DEVELOPER_YAML);
+        let conn = new_connection(data_root.path()).await;
+        let response = conn
+            .cx()
+            .send_request(agent_client_protocol::schema::v1::LoadSessionRequest::new(
+                agent_client_protocol::schema::v1::SessionId::new(stored.id.clone()),
+                stored.working_dir.clone(),
+            ))
+            .block_task()
+            .await
+            .unwrap();
+
+        let results = response
+            .meta
+            .as_ref()
+            .and_then(|meta| meta.get("extensionResults"))
+            .and_then(|results| results.as_array())
+            .cloned()
+            .expect("load reports extension results");
+        let result = |name: &str| {
+            results
+                .iter()
+                .find(|result| result["name"] == name)
+                .cloned()
+                .unwrap_or_else(|| panic!("no result for {name}: {results:?}"))
+        };
+        assert_eq!(result("removable")["success"], false);
+        assert_eq!(
+            result("removable")["error"],
+            "Extension 'removable' was removed from your configuration and was not loaded for this session."
+        );
+        assert_eq!(result("client-server")["success"], true);
+        assert_eq!(result("developer")["success"], true);
+
+        let loaded = session_extension_names(&conn, &stored.id).await;
+        assert!(!loaded.contains("removable"), "{loaded:?}");
+        assert!(loaded.contains("client-server"), "{loaded:?}");
+        assert!(loaded.contains("developer"), "{loaded:?}");
+    });
+}
+
 fn extension_name(extension: &serde_json::Value) -> &str {
     extension["name"]
         .as_str()

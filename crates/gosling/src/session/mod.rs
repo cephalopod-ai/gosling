@@ -31,8 +31,9 @@ pub use diagnostics::{
     DiagnosticsTextFile, SystemInfo,
 };
 pub use extension_data::{
-    AcpPromptRunState, DeepResearchState, EnabledExtensionsState, ExtensionData, ExtensionState,
-    ShellSkillSelectionState, SystemPromptExtra, SystemPromptExtrasState, TodoState,
+    removed_from_config_message, AcpPromptRunState, DeepResearchState, EnabledExtensionsState,
+    ExtensionData, ExtensionState, ResumedExtensions, ShellSkillSelectionState, SystemPromptExtra,
+    SystemPromptExtrasState, TodoState,
 };
 pub use library::{
     NewSessionLibraryContent, SessionLibraryItem, SessionLibraryItemKind, SessionLibraryScope,
