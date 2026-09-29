@@ -1084,6 +1084,27 @@ impl SessionManager {
             .await
     }
 
+    /// Run when an ACP server starts: reopens, as `session/load` would, every
+    /// session whose ACP run is still recorded as in progress, so a run whose
+    /// process was killed or lost its client is recorded as interrupted before
+    /// anyone loads it. A session a live turn still owns is left alone.
+    pub(crate) async fn close_interrupted_turns(&self) -> Result<()> {
+        for session_id in self.storage.sessions_with_acp_run_in_progress().await? {
+            let closed = async {
+                self.recover_tool_operations(&session_id).await?;
+                self.close_interrupted_turn(&session_id).await
+            };
+            if let Err(error) = closed.await {
+                tracing::warn!(
+                    session.id = session_id.as_str(),
+                    error = %error,
+                    "could not close an interrupted turn"
+                );
+            }
+        }
+        Ok(())
+    }
+
     /// Closes the previous turn before a new turn adds its prompt. The caller
     /// holds the session's turn lease.
     pub(crate) async fn close_unfinished_turn(&self, session_id: &str) -> Result<bool> {

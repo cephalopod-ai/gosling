@@ -6,6 +6,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::StreamExt;
+use gosling::acp::server_factory::{AcpServer, AcpServerFactoryConfig};
 use gosling::agents::{Agent, AgentConfig, AgentEvent, GoslingPlatform, SessionConfig};
 use gosling::config::{GoslingMode, PermissionManager};
 use gosling::conversation::message::{Message, MessageContent, MessageMetadata};
@@ -517,6 +518,96 @@ async fn a_finished_reply_is_stored_unmarked_and_reopening_leaves_it_alone() -> 
     assert_eq!(
         fixture.run_state().await?,
         Some(AcpPromptRunState::Completed)
+    );
+    Ok(())
+}
+
+async fn stored_session(
+    sessions: &SessionManager,
+    history: Vec<Message>,
+    state: AcpPromptRunState,
+) -> Result<String> {
+    let session = sessions
+        .create_session(
+            std::env::temp_dir(),
+            "restart".to_string(),
+            SessionType::Acp,
+            GoslingMode::Auto,
+        )
+        .await?;
+    for message in history {
+        sessions
+            .add_message(&session.id, &message.with_generated_id())
+            .await?;
+    }
+    sessions
+        .merge_extension_state(
+            &session.id,
+            &format!(
+                "{}.{}",
+                AcpPromptRunState::EXTENSION_NAME,
+                AcpPromptRunState::VERSION
+            ),
+            state.to_value()?,
+        )
+        .await?;
+    Ok(session.id)
+}
+
+// F14: a process killed mid-turn (SIGKILL, stdio EOF) leaves its ACP run in
+// progress with no live turn lease. Starting an ACP server on the same store
+// records it as interrupted and closes its turn, so `session/list` can show it
+// before anyone loads the session; a finished run is left as it was.
+#[tokio::test]
+async fn an_acp_server_start_closes_runs_left_in_progress_by_a_dead_process() -> Result<()> {
+    let temp = TempDir::new()?;
+    let data_dir = temp.path().join("data");
+    let sessions = SessionManager::new(data_dir.clone());
+    let stale = stored_session(
+        &sessions,
+        vec![Message::user().with_text("F14 long prompt")],
+        AcpPromptRunState::InProgress,
+    )
+    .await?;
+    let finished = stored_session(
+        &sessions,
+        vec![
+            Message::user().with_text("Say DONE"),
+            Message::assistant().with_text("DONE"),
+        ],
+        AcpPromptRunState::Completed,
+    )
+    .await?;
+    sessions.shutdown().await;
+
+    let server = AcpServer::new(AcpServerFactoryConfig {
+        builtins: vec![],
+        state_dir: temp.path().join("state"),
+        data_dir: data_dir.clone(),
+        platform_data_dir: data_dir.clone(),
+        config_dir: temp.path().join("config"),
+        gosling_platform: GoslingPlatform::GoslingCli,
+        additional_source_roots: Vec::new(),
+        shell_runtime: Default::default(),
+    });
+    server.create_agent().await?;
+    server.shutdown().await;
+
+    let sessions = SessionManager::new(data_dir);
+    let state = |session: &gosling::session::Session| {
+        AcpPromptRunState::from_extension_data(&session.extension_data)
+    };
+    let stale = sessions.get_session(&stale, true).await?;
+    assert_eq!(state(&stale), Some(AcpPromptRunState::Interrupted));
+    assert_eq!(
+        texts(stale.conversation.as_ref().unwrap().messages()),
+        vec!["F14 long prompt", INTERRUPTED]
+    );
+    let finished = sessions.get_session(&finished, true).await?;
+    assert_eq!(state(&finished), Some(AcpPromptRunState::Completed));
+    assert_eq!(
+        texts(finished.conversation.as_ref().unwrap().messages()),
+        vec!["Say DONE", "DONE"]
     );
     Ok(())
 }

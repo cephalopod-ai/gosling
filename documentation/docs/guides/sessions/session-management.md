@@ -306,6 +306,8 @@ Sessions created in gosling Desktop can be resumed in the CLI and vice versa. Al
 :::note Interrupted turns
 A turn can stop before it finishes: you cancel it, quit or close gosling while it is running or waiting for a tool approval, the client disconnects, or the process is killed. When you reopen or resume the session, or send the next message, gosling closes that turn in the history instead of sending it again. Tool calls that never ran are recorded as not run, a reply that was cut off stays visible to you but is marked incomplete and is not sent back to the model, and the turn ends with `Run interrupted before completion.` (or `Run cancelled by user before completion.` when you cancelled it). Your next message starts a new turn on its own; to continue the stopped task, ask for it explicitly.
 
+When `gosling acp` or `gosling serve` starts, it also closes the turns that a killed or disconnected ACP process left running, so clients see them as stopped before anyone reopens them; ACP `session/list` marks such a session with `lastRunInterrupted: true` in its `_meta`. A turn that another running gosling process still owns is left alone.
+
 In gosling Desktop, a cut-off reply carries an **Interrupted** marker, a tool call that never ran shows **Not run** instead of a failure or a pending state, and the closing line appears as a status line rather than as a reply.
 :::
 

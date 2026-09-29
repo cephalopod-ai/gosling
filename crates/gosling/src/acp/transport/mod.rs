@@ -115,6 +115,15 @@ fn is_websocket_upgrade(request: &Request) -> bool {
             .is_some_and(|value| value.eq_ignore_ascii_case("websocket"))
 }
 
+fn reject_origin(origin: &HeaderValue) -> StatusCode {
+    tracing::warn!(
+        security.event_type = "acp_origin_rejected",
+        origin = %String::from_utf8_lossy(origin.as_bytes()),
+        "refused an ACP request from an Origin that is not allowed"
+    );
+    StatusCode::FORBIDDEN
+}
+
 async fn enforce_acp_origin(
     State(policy): State<AcpOriginPolicy>,
     mut request: Request,
@@ -125,7 +134,7 @@ async fn enforce_acp_origin(
     if request.method() != Method::OPTIONS && !is_websocket_upgrade(&request) {
         if let Some(origin) = request.headers().get(header::ORIGIN) {
             if !policy.origin_allowed(origin) {
-                return Err(StatusCode::FORBIDDEN);
+                return Err(reject_origin(origin));
             }
         }
     }
@@ -140,7 +149,7 @@ async fn enforce_acp_origin(
         // the policy below, and by `check_acp_token`, which runs first.
         if let Some(origin) = request.headers().get(header::ORIGIN) {
             if !policy.origin_allowed(origin) {
-                return Err(StatusCode::FORBIDDEN);
+                return Err(reject_origin(origin));
             }
         }
 

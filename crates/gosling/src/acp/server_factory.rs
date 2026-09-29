@@ -7,6 +7,7 @@ use crate::config::paths::{Paths, RuntimePaths};
 use crate::source_roots::SourceRoot;
 use anyhow::Result;
 use std::sync::Arc;
+use tokio::sync::OnceCell;
 use tracing::info;
 
 pub struct AcpServerFactoryConfig {
@@ -24,6 +25,7 @@ pub struct AcpServer {
     config: AcpServerFactoryConfig,
     session_manager: Arc<crate::session::SessionManager>,
     prompt_runs: PromptRunShutdown,
+    interrupted_turns_closed: OnceCell<()>,
 }
 
 impl AcpServer {
@@ -34,6 +36,7 @@ impl AcpServer {
             config,
             session_manager,
             prompt_runs: PromptRunShutdown::new(),
+            interrupted_turns_closed: OnceCell::new(),
         }
     }
 
@@ -49,6 +52,11 @@ impl AcpServer {
     }
 
     pub async fn create_agent(&self) -> Result<Arc<GoslingAcpAgent>> {
+        // Before this server starts a prompt of its own, so none of its runs
+        // can be taken for one whose process died.
+        self.interrupted_turns_closed
+            .get_or_try_init(|| self.session_manager.close_interrupted_turns())
+            .await?;
         Paths::scope(self.runtime_paths(), async {
             let config = crate::config::Config::global();
             let disable_session_naming =
