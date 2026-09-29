@@ -1,11 +1,11 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use gosling::config::Config;
 use gosling::conversation::message::Message;
 use gosling::conversation::Conversation;
 use std::fs;
 use std::io::Read;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use tempfile::Builder;
 use tempfile::NamedTempFile;
@@ -70,22 +70,39 @@ fn resolve_editor_or_default_from_sources(
 /// Open a YAML temp file with the user's editor to edit a conversation.
 /// Returns the edited conversation, or an error if the editor failed or YAML was invalid.
 pub fn edit_conversation(conversation: &Conversation) -> Result<Conversation> {
+    edit_conversation_with(&resolve_editor_or_default(), conversation)
+}
+
+fn edit_conversation_with(editor: &str, conversation: &Conversation) -> Result<Conversation> {
     let yaml = serde_yaml::to_string(conversation.messages())?;
 
     let mut tmp = NamedTempFile::with_suffix(".yaml")?;
     tmp.write_all(yaml.as_bytes())?;
     tmp.flush()?;
 
-    let editor = resolve_editor_or_default();
-    let path = tmp.path().to_path_buf();
+    launch_editor(editor, tmp.path())?;
 
-    launch_editor(&editor, &path).with_context(|| format!("failed to launch editor '{editor}'"))?;
+    let edited = std::fs::read_to_string(tmp.path())?;
+    match serde_yaml::from_str::<Vec<Message>>(&edited) {
+        Ok(messages) => Ok(Conversation::new_unvalidated(messages)),
+        Err(error) => {
+            let kept = keep_owner_only(tmp)?;
+            Err(anyhow::Error::new(error).context(format!(
+                "invalid YAML — session unchanged. Your edits were kept at {}; fix the YAML there and paste it into the editor on your next --edit",
+                kept.display()
+            )))
+        }
+    }
+}
 
-    let edited = std::fs::read_to_string(&path)?;
-    let messages: Vec<Message> =
-        serde_yaml::from_str(&edited).context("invalid YAML — session unchanged")?;
-
-    Ok(Conversation::new_unvalidated(messages))
+fn keep_owner_only(tmp: NamedTempFile) -> Result<PathBuf> {
+    let path = tmp.into_temp_path().keep()?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?;
+    }
+    Ok(path)
 }
 
 /// Build the markdown template content for the editor prompt.
@@ -159,16 +176,19 @@ fn launch_editor(editor_cmd: &str, file_path: &Path) -> Result<()> {
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());
 
-    let status = cmd.status()?;
+    let status = cmd
+        .status()
+        .map_err(|error| anyhow::anyhow!("failed to launch editor '{editor_cmd}': {error}"))?;
 
-    if !status.success() {
-        return Err(anyhow::anyhow!(
-            "Editor exited with non-zero status: {}",
-            status.code().unwrap_or(-1)
-        ));
+    if status.success() {
+        return Ok(());
     }
-
-    Ok(())
+    match status.code() {
+        Some(code) => Err(anyhow::anyhow!(
+            "editor '{editor_cmd}' exited with status {code}"
+        )),
+        None => Err(anyhow::anyhow!("editor '{editor_cmd}' ended with {status}")),
+    }
 }
 
 /// Main function to get input from editor
@@ -529,6 +549,115 @@ with multiple lines.
         content = content.replace("fix the login bug\n", "");
         let result = extract_user_input(&content);
         assert_eq!(result, "");
+    }
+
+    #[cfg(unix)]
+    mod edit_conversation_tests {
+        use super::super::*;
+        use std::os::unix::fs::PermissionsExt;
+        use tempfile::TempDir;
+
+        const INVALID_YAML: &str = "role: user\ncontent: [unclosed\n";
+
+        fn conversation(text: &str) -> Conversation {
+            Conversation::new_unvalidated(vec![Message::user().with_text(text)])
+        }
+
+        /// Writes an executable editor script that records the path it was given.
+        fn fake_editor(dir: &TempDir, body: &str) -> (String, PathBuf) {
+            let log = dir.path().join("edited-path");
+            let script = dir.path().join("editor.sh");
+            fs::write(
+                &script,
+                format!(
+                    "#!/bin/sh\nprintf '%s' \"$1\" > '{}'\n{body}\n",
+                    log.display()
+                ),
+            )
+            .unwrap();
+            fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+            (script.display().to_string(), log)
+        }
+
+        #[test]
+        fn invalid_yaml_keeps_edits_at_a_named_owner_only_path() {
+            let dir = TempDir::new().unwrap();
+            let replacement = dir.path().join("bad.yaml");
+            fs::write(&replacement, INVALID_YAML).unwrap();
+            let (editor, log) =
+                fake_editor(&dir, &format!("cp '{}' \"$1\"", replacement.display()));
+
+            let error = edit_conversation_with(&editor, &conversation("hello")).unwrap_err();
+
+            let edited_path = PathBuf::from(fs::read_to_string(&log).unwrap());
+            let message = format!("{error:#}");
+            assert!(
+                message.contains("invalid YAML — session unchanged"),
+                "{message}"
+            );
+            assert!(
+                message.contains(&format!(
+                    "Your edits were kept at {}",
+                    edited_path.display()
+                )),
+                "{message}"
+            );
+            assert_eq!(fs::read_to_string(&edited_path).unwrap(), INVALID_YAML);
+            let mode = fs::metadata(&edited_path).unwrap().permissions().mode();
+            fs::remove_file(&edited_path).unwrap();
+            assert_eq!(mode & 0o777, 0o600);
+        }
+
+        #[test]
+        fn non_zero_editor_exit_reports_the_status_not_a_launch_failure() {
+            let dir = TempDir::new().unwrap();
+            let (editor, log) = fake_editor(&dir, "exit 3");
+
+            let error = edit_conversation_with(&editor, &conversation("hello")).unwrap_err();
+
+            let message = format!("{error:#}");
+            assert!(
+                message.contains(&format!("editor '{editor}' exited with status 3")),
+                "{message}"
+            );
+            assert!(!message.contains("failed to launch"), "{message}");
+            let edited_path = PathBuf::from(fs::read_to_string(&log).unwrap());
+            assert!(!edited_path.exists());
+        }
+
+        #[test]
+        fn valid_edit_applies_and_removes_the_temp_file() {
+            let dir = TempDir::new().unwrap();
+            let replacement = dir.path().join("good.yaml");
+            fs::write(
+                &replacement,
+                serde_yaml::to_string(conversation("edited").messages()).unwrap(),
+            )
+            .unwrap();
+            let (editor, log) =
+                fake_editor(&dir, &format!("cp '{}' \"$1\"", replacement.display()));
+
+            let edited = edit_conversation_with(&editor, &conversation("hello")).unwrap();
+
+            assert_eq!(edited.messages().len(), 1);
+            assert_eq!(edited.messages()[0].as_concat_text(), "edited");
+            let edited_path = PathBuf::from(fs::read_to_string(&log).unwrap());
+            assert!(!edited_path.exists());
+        }
+
+        #[test]
+        fn missing_editor_binary_reports_a_launch_failure() {
+            let dir = TempDir::new().unwrap();
+            let editor = dir.path().join("no-such-editor").display().to_string();
+
+            let error = edit_conversation_with(&editor, &conversation("hello")).unwrap_err();
+
+            let message = format!("{error:#}");
+            assert!(
+                message.contains(&format!("failed to launch editor '{editor}'")),
+                "{message}"
+            );
+        }
     }
 
     #[test]
