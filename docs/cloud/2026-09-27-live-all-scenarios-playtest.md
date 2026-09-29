@@ -199,7 +199,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Medium | D04 | `--edit` with invalid YAML discards the user's edits without naming or keeping the temp file; wrong "failed to launch" wording | open — queued R8b |
 | Medium | D05 | Diagnostics bundle leaks credentials that are not regex-shaped (including the configured provider key) | fixed (R5) |
 | Medium | D07 | `session list -w` leaks sibling directories (case-insensitive substring) and misses paths with a trailing slash | open — queued R8b |
-| Medium | D08 | Terminal control sequences in session names are printed raw; imported transcripts can inject them | open — queued R8b |
+| Medium | D08 | Terminal control sequences in session names are printed raw; imported transcripts can inject them | fixed (R8b) |
 | Medium | E05 | CLI text mode never shows a permission refusal; the operator sees a tool card as if the call ran | fixed (R8a) |
 | Medium | E06 | `GOSLING_PATH_ROOT` does not isolate skills/agents; operator's personal skill catalog is sent to the disposable root's provider (suspicion) | fixed (R7) |
 | Medium | E07 | Nested (subdirectory) context files are injected as a plain `user` message without the "untrusted project hints" framing | fixed (R7) |
@@ -213,7 +213,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Medium | G122 | Quitting while a tool approval is pending leaves the tool "pending" forever; the next message silently re-submits the old request | fixed (R1a+R13a) |
 | Medium | G128 | Keyboard-only users cannot open existing chats, lose focus after dialogs, and get no focus ring on primary navigation | open — queued R13b |
 | Medium | G129 | A reply interrupted by window close/quit is shown after relaunch as a normal complete message; the session stays "in_progress" | fixed (R1a+R13a) |
-| Medium | G131 | Invalid config values are invisible in Desktop; Configuration Editor shows "[object Object]" for providers | open — queued R13b |
+| Medium | G131 | Invalid config values are invisible in Desktop; Configuration Editor shows "[object Object]" for providers | fixed (nested values read-only, invalid Max Turns shown; per-key config validation API is a follow-up) (R13b) |
 | Medium | G132 | Onboarding "OpenAI" API-key field shows the secret in clear text (and offers no host/base-path for "OpenAI compatible" endpoints) | fixed (R13a) |
 | Medium | G201 | Opening a large Markdown output freezes the whole Desktop window for 15–20 s | open — queued R13b |
 | Medium | G207 | "Open in new window" on a session in a non-active typed workspace replaces the current window with a fatal error screen | open — queued R13b |
