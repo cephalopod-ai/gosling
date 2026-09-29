@@ -192,7 +192,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Medium | C03 | Removed MCP extensions come back when an older session is resumed/loaded | deferred (product decision: record extension origin in session state) (R11) |
 | Medium | C05 | Skill discovery ignores `GOSLING_PATH_ROOT` and reads/writes HOME-based skill dirs | fixed (R7) |
 | Medium | C06 | `disabledPlugins` does not disable an installed plugin's skills | fixed (R11) |
-| Medium | C08 | ACP: parallel subagents' tool activity is attributed to the first delegate call | open — queued R11 |
+| Medium | C08 | ACP: parallel subagents' tool activity is attributed to the first delegate call | fixed (R11) |
 | Medium | C10 | A stalled provider stream inside a synchronous subagent blocks the parent indefinitely | fixed (docs: real 30-min sync delegate limit; timeout path tested) (R11) |
 | Medium | C14 | No guard against opening a store written by a newer schema (downgrade not blocked) | fixed (R4) |
 | Medium | D03 | Failed `--fork --edit` leaves an orphan fork with the source's name that then hijacks `--resume` | fixed (R4) |
