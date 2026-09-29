@@ -217,7 +217,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Medium | G132 | Onboarding "OpenAI" API-key field shows the secret in clear text (and offers no host/base-path for "OpenAI compatible" endpoints) | fixed (R13a) |
 | Medium | G201 | Opening a large Markdown output freezes the whole Desktop window for 15–20 s | fixed (128 KiB Markdown render cap + plain-text view; per-tab parse cache is a follow-up) (R13b) |
 | Medium | G207 | "Open in new window" on a session in a non-active typed workspace replaces the current window with a fatal error screen | fixed (R13b) |
-| Medium | G211 | Archiving does not reach other windows: the archived chat stays open there and keeps accepting turns while staying archived | open — queued R13b |
+| Medium | G211 | Archiving does not reach other windows: the archived chat stays open there and keeps accepting turns while staying archived | fixed (backend refuses prompts to archived sessions; Desktop offers Restore; cross-window broadcast is a follow-up) (R13b) |
 | Medium | G212 | External-backend secret is put in the ACP WebSocket URL (`?token=<secret>`) and printed in the renderer console on every failed connect | fixed (R13a) |
 | Medium | G221 | Downloads started right after switching chats are saved into the previous chat's workspace | fixed (R13a) |
 | Medium | H01 | Repeated identical failing tool calls are denied but the turn never ends before 1000 turns | fixed (R3) |
@@ -241,7 +241,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | A11 | `gosling session export --help` documents resume semantics that don't apply | fixed (R8b) |
 | Low | A13 | `/model` switch injects a ~3 KB "Gosling session checkpoint" into the next prompt (even for an empty session) and the session title is generated from it | fixed (R9) |
 | Low | A14 | Documented slash commands without their argument are reported as "Unknown command" | open — queued R8b |
-| Low | A15 | Version/help text gaps: `--version` prints " 1.3.0" with no program name; undocumented `session diagnostics` and `shell-validate` options | open — queued R8b |
+| Low | A15 | Version/help text gaps: `--version` prints " 1.3.0" with no program name; undocumented `session diagnostics` and `shell-validate` options | fixed (R8b) |
 | Low | A18 | Tool output and the following assistant text are printed with no separator (text and quiet modes) | fixed (R8a) |
 | Low | A19 | Hidden internal subcommands leak into shell completion and typo suggestions | open — queued R8b |
 | Low | A20 | (exploratory) `gosling secret` reports the wrong storage location and "removes" servers that don't exist | fixed (R5) |
@@ -273,14 +273,14 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | D09 | Session pickers are shuffled on every run; diagnostics/context-history picker says "Select a session to export:" | open — queued R8b |
 | Low | D10 | Ctrl-C in the `session remove` picker kills the process by SIGINT and leaves the cursor hidden | open — queued R8b |
 | Low | D11 | `session export\|diagnostics\|context-history list` without an identifier outside a TTY: "Error: not connected", exit 0 | fixed (R8a) |
-| Low | D12 | `session remove -r` matches IDs only, but the CLI guide's example implies names | open — queued R8b |
+| Low | D12 | `session remove -r` matches IDs only, but the CLI guide's example implies names | fixed (R8b) |
 | Low | D13 | Failed imports print "Imported session working directory: …" first; errors lack file/format context | open — queued R8b |
 | Low | D14 | `gosling project` stops (exit 0) when the newest project is gone and hides child failures | open — queued R8b |
 | Low | D15 | `term init` aliases break when the gosling binary path contains a space | open — queued R8b |
-| Low | D16 | CLI guide's `--resume --path ./session.json  # exported session` does not work | open — queued R8b |
+| Low | D16 | CLI guide's `--resume --path ./session.json  # exported session` does not work | fixed (R8b) |
 | Low | D17 | Forks lose their lineage (auto-renamed, banner says "resuming", no forked-from metadata) | fixed (cheap parts) (R4) |
 | Low | D18 | Typeahead during interactive startup is not submitted; later lines (even `/exit`) are merged into one prompt | open — queued R8b |
-| Low | D19 | `session list --format xml` silently falls back to text (exit 0) (suspicion) | open — queued R8b |
+| Low | D19 | `session list --format xml` silently falls back to text (exit 0) (suspicion) | fixed (R8b) |
 | Low | D24 | Import de-duplication blocks importing new turns of a grown transcript | note (product question) |
 | Low | D25 | `gosling tui` with non-interactive stdin renders a frame, then dumps an Ink/React stack trace | open — queued R8b |
 | Low | D26 | Default `review --dry-run` does not show what would run: `--checks-only` and `--instructions` produce byte-identical output that still announces a main pass | open — queued R8b |
