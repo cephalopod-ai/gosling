@@ -321,7 +321,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | G123 | Automatic navigation collapse at narrow width is persisted as the user's preference | open — queued R13b |
 | Low | G124 | At the minimum window (480x400) with navigation open, the Chats list has zero height | open — queued R13b |
 | Low | G125 | Renderer CSP lists invalid IPv6 sources (console error on every page load) | open — queued R13b |
-| Low | G126 | Concurrent-turn rejection is shown as "Internal error / Task failed" with an unrelated recovery action, and the rejected text is lost | open — queued R13b |
+| Low | G126 | Concurrent-turn rejection is shown as "Internal error / Task failed" with an unrelated recovery action, and the rejected text is lost | fixed (R13b) |
 | Low | G133 | A failing extension is reported only as "Failed to add extension" and is not flagged in the Extensions list | open — queued R11 |
 | Low | G202 | HTML artifact preview never runs its scripts: the app page's CSP blocks the inline scripts the preview sandbox is designed to allow | open — queued R13b |
 | Low | G203 | Malformed, empty and missing previewable outputs are not reported with a clear, bounded message | open — queued R13b |
@@ -330,11 +330,11 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | G208 | An assistant reference to an in-workspace symlink grants the renderer read access to the outside-root target | fixed (R13b) |
 | Low | G209 | Two windows overwrite each other's persisted artifact tabs; tabs closed in one window come back after relaunch | open — queued R13b |
 | Low | G213 | External backend faults are indistinguishable and undetected while idle | open — queued R13b |
-| Low | G214 | An invalid external-backend URL is saved when the Secret field loses focus | open — queued R13b |
+| Low | G214 | An invalid external-backend URL is saved when the Secret field loses focus | fixed (R13b) |
 | Low | G215 | Desktop per-session state is keyed by session id only, so sessions of different backends share UI state | open — queued R13b |
-| Low | G217 | Copy/IPC failure toasts show Electron's internal "Error invoking remote method '…': Error:" prefix | open — queued R13b |
+| Low | G217 | Copy/IPC failure toasts show Electron's internal "Error invoking remote method '…': Error:" prefix | fixed (R13b) |
 | Low | G218 | After a turn with more than 200 outputs, the live Outputs list and count silently stop at 200 | open — queued R13b |
-| Low | G219 | Escape inside an open provider/model dropdown closes the entire model-switch dialog | open — queued R13b |
+| Low | G219 | Escape inside an open provider/model dropdown closes the entire model-switch dialog | fixed (R13b) |
 | Low | H06 | After a normal exit all session data lives only in `sessions.db-wal`; `sessions.db` is an empty 4 KB file | fixed (R4) |
 | Low | H07 | Delegate activity title echoes the raw `source` argument (`null`, blanks, normalized sentinel) | fixed (R11) |
 | Low | S01 | Stale turn-lease rows left by concurrent `gosling run` processes | fixed (R4) |
