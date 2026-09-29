@@ -208,7 +208,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Medium | F15 | SIGTERM "graceful" shutdown keeps running turns alive for 5 s, then drops every client without a terminal event | fixed (R1b) |
 | Medium | G102 | Credential picker/profile manager marks 14 alias profiles "configured", including providers the app reports as unconfigured | fixed (R13a) |
 | Medium | G104 | Workspace save/duplicate errors show only "Invalid params" (reason dropped) and the editor error renders out of view | fixed (R13a) |
-| Medium | G105 | A chat's workspace label is a creation-time snapshot; after rename + name reuse it names a different workspace | open — queued R13b |
+| Medium | G105 | A chat's workspace label is a creation-time snapshot; after rename + name reuse it names a different workspace | fixed (R13b) |
 | Medium | G108 | Historical session with a moved working folder fails with "Invalid params: invalid directory path" and cannot be recovered by relinking | partial (named error + restore works; re-home of pinned chats needs product decision) (R13a) |
 | Medium | G122 | Quitting while a tool approval is pending leaves the tool "pending" forever; the next message silently re-submits the old request | fixed (R1a+R13a) |
 | Medium | G128 | Keyboard-only users cannot open existing chats, lose focus after dialogs, and get no focus ring on primary navigation | open — queued R13b |
