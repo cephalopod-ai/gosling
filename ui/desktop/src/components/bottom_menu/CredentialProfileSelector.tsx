@@ -35,13 +35,13 @@ const i18n = defineMessages({
     id: 'credentialProfileSelector.newChats',
     defaultMessage: 'New chats',
   },
-  noProfile: {
-    id: 'credentialProfileSelector.noProfile',
-    defaultMessage: 'No credential',
+  appDefault: {
+    id: 'credentialProfileSelector.appDefault',
+    defaultMessage: 'App default',
   },
-  noProfilePinned: {
-    id: 'credentialProfileSelector.noProfilePinned',
-    defaultMessage: 'No credential profile is pinned',
+  appDefaultDetail: {
+    id: 'credentialProfileSelector.appDefaultDetail',
+    defaultMessage: "Uses the app's default provider credentials",
   },
   pinned: {
     id: 'credentialProfileSelector.pinned',
@@ -77,7 +77,7 @@ export function CredentialProfileSelector({
   const currentProfile = credentialProfiles.find((profile) => profile.id === credentialProfileId);
   const savedProfileName = credentialProfileName?.trim() || null;
   const displayName =
-    currentProfile?.name ?? savedProfileName ?? intl.formatMessage(i18n.noProfile);
+    currentProfile?.name ?? savedProfileName ?? intl.formatMessage(i18n.appDefault);
   const missingProfile = Boolean(credentialProfileId && !currentProfile);
   const tooltip = intl.formatMessage(i18n.tooltip, { profile: displayName });
 
@@ -125,7 +125,7 @@ export function CredentialProfileSelector({
                       ? `${currentProfile.providerOrServiceId} · ${currentProfile.status.replace(/_/g, ' ')}`
                       : missingProfile
                         ? intl.formatMessage(i18n.missingProfile)
-                        : intl.formatMessage(i18n.noProfilePinned)}
+                        : intl.formatMessage(i18n.appDefaultDetail)}
                   </div>
                 </div>
                 {!missingProfile && credentialProfileId && (

@@ -3029,12 +3029,6 @@
   "credentialProfileSelector.newChats": {
     "defaultMessage": "New chats"
   },
-  "credentialProfileSelector.noProfile": {
-    "defaultMessage": "No credential"
-  },
-  "credentialProfileSelector.noProfilePinned": {
-    "defaultMessage": "No credential profile is pinned"
-  },
   "credentialProfileSelector.pinned": {
     "defaultMessage": "Pinned"
   },
@@ -4252,5 +4246,11 @@
   },
   "workspaceEditorDialog.nameTooLong": {
     "defaultMessage": "{excess,plural,one{Name must be at most {limit} characters. Remove # character.} other{Name must be at most {limit} characters. Remove # characters.}}"
+  },
+  "credentialProfileSelector.appDefault": {
+    "defaultMessage": "App default"
+  },
+  "credentialProfileSelector.appDefaultDetail": {
+    "defaultMessage": "Uses the app's default provider credentials"
   }
 }

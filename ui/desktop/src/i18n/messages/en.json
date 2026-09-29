@@ -902,6 +902,12 @@
   "costTracker.totalSessionCost": {
     "defaultMessage": "Total session cost: {cost}"
   },
+  "credentialProfileSelector.appDefault": {
+    "defaultMessage": "App default"
+  },
+  "credentialProfileSelector.appDefaultDetail": {
+    "defaultMessage": "Uses the app's default provider credentials"
+  },
   "credentialProfileSelector.availableProfiles": {
     "defaultMessage": "Available credential profiles"
   },
@@ -916,12 +922,6 @@
   },
   "credentialProfileSelector.newChats": {
     "defaultMessage": "New chats"
-  },
-  "credentialProfileSelector.noProfile": {
-    "defaultMessage": "No credential"
-  },
-  "credentialProfileSelector.noProfilePinned": {
-    "defaultMessage": "No credential profile is pinned"
   },
   "credentialProfileSelector.pinned": {
     "defaultMessage": "Pinned"
