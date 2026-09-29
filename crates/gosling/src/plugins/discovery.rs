@@ -62,7 +62,7 @@ fn discover_enabled_plugins_with_config(
     let scoped_settings = load_all_settings(project_root);
     let mut found: HashMap<String, DiscoveredPlugin> = HashMap::new();
 
-    if let Some(root) = project_root {
+    if let Some(root) = project_root.filter(|root| !is_user_plugin_dir(&project_plugin_dir(root))) {
         for (name, root) in list_dir_children(&project_plugin_dir(root)) {
             found.entry(name.clone()).or_insert(DiscoveredPlugin {
                 name,
@@ -236,6 +236,15 @@ fn settings_state(
 
 fn project_plugin_dir(project_root: &Path) -> PathBuf {
     project_root.join(".agents").join("plugins")
+}
+
+/// A session started in the home directory sees the user install dir as its
+/// project plugin dir; those plugins are user-installed, not repo-shipped.
+fn is_user_plugin_dir(dir: &Path) -> bool {
+    match (dir.canonicalize(), plugin_install_dir().canonicalize()) {
+        (Ok(dir), Ok(user_dir)) => dir == user_dir,
+        _ => false,
+    }
 }
 
 fn list_dir_children(dir: &Path) -> Vec<(String, PathBuf)> {

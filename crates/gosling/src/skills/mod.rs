@@ -222,7 +222,7 @@ fn inferred_discoverable_skill_root(path: &Path) -> Option<PathBuf> {
         global_roots.push(home.join(".claude").join("skills"));
         global_roots.push(home.join(".config").join("agents").join("skills"));
     }
-    global_roots.extend(installed_plugin_skill_dirs());
+    global_roots.extend(installed_plugin_skill_dirs(None));
 
     for root in global_roots {
         let canonical_root = canonicalize_or_original(&root);
@@ -342,7 +342,7 @@ fn project_skill_dirs(working_dir: Option<&Path>) -> Vec<PathBuf> {
     dirs
 }
 
-fn global_skill_dirs() -> Vec<(PathBuf, SkillSourceKind)> {
+fn global_skill_dirs(working_dir: Option<&Path>) -> Vec<(PathBuf, SkillSourceKind)> {
     let mut skill_dirs = Vec::new();
     let home = Paths::home_dir();
     if let Some(h) = home.as_ref() {
@@ -358,7 +358,7 @@ fn global_skill_dirs() -> Vec<(PathBuf, SkillSourceKind)> {
     }
 
     skill_dirs.extend(
-        installed_plugin_skill_dirs()
+        installed_plugin_skill_dirs(working_dir)
             .into_iter()
             .map(|dir| (dir, SkillSourceKind::Plugin)),
     );
@@ -622,7 +622,7 @@ pub(crate) fn discover_skills_with_origin(working_dir: Option<&Path>) -> Vec<Dis
         }
     }
 
-    for (dir, kind) in global_skill_dirs() {
+    for (dir, kind) in global_skill_dirs(working_dir) {
         for entry in scan_skills_from_dir(&dir, true, &mut seen) {
             sources.push(DiscoveredSkill {
                 entry,

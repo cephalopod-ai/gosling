@@ -79,7 +79,7 @@ struct InstallMetadata {
     last_update_check: Option<DateTime<Utc>>,
 }
 
-pub fn installed_plugin_skill_dirs() -> Vec<PathBuf> {
+pub fn installed_plugin_skill_dirs(project_root: Option<&Path>) -> Vec<PathBuf> {
     let plugins_dir = plugin_install_dir();
     for update in auto_update_plugins_at_root(Utc::now(), &plugins_dir) {
         if let Err(err) = update.result {
@@ -95,11 +95,17 @@ pub fn installed_plugin_skill_dirs() -> Vec<PathBuf> {
         Err(_) => return Vec::new(),
     };
 
+    let enabled_roots: HashSet<PathBuf> = discovery::discover_enabled_plugins(project_root)
+        .into_iter()
+        .map(|plugin| plugin.root)
+        .collect();
+
     let mut seen = HashSet::new();
     entries
         .flatten()
-        .flat_map(|entry| {
-            let plugin_dir = entry.path();
+        .map(|entry| entry.path())
+        .filter(|plugin_dir| enabled_roots.contains(plugin_dir))
+        .flat_map(|plugin_dir| {
             let default_skills_dir = plugin_dir.join("skills");
             let mut skill_dirs = Vec::new();
             if default_skills_dir.is_dir() {
