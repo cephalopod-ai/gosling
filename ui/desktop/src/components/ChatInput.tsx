@@ -161,6 +161,10 @@ const i18n = defineMessages({
     id: 'chatInput.failedToReadImage',
     defaultMessage: 'Failed to read image file',
   },
+  attachFile: {
+    id: 'chatInput.attachFile',
+    defaultMessage: 'Attach file',
+  },
 });
 
 interface ChatInputProps {
@@ -1816,6 +1820,7 @@ export default function ChatInput({
                   type="button"
                   onClick={handleFileSelect}
                   disabled={isFilePickerOpen}
+                  aria-label={intl.formatMessage(i18n.attachFile)}
                   variant="ghost"
                   size="sm"
                   shape="round"
@@ -1827,7 +1832,7 @@ export default function ChatInput({
                   <Attach className="w-4 h-4" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Attach file</TooltipContent>
+              <TooltipContent>{intl.formatMessage(i18n.attachFile)}</TooltipContent>
             </Tooltip>
           </>
         )}

@@ -443,6 +443,9 @@
   "chat.notification.taskComplete.title": {
     "defaultMessage": "Gosling finished the task."
   },
+  "chatInput.attachFile": {
+    "defaultMessage": "Attach file"
+  },
   "chatInput.contextWindow": {
     "defaultMessage": "Context window"
   },
