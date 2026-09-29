@@ -33,6 +33,7 @@ import {
   isArtifactPreviewable,
   parseCsv,
   stripOutputHistoryMarkers,
+  withoutHtmlScripts,
 } from './artifactUtils';
 import type { ArtifactTab } from './types';
 import { useArtifactRouter } from '../../contexts/ArtifactRouterContext';
@@ -102,6 +103,10 @@ const i18n = defineMessages({
   jsonParseFailed: {
     id: 'artifactPane.jsonParseFailed',
     defaultMessage: 'Could not parse this file as JSON. Showing the original text.',
+  },
+  htmlScriptsDisabled: {
+    id: 'artifactPane.htmlScriptsDisabled',
+    defaultMessage: 'Scripts are disabled in this preview. Open the file externally to run them.',
   },
   jsonlParseFailed: {
     id: 'artifactPane.jsonlParseFailed',
@@ -310,6 +315,25 @@ function JsonPreview({
   );
 }
 
+function HtmlPreview({ content, title }: { content: string; title: string }) {
+  const intl = useIntl();
+  const { html, removedScripts } = useMemo(() => withoutHtmlScripts(content), [content]);
+  return (
+    <div className="flex h-full flex-col">
+      {removedScripts && (
+        <PreviewNotice>{intl.formatMessage(i18n.htmlScriptsDisabled)}</PreviewNotice>
+      )}
+      <iframe
+        className="min-h-0 w-full flex-1 border-0 bg-white"
+        sandbox=""
+        referrerPolicy="no-referrer"
+        srcDoc={addSandboxCsp(html)}
+        title={title}
+      />
+    </div>
+  );
+}
+
 function ImagePreview({ src, alt }: { src: string; alt: string }) {
   const intl = useIntl();
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
@@ -448,15 +472,7 @@ function Preview({
     case 'jsonl':
       return <JsonPreview content={data.content} jsonl truncated={data.truncated} />;
     case 'html':
-      return (
-        <iframe
-          className="h-full w-full border-0 bg-white"
-          sandbox="allow-scripts"
-          referrerPolicy="no-referrer"
-          srcDoc={addSandboxCsp(data.content)}
-          title={tab.title}
-        />
-      );
+      return <HtmlPreview content={data.content} title={tab.title} />;
     case 'image':
     case 'svg':
       return (

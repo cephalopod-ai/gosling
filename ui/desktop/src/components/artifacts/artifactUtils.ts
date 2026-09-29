@@ -331,9 +331,32 @@ export function stripOutputHistoryMarkers(markdown: string): string {
     .join('\n');
 }
 
+// An about:srcdoc frame inherits the app page's CSP (script-src 'self'), so inline scripts can
+// never run in the preview. Running them safely needs a separate origin (a dedicated protocol or
+// session partition); until then scripts are removed so the preview is honest and quiet.
+export function withoutHtmlScripts(html: string): { html: string; removedScripts: boolean } {
+  const document = new DOMParser().parseFromString(html, 'text/html');
+  let removedScripts = false;
+  document.querySelectorAll('script').forEach((script) => {
+    script.remove();
+    removedScripts = true;
+  });
+  document.querySelectorAll('*').forEach((element) => {
+    for (const attribute of Array.from(element.attributes)) {
+      if (attribute.name.toLowerCase().startsWith('on')) {
+        element.removeAttribute(attribute.name);
+        removedScripts = true;
+      }
+    }
+  });
+  if (!removedScripts) return { html, removedScripts };
+  const doctype = document.doctype ? `<!doctype ${document.doctype.name}>` : '';
+  return { html: `${doctype}${document.documentElement.outerHTML}`, removedScripts };
+}
+
 export function addSandboxCsp(html: string): string {
   const policy =
-    "default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; script-src 'unsafe-inline' blob:; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
+    "default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; script-src 'none'; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
   const meta = `<meta http-equiv="Content-Security-Policy" content="${policy}">`;
   if (/<head[\s>]/i.test(html)) {
     return html.replace(/<head([^>]*)>/i, `<head$1>${meta}`);

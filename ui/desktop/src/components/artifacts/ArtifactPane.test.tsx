@@ -551,6 +551,60 @@ describe('ArtifactPane', () => {
     ).toBeInTheDocument();
   });
 
+  it('previews HTML without scripts and says that scripts are disabled', async () => {
+    readArtifactFile.mockResolvedValue({
+      content:
+        '<!doctype html><html><head><title>Page</title><script>document.title = "ran"</script></head><body onload="run()"><h1>DT06-HTML-OK</h1><p id="r">pending</p><script src="app.js"></script></body></html>',
+      encoding: 'utf8',
+      error: null,
+      filePath: '/outputs/page.html',
+      found: true,
+      missing: false,
+      sizeBytes: 200,
+      truncated: false,
+    });
+    renderFilePreview('/outputs/page.html');
+
+    const frame = await waitFor(() => {
+      const element = document.querySelector('iframe[title="page.html"]');
+      expect(element).not.toBeNull();
+      return element!;
+    });
+    expect(frame.getAttribute('sandbox')).toBe('');
+    const srcDoc = frame.getAttribute('srcdoc') ?? '';
+    expect(srcDoc).toContain('DT06-HTML-OK');
+    expect(srcDoc).toContain("script-src 'none'");
+    expect(srcDoc).not.toMatch(/<script|onload=/i);
+    expect(srcDoc.indexOf('Content-Security-Policy')).toBeLessThan(srcDoc.indexOf('<title>'));
+    expect(
+      screen.getByText(
+        'Scripts are disabled in this preview. Open the file externally to run them.'
+      )
+    ).toBeInTheDocument();
+  });
+
+  it('does not mention scripts for static HTML', async () => {
+    readArtifactFile.mockResolvedValue({
+      content: '<h1>Static</h1>',
+      encoding: 'utf8',
+      error: null,
+      filePath: '/outputs/static.html',
+      found: true,
+      missing: false,
+      sizeBytes: 15,
+      truncated: false,
+    });
+    renderFilePreview('/outputs/static.html');
+
+    const frame = await waitFor(() => {
+      const element = document.querySelector('iframe[title="static.html"]');
+      expect(element).not.toBeNull();
+      return element!;
+    });
+    expect(frame.getAttribute('srcdoc')).toContain('<h1>Static</h1>');
+    expect(screen.queryByText(/Scripts are disabled/)).toBeNull();
+  });
+
   it('saves a full transient artifact through its originating workspace', async () => {
     render(
       <IntlTestWrapper>

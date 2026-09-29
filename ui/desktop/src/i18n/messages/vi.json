@@ -4243,5 +4243,8 @@
   },
   "artifactPane.jsonlParseFailed": {
     "defaultMessage": "Could not parse line {line} as JSON. Showing the original text."
+  },
+  "artifactPane.htmlScriptsDisabled": {
+    "defaultMessage": "Scripts are disabled in this preview. Open the file externally to run them."
   }
 }

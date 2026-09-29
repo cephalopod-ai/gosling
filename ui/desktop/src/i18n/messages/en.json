@@ -146,6 +146,9 @@
   "artifactPane.hideRepositoryFiles": {
     "defaultMessage": "Hide repository files"
   },
+  "artifactPane.htmlScriptsDisabled": {
+    "defaultMessage": "Scripts are disabled in this preview. Open the file externally to run them."
+  },
   "artifactPane.imageParseFailed": {
     "defaultMessage": "Could not parse this file as an image."
   },
