@@ -1,4 +1,12 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import type { SessionArtifactDto } from '@repo-makeover/gosling-sdk';
 import { toast } from 'react-toastify';
 import {
@@ -97,6 +105,33 @@ function validSessionState(value: Partial<SessionPreviewState> | undefined): Ses
   };
 }
 
+function persistableSessionState(state: SessionPreviewState): SessionPreviewState {
+  return { ...state, tabs: state.tabs.filter((tab) => tab.source.type === 'file') };
+}
+
+function sameStoredSessionState(local: SessionPreviewState, stored: SessionPreviewState): boolean {
+  return (
+    JSON.stringify(validSessionState(persistableSessionState(local))) === JSON.stringify(stored)
+  );
+}
+
+/** A session state another window stored, keeping this window's unpersisted content tabs. */
+function adoptStoredSessionState(
+  stored: SessionPreviewState,
+  local: SessionPreviewState | undefined
+): SessionPreviewState {
+  const contentTabs = local?.tabs.filter((tab) => tab.source.type === 'content') ?? [];
+  if (contentTabs.length === 0) return stored;
+  const tabs = [...stored.tabs, ...contentTabs];
+  return {
+    ...stored,
+    tabs,
+    activeTabId:
+      stored.activeTabId ??
+      (tabs.some((tab) => tab.id === local?.activeTabId) ? (local?.activeTabId ?? null) : null),
+  };
+}
+
 function loadPersistedWorkbench(): PersistedWorkbench {
   try {
     const parsed = JSON.parse(
@@ -135,6 +170,11 @@ export function ArtifactWorkbenchProvider({ children }: { children: React.ReactN
     Record<string, SessionArtifactDto[]>
   >({});
   const [sessions, setSessions] = useState(initial.sessions);
+  // Every window of the app shares this storage key. Session states this window last wrote or
+  // adopted; only the ones it has changed since are written back, merged over what is stored,
+  // so one window's save no longer restores tabs another window closed.
+  const syncedSessionsRef = useRef(initial.sessions);
+  const sessionsRef = useRef(initial.sessions);
   const [isOpen, setIsOpen] = useState(initial.isOpen);
   const [hideRepositoryFiles, setHideRepositoryFiles] = useState(initial.hideRepositoryFiles);
   const [width, setWidthState] = useState(initial.width);
@@ -157,22 +197,58 @@ export function ArtifactWorkbenchProvider({ children }: { children: React.ReactN
   );
 
   useEffect(() => {
-    const fallback = sessions[DEFAULT_SESSION_ID] ?? emptySessionState();
+    sessionsRef.current = sessions;
+    const synced = syncedSessionsRef.current;
+    const merged: Record<string, SessionPreviewState> = {
+      ...loadPersistedWorkbench().sessions,
+      ...Object.fromEntries(
+        Object.entries(sessions)
+          .filter(([sessionId, state]) => synced[sessionId] !== state)
+          .map(([sessionId, state]) => [sessionId, persistableSessionState(state)])
+      ),
+    };
+    syncedSessionsRef.current = sessions;
+    const fallback = merged[DEFAULT_SESSION_ID] ?? emptySessionState();
     const persisted: PersistedWorkbench = {
       hideRepositoryFiles,
       isOpen,
-      sessions: Object.fromEntries(
-        Object.entries(sessions).map(([sessionId, state]) => [
-          sessionId,
-          { ...state, tabs: state.tabs.filter((tab) => tab.source.type === 'file') },
-        ])
-      ),
-      tabs: fallback.tabs.filter((tab) => tab.source.type === 'file'),
+      sessions: merged,
+      tabs: fallback.tabs,
       activeTabId: fallback.activeTabId,
       width,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted));
   }, [hideRepositoryFiles, isOpen, sessions, width]);
+
+  useEffect(() => {
+    const adoptOtherWindowChanges = (event: StorageEvent) => {
+      if (event.key !== STORAGE_KEY) return;
+      const local = sessionsRef.current;
+      const adopted = Object.fromEntries(
+        Object.entries(loadPersistedWorkbench().sessions)
+          .filter(
+            ([sessionId, stored]) =>
+              !local[sessionId] || !sameStoredSessionState(local[sessionId], stored)
+          )
+          .map(([sessionId, stored]) => [
+            sessionId,
+            adoptStoredSessionState(stored, local[sessionId]),
+          ])
+      );
+      if (Object.keys(adopted).length === 0) return;
+      syncedSessionsRef.current = { ...syncedSessionsRef.current, ...adopted };
+      setSessions((all) => {
+        const next = { ...all };
+        for (const [sessionId, state] of Object.entries(adopted)) {
+          // A change this window made after the event was read wins; it is written next.
+          if (all[sessionId] === local[sessionId]) next[sessionId] = state;
+        }
+        return next;
+      });
+    };
+    window.addEventListener('storage', adoptOtherWindowChanges);
+    return () => window.removeEventListener('storage', adoptOtherWindowChanges);
+  }, []);
 
   const updateCurrent = useCallback(
     (update: (state: SessionPreviewState) => SessionPreviewState) => {
