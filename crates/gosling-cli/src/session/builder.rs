@@ -245,6 +245,22 @@ fn missing_setting_error(config: &Config, setting: &str) -> String {
     }
 }
 
+/// Matches the interactive `/model` rule, so `--model` and `GOSLING_MODEL`
+/// can't send a blank or space-containing name to the provider verbatim.
+fn validate_model_name(model_name: &str) -> Result<(), String> {
+    if model_name.trim().is_empty() {
+        return Err(
+            "The model name is empty. Pass --model <name> or run 'gosling configure'.".to_string(),
+        );
+    }
+    if model_name.contains(char::is_whitespace) {
+        return Err(format!(
+            "Model name '{model_name}' contains spaces or line breaks; model names cannot contain them."
+        ));
+    }
+    Ok(())
+}
+
 struct ResolvedProviderConfig {
     provider_name: String,
     model_name: String,
@@ -282,6 +298,7 @@ fn resolve_provider_and_model(
         .or_else(|| saved_model_config.as_ref().map(|mc| mc.model_name.clone()))
         .or_else(|| config.get_gosling_model().ok())
         .ok_or_else(|| missing_setting_error(config, "model"))?;
+    validate_model_name(&model_name)?;
 
     let model_config = if session_config.resume
         && saved_model_config
@@ -1090,6 +1107,44 @@ mod tests {
 
         assert_eq!(resolved_limit(Some("50000")), Some(50_000));
         assert_eq!(resolved_limit(None), Some(10_000));
+    }
+
+    // GSL-PT-20260927-B13: an empty or space-containing --model / GOSLING_MODEL
+    // was accepted and sent to the provider verbatim.
+    #[test]
+    fn blank_or_spaced_model_names_are_rejected_before_the_session_starts() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("config.yaml");
+        std::fs::write(
+            &config_path,
+            "GOSLING_PROVIDER: openai\nGOSLING_MODEL: playtest-model\n",
+        )
+        .unwrap();
+        let config =
+            Config::new_with_file_secrets(&config_path, dir.path().join("secrets.yaml")).unwrap();
+        let with_model = |model: Option<&str>| SessionBuilderConfig {
+            model: model.map(str::to_string),
+            ..SessionBuilderConfig::default()
+        };
+        let resolve = |session_config: &SessionBuilderConfig| {
+            resolve_provider_and_model(session_config, &config, None, None)
+        };
+
+        let empty = resolve(&with_model(Some(""))).err().unwrap();
+        assert!(empty.contains("model name is empty"), "{empty}");
+        let spaced = resolve(&with_model(Some("bad model"))).err().unwrap();
+        assert!(spaced.contains("spaces or line breaks"), "{spaced}");
+        {
+            let _env = env_lock::lock_env([("GOSLING_MODEL", Some(""))]);
+            assert!(resolve(&with_model(None)).is_err());
+        }
+
+        assert_eq!(
+            resolve(&with_model(Some("playtest-model-b")))
+                .expect("a normal model name resolves")
+                .model_name,
+            "playtest-model-b"
+        );
     }
 
     #[test]
