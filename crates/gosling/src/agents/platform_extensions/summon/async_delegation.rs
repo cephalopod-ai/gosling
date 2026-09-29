@@ -72,6 +72,7 @@ impl SummonClient {
                 cancellation_token: Some(task_token_clone),
                 on_message: Some(on_message),
                 notification_tx: Some(notif_tx),
+                parent_tool_request_id: None,
             })
             .await
         });

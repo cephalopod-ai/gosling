@@ -53,7 +53,12 @@ impl McpClientTrait for SummonClient {
             },
             "delegate" => {
                 match self
-                    .handle_delegate(session_id, arguments, cancellation_token)
+                    .handle_delegate(
+                        session_id,
+                        ctx.tool_call_request_id.as_deref(),
+                        arguments,
+                        cancellation_token,
+                    )
                     .await
                 {
                     Ok(result) => Ok(result),

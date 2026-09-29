@@ -755,6 +755,7 @@ You review code."#;
             let err = client
                 .handle_delegate(
                     "session-that-must-not-be-read",
+                    None,
                     args.as_object().cloned(),
                     CancellationToken::new(),
                 )
@@ -831,6 +832,7 @@ You review code."#;
             let err = client
                 .handle_delegate(
                     &session.id,
+                    None,
                     args.as_object().cloned(),
                     CancellationToken::new(),
                 )
@@ -909,6 +911,7 @@ You review code."#;
             Duration::from_secs(30),
             client.handle_delegate(
                 &session_id,
+                None,
                 args.as_object().cloned(),
                 CancellationToken::new(),
             ),
@@ -972,6 +975,7 @@ You review code."#;
             Duration::from_secs(30),
             client.handle_delegate(
                 &session_id,
+                None,
                 args.as_object().cloned(),
                 CancellationToken::new(),
             ),
@@ -1210,7 +1214,7 @@ You review code."#;
                     .clone(),
             );
             let content = MessageContent::tool_request("req1", Ok(tool_call));
-            let notif = create_tool_notification(&content, "20260204_1").unwrap();
+            let notif = create_tool_notification(&content, "20260204_1", None).unwrap();
 
             let buffer = Arc::new(Mutex::new(vec![notif]));
 
