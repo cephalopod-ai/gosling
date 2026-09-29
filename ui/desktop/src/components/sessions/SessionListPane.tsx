@@ -838,7 +838,22 @@ export default function SessionListPane({ mode, isActive, onSelectSession }: Ses
         }`}
       >
         <div className="min-w-0">
-          <h3 className="mb-1 w-full break-words text-base line-clamp-2">{displayName}</h3>
+          {mode === 'active' && onSelectSession ? (
+            <h3 className="mb-1 w-full text-base">
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  handleCardClick();
+                }}
+                className="w-full rounded-sm text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-active"
+              >
+                <span className="break-words line-clamp-2">{displayName}</span>
+              </button>
+            </h3>
+          ) : (
+            <h3 className="mb-1 w-full break-words text-base line-clamp-2">{displayName}</h3>
+          )}
           <div className="mt-2 flex-1">
             <div className="flex min-w-0 items-center text-xs text-text-secondary">
               <Calendar className="mr-1 h-3 w-3 flex-shrink-0" />

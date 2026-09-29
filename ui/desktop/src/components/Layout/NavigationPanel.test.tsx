@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { IntlTestWrapper } from '../../i18n/test-utils';
 import { useNavigationContext } from './NavigationContext';
@@ -355,5 +356,70 @@ describe('NavigationPanel workspace unread activity', () => {
     expect(screen.getByTestId('workspaces')).toHaveTextContent(/^Workspaces$/);
     status('math-1', 'math', 'idle');
     expect(screen.getByText('Ready workspace: math')).toBeInTheDocument();
+  });
+});
+
+describe('NavigationPanel keyboard access to chats', () => {
+  const onSessionClick = vi.fn();
+  const session = {
+    id: 'math-1',
+    workspaceId: 'math',
+    name: 'First math chat',
+    workingDir: '/math',
+    createdAt: '2026-09-08T10:00:00Z',
+    updatedAt: '',
+    messageCount: 2,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    route.pathname = '/';
+    vi.mocked(useNavigationContext).mockReturnValue({
+      isNavExpanded: true,
+      setIsNavExpanded: vi.fn(),
+    });
+    vi.mocked(useNavigationSessions).mockReturnValue({
+      recentSessions: [session],
+      activeSessionId: undefined,
+      fetchSessions: vi.fn(),
+      handleNavClick: vi.fn(),
+      handleSessionClick: onSessionClick,
+    });
+  });
+
+  const tabTo = async (user: ReturnType<typeof userEvent.setup>, target: HTMLElement) => {
+    for (let stop = 0; stop < 30 && document.activeElement !== target; stop += 1) {
+      await user.tab();
+    }
+  };
+
+  it('reaches a chat row with Tab and opens it with Enter or Space', async () => {
+    const user = userEvent.setup();
+    render(<Navigation />, { wrapper: IntlTestWrapper });
+    const row = screen.getByRole('button', { name: 'First math chat' });
+
+    await tabTo(user, row);
+    expect(row).toHaveFocus();
+    await user.keyboard('{Enter}');
+    expect(onSessionClick).toHaveBeenCalledWith('math-1');
+
+    onSessionClick.mockClear();
+    await user.keyboard(' ');
+    expect(onSessionClick).toHaveBeenCalledWith('math-1');
+  });
+
+  it('keeps the session actions button outside the row and does not open the chat from it', async () => {
+    const user = userEvent.setup();
+    render(<Navigation />, { wrapper: IntlTestWrapper });
+    const row = screen.getByRole('button', { name: 'First math chat' });
+    const actions = screen.getByRole('button', { name: 'Session actions' });
+
+    expect(row).not.toContainElement(actions);
+    await tabTo(user, actions);
+    expect(actions).toHaveFocus();
+    await user.keyboard('{Enter}');
+    expect(onSessionClick).not.toHaveBeenCalled();
+    expect(await screen.findByRole('menuitem', { name: 'Rename session' })).toBeInTheDocument();
   });
 });

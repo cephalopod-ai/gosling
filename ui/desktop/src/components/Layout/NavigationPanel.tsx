@@ -229,25 +229,38 @@ const SessionRow: React.FC<SessionRowProps> = ({
         active && 'bg-background-tertiary'
       )}
     >
-      <InlineEditText
-        value={session.name}
-        onSave={async (newName) => {
-          await acpRenameSession(session.id, newName);
-          window.dispatchEvent(
-            new CustomEvent(AppEvents.SESSION_RENAMED, {
-              detail: { sessionId: session.id, newName, userInitiated: true },
-            })
-          );
+      <div
+        role={isEditing ? undefined : 'button'}
+        tabIndex={isEditing ? undefined : 0}
+        onKeyDown={(event) => {
+          if (isEditing || event.target !== event.currentTarget) return;
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            onClick();
+          }
         }}
-        placeholder={intl.formatMessage(i18n.untitledSession)}
-        disabled={isStreaming}
-        singleClickEdit={false}
-        className="truncate text-text-primary flex-1 !px-0 !py-0 hover:bg-transparent"
-        editClassName="!text-sm"
-        editToken={renameToken}
-        onEditStart={() => setIsEditing(true)}
-        onEditEnd={() => setIsEditing(false)}
-      />
+        className="flex min-w-0 flex-1 rounded-full focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-active"
+      >
+        <InlineEditText
+          value={session.name}
+          onSave={async (newName) => {
+            await acpRenameSession(session.id, newName);
+            window.dispatchEvent(
+              new CustomEvent(AppEvents.SESSION_RENAMED, {
+                detail: { sessionId: session.id, newName, userInitiated: true },
+              })
+            );
+          }}
+          placeholder={intl.formatMessage(i18n.untitledSession)}
+          disabled={isStreaming}
+          singleClickEdit={false}
+          className="truncate text-text-primary flex-1 !px-0 !py-0 hover:bg-transparent"
+          editClassName="!text-sm"
+          editToken={renameToken}
+          onEditStart={() => setIsEditing(true)}
+          onEditEnd={() => setIsEditing(false)}
+        />
+      </div>
       <div className="flex items-center gap-1">
         <SessionIndicators isStreaming={isStreaming} hasUnread={hasUnread} hasError={hasError} />
         <DropdownMenu>
