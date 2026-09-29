@@ -252,9 +252,11 @@ impl SessionStorage {
         })
     }
 
+    /// The sessions a person had, from any surface: `Acp` sessions come from
+    /// editors and `gosling serve`, and ACP `session/list` shows the same set.
     pub(super) async fn list_sessions(&self) -> Result<Vec<Session>> {
         self.list_sessions_by_types(
-            Some(&[SessionType::User, SessionType::Scheduled]),
+            Some(&[SessionType::User, SessionType::Scheduled, SessionType::Acp]),
             SessionArchiveState::Active,
         )
         .await

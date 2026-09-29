@@ -272,7 +272,7 @@ gosling session -n my-session --debug --max-turns 25
 ---
 
 #### session list [options]
-List all saved sessions.
+List all saved sessions: CLI chats, scheduled runs, and sessions started over ACP (`gosling acp`, `gosling serve`, editors). Internal subagent, hidden and terminal sessions are not listed. In JSON output, `session_type` says where each session came from (`user`, `scheduled` or `acp`).
 
 **Options:**
 - **`-f, --format <format>`**: Specify output format (`text` or `json`). Default is `text`

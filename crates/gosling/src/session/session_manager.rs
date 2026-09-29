@@ -4233,9 +4233,24 @@ mod tests {
         .await
         .unwrap();
 
-        let default_sessions = sm.list_sessions().await.unwrap();
-        assert_eq!(default_sessions.len(), 1);
-        assert_eq!(default_sessions[0].name, "User session");
+        sm.create_session(
+            PathBuf::from("/tmp/test"),
+            "Subagent session".to_string(),
+            SessionType::SubAgent,
+            GoslingMode::default(),
+        )
+        .await
+        .unwrap();
+
+        let mut default_names: Vec<String> = sm
+            .list_sessions()
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|session| session.name)
+            .collect();
+        default_names.sort();
+        assert_eq!(default_names, vec!["ACP session", "User session"]);
 
         let acp_sessions = sm
             .list_sessions_by_types(&[SessionType::Acp])
