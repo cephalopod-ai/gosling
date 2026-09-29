@@ -470,10 +470,13 @@ async fn resolve_or_prompt_session_id(
         crate::commands::session::ensure_session_picker_terminal(
             "--session-id <ID> or --name <NAME>",
         )?;
-        return match crate::commands::session::prompt_interactive_session_selection(session_manager)
-            .await
+        return match crate::signal::cancellable_prompts(
+            crate::commands::session::prompt_interactive_session_selection(session_manager),
+        )
+        .await
         {
             Ok(id) => Ok(Some(id)),
+            Err(e) if crate::signal::is_prompt_cancellation(&e) => Err(e),
             Err(e) => {
                 eprintln!("Error: {}", e);
                 Ok(None)
@@ -2035,7 +2038,8 @@ async fn handle_session_subcommand(command: SessionCommand) -> Result<()> {
             } else {
                 (None, None)
             };
-            handle_session_remove(session_id, name, regex, yes).await?;
+            crate::signal::cancellable_prompts(handle_session_remove(session_id, name, regex, yes))
+                .await?;
         }
         SessionCommand::Export {
             identifier,
@@ -2078,7 +2082,7 @@ async fn handle_session_subcommand(command: SessionCommand) -> Result<()> {
             crate::commands::session::handle_diagnostics(&session_id, output).await?;
         }
         SessionCommand::ContextHistory { command } => {
-            handle_context_history_subcommand(command).await?;
+            crate::signal::cancellable_prompts(handle_context_history_subcommand(command)).await?;
         }
     }
     Ok(())
