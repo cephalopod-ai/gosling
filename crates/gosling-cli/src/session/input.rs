@@ -141,7 +141,11 @@ pub fn get_input(
     }
 
     #[cfg(unix)]
-    if std::io::stdin().is_terminal() {
+    let _enter_guard = if std::io::stdin().is_terminal() {
+        let enter_guard = std::env::var("TERM")
+            .map_or(true, |term| rustyline_enters_raw_mode(&term))
+            .then(|| EnterKeyGuard::apply(libc::STDIN_FILENO))
+            .flatten();
         match typeahead.take(libc::STDIN_FILENO) {
             Some((Typeahead::Line(line), superseded)) => {
                 for skipped in &superseded {
@@ -163,7 +167,10 @@ pub fn get_input(
             Some((Typeahead::Eof, _)) => return Ok(InputResult::Exit),
             None => {}
         }
-    }
+        enter_guard
+    } else {
+        None
+    };
     #[cfg(not(unix))]
     let _ = typeahead;
 
@@ -289,6 +296,53 @@ fn take_typeahead(fd: libc::c_int) -> Option<Typeahead> {
         }
         _ => None,
     }
+}
+
+/// Keeps Enter a `\r` from the type-ahead check until rustyline's prompt returns.
+///
+/// rustyline enters raw mode with `TCSADRAIN`, which first waits until the terminal has read
+/// everything printed so far; a slow or busy terminal can take a while. Until then the line
+/// discipline turns Enter into `\n`, which rustyline reads as the Ctrl+J newline binding, so a
+/// line typed during that wait was never submitted and merged with the next one. With `ICRNL`
+/// off, that Enter stays `\r` in the pending partial line and rustyline accepts it. Lines
+/// finished before the guard still end in `\n` and are taken by [`take_typeahead`].
+#[cfg(unix)]
+struct EnterKeyGuard {
+    fd: libc::c_int,
+}
+
+#[cfg(unix)]
+impl EnterKeyGuard {
+    fn apply(fd: libc::c_int) -> Option<Self> {
+        // SAFETY: `termios` is plain data; `tcgetattr` writes into it and `tcsetattr` reads it.
+        let mut termios: libc::termios = unsafe { std::mem::zeroed() };
+        if unsafe { libc::tcgetattr(fd, &mut termios) } != 0 || termios.c_iflag & libc::ICRNL == 0 {
+            return None;
+        }
+        termios.c_iflag &= !libc::ICRNL;
+        (unsafe { libc::tcsetattr(fd, libc::TCSANOW, &termios) } == 0).then_some(Self { fd })
+    }
+}
+
+#[cfg(unix)]
+impl Drop for EnterKeyGuard {
+    fn drop(&mut self) {
+        // SAFETY: as in `apply`.
+        let mut termios: libc::termios = unsafe { std::mem::zeroed() };
+        if unsafe { libc::tcgetattr(self.fd, &mut termios) } == 0 {
+            termios.c_iflag |= libc::ICRNL;
+            unsafe { libc::tcsetattr(self.fd, libc::TCSANOW, &termios) };
+        }
+    }
+}
+
+/// rustyline reads plain `\n`-terminated lines instead of entering raw mode on these terminals
+/// (its `UNSUPPORTED_TERM` list), so Enter must keep its `\n` translation there.
+#[cfg(unix)]
+fn rustyline_enters_raw_mode(term: &str) -> bool {
+    !["dumb", "cons25", "emacs"]
+        .iter()
+        .any(|unsupported| unsupported.eq_ignore_ascii_case(term))
 }
 
 fn parse_inline_input(input: &str) -> InputResult {
@@ -659,6 +713,80 @@ mod tests {
         unsafe {
             libc::close(slave);
             libc::close(master);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_enter_typed_while_waiting_for_raw_mode_is_submitted() {
+        let (mut master, mut slave) = (0, 0);
+        // SAFETY: both out-pointers are valid; name, termios and winsize are optional.
+        let opened = unsafe {
+            libc::openpty(
+                &mut master,
+                &mut slave,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        };
+        assert_eq!(opened, 0);
+        let write = |bytes: &[u8]| {
+            // SAFETY: `bytes` is valid for its length and `master` is open.
+            let written = unsafe { libc::write(master, bytes.as_ptr().cast(), bytes.len()) };
+            assert_eq!(written, bytes.len() as isize);
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        };
+        // What rustyline reads once its raw mode is in place.
+        let read_as_rustyline = || {
+            // SAFETY: `termios` is plain data and the buffer is valid for its length.
+            unsafe {
+                let mut prompt_mode: libc::termios = std::mem::zeroed();
+                assert_eq!(libc::tcgetattr(slave, &mut prompt_mode), 0);
+                let mut raw = prompt_mode;
+                raw.c_lflag &= !(libc::ICANON | libc::ECHO);
+                raw.c_cc[libc::VMIN] = 0;
+                raw.c_cc[libc::VTIME] = 0;
+                assert_eq!(libc::tcsetattr(slave, libc::TCSANOW, &raw), 0);
+                let mut buffer = [0u8; 256];
+                let read = libc::read(slave, buffer.as_mut_ptr().cast(), buffer.len());
+                assert_eq!(libc::tcsetattr(slave, libc::TCSANOW, &prompt_mode), 0);
+                buffer[..read.max(0) as usize].to_vec()
+            }
+        };
+
+        let guard = EnterKeyGuard::apply(slave);
+        assert!(guard.is_some(), "a fresh pty translates Enter to \\n");
+        assert_eq!(take_typeahead(slave), None);
+
+        write(b"ping\r");
+        assert_eq!(read_as_rustyline(), b"ping\r");
+
+        write(b"two\nlines\r");
+        assert_eq!(read_as_rustyline(), b"two\nlines\r");
+
+        drop(guard);
+        write(b"between turns\r");
+        assert_eq!(
+            take_typeahead(slave),
+            Some(Typeahead::Line("between turns".to_string()))
+        );
+
+        // SAFETY: both descriptors came from openpty above.
+        unsafe {
+            libc::close(slave);
+            libc::close(master);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_enter_guard_is_skipped_where_rustyline_reads_plain_lines() {
+        for term in ["dumb", "DUMB", "cons25", "emacs"] {
+            assert!(!rustyline_enters_raw_mode(term), "{term}");
+        }
+        for term in ["xterm-256color", "screen", "tmux-256color", ""] {
+            assert!(rustyline_enters_raw_mode(term), "{term}");
         }
     }
 
