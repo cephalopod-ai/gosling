@@ -296,10 +296,18 @@ Search allows you to find specific content within sessions or find specific sess
         ```
         gosling session -r --name react-migration
         ```
+
+        If you resume a session from a different directory, `gosling session --resume` asks whether to switch back to the session's original directory; if you stay, the session moves to your current directory. `gosling run --resume` stays in the current directory and moves the session there. Sessions whose tools are restricted to their working directory, such as imported sessions, always keep their working directory: gosling switches to it instead.
     </TabItem>
 </Tabs>
 
 Sessions created in gosling Desktop can be resumed in the CLI and vice versa. All sessions are stored in the [same database](/docs/guides/logs#session-records).
+
+:::note Interrupted turns
+A turn can stop before it finishes: you cancel it, quit or close gosling while it is running or waiting for a tool approval, the client disconnects, or the process is killed. When you reopen or resume the session, or send the next message, gosling closes that turn in the history instead of sending it again. Tool calls that never ran are recorded as not run, a reply that was cut off stays visible to you but is marked incomplete and is not sent back to the model, and the turn ends with `Run interrupted before completion.` (or `Run cancelled by user before completion.` when you cancelled it). Your next message starts a new turn on its own; to continue the stopped task, ask for it explicitly.
+
+In gosling Desktop, a cut-off reply carries an **Interrupted** marker, a tool call that never ran shows **Not run** instead of a failure or a pending state, and the closing line appears as a status line rather than as a reply.
+:::
 
 :::tip Create New Sessions for New Tasks
 While you can resume sessions, we recommend creating new sessions for new tasks to reduce the chance of [doom spiraling](/docs/troubleshooting/known-issues#stuck-in-a-loop-or-unresponsive).
@@ -336,7 +344,7 @@ Create a complete copy of any session to reuse configurations, experiment with v
         - Provider and model configuration
         - Extension data and configurations
 
-        The new session is named the same as the original and appears at the top of your session list.
+        The new session is named `branch: <original name>` and appears at the top of your session list.
 
         :::tip Duplicate vs Fork Session
         - **Duplicate** (Copy button in session list): Creates a complete copy of the entire session. Use this to preserve a working session or reuse its configuration.
@@ -367,6 +375,8 @@ Create a complete copy of any session to reuse configurations, experiment with v
         - All session metadata and settings
         - Provider and model configuration
         - Extension data and configurations
+
+        The fork is named `branch: <original name>` and keeps that name, so `--name <original name>` still resumes the original session.
     </TabItem>
 </Tabs>
 
@@ -411,11 +421,13 @@ Create a complete copy of any session to reuse configurations, experiment with v
     </TabItem>
 </Tabs>
 
+An imported session starts in Manual Approval (`approve`) mode with tools restricted to its working directory, because its history comes from outside this gosling instance. Switch the mode with `/mode` in the CLI or the mode selector in Desktop once you trust the session.
+
 ## Export Sessions
 
 <Tabs groupId="interface">
     <TabItem value="ui" label="gosling Desktop" default>
-        Export complete sessions as JSON files for backup, sharing, migration, or archival. Exported files preserve all session data including conversation history, metadata, and settings.
+        Export complete sessions as JSON files for backup, sharing, migration, or archival. Exported files preserve all session data including conversation history, metadata, and settings, except that secrets known to gosling and credential-shaped text are replaced with `[REDACTED]`.
 
         1. Click <History className="inline" size={16} /> `Session History` in the sidebar
         2. Find the session you want to export
@@ -425,7 +437,7 @@ Create a complete copy of any session to reuse configurations, experiment with v
 
     </TabItem>
     <TabItem value="cli" label="gosling CLI">
-        Export sessions for backup, sharing, migration, or documentation purposes. You can export as JSON files to preserve complete session data including conversation history, metadata, and settings, or as Markdown files to get a formatted, readable version of the conversation.
+        Export sessions for backup, sharing, migration, or documentation purposes. You can export as JSON files to preserve complete session data including conversation history, metadata, and settings, or as Markdown files to get a formatted, readable version of the conversation. Secrets are replaced with `[REDACTED]` unless you pass `--no-redact`.
 
         From your terminal, run the [`session export`](/docs/guides/gosling-cli-commands#session-export-options) subcommand:
         

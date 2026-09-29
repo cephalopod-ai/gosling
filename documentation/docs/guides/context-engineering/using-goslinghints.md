@@ -76,7 +76,11 @@ The `.goslinghints` file can include any instructions or contextual details rele
 
 The `.goslinghints` file supports natural language. Write clear, specific instructions using direct language that gosling can easily understand and follow. Include relevant context about your project and workflow preferences, and prioritize your most important guidelines first.
 
-gosling loads hints at the start of your session. As it accesses files in nested directories, it also loads the hint files for those directories. gosling adds hints to the system prompt for every request. Because `.goslinghints` content uses tokens, keeping it concise can reduce cost and improve performance.
+gosling loads hints at the start of your session and adds them to the system prompt for every request. As it accesses files in nested directories, it also loads the hint files for those directories and adds them to the conversation as context only the model sees (they don't appear in your chat transcript). Because `.goslinghints` content uses tokens, keeping it concise can reduce cost and improve performance.
+
+Project hints, from the working directory and from nested directories alike, are labelled as untrusted content from the repository: the model is told they came from files in the project rather than from you, and that they never authorize skipping an approval or widening permissions. Your global hints are labelled as yours.
+
+If gosling can't read a context file (for example because of its permissions), it prints a warning that names the file and continues without it. A file with bytes that aren't valid UTF-8 is still loaded, with those bytes replaced by the Unicode replacement character (U+FFFD), and gosling warns about that too. Each warning appears once per gosling process on standard error and is also written to the log file.
 
 ### Example Global `.goslinghints` File
 
@@ -116,6 +120,8 @@ gosling supports hierarchical local hints in git repositories. When your session
 This is especially useful in monorepos or large projects where different parts of the codebase have different conventions.
 
 By default, gosling looks for both `AGENTS.md` and `.goslinghints` at each level. If you're using [custom context files](#custom-context-files), gosling applies the same nested loading behavior to those filenames too.
+
+Nested hints only come from directories inside the working directory, and gosling skips directories that git ignores (through `.gitignore` files from the repository root down to that directory), such as `node_modules/` or a vendored tree. One update adds at most 16 KiB of nested hints; anything beyond that is left out, and the model is told so.
 
 As a best practice, `.goslinghints` at each level should only include hints relevant to that scope:
 - **Root level**: Include project-wide standards, build processes, and general guidelines
@@ -194,7 +200,7 @@ If you start gosling in `my-project/`, the root-level hints are loaded immediate
    </details>
 
 :::note
-After nested hints are loaded for a directory, they remain active for the rest of the session. If you update a hint file and want gosling to pick up the new content reliably, restart the session.
+After nested hints are loaded for a directory, they remain active for the rest of the session, including when you resume it later: gosling does not add a directory's hints a second time while the conversation still holds them. If you update a hint file and want gosling to pick up the new content reliably, start a new session.
 :::
 
 ## Common Use Cases
@@ -222,7 +228,7 @@ Like prompts, this is not an extensive list to shape your `.goslinghints` file. 
 
 ## Custom Context Files
 
-gosling looks for `AGENTS.md` then `.goslinghints` files by default, but you can configure a different filename or multiple context files using the `CONTEXT_FILE_NAMES` environment variable. This is useful for:
+gosling looks for `.goslinghints` then `AGENTS.md` files by default (when both exist, `.goslinghints` comes first in the prompt), but you can configure a different filename or multiple context files using the `CONTEXT_FILE_NAMES` environment variable. This is useful for:
 
 - **Tool compatibility**: Use conventions from other AI tools (e.g. `CLAUDE.md`)
 - **Organization**: Separate frequently-used rules into multiple files that load automatically
@@ -236,7 +242,7 @@ Here's how it works:
 
 ### Configuration
 
-Set the `CONTEXT_FILE_NAMES` environment variable to a JSON array of filenames. The default is `["AGENTS.md", ".goslinghints"]`.
+Set the `CONTEXT_FILE_NAMES` environment variable to a JSON array of filenames. The default is `[".goslinghints", "AGENTS.md"]`, and files load in the order you list them. If the value isn't a list of filenames, gosling prints a warning (once per process) and uses the default.
 
 ```bash
 # Single custom file

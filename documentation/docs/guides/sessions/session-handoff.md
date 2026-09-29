@@ -118,7 +118,10 @@ starts another model turn:
   effect.
 
 Crash recovery cannot restore an interrupted provider stream exactly. When it starts a new turn,
-the handoff boundary and ordinary permission checks still apply.
+the handoff boundary and ordinary permission checks still apply. The interrupted turn itself is
+already closed in the history when the chat reopens (see
+[Resume Session](/docs/guides/sessions/session-management#resume-session)); recovery asks the model
+to continue it and never resends the interrupted request as part of the new turn.
 
 ## Retention and limits
 

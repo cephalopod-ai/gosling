@@ -130,6 +130,30 @@ fn status_message_from_system_notification(
     }
 }
 
+/// Tells the client to drop messages it was shown that are not part of the
+/// history (matched by `_meta.gosling.messageId`), so the live view matches
+/// what a `session/load` replays.
+pub(super) fn retracted_messages_update(
+    session_id: &SessionId,
+    message_ids: &[String],
+) -> SessionNotification {
+    let message_ids: Vec<String> = message_ids
+        .iter()
+        .map(|id| presentation::project_identifier(id))
+        .collect();
+    let mut gosling = serde_json::Map::new();
+    gosling.insert(
+        "retractedMessageIds".to_string(),
+        serde_json::json!(message_ids),
+    );
+    let mut meta = serde_json::Map::new();
+    meta.insert("gosling".to_string(), serde_json::Value::Object(gosling));
+    SessionNotification::new(
+        session_id.clone(),
+        SessionUpdate::SessionInfoUpdate(SessionInfoUpdate::new().meta(meta)),
+    )
+}
+
 pub(super) fn message_update_meta(message_id: Option<&str>, created: i64, steer: bool) -> Meta {
     let mut gosling = serde_json::Map::new();
     gosling.insert("created".to_string(), serde_json::json!(created));
@@ -186,6 +210,9 @@ fn replay_message_gosling_meta(message: &Message) -> serde_json::Map<String, ser
     }
     if message.metadata.imported_untrusted {
         gosling.insert("importedUntrusted".to_string(), serde_json::json!(true));
+    }
+    if message.metadata.incomplete {
+        gosling.insert("incomplete".to_string(), serde_json::json!(true));
     }
     gosling
 }

@@ -1,17 +1,22 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{Args, CommandFactory, Parser, Subcommand};
 use clap_complete::{generate, Shell as ClapShell};
 use clap_complete_nushell::Nushell as ClapNushell;
 use gosling::acp::custom_requests::{
     ShellAuthorityMode, ShellIdentity, ShellProtocolPolicy, ShellProvisioning,
+    ShellProvisioningIssue, ShellProvisioningIssueCode, ShellProvisioningIssueSeverity,
     ShellSessionProvisioning, SHELL_PROVISIONING_SCHEMA_VERSION,
 };
 use gosling::acp::domain_adapter::McpDomainAdapter;
 use gosling::acp::shell::{DomainAdapter, ShellRuntime};
+use gosling::agents::platform_extensions::PLATFORM_EXTENSIONS;
 use gosling::agents::GoslingPlatform;
-use gosling::builtin_extension::register_builtin_extensions;
+use gosling::builtin_extension::{get_builtin_extension, register_builtin_extensions};
 use gosling::config::paths::{Paths, RuntimePaths};
-use gosling::config::{get_domain_adapter_registration, Config, ConfigError, GoslingMode};
+use gosling::config::{
+    get_domain_adapter_registration, Config, ConfigError, GoslingMode,
+    INVALID_GOSLING_MODE_FALLBACK,
+};
 use gosling::source_roots::SourceRoot;
 use gosling_mcp::mcp_server_runner::{serve, McpCommand};
 use gosling_mcp::{AutoVisualiserRouter, ComputerControllerServer};
@@ -28,10 +33,12 @@ use crate::commands::session::{handle_session_list, handle_session_remove};
 use crate::commands::skills::handle_skills_list;
 use crate::session::{build_session, SessionBuilderConfig};
 use gosling::agents::Container;
+use gosling::conversation::Conversation;
 use gosling::session::session_manager::SessionType;
 use gosling::session::SessionManager;
 use std::io::{IsTerminal, Read};
 use std::path::PathBuf;
+use strum::VariantNames;
 use tracing::warn;
 
 const GOSLING_SERVER_SECRET_KEY_ENV: &str = "GOSLING_SERVER__SECRET_KEY";
@@ -39,10 +46,11 @@ const GOSLING_SERVER_SECRET_KEY_ENV: &str = "GOSLING_SERVER__SECRET_KEY";
 fn warn_about_invalid_config_values() {
     let config = Config::global();
 
-    if let Err(error) = config.get_gosling_mode() {
-        if !matches!(error, ConfigError::NotFound(_)) {
-            eprintln!("Warning: Invalid GOSLING_MODE: {error}. Falling back to smart_approve.");
-        }
+    if let Err(error) = config.resolve_gosling_mode() {
+        eprintln!(
+            "Warning: Invalid GOSLING_MODE: {error}. New sessions use {INVALID_GOSLING_MODE_FALLBACK} (ask before every tool call) until it is set to one of: {}.",
+            GoslingMode::VARIANTS.join(", ")
+        );
     }
 
     if let Err(error) = config.get_param::<u32>("GOSLING_MAX_TURNS") {
@@ -51,33 +59,35 @@ fn warn_about_invalid_config_values() {
         }
     }
 
+    let default_threshold = gosling::context_mgmt::DEFAULT_COMPACTION_THRESHOLD;
     match config.get_param::<f64>("GOSLING_AUTO_COMPACT_THRESHOLD") {
         Ok(threshold)
             if gosling::context_mgmt::validate_compaction_settings(threshold, 0.0).is_err() =>
         {
             eprintln!(
-                "Warning: Invalid GOSLING_AUTO_COMPACT_THRESHOLD: {threshold}. Use 0 to disable auto-compaction or a value greater than 0 and less than 1."
+                "Warning: Invalid GOSLING_AUTO_COMPACT_THRESHOLD: {threshold}. Use 0 to disable auto-compaction or a value greater than 0 and less than 1. Auto-compaction is disabled until it is corrected."
             );
         }
         Err(error) if !matches!(error, ConfigError::NotFound(_)) => {
             eprintln!(
-                "Warning: Invalid GOSLING_AUTO_COMPACT_THRESHOLD: {error}. Falling back to the default."
+                "Warning: Invalid GOSLING_AUTO_COMPACT_THRESHOLD: {error}. Falling back to the default {default_threshold}."
             );
         }
         _ => {}
     }
 
+    let default_reduction = gosling::context_mgmt::DEFAULT_AUTO_COMPACT_REDUCTION;
     match config.get_param::<f64>("GOSLING_AUTO_COMPACT_REDUCTION") {
         Ok(reduction)
             if gosling::context_mgmt::validate_compaction_settings(0.0, reduction).is_err() =>
         {
             eprintln!(
-                "Warning: Invalid GOSLING_AUTO_COMPACT_REDUCTION: {reduction}. Use 0 to always fully collapse on auto-compaction, or a value greater than 0 and less than 1."
+                "Warning: Invalid GOSLING_AUTO_COMPACT_REDUCTION: {reduction}. Use 0 to always fully collapse on auto-compaction, or a value greater than 0 and less than 1. Falling back to the default {default_reduction}."
             );
         }
         Err(error) if !matches!(error, ConfigError::NotFound(_)) => {
             eprintln!(
-                "Warning: Invalid GOSLING_AUTO_COMPACT_REDUCTION: {error}. Falling back to the default."
+                "Warning: Invalid GOSLING_AUTO_COMPACT_REDUCTION: {error}. Falling back to the default {default_reduction}."
             );
         }
         _ => {}
@@ -448,14 +458,18 @@ async fn get_or_create_session_id(
 }
 
 /// Resolve `identifier` to a session ID, or prompt the user to pick one
-/// interactively when no identifier was given. Returns `Ok(None)` when the
-/// interactive prompt fails, having already reported the error — callers
-/// should treat that as "already handled" and return without further action.
+/// interactively when no identifier was given. Fails without a terminal for
+/// the picker. Returns `Ok(None)` when the interactive prompt fails, having
+/// already reported the error — callers should treat that as "already
+/// handled" and return without further action.
 async fn resolve_or_prompt_session_id(
     session_manager: &SessionManager,
     identifier: Option<Identifier>,
 ) -> Result<Option<String>> {
     let Some(id) = identifier else {
+        crate::commands::session::ensure_session_picker_terminal(
+            "--session-id <ID> or --name <NAME>",
+        )?;
         return match crate::commands::session::prompt_interactive_session_selection(session_manager)
             .await
         {
@@ -572,6 +586,13 @@ enum SessionCommand {
             action = clap::ArgAction::Append
         )]
         relays: Vec<String>,
+
+        #[arg(
+            long = "no-redact",
+            conflicts_with = "nostr",
+            help = "Keep stored secrets and credential-shaped text instead of replacing them with [REDACTED] (for local backups)"
+        )]
+        no_redact: bool,
     },
     #[command(
         about = "Import a session from JSON, a Claude Code / Codex / Pi .jsonl, or an encrypted Nostr share link"
@@ -731,8 +752,10 @@ enum SkillsCommand {
 
 #[derive(Subcommand)]
 enum SecretCommand {
-    /// Store login credentials for a named server (e.g. a VPS) in the system keyring
-    #[command(about = "Store login credentials for a named server in the system keyring")]
+    /// Store login credentials for a named server (e.g. a VPS) in gosling's secret store
+    #[command(
+        about = "Store login credentials for a named server in gosling's secret store (the system keyring, or secrets.yaml when the keyring is disabled)"
+    )]
     Set {
         /// Server name, used as the credential key prefix (e.g. "racknerd" -> RACKNERD_PASSWORD)
         name: String,
@@ -1513,7 +1536,13 @@ async fn build_shell_runtime(
     let runtime_namespace = shell_runtime_namespace.unwrap_or(&shell_id).to_owned();
     validate_shell_id(&runtime_namespace)?;
     let mut provisioning = match provisioning_path {
-        Some(path) => serde_json::from_slice::<ShellProvisioning>(&std::fs::read(path)?)?,
+        Some(path) => {
+            let document = std::fs::read(path)
+                .with_context(|| format!("could not read {}", path.display()))?;
+            serde_json::from_slice::<ShellProvisioning>(&document).with_context(|| {
+                format!("invalid shell provisioning document {}", path.display())
+            })?
+        }
         None => ShellProvisioning {
             schema_version: SHELL_PROVISIONING_SCHEMA_VERSION,
             protocol_policy: ShellProtocolPolicy {
@@ -1575,11 +1604,22 @@ async fn handle_shell_validate_command(
         default_working_dir.clone(),
     )
     .await?;
-    let base_paths = RuntimePaths::new(Paths::config_dir(), Paths::data_dir(), Paths::state_dir());
+    let data_dir = Paths::data_dir();
+    // Creating the workspace store would pin this installation's Default
+    // workspace to wherever the validator ran, so a missing store is
+    // validated through a scratch copy instead.
+    let scratch_data_dir = if WorkspaceService::store_exists(&data_dir) {
+        None
+    } else {
+        Some(tempfile::tempdir()?)
+    };
+    let workspace_data_dir = scratch_data_dir
+        .as_ref()
+        .map_or(data_dir.as_path(), |scratch| scratch.path());
     let workspace_service =
-        WorkspaceService::initialize(&base_paths.data_dir, &default_working_dir).await?;
+        WorkspaceService::initialize(workspace_data_dir, &default_working_dir).await?;
     let builtins = resolve_serve_builtins(builtins, true);
-    let report = gosling::acp::shell_validation::validate_shell_provisioning(
+    let mut report = gosling::acp::shell_validation::validate_shell_provisioning(
         runtime.provisioning(),
         Config::global(),
         &workspace_service,
@@ -1587,11 +1627,30 @@ async fn handle_shell_validate_command(
         &default_working_dir,
     )
     .await;
+    report.issues.extend(unknown_builtin_issues(&builtins));
+    report.valid = report.issues.is_empty();
     println!("{}", serde_json::to_string_pretty(&report)?);
     if !report.valid {
         anyhow::bail!("shell provisioning is invalid");
     }
     Ok(())
+}
+
+fn unknown_builtin_issues(builtins: &[String]) -> Vec<ShellProvisioningIssue> {
+    builtins
+        .iter()
+        .enumerate()
+        .filter(|(_, name)| {
+            !PLATFORM_EXTENSIONS.contains_key(name.as_str())
+                && get_builtin_extension(name).is_none()
+        })
+        .map(|(index, name)| ShellProvisioningIssue {
+            code: ShellProvisioningIssueCode::MissingExtension,
+            severity: ShellProvisioningIssueSeverity::Error,
+            path: format!("--with-builtin[{index}]"),
+            message: format!("builtin extension '{name}' does not exist"),
+        })
+        .collect()
 }
 
 async fn handle_serve_command(args: ServeCommandArgs) -> Result<()> {
@@ -1693,7 +1752,7 @@ async fn handle_serve_command(args: ServeCommandArgs) -> Result<()> {
         .collect::<Result<Vec<_>>>()?;
     let secret_key = env_secret.unwrap_or_else(generate_serve_secret_key);
     let router = create_router(
-        server,
+        Arc::clone(&server),
         secret_key,
         require_token,
         additional_allowed_origins,
@@ -1735,8 +1794,10 @@ async fn handle_serve_command(args: ServeCommandArgs) -> Result<()> {
             info!("Starting ACP server on https://{}", addr);
             let shutdown_handle = axum_server::Handle::new();
             let signal_handle = shutdown_handle.clone();
+            let stopping_server = Arc::clone(&server);
             tokio::spawn(async move {
                 crate::signal::shutdown_signal().await;
+                stopping_server.stop_prompt_runs(SERVE_SHUTDOWN_GRACE).await;
                 signal_handle.graceful_shutdown(Some(std::time::Duration::from_secs(5)));
             });
 
@@ -1764,18 +1825,27 @@ async fn handle_serve_command(args: ServeCommandArgs) -> Result<()> {
     } else {
         info!("Starting ACP server on http://{}", addr);
         let listener = tokio::net::TcpListener::bind(addr).await?;
+        let stopping_server = Arc::clone(&server);
         serve_http_until_shutdown(
             listener,
             router,
-            crate::signal::shutdown_signal(),
+            async move {
+                crate::signal::shutdown_signal().await;
+                stopping_server.stop_prompt_runs(SERVE_SHUTDOWN_GRACE).await;
+            },
             SERVE_SHUTDOWN_GRACE,
         )
         .await?;
     }
 
+    server.shutdown().await;
     Ok(())
 }
 
+/// How long a stopping server waits for running prompts to answer, and then
+/// for open connections to close. Running prompts are stopped first: an SSE or
+/// WebSocket connection outlives the grace, so a turn left running would
+/// stream on until the forced close and its client would never get an answer.
 const SERVE_SHUTDOWN_GRACE: std::time::Duration = std::time::Duration::from_secs(5);
 
 async fn resolve_serve_addr(host: &str, port: u16) -> Result<std::net::SocketAddr> {
@@ -1855,6 +1925,7 @@ async fn handle_session_subcommand(command: SessionCommand) -> Result<()> {
             format,
             nostr,
             relays,
+            no_redact,
         } => {
             let session_manager = SessionManager::instance();
             let Some(session_identifier) =
@@ -1868,6 +1939,7 @@ async fn handle_session_subcommand(command: SessionCommand) -> Result<()> {
                 format,
                 nostr,
                 relays,
+                !no_redact,
             )
             .await?;
         }
@@ -2044,34 +2116,14 @@ async fn handle_interactive_session(
         );
     }
 
-    let gosling_mode = Config::global().get_gosling_mode().unwrap_or_default();
+    let gosling_mode = Config::global().effective_gosling_mode();
     let mut session_id = get_or_create_session_id(identifier, resume, false, gosling_mode).await?;
 
     if edit || fork {
         if let Some(ref id) = session_id {
-            let session_manager = SessionManager::instance();
-            let original = session_manager.get_session(id, true).await?;
-
-            let target_id = if fork {
-                let copied = session_manager
-                    .copy_session(id, original.name.clone())
-                    .await?;
-                let copied_id = copied.id.clone();
-                session_id = Some(copied.id);
-                copied_id
-            } else {
-                id.clone()
-            };
-
-            if edit {
-                let conversation = original
-                    .conversation
-                    .ok_or_else(|| anyhow::anyhow!("session has no messages to edit"))?;
-                let edited = crate::session::editor::edit_conversation(&conversation)?;
-                session_manager
-                    .replace_conversation(&target_id, &edited)
-                    .await?;
-            }
+            let editor = edit.then_some(crate::session::editor::edit_conversation);
+            session_id =
+                Some(fork_or_edit_session(&SessionManager::instance(), id, fork, editor).await?);
         }
     }
 
@@ -2107,6 +2159,59 @@ async fn handle_interactive_session(
     let result = session.interactive(None).await;
     log_session_completion(&session, session_start, session_type, result.is_ok()).await;
     result
+}
+
+/// Applies `--fork`/`--edit` to the session being resumed and returns the
+/// session to open. The editor runs before any fork exists, so a failed or
+/// abandoned edit leaves no copy behind, and a fork whose edited history
+/// cannot be saved is removed again. A fork is named like a Desktop branch,
+/// so it keeps its name instead of being retitled and does not shadow its
+/// source in `--name` lookups.
+async fn fork_or_edit_session<E>(
+    session_manager: &SessionManager,
+    session_id: &str,
+    fork: bool,
+    editor: Option<E>,
+) -> Result<String>
+where
+    E: FnOnce(&Conversation) -> Result<Conversation>,
+{
+    let original = session_manager.get_session(session_id, true).await?;
+    let edited = match editor {
+        Some(edit) => {
+            let conversation = original
+                .conversation
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("session has no messages to edit"))?;
+            Some(edit(conversation)?)
+        }
+        None => None,
+    };
+
+    let target_id = if fork {
+        session_manager
+            .copy_session(
+                session_id,
+                gosling::session::branch_session_name(&original.name),
+            )
+            .await?
+            .id
+    } else {
+        session_id.to_string()
+    };
+
+    if let Some(edited) = edited {
+        if let Err(error) = session_manager
+            .replace_conversation(&target_id, &edited)
+            .await
+        {
+            if fork {
+                let _ = session_manager.delete_session(&target_id).await;
+            }
+            return Err(error);
+        }
+    }
+    Ok(target_id)
 }
 
 async fn log_session_completion(
@@ -2226,7 +2331,7 @@ async fn handle_run_command(
         }
     }
 
-    let gosling_mode = Config::global().get_gosling_mode().unwrap_or_default();
+    let gosling_mode = Config::global().effective_gosling_mode();
     let session_id = get_or_create_session_id(
         identifier,
         run_behavior.resume,
@@ -2348,7 +2453,7 @@ async fn handle_default_session() -> Result<()> {
         return handle_configure().await;
     }
 
-    let gosling_mode = Config::global().get_gosling_mode().unwrap_or_default();
+    let gosling_mode = Config::global().effective_gosling_mode();
     let session_id = get_or_create_session_id(None, false, false, gosling_mode).await?;
 
     let mut session = build_session(SessionBuilderConfig {
@@ -2380,7 +2485,12 @@ async fn handle_default_session() -> Result<()> {
 pub async fn cli() -> anyhow::Result<()> {
     register_builtin_extensions(gosling_mcp::BUILTIN_EXTENSIONS.clone());
 
+    // Parse first: `--help`, `--version` and usage errors exit inside
+    // `Cli::parse()`, so they never create a log file in the state directory.
     let cli = Cli::parse();
+    if let Err(e) = crate::logging::setup_logging(None) {
+        eprintln!("Warning: Failed to initialize logging: {}", e);
+    }
     if let Some(Command::SessionHistoryMcp {
         session_id,
         data_dir,
@@ -2599,6 +2709,119 @@ pub async fn cli() -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gosling::conversation::message::Message;
+
+    async fn named_source_session(manager: &SessionManager, dir: &std::path::Path) -> String {
+        let source = manager
+            .create_session(
+                dir.to_path_buf(),
+                "ac03-src".to_string(),
+                SessionType::User,
+                GoslingMode::Auto,
+            )
+            .await
+            .unwrap();
+        manager
+            .update(&source.id)
+            .user_provided_name("ac03-src")
+            .apply()
+            .await
+            .unwrap();
+        manager
+            .add_message(&source.id, &Message::user().with_text("SOURCE-BASE"))
+            .await
+            .unwrap();
+        source.id
+    }
+
+    fn texts(conversation: Option<Conversation>) -> Vec<String> {
+        conversation
+            .unwrap_or_default()
+            .messages()
+            .iter()
+            .map(|message| message.as_concat_text())
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn a_failed_fork_edit_creates_no_fork_and_leaves_the_source_unchanged() {
+        let temp = tempfile::tempdir().unwrap();
+        let manager = SessionManager::new(temp.path().to_path_buf());
+        let source_id = named_source_session(&manager, temp.path()).await;
+
+        let failed = fork_or_edit_session(
+            &manager,
+            &source_id,
+            true,
+            Some(|_: &Conversation| -> Result<Conversation> {
+                anyhow::bail!("Editor exited with non-zero status: 3")
+            }),
+        )
+        .await;
+
+        assert!(failed.is_err());
+        let sessions = manager.list_all_sessions().await.unwrap();
+        assert_eq!(
+            sessions.iter().map(|s| s.id.as_str()).collect::<Vec<_>>(),
+            vec![source_id.as_str()]
+        );
+        let source = manager.get_session(&source_id, true).await.unwrap();
+        assert_eq!(texts(source.conversation), vec!["SOURCE-BASE"]);
+    }
+
+    #[tokio::test]
+    async fn a_fork_edit_changes_only_a_branch_named_after_its_source() {
+        let temp = tempfile::tempdir().unwrap();
+        let manager = SessionManager::new(temp.path().to_path_buf());
+        let source_id = named_source_session(&manager, temp.path()).await;
+
+        let fork_id = fork_or_edit_session(
+            &manager,
+            &source_id,
+            true,
+            Some(|_: &Conversation| -> Result<Conversation> {
+                Ok(Conversation::new_unvalidated(vec![
+                    Message::user().with_text("EDITED")
+                ]))
+            }),
+        )
+        .await
+        .unwrap();
+
+        assert_ne!(fork_id, source_id);
+        let fork = manager.get_session(&fork_id, true).await.unwrap();
+        assert_eq!(fork.name, "branch: ac03-src");
+        assert!(fork.user_set_name);
+        assert_eq!(texts(fork.conversation), vec!["EDITED"]);
+        let source = manager.get_session(&source_id, true).await.unwrap();
+        assert_eq!(source.name, "ac03-src");
+        assert_eq!(texts(source.conversation), vec!["SOURCE-BASE"]);
+    }
+
+    #[tokio::test]
+    async fn an_edit_without_fork_rewrites_the_resumed_session() {
+        let temp = tempfile::tempdir().unwrap();
+        let manager = SessionManager::new(temp.path().to_path_buf());
+        let source_id = named_source_session(&manager, temp.path()).await;
+
+        let opened = fork_or_edit_session(
+            &manager,
+            &source_id,
+            false,
+            Some(|_: &Conversation| -> Result<Conversation> {
+                Ok(Conversation::new_unvalidated(vec![
+                    Message::user().with_text("TRIMMED")
+                ]))
+            }),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(opened, source_id);
+        assert_eq!(manager.list_all_sessions().await.unwrap().len(), 1);
+        let source = manager.get_session(&source_id, true).await.unwrap();
+        assert_eq!(texts(source.conversation), vec!["TRIMMED"]);
+    }
 
     #[test]
     fn session_remove_accepts_non_interactive_confirmation() {

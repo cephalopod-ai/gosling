@@ -15,7 +15,30 @@ pub const DEFAULT_EXTENSION_TIMEOUT: u64 = 300;
 pub const DEFAULT_EXTENSION_DESCRIPTION: &str = "";
 pub const DEFAULT_DISPLAY_NAME: &str = "Developer";
 const EXTENSIONS_CONFIG_KEY: &str = "extensions";
+/// Secrets supplied for one extension live under that extension's key in the
+/// shared secret store. Stored under the bare variable name, installing a second
+/// extension (or one naming `OPENAI_API_KEY`) silently replaced another
+/// extension's or the provider's credential. (GSL-PT-20260927-C20)
+const EXTENSION_SECRET_KEY_PREFIX: &str = "extension-secret::";
 static EXTENSION_MUTATION_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
+pub fn extension_secret_key(extension_key: &str, env_key: &str) -> String {
+    format!("{EXTENSION_SECRET_KEY_PREFIX}{extension_key}::{env_key}")
+}
+
+pub fn is_extension_secret_key(key: &str) -> bool {
+    key.starts_with(EXTENSION_SECRET_KEY_PREFIX)
+}
+
+fn delete_extension_secrets(config: &Config, extension_key: &str) -> Result<(), ConfigError> {
+    let prefix = extension_secret_key(extension_key, "");
+    let owned: Vec<String> = config
+        .all_secrets()?
+        .into_keys()
+        .filter(|key| key.starts_with(&prefix))
+        .collect();
+    config.delete_secret_values(&owned)
+}
 
 fn lock_extension_mutations() -> MutexGuard<'static, ()> {
     EXTENSION_MUTATION_LOCK
@@ -205,10 +228,11 @@ fn get_extension_by_name_with_config(config: &Config, name: &str) -> Option<Exte
         .find(|config| config.name() == name || config.key() == key)
 }
 
-pub fn set_extension(entry: ExtensionEntry) -> Result<(), ConfigError> {
+pub fn set_extension(entry: ExtensionEntry) -> anyhow::Result<()> {
     let _guard = lock_extension_mutations();
     let _file_guard = Config::global().lock_extension_transaction()?;
-    set_extension_with_config(Config::global(), entry)
+    revoke_grants_if_definition_changed(Config::global(), &entry)?;
+    Ok(set_extension_with_config(Config::global(), entry)?)
 }
 
 pub fn set_extension_with_secrets(
@@ -217,7 +241,23 @@ pub fn set_extension_with_secrets(
 ) -> anyhow::Result<()> {
     let _guard = lock_extension_mutations();
     let _file_guard = Config::global().lock_extension_transaction()?;
+    revoke_grants_if_definition_changed(Config::global(), &entry)?;
     set_extension_with_secrets_and_config(Config::global(), entry, secret_updates)
+}
+
+/// An Always Allow grant was given to the server configured when the user chose it,
+/// so a different server definition under the same name has to earn it again.
+fn revoke_grants_if_definition_changed(
+    config: &Config,
+    entry: &ExtensionEntry,
+) -> anyhow::Result<()> {
+    let key = entry.config.key();
+    match get_extensions_map_with_config(config).get(&key) {
+        Some(previous) if previous.config != entry.config => {
+            crate::config::PermissionManager::instance().revoke_extension_grants(&key)
+        }
+        _ => Ok(()),
+    }
 }
 
 fn set_extension_with_secrets_and_config(
@@ -227,6 +267,10 @@ fn set_extension_with_secrets_and_config(
 ) -> anyhow::Result<()> {
     let key = entry.config.key();
     let previous = get_extensions_map_with_config(config).shift_remove(&key);
+    let secret_updates = secret_updates
+        .iter()
+        .map(|(env_key, value)| (extension_secret_key(&key, env_key), value.clone()))
+        .collect::<Vec<_>>();
     let secret_snapshot = if secret_updates.is_empty() {
         IndexMap::new()
     } else {
@@ -235,7 +279,7 @@ fn set_extension_with_secrets_and_config(
             .iter()
             .map(|(key, _)| (key.clone(), stored_secrets.get(key).cloned()))
             .collect::<IndexMap<_, _>>();
-        config.set_secret_values(secret_updates)?;
+        config.set_secret_values(&secret_updates)?;
         snapshot
     };
     if let Err(config_error) = set_extension_with_config(config, entry.clone()) {
@@ -342,6 +386,20 @@ pub fn remove_extension_and_permissions(key: &str) -> anyhow::Result<bool> {
                 "failed to remove extension permissions: {permission_error}; failed to restore extension config: {config_error}"
             ),
         };
+    }
+    let may_hold_secrets = matches!(
+        previous.config,
+        ExtensionConfig::Stdio { .. } | ExtensionConfig::StreamableHttp { .. }
+    );
+    if may_hold_secrets {
+        if let Err(secret_error) = delete_extension_secrets(Config::global(), key) {
+            match set_extension_at_key_with_config(Config::global(), key.to_string(), previous) {
+                Ok(()) => anyhow::bail!("failed to delete extension secrets: {secret_error}"),
+                Err(config_error) => anyhow::bail!(
+                    "failed to delete extension secrets: {secret_error}; failed to restore extension config: {config_error}"
+                ),
+            }
+        }
     }
     Ok(true)
 }
@@ -750,7 +808,8 @@ extensions:
         let config_path = temp_dir.path().join("config.yaml");
         let secrets_path = temp_dir.path().join("secrets.yaml");
         let config = Config::new_with_file_secrets(&config_path, &secrets_path).unwrap();
-        config.set_secret("TOKEN", &"old-value").unwrap();
+        let stored_key = extension_secret_key("newextension", "TOKEN");
+        config.set_secret(&stored_key, &"old-value").unwrap();
         std::fs::create_dir(config_path.with_extension("save.lock")).unwrap();
 
         let error = set_extension_with_secrets_and_config(
@@ -761,8 +820,101 @@ extensions:
         .expect_err("config failure must roll back the secret update");
 
         assert!(error.to_string().contains("Failed to read config file"));
-        assert_eq!(config.get_secret::<String>("TOKEN").unwrap(), "old-value");
+        assert_eq!(
+            config.get_secret::<String>(&stored_key).unwrap(),
+            "old-value"
+        );
         assert!(!config_path.exists());
+    }
+
+    fn stdio_entry(name: &str, env_keys: &[&str]) -> ExtensionEntry {
+        ExtensionEntry {
+            enabled: true,
+            activation_paths: None,
+            config: ExtensionConfig::Stdio {
+                name: name.to_string(),
+                description: String::new(),
+                cmd: "server".to_string(),
+                args: Vec::new(),
+                envs: Default::default(),
+                env_keys: env_keys.iter().map(|key| key.to_string()).collect(),
+                timeout: None,
+                cwd: None,
+                bundled: None,
+                available_tools: Vec::new(),
+            },
+        }
+    }
+
+    #[test]
+    fn test_extension_secrets_never_replace_another_owners_value() {
+        let (config, _config_file, _secrets_file) = test_config("extensions: {}\n");
+        config
+            .set_secret("OPENAI_API_KEY", &"provider-key")
+            .unwrap();
+        config.set_secret("SHARED_TOKEN", &"legacy-value").unwrap();
+
+        for (name, value) in [("ext-x", "token-for-x"), ("ext-y", "token-for-y")] {
+            set_extension_with_secrets_and_config(
+                &config,
+                stdio_entry(name, &["SHARED_TOKEN", "OPENAI_API_KEY"]),
+                &[
+                    ("SHARED_TOKEN".to_string(), Value::String(value.to_string())),
+                    (
+                        "OPENAI_API_KEY".to_string(),
+                        Value::String(format!("{name}-openai")),
+                    ),
+                ],
+            )
+            .unwrap();
+        }
+
+        let secrets = config.all_secrets().unwrap();
+        assert_eq!(secrets["OPENAI_API_KEY"], "provider-key");
+        assert_eq!(secrets["SHARED_TOKEN"], "legacy-value");
+        assert_eq!(
+            secrets[&extension_secret_key("ext-x", "SHARED_TOKEN")],
+            "token-for-x"
+        );
+        assert_eq!(
+            secrets[&extension_secret_key("ext-y", "SHARED_TOKEN")],
+            "token-for-y"
+        );
+        assert_eq!(
+            secrets[&extension_secret_key("ext-x", "OPENAI_API_KEY")],
+            "ext-x-openai"
+        );
+    }
+
+    #[test]
+    fn test_delete_extension_secrets_removes_only_that_extensions_values() {
+        let (config, _config_file, _secrets_file) = test_config("extensions: {}\n");
+        config
+            .set_secret_values(&[
+                (
+                    extension_secret_key("ext-x", "TOKEN"),
+                    Value::String("x".to_string()),
+                ),
+                (
+                    extension_secret_key("ext-x", "OTHER"),
+                    Value::String("x2".to_string()),
+                ),
+                (
+                    extension_secret_key("ext-xy", "TOKEN"),
+                    Value::String("xy".to_string()),
+                ),
+                ("TOKEN".to_string(), Value::String("legacy".to_string())),
+            ])
+            .unwrap();
+
+        delete_extension_secrets(&config, "ext-x").unwrap();
+
+        let mut remaining: Vec<String> = config.all_secrets().unwrap().into_keys().collect();
+        remaining.sort();
+        assert_eq!(
+            remaining,
+            vec!["TOKEN".to_string(), extension_secret_key("ext-xy", "TOKEN")]
+        );
     }
 
     #[test]

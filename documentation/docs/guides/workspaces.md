@@ -24,6 +24,12 @@ A workspace is a repeatable environment for new chats. It can define:
 gosling creates a usable `Default` workspace automatically. Existing sessions remain valid and do
 not need to be migrated manually.
 
+The `Default` workspace is created the first time a gosling backend starts with a data directory
+that has no workspaces yet, and its working folder is the directory that backend started in: usually
+your home folder for gosling Desktop, or the current directory of `gosling acp` or `gosling serve`
+(an absolute `GOSLING_WORKING_DIR` takes precedence). Start a server from the folder you want as
+the default, or edit the workspace afterwards. `gosling shell-validate` never creates it.
+
 ## Start or filter workspace chats
 
 Open the sidebar and expand **Workspaces**.
@@ -49,7 +55,9 @@ silently switch the session to another account.
 ## Create a workspace
 
 1. Select **Add workspace** next to the Workspaces heading.
-2. Enter a name and, optionally, a description, icon label, provider, and model.
+2. Enter a name and, optionally, a description, icon label, provider, and model. Only providers
+   you have set up are offered. A new workspace starts on **Use app default**, or on ChatGPT Codex
+   `gpt-5.6-terra` with medium effort when ChatGPT Codex is already signed in.
 3. Choose the primary working folder.
 4. Add source or reference folders as needed and choose **Read only** or **Read/write** for each.
 5. Add one or more product output destinations. Assign product types and select exactly one default
@@ -105,6 +113,11 @@ gosling uses its existing owner-protected `secrets.yaml` fallback. Workspace met
 profile UUID and configured-field metadata, using internal secure identifiers shaped like
 `workspace-credential::<profile UUID>::<field>`.
 
+Each provider you have set up on the Providers screen also appears as a read-only
+`Current <provider> configuration` profile that references the saved values instead of copying
+them. Only providers with values you actually saved (and that the provider list reports as
+configured) appear; if such a provider is no longer set up, its profile is listed as missing.
+
 Deleting a referenced profile requires confirmation and leaves affected workspaces in a visible
 relink-required state. gosling does not silently substitute another credential. Global-migration
 aliases and distribution-managed profiles are read-only in the workspace profile manager; create a
@@ -121,7 +134,10 @@ When a new chat starts, the backend:
 4. gives the agent the workspace's non-secret folder and output context.
 
 Resuming a session uses that pinned snapshot and profile reference, not whichever workspace is
-active now. Deleting a workspace preserves its sessions and files; historical sessions continue to
+active now. A chat therefore keeps the folders it started with: if its working folder is moved or
+deleted, reopening it fails with an error that names the folder, and it opens again once the folder
+is back at that path. Relinking the workspace to the new location changes the folders of new chats
+only. Deleting a workspace preserves its sessions and files; historical sessions continue to
 show the saved workspace name. A missing profile produces a relink error instead of falling back to
 another account.
 
@@ -255,7 +271,9 @@ another workspace. Missing outputs show a relink error, or—when **Allow explic
 missing** is enabled—ask before creating the directory. If a native download cannot be routed,
 gosling shows a warning instead of silently claiming it used the workspace. Rapid workspace
 switches are ordered so a slower validation of an older selection cannot restore its download
-destination.
+destination. A download's destination belongs to the chat it was set up for: one that starts while
+you are switching to another chat, before that chat's destination is ready, is treated as unrouted
+instead of landing in the previous chat's workspace.
 
 The router never moves an already-generated file. **Save a copy** copies the complete source file,
 not a truncated preview. Direct absolute-path writes performed inside an independent third-party

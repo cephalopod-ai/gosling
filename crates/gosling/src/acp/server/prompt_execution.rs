@@ -14,6 +14,10 @@ const RESEARCH_PERMISSION_DENIED_REASON: &str = "deep_research_permission_denied
 /// Prefix `Agent::handle_denied_tools` puts on the result of a tool call the
 /// permission policy refused.
 const POLICY_DENIED_TOOL_RESULT_PREFIX: &str = "Tool denied by policy:";
+/// How long a cancelled prompt waits for its closing writes before it answers
+/// anyway. Clients expect a cancel to end the prompt within seconds, even while
+/// another writer holds the session store.
+const CANCELLED_TURN_BOOKKEEPING_LIMIT: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// Tool calls this turn that the permission policy refused. A research turn
 /// that wrote nothing after such a refusal is blocked on a permission, not on
@@ -72,17 +76,6 @@ impl PolicyDeniedTools {
              then send your message again."
         ))
     }
-}
-
-/// Closes a cancelled turn in history. Without it the cancelled user message
-/// is merged into the next prompt and the model re-executes the cancelled
-/// request as if it were live instruction. Matches the CLI headless notice.
-const CANCELLED_TURN_NOTICE: &str = "Run cancelled by user before completion.";
-
-fn cancelled_turn_needs_notice(messages: &[Message]) -> bool {
-    messages
-        .last()
-        .is_some_and(|message| message.role == rmcp::model::Role::User)
 }
 
 fn to_nonnegative_u64(value: Option<i32>) -> Option<u64> {
@@ -279,6 +272,40 @@ impl GoslingAcpAgent {
             })
     }
 
+    /// Closes a cancelled turn and records how it ended, giving up after
+    /// [`CANCELLED_TURN_BOOKKEEPING_LIMIT`]. A turn left open that way is
+    /// closed on the session's next load or prompt.
+    async fn record_cancelled_turn(
+        &self,
+        session_id: &str,
+        state: AcpPromptRunState,
+        stopped_by_shutdown: bool,
+    ) -> Result<(), agent_client_protocol::Error> {
+        let bookkeeping = async {
+            // Without a closed turn the cancelled prompt merges into the next
+            // one and the model re-executes it as live instruction.
+            let closed = if stopped_by_shutdown {
+                self.session_manager
+                    .close_turn_stopped_by_shutdown(session_id)
+                    .await
+            } else {
+                self.session_manager.close_cancelled_turn(session_id).await
+            };
+            closed.internal_err_ctx("Failed to record the cancelled turn")?;
+            self.record_acp_prompt_state(session_id, state).await
+        };
+        match tokio::time::timeout(CANCELLED_TURN_BOOKKEEPING_LIMIT, bookkeeping).await {
+            Ok(recorded) => recorded,
+            Err(_) => {
+                warn!(
+                    session_id,
+                    "session store stayed busy; the cancelled turn is closed on its next load or prompt"
+                );
+                Ok(())
+            }
+        }
+    }
+
     pub(super) async fn on_prompt(
         &self,
         cx: &ConnectionTo<Client>,
@@ -291,7 +318,8 @@ impl GoslingAcpAgent {
         let research_run_started_at = chrono::Utc::now() - chrono::Duration::seconds(1);
 
         let run_id = format!("run_{}", Uuid::new_v4());
-        let cancel_token = CancellationToken::new();
+        let cancel_token = self.prompt_run_shutdown.run_token();
+        let _in_flight = self.prompt_run_shutdown.track();
         self.start_active_run(&session_id, run_id.clone(), cancel_token.clone())
             .await?;
 
@@ -314,13 +342,27 @@ impl GoslingAcpAgent {
             return Err(error);
         }
 
-        if let Err(error) = self
-            .record_acp_prompt_state(&session_id, AcpPromptRunState::InProgress)
-            .await
-        {
-            let _ = self.clear_active_run(&session_id, &run_id).await;
-            let _ = Self::send_active_run_update(cx, &args.session_id, None);
-            return Err(error);
+        let in_progress = tokio::select! {
+            biased;
+            _ = cancel_token.cancelled() => None,
+            recorded = self.record_acp_prompt_state(&session_id, AcpPromptRunState::InProgress) => {
+                Some(recorded)
+            }
+        };
+        match in_progress {
+            // Cancelled while waiting on the session store: nothing of this
+            // turn has been written, so there is nothing to close.
+            None => {
+                let _ = self.clear_active_run(&session_id, &run_id).await;
+                Self::send_active_run_update(cx, &args.session_id, None)?;
+                return Ok(PromptResponse::new(StopReason::Cancelled));
+            }
+            Some(Err(error)) => {
+                let _ = self.clear_active_run(&session_id, &run_id).await;
+                let _ = Self::send_active_run_update(cx, &args.session_id, None);
+                return Err(error);
+            }
+            Some(Ok(())) => {}
         }
 
         let user_message = Self::convert_acp_prompt_to_message(&args.prompt);
@@ -339,10 +381,14 @@ impl GoslingAcpAgent {
             tail_limit: Some(tail_limit),
         };
 
-        let mut stream = match agent
-            .reply(user_message, session_config, Some(cancel_token.clone()))
-            .await
-        {
+        // Starting the turn waits on the session store; a cancel then ends it
+        // like any other cancelled turn, closing whatever it already wrote.
+        let reply = tokio::select! {
+            biased;
+            _ = cancel_token.cancelled() => Ok(stream::empty().boxed()),
+            reply = agent.reply(user_message, session_config, Some(cancel_token.clone())) => reply,
+        };
+        let mut stream = match reply {
             Ok(stream) => stream,
             Err(error) => {
                 let persisted = self
@@ -374,7 +420,10 @@ impl GoslingAcpAgent {
         let mut terminal_assistant_text = String::new();
         let mut current_assistant_message_ids = HashSet::new();
         let mut latest_context_usage = None;
+        let mut provider_usage_after_context = false;
         let mut policy_denied_tools = PolicyDeniedTools::default();
+        let mut turn_limit_reached = false;
+        let mut shown_message_ids: Vec<String> = Vec::new();
 
         loop {
             let event = tokio::select! {
@@ -403,6 +452,12 @@ impl GoslingAcpAgent {
                 Ok(crate::agents::AgentEvent::Message(message)) => {
                     // Agent persists messages via session_manager.add_message() internally.
                     let stored_message_id = message.id.clone();
+                    turn_limit_reached |= message.metadata.turn_limit.is_some();
+                    if let Some(message_id) = stored_message_id.as_ref() {
+                        if !shown_message_ids.contains(message_id) {
+                            shown_message_ids.push(message_id.clone());
+                        }
+                    }
 
                     if message.role == Role::Assistant {
                         if let Some(message_id) = stored_message_id.as_ref() {
@@ -499,8 +554,10 @@ impl GoslingAcpAgent {
                         ))?;
                     }
                 }
+                Ok(crate::agents::AgentEvent::Usage(_)) => provider_usage_after_context = true,
                 Ok(crate::agents::AgentEvent::ContextUsage(context_usage)) => {
                     latest_context_usage = Some(context_usage);
+                    provider_usage_after_context = false;
                     let session = self
                         .session_manager
                         .get_session(&session_id, false)
@@ -518,7 +575,20 @@ impl GoslingAcpAgent {
                         ))?;
                     }
                 }
-                Ok(_) => {}
+                Ok(crate::agents::AgentEvent::HistoryReplaced(conversation)) => {
+                    let retracted = self
+                        .session_manager
+                        .retracted_message_ids(&session_id, &conversation, &shown_message_ids)
+                        .await
+                        .internal_err_ctx("Failed to load the session history")?;
+                    if !retracted.is_empty() {
+                        shown_message_ids.retain(|id| !retracted.contains(id));
+                        cx.send_notification(retracted_messages_update(
+                            &args.session_id,
+                            &retracted,
+                        ))?;
+                    }
+                }
                 Err(e) => {
                     stream_error = Some(
                         agent_client_protocol::Error::internal_error()
@@ -528,6 +598,10 @@ impl GoslingAcpAgent {
                 }
             }
         }
+        // A stream left mid-poll by a cancel can hold the session store's
+        // write gate or an open transaction; the writes below would wait on it
+        // forever.
+        drop(stream);
 
         {
             let mut sessions = self.sessions.lock().await;
@@ -543,27 +617,18 @@ impl GoslingAcpAgent {
         Self::send_active_run_update(cx, &args.session_id, None)?;
         was_cancelled |= cancel_token.is_cancelled();
         if was_cancelled {
-            let session = self
-                .session_manager
-                .get_session(&session_id, true)
-                .await
-                .internal_err_ctx("Failed to load session")?;
-            let messages = session
-                .conversation
-                .as_ref()
-                .map(|conversation| conversation.messages().as_slice())
-                .unwrap_or_default();
-            if cancelled_turn_needs_notice(messages) {
-                self.session_manager
-                    .add_message(
-                        &session_id,
-                        &Message::assistant()
-                            .with_text(CANCELLED_TURN_NOTICE)
-                            .with_generated_id(),
-                    )
-                    .await
-                    .internal_err_ctx("Failed to record the cancelled turn")?;
-            }
+            // Stopped by the server shutting down, not by the user: recorded
+            // like a turn whose process went away.
+            let stopped_by_shutdown = self.prompt_run_shutdown.is_stopping();
+            let terminal_state = if stream_error.is_some() {
+                AcpPromptRunState::Failed
+            } else if stopped_by_shutdown {
+                AcpPromptRunState::Interrupted
+            } else {
+                AcpPromptRunState::Cancelled
+            };
+            self.record_cancelled_turn(&session_id, terminal_state, stopped_by_shutdown)
+                .await?;
         }
         if stream_error.is_none() && !was_cancelled {
             match research_completion::verify_deep_research_completion(
@@ -638,15 +703,15 @@ impl GoslingAcpAgent {
                 }
             }
         }
-        let terminal_state = if stream_error.is_some() {
-            AcpPromptRunState::Failed
-        } else if was_cancelled {
-            AcpPromptRunState::Cancelled
-        } else {
-            AcpPromptRunState::Completed
-        };
-        self.record_acp_prompt_state(&session_id, terminal_state)
-            .await?;
+        if !was_cancelled {
+            let terminal_state = if stream_error.is_some() {
+                AcpPromptRunState::Failed
+            } else {
+                AcpPromptRunState::Completed
+            };
+            self.record_acp_prompt_state(&session_id, terminal_state)
+                .await?;
+        }
         if let Some(error) = stream_error {
             return Err(error);
         }
@@ -656,11 +721,17 @@ impl GoslingAcpAgent {
             .get_session(&session_id, false)
             .await
             .internal_err_ctx("Failed to load session")?;
-        let updates = if latest_context_usage.is_some() {
-            build_usage_updates_with_context(&session, latest_context_usage.as_ref())
-        } else {
-            let context_limit = resolve_active_context_limit(&agent, &session).await;
-            build_usage_updates_with_limit(&session, context_limit)
+        let updates = match latest_context_usage.as_ref() {
+            Some(context) if !provider_usage_after_context => {
+                build_usage_updates_with_context(&session, Some(context))
+            }
+            // The agent reports its snapshot before each provider call; the
+            // total that provider recorded afterwards is the newer measurement.
+            Some(context) => build_usage_updates_with_limit(&session, Some(context.context_limit)),
+            None => {
+                let context_limit = resolve_active_context_limit(&agent, &session).await;
+                build_usage_updates_with_limit(&session, context_limit)
+            }
         };
         if let Some(updates) = updates {
             if self.supports_gosling_custom_notifications() {
@@ -700,6 +771,8 @@ impl GoslingAcpAgent {
         );
         let stop_reason = if was_cancelled {
             StopReason::Cancelled
+        } else if turn_limit_reached {
+            StopReason::MaxTurnRequests
         } else {
             StopReason::EndTurn
         };
@@ -710,32 +783,6 @@ impl GoslingAcpAgent {
         }
         drop(completed_run);
         Ok(response)
-    }
-}
-
-#[cfg(test)]
-mod cancelled_turn_tests {
-    use super::*;
-
-    #[test]
-    fn cancelled_turn_ending_on_user_content_is_closed() {
-        assert!(cancelled_turn_needs_notice(&[
-            Message::user().with_text("run it")
-        ]));
-        assert!(cancelled_turn_needs_notice(&[
-            Message::user().with_text("run it"),
-            Message::assistant().with_text("calling a tool"),
-            Message::user().with_text("tool output"),
-        ]));
-    }
-
-    #[test]
-    fn cancelled_turn_with_assistant_reply_or_no_history_is_unchanged() {
-        assert!(!cancelled_turn_needs_notice(&[]));
-        assert!(!cancelled_turn_needs_notice(&[
-            Message::user().with_text("run it"),
-            Message::assistant().with_text("partial"),
-        ]));
     }
 }
 

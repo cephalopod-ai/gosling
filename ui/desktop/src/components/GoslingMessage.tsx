@@ -1,4 +1,6 @@
 import { memo, useCallback, useMemo, useRef } from 'react';
+import { Ban } from 'lucide-react';
+import { defineMessages, useIntl } from '../i18n';
 import ImagePreview from './ImagePreview';
 import { formatMessageTimestamp } from '../utils/timeUtils';
 import MarkdownContent from './MarkdownContent';
@@ -22,6 +24,13 @@ import MessageCopyLink from './MessageCopyLink';
 import { cn } from '../utils';
 import { ArtifactMessageLinks } from './artifacts/ArtifactMessageLinks';
 import { useArtifactWorkbench } from '../contexts/ArtifactWorkbenchContext';
+
+const i18n = defineMessages({
+  replyInterrupted: {
+    id: 'goslingMessage.replyInterrupted',
+    defaultMessage: 'Interrupted — this reply was cut off before it finished.',
+  },
+});
 
 interface GoslingMessageProps {
   sessionId: string;
@@ -58,6 +67,7 @@ function GoslingMessage({
   workspaceId,
   submitElicitationResponse,
 }: GoslingMessageProps) {
+  const intl = useIntl();
   const contentRef = useRef<HTMLDivElement | null>(null);
   const { openFile } = useArtifactWorkbench();
   const handleLocalFileLink = useCallback(
@@ -143,6 +153,16 @@ function GoslingMessage({
               </div>
             )}
           </div>
+        )}
+
+        {message.metadata.incomplete && (
+          <p
+            className="mt-1 flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400"
+            data-testid="reply-interrupted"
+          >
+            <Ban className="size-3 shrink-0" aria-hidden />
+            {intl.formatMessage(i18n.replyInterrupted)}
+          </p>
         )}
 
         {toolRequests.length > 0 && (

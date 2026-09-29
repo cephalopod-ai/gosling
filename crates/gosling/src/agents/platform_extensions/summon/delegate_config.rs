@@ -50,6 +50,20 @@ pub(super) fn delegate_mode_notice(mode: GoslingMode) -> &'static str {
     }
 }
 
+/// A delegate answers no approval prompts, so it may only be started by a
+/// parent whose operator already runs tools without approval.
+pub(super) fn ensure_parent_allows_delegation(parent_mode: GoslingMode) -> Result<(), String> {
+    if parent_mode == GoslingMode::Auto {
+        return Ok(());
+    }
+    Err(format!(
+        "Delegation is only available in Autonomous (auto) mode. This session is in \
+         {parent_mode} mode, and a subagent would run its tools without asking for approval, \
+         so no subagent was started. Do the task in this session, or switch the session to \
+         Autonomous (CLI: /mode auto; Desktop: the mode selector) and ask again."
+    ))
+}
+
 /// The pieces shared by the synchronous and background delegate paths, which
 /// differ only in how they run the resulting task and report progress.
 pub(super) struct PreparedDelegate {
@@ -80,7 +94,8 @@ impl SummonClient {
         let subagent_mode = delegate_mode(task_config.provider.executes_tools_outside_gosling());
 
         // Hosted-tool subagents use Auto because no UI is attached to answer
-        // approval prompts. External-tool providers cannot safely use Auto;
+        // approval prompts; `handle_delegate` therefore only gets here from an
+        // Autonomous parent. External-tool providers cannot safely use Auto;
         // Chat mode keeps those providers available for bounded text work while
         // rejecting their delegated tool calls at the ACP boundary.
         let agent_config = AgentConfig::new(

@@ -135,9 +135,13 @@ impl ToolInspector for PermissionInspector {
                                 InspectionAction::Allow,
                                 "User permission allows this tool".to_string(),
                             ),
+                            // An unreadable policy also reads as NeverAllow; name the file
+                            // rather than blaming a decision the operator never made.
                             PermissionLevel::NeverAllow => (
                                 InspectionAction::Deny,
-                                "User permission denies this tool".to_string(),
+                                permission_manager.policy_problem().unwrap_or_else(|| {
+                                    "User permission denies this tool".to_string()
+                                }),
                             ),
                             PermissionLevel::AskBefore if gosling_mode == GoslingMode::Auto => (
                                 InspectionAction::Allow,
@@ -334,6 +338,42 @@ mod tests {
             .unwrap();
 
         assert_eq!(results[0].action, InspectionAction::Deny);
+        assert_eq!(results[0].reason, "User permission denies this tool");
+    }
+
+    /// GSL-PT-20260927-S18: the denial for an unreadable policy file used to
+    /// blame a user permission; it must name the file instead.
+    #[tokio::test]
+    async fn unreadable_policy_denial_names_the_file() {
+        let config_dir = tempfile::tempdir().unwrap().keep();
+        let policy = config_dir.join("permission.yaml");
+        std::fs::write(&policy, "user: [unclosed\n").unwrap();
+        let inspector = new_inspector(Arc::new(PermissionManager::new(config_dir)));
+        let req = ToolRequest {
+            id: "req".into(),
+            tool_call: Ok(CallToolRequestParams::new("shell").with_arguments(object!({}))),
+            metadata: None,
+            tool_meta: None,
+        };
+
+        let results = inspector
+            .inspect(
+                gosling_test_support::TEST_SESSION_ID,
+                &[req],
+                &[],
+                GoslingMode::Auto,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(results[0].action, InspectionAction::Deny);
+        assert!(
+            results[0]
+                .reason
+                .contains(&format!("Permission policy {}", policy.display())),
+            "{}",
+            results[0].reason
+        );
     }
 
     #[tokio::test]

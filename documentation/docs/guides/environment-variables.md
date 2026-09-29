@@ -172,7 +172,7 @@ These variables control how gosling manages conversation sessions and context.
 | `GOSLING_SUBAGENT_MAX_TURNS` | Sets the maximum turns allowed for a [subagent](/docs/guides/context-engineering/subagents) to complete before timeout. Can be overridden by `max_turns` in subagent tool calls. | Integer (e.g., 25) | 25 |
 | `GOSLING_MAX_BACKGROUND_TASKS` | Sets the maximum number of concurrent background [subagent](/docs/guides/context-engineering/subagents) tasks gosling can run at once | Integer (e.g., 1, 5, 10) | 5 |
 | `GOSLING_SYNC_DELEGATE_TIMEOUT_SECS` | Wall-clock budget for a synchronous `delegate` call. On expiry the subagent is cancelled and the tool call returns an error naming its session; the task is never retried automatically. Set `0` to remove the bound. Background delegates (`async: true`) are unaffected. | Integer seconds, or 0 to disable | 1800 |
-| `CONTEXT_FILE_NAMES` | Specifies custom filenames for [hint/context files](/docs/guides/context-engineering/using-goslinghints#custom-context-files) | JSON array of strings (e.g., `["CLAUDE.md", ".goslinghints"]`) | `[".goslinghints"]` |
+| `CONTEXT_FILE_NAMES` | Specifies custom filenames for [hint/context files](/docs/guides/context-engineering/using-goslinghints#custom-context-files) | JSON array of strings (e.g., `["CLAUDE.md", ".goslinghints"]`) | `[".goslinghints", "AGENTS.md"]` |
 | `GOSLING_DISABLE_SESSION_NAMING` | Disables automatic AI-generated session naming; avoids the background model call and keeps the default "CLI Session" (gosling CLI) or "New Chat" (gosling Desktop) | "1", "true" (case-insensitive) to enable | false |
 | `GOSLING_DISABLE_TOOL_CALL_SUMMARY` | Disables the per-tool-call AI-generated summary title, keeping the fallback title instead. Saves one provider call per tool invocation. | "1", "true" (case-insensitive) to enable | false |
 | `GOSLING_PROMPT_EDITOR` | [External editor](/docs/guides/gosling-cli-commands#external-editor-mode) to use for composing prompts instead of CLI input | Editor command (e.g., "vim", "code --wait") | Unset (uses CLI input) |
@@ -294,7 +294,7 @@ These variables control how gosling handles [tool execution](/docs/guides/managi
 
 | Variable | Purpose | Values | Default |
 |----------|---------|---------|---------|
-| `GOSLING_MODE` | Controls how gosling handles tool execution | "auto", "approve", "chat", "smart_approve" | "smart_approve" |
+| `GOSLING_MODE` | Controls how gosling handles tool execution. Any other value is reported as invalid and new sessions use "approve" (ask before every tool call) until it is corrected | "auto", "approve", "chat", "smart_approve" | "auto" |
 | `GOSLING_CODE_EXECUTION_RUNTIME` | Allows or blocks [Code Mode](/docs/guides/managing-tools/code-mode) runtime loading for new gosling processes. Changing it requires restart. | "enabled", "disabled" | "enabled" |
 | `GOSLING_TOOLSHIM` | Enables/disables tool call interpretation | "1", "true" (case-insensitive) to enable | false |
 | `GOSLING_TOOLSHIM_OLLAMA_MODEL` | Specifies the model for [tool call interpretation](/docs/experimental/ollama) | Model name (e.g. llama3.2, qwen2.5) | System default |
@@ -579,14 +579,28 @@ These variables are primarily used for development, testing, and debugging gosli
 
 | Variable | Purpose | Values | Default |
 |----------|---------|---------|---------|
-| `GOSLING_PATH_ROOT` | Override the root directory for all gosling data, config, and state files | Absolute path to directory | Platform-specific defaults |
+| `GOSLING_PATH_ROOT` | Override the root directory for all gosling data, config, and state files, and for the home-directory locations gosling discovers | Absolute path to directory | Platform-specific defaults |
 
 **Default locations:**
-- macOS: `~/Library/Application Support/Block/gosling/`
-- Linux: `~/.local/share/gosling/`
+- macOS and Linux: `~/.config/gosling/` (config), `~/.local/share/gosling/` (data), and `~/.local/state/gosling/` (state and logs), or the `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, and `XDG_STATE_HOME` directories when those are set
 - Windows: `%APPDATA%\Block\gosling\`
 
-When set, gosling creates `config/`, `data/`, and `state/` subdirectories under the specified path. Useful for isolating test environments, running multiple configurations, or CI/CD pipelines.
+When set, gosling creates `config/`, `data/`, and `state/` subdirectories under the specified path. The root also takes the place of your home directory for the locations gosling reads and writes there, so an isolated root never sees your personal skills, agents, or review checks:
+
+| Without `GOSLING_PATH_ROOT` | With `GOSLING_PATH_ROOT` |
+|---|---|
+| `~/.agents/skills/`, `~/.claude/skills/`, `~/.config/agents/skills/` | `<root>/.agents/skills/`, `<root>/.claude/skills/`, `<root>/.config/agents/skills/` |
+| `~/.agents/agents/`, `~/.gosling/agents/`, `~/.claude/agents/` | `<root>/.agents/agents/`, `<root>/.gosling/agents/`, `<root>/.claude/agents/` |
+| `~/.agents/plugins/`, `~/.agents/AGENTS.md`, `~/.config/gosling/settings.json` | `<root>/.agents/plugins/`, `<root>/.agents/AGENTS.md`, `<root>/.config/gosling/settings.json` |
+| `~/.config/gosling/checks/`, `~/.config/agents/checks/` (`gosling review`) | `<root>/.config/gosling/checks/`, `<root>/.config/agents/checks/` |
+
+Useful for isolating test environments, running multiple configurations, or CI/CD pipelines.
+
+Some things stay shared with the rest of your machine:
+- **System keyring.** Secrets in the OS keyring use the service name `gosling` for every root, so roots with the keyring enabled read and write the same keychain items. Set `GOSLING_DISABLE_KEYRING` (or `GOSLING_DISABLE_KEYRING: true` in the root's `config/config.yaml`) to keep that root's secrets in `<root>/config/secrets.yaml` instead.
+- **Your project.** Project files such as `AGENTS.md`, `.goslinghints`, `.agents/skills/`, `.agents/agents/`, and `.agents/checks/` come from the working directory.
+- **Paths you give gosling.** `~` in tool arguments, configured skill catalog paths, and trusted directories still means your real home directory.
+- **Other programs.** Extensions and command-line providers run with your normal environment and use their own configuration. The onboarding import request reads the default gosling config and the Claude Desktop config when a client asks for it.
 
 **Examples**
 

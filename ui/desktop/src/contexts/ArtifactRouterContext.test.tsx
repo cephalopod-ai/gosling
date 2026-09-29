@@ -190,6 +190,24 @@ describe('ArtifactRouterProvider', () => {
     );
   });
 
+  it('ties the published route to the visible chat so main can refuse it after a switch', async () => {
+    renderRouter();
+    await act(() => router.setVisibleSessionWorkspaceId('pinned', 'chat-a'));
+    await waitFor(() =>
+      expect(setArtifactRoutingConfig).toHaveBeenLastCalledWith(
+        expect.objectContaining({ workspaceId: 'pinned', sessionId: 'chat-a' })
+      )
+    );
+
+    await act(() => router.setVisibleSessionWorkspaceId(undefined));
+    await waitFor(() =>
+      expect(setArtifactRoutingConfig).toHaveBeenLastCalledWith(
+        expect.objectContaining({ workspaceId: 'active' })
+      )
+    );
+    expect(setArtifactRoutingConfig.mock.lastCall?.[0]).not.toHaveProperty('sessionId');
+  });
+
   it('does not republish routing when an equal artifact set arrives again', async () => {
     renderRouter();
     await waitFor(() => expect(setArtifactRoutingConfig).toHaveBeenCalled());

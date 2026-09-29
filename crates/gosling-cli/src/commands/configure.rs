@@ -10,13 +10,15 @@ use gosling::config::declarative_providers::{
 use gosling::config::extensions::{
     get_all_extension_names, get_all_extensions, get_enabled_extensions, get_extension_by_name,
     name_to_key, remove_extension_and_permissions, set_extension, set_extension_enabled,
+    set_extension_with_secrets,
 };
 use gosling::config::paths::Paths;
 use gosling::config::permission::PermissionLevel;
 use gosling::config::signup_tetrate::TetrateAuth;
 use gosling::config::{
-    configure_tetrate, CodeExecutionRuntime, Config, ConfigError, ExperimentManager,
-    ExtensionEntry, GoslingMode, PermissionManager, GOSLING_CODE_EXECUTION_RUNTIME_KEY,
+    configure_tetrate, CodeExecutionRuntime, Config, ConfigError, ConfigResolutionScope,
+    ExperimentManager, ExtensionEntry, GoslingMode, PermissionManager,
+    GOSLING_CODE_EXECUTION_RUNTIME_KEY,
 };
 #[cfg(feature = "telemetry")]
 use gosling::posthog::TELEMETRY_ENABLED_KEY;
@@ -33,13 +35,23 @@ use std::io::IsTerminal;
 // cursor-selected and cursor-unselected items.
 const MULTISELECT_VISIBILITY_HINT: &str = "<";
 
+/// Reads skip a config file that fails to parse, so a missing provider or model
+/// is usually this file's fault. Commands that would otherwise say "not
+/// configured, run 'gosling configure'" name the file instead, since configure
+/// refuses to run on it. (GSL-PT-20260927-A05, GSL-PT-20260927-S12)
+pub fn unparsable_config_problem(config: &Config) -> Option<String> {
+    config.check_write_config_parses().err().map(|e| {
+        format!(
+            "{} could not be parsed ({e}). Fix or move the file",
+            config.path()
+        )
+    })
+}
+
 pub async fn handle_configure() -> anyhow::Result<()> {
     let config = Config::global();
-    if let Err(e) = config.check_write_config_parses() {
-        anyhow::bail!(
-            "Cannot configure: {} could not be parsed ({e}). Fix or move the file, then run 'gosling configure' again.",
-            config.path()
-        );
+    if let Some(problem) = unparsable_config_problem(config) {
+        anyhow::bail!("Cannot configure: {problem}, then run 'gosling configure' again.");
     }
 
     if !std::io::stdin().is_terminal() {
@@ -143,7 +155,7 @@ async fn handle_manual_provider_setup(config: &Config) -> anyhow::Result<()> {
         Ok(false) => {
             let _ = config.clear();
             println!(
-                "\n  {}: No provider was activated. Credentials you entered may already be in secret storage;\n   inspect them and run '{}' again to ensure gosling can connect",
+                "\n  {}: No provider was activated and the values you entered were not saved.\n   Run '{}' again to ensure gosling can connect",
                 style("Warning").yellow().italic(),
                 style("gosling configure").cyan()
             );
@@ -199,7 +211,7 @@ fn print_manual_config_error(e: &anyhow::Error) {
         }
         _ => {
             println!(
-                "\n  {} {} \n  No provider was activated. Credentials you entered may already be in secret storage;\n   inspect them and run '{}' again to ensure gosling can connect",
+                "\n  {} {} \n  No provider was activated and the values you entered were not saved.\n   Run '{}' again to ensure gosling can connect",
                 style("Error").red().italic(),
                 e,
                 style("gosling configure").cyan()
@@ -288,7 +300,9 @@ async fn handle_existing_config() -> anyhow::Result<()> {
             if configure_provider_dialog().await? {
                 Ok(())
             } else {
-                anyhow::bail!("{PROVIDER_NOT_CONFIGURED}; the active provider was not changed")
+                anyhow::bail!(
+                    "{PROVIDER_NOT_CONFIGURED}; the values entered were not saved and the active provider was not changed"
+                )
             }
         }
         "custom_providers" => configure_custom_provider_dialog().await,
@@ -434,9 +448,23 @@ fn interactive_model_search(
     }
 }
 
+/// The models to offer, with the saved model first when the provider does not
+/// list it, so the picker can start on it: Enter then keeps the saved model
+/// instead of silently replacing it with the first listed one.
+/// (GSL-PT-20260927-B02)
+fn offered_models(listed: Vec<String>, current_model: Option<&str>) -> Vec<String> {
+    match current_model {
+        Some(current) if !listed.iter().any(|model| model == current) => {
+            std::iter::once(current.to_string()).chain(listed).collect()
+        }
+        _ => listed,
+    }
+}
+
 fn select_model_from_list(
     models: &[String],
     provider_meta: &gosling::providers::base::ProviderMetadata,
+    current_model: Option<&str>,
 ) -> anyhow::Result<String> {
     const MAX_MODELS: usize = 10;
 
@@ -444,7 +472,10 @@ fn select_model_from_list(
     // If we have more than MAX_MODELS models, show the recommended models with additional search option.
     // Otherwise, show all models without search.
     if models.len() > MAX_MODELS {
-        let mut recommended_models: Vec<String> = models.iter().take(MAX_MODELS).cloned().collect();
+        let mut recommended_models = offered_models(
+            models.iter().take(MAX_MODELS).cloned().collect(),
+            current_model,
+        );
         for known_model in provider_meta
             .known_models
             .iter()
@@ -480,9 +511,7 @@ fn select_model_from_list(
                 "",
             ));
 
-            let selection = cliclack::select("Select a model:")
-                .items(&model_items)
-                .interact()?;
+            let selection = model_select(&model_items, current_model).interact()?;
 
             if selection == "search_all" {
                 interactive_model_search(models, provider_meta)
@@ -496,7 +525,10 @@ fn select_model_from_list(
         }
     } else {
         let mut model_items: Vec<(String, String, &str)> =
-            models.iter().map(|m| (m.clone(), m.clone(), "")).collect();
+            offered_models(models.to_vec(), current_model)
+                .into_iter()
+                .map(|m| (m.clone(), m, ""))
+                .collect();
 
         model_items.push((
             UNLISTED_MODEL_KEY.to_string(),
@@ -504,15 +536,24 @@ fn select_model_from_list(
             "",
         ));
 
-        let selection = cliclack::select("Select a model:")
-            .items(&model_items)
-            .interact()?;
+        let selection = model_select(&model_items, current_model).interact()?;
 
         if selection == UNLISTED_MODEL_KEY {
             prompt_unlisted_model(provider_meta)
         } else {
             Ok(selection)
         }
+    }
+}
+
+fn model_select(
+    items: &[(String, String, &str)],
+    current_model: Option<&str>,
+) -> cliclack::Select<String> {
+    let select = cliclack::select("Select a model:").items(items);
+    match current_model {
+        Some(current) => select.initial_value(current.to_string()),
+        None => select,
     }
 }
 
@@ -532,26 +573,63 @@ fn prompt_unlisted_model(
     Ok(model.trim().to_string())
 }
 
-fn try_store_secret(config: &Config, key_name: &str, value: String) -> anyhow::Result<bool> {
-    match config.set_secret(key_name, &value) {
-        Ok(_) => Ok(true),
-        Err(ConfigError::FallbackToFileStorage) => Ok(true),
-        Err(e) => {
-            cliclack::outro(style(format!(
-                "Failed to store {} securely: {}. Please ensure your system's secure storage is accessible. Alternatively you can run with GOSLING_DISABLE_KEYRING=true or set the key in your environment variables",
-                key_name, e
-            )).on_red().white())?;
-            Ok(false)
+/// Values entered while setting up a provider. Nothing is saved until the
+/// provider check passes: the model listing and the check see these values
+/// through a resolution scope, so an abandoned or failed setup leaves the saved
+/// configuration exactly as it was. (GSL-PT-20260927-B01)
+#[derive(Default)]
+struct ProviderSetupDraft {
+    params: Vec<(String, Value)>,
+    secrets: Vec<(String, Value)>,
+}
+
+impl ProviderSetupDraft {
+    fn set(&mut self, key: &ConfigKey, value: String) {
+        let values = if key.secret {
+            &mut self.secrets
+        } else {
+            &mut self.params
+        };
+        values.push((key.name.clone(), Value::String(value)));
+    }
+
+    fn set_param(&mut self, name: &str, value: Value) {
+        self.params.push((name.to_string(), value));
+    }
+
+    async fn resolve<F: std::future::Future>(&self, future: F) -> F::Output {
+        let scope = ConfigResolutionScope::unsaved(
+            self.params.iter().cloned().collect(),
+            self.secrets.iter().cloned().collect(),
+        );
+        Config::with_resolution_scope(scope, future).await
+    }
+
+    /// Returns false, after telling the user why, when the secrets cannot be stored.
+    fn save(self, config: &Config) -> anyhow::Result<bool> {
+        match config.set_secret_values(&self.secrets) {
+            Ok(()) | Err(ConfigError::FallbackToFileStorage) => {}
+            Err(e) => {
+                let names: Vec<&str> = self.secrets.iter().map(|(name, _)| name.as_str()).collect();
+                cliclack::outro(style(format!(
+                    "Failed to store {} securely: {}. Please ensure your system's secure storage is accessible. Alternatively you can run with GOSLING_DISABLE_KEYRING=true or set the key in your environment variables",
+                    names.join(", "), e
+                )).on_red().white())?;
+                return Ok(false);
+            }
         }
+        config.set_param_values(&self.params)?;
+        Ok(true)
     }
 }
 
 async fn configure_single_key(
     config: &Config,
+    draft: &mut ProviderSetupDraft,
     provider_name: &str,
     display_name: &str,
     key: &ConfigKey,
-) -> anyhow::Result<bool> {
+) -> anyhow::Result<()> {
     let from_env = std::env::var(&key.name).ok();
 
     match from_env {
@@ -561,14 +639,11 @@ async fn configure_single_key(
                 .initial_value(true)
                 .interact()?
             {
-                if key.secret {
-                    if !try_store_secret(config, &key.name, env_value)? {
-                        return Ok(false);
-                    }
-                } else {
-                    config.set_param(&key.name, &env_value)?;
-                }
-                let _ = cliclack::log::info(format!("Saved {} to {}", key.name, config.path()));
+                draft.set(key, env_value);
+                let _ = cliclack::log::info(format!(
+                    "{} will be saved once the configuration check passes",
+                    key.name
+                ));
             }
         }
         None => {
@@ -583,7 +658,9 @@ async fn configure_single_key(
                     let _ = cliclack::log::info(format!("{} is already configured", key.name));
                     if cliclack::confirm("Would you like to update this value?").interact()? {
                         if key.oauth_flow {
-                            handle_oauth_configuration(provider_name, &key.name).await?;
+                            draft
+                                .resolve(handle_oauth_configuration(provider_name, &key.name))
+                                .await?;
                         } else {
                             let value: String = if key.secret {
                                 cliclack::password(format!("Enter new value for {}", key.name))
@@ -598,19 +675,15 @@ async fn configure_single_key(
                                 input.interact()?
                             };
 
-                            if key.secret {
-                                if !try_store_secret(config, &key.name, value)? {
-                                    return Ok(false);
-                                }
-                            } else {
-                                config.set_param(&key.name, &value)?;
-                            }
+                            draft.set(key, value);
                         }
                     }
                 }
                 Err(_) => {
                     if key.oauth_flow {
-                        handle_oauth_configuration(provider_name, &key.name).await?;
+                        draft
+                            .resolve(handle_oauth_configuration(provider_name, &key.name))
+                            .await?;
                     } else if !key.required && key.secret {
                         if cliclack::confirm(format!(
                             "Would you like to set {}? (optional)",
@@ -623,9 +696,7 @@ async fn configure_single_key(
                                 cliclack::password(format!("Enter value for {}", key.name))
                                     .mask('▪')
                                     .interact()?;
-                            if !try_store_secret(config, &key.name, value)? {
-                                return Ok(false);
-                            }
+                            draft.set(key, value);
                         }
                     } else {
                         let prompt = if key.required {
@@ -650,23 +721,15 @@ async fn configure_single_key(
                             input.interact()?
                         };
 
-                        if value.is_empty() {
-                            return Ok(true);
-                        }
-
-                        if key.secret {
-                            if !try_store_secret(config, &key.name, value)? {
-                                return Ok(false);
-                            }
-                        } else {
-                            config.set_param(&key.name, &value)?;
+                        if !value.is_empty() {
+                            draft.set(key, value);
                         }
                     }
                 }
             }
         }
     }
-    Ok(true)
+    Ok(())
 }
 
 pub async fn configure_provider_dialog() -> anyhow::Result<bool> {
@@ -714,14 +777,20 @@ pub async fn configure_provider_dialog() -> anyhow::Result<bool> {
         .find(|(p, _)| &p.name == provider_name)
         .expect("Selected provider must exist in metadata");
 
+    let mut draft = ProviderSetupDraft::default();
     for key in provider_meta
         .config_keys
         .iter()
         .filter(|k| k.primary || k.oauth_flow)
     {
-        if !configure_single_key(config, provider_name, &provider_meta.display_name, key).await? {
-            return Ok(false);
-        }
+        configure_single_key(
+            config,
+            &mut draft,
+            provider_name,
+            &provider_meta.display_name,
+            key,
+        )
+        .await?;
     }
 
     let non_primary_keys: Vec<_> = provider_meta
@@ -735,36 +804,55 @@ pub async fn configure_provider_dialog() -> anyhow::Result<bool> {
             .interact()?
     {
         for key in non_primary_keys {
-            if !configure_single_key(config, provider_name, &provider_meta.display_name, key)
-                .await?
-            {
-                return Ok(false);
-            }
+            configure_single_key(
+                config,
+                &mut draft,
+                provider_name,
+                &provider_meta.display_name,
+                key,
+            )
+            .await?;
         }
     }
 
     let spin = spinner();
     spin.start("Attempting to fetch supported models...");
-    let temp_provider = create(provider_name, Vec::new()).await?;
-    let models_res = retry_operation(&RetryConfig::default(), || async {
-        temp_provider
-            .fetch_recommended_models(gosling::model_config::global_toolshim())
-            .await
-    })
-    .await;
+    let temp_provider = draft.resolve(create(provider_name, Vec::new())).await?;
+    let models_res = draft
+        .resolve(retry_operation(&RetryConfig::default(), || async {
+            temp_provider
+                .fetch_recommended_models(gosling::model_config::global_toolshim())
+                .await
+        }))
+        .await;
     spin.stop(style("Model fetch complete").green());
 
-    // Select a model: on fetch error show styled error and abort; if models available, show list; otherwise free-text input
+    let current_model =
+        if config.get_gosling_provider().ok().as_deref() == Some(provider_name.as_str()) {
+            config.get_gosling_model().ok()
+        } else {
+            gosling::config::get_provider_entry(config, provider_name)
+                .map(|entry| entry.model)
+                .filter(|model| !model.is_empty())
+        };
+
+    // Pick from the provider's list when it has one; otherwise type the model in.
+    // A listing that fails (some OpenAI-compatible servers have no working
+    // /models) does not end the setup: the check below verifies a typed model.
+    // (GSL-PT-20260927-B03)
     let model: String = match models_res {
-        Err(e) => {
-            // Provider hook error
-            cliclack::outro(style(e.to_string()).on_red().white())?;
-            return Ok(false);
+        Ok(models) if !models.is_empty() => {
+            select_model_from_list(&models, provider_meta, current_model.as_deref())?
         }
-        Ok(models) if !models.is_empty() => select_model_from_list(&models, provider_meta)?,
-        Ok(_) => {
-            let default_model =
-                std::env::var("GOSLING_MODEL").unwrap_or(provider_meta.default_model.clone());
+        listing => {
+            if let Err(e) = listing {
+                let _ = cliclack::log::warning(format!(
+                    "Could not list this provider's models: {e}\nEnter the model name instead; the configuration check verifies it."
+                ));
+            }
+            let default_model = current_model
+                .or_else(|| std::env::var("GOSLING_MODEL").ok())
+                .unwrap_or(provider_meta.default_model.clone());
             cliclack::input("Enter a model from that provider:")
                 .default_input(&default_model)
                 .interact()?
@@ -772,7 +860,7 @@ pub async fn configure_provider_dialog() -> anyhow::Result<bool> {
     };
 
     {
-        let supports_thinking = match temp_provider.fetch_model_info(&model).await {
+        let supports_thinking = match draft.resolve(temp_provider.fetch_model_info(&model)).await {
             Ok(model_info) => model_info.reasoning,
             Err(_) => gosling_providers::model::ModelConfig::new(&model).is_reasoning_model(),
         };
@@ -789,7 +877,7 @@ pub async fn configure_provider_dialog() -> anyhow::Result<bool> {
                 .interact()?
                 .parse()
                 .map_err(|_| anyhow::anyhow!("invalid thinking effort"))?;
-            config.set_gosling_thinking_effort(effort)?;
+            draft.set_param("GOSLING_THINKING_EFFORT", serde_json::to_value(effort)?);
         }
     }
 
@@ -802,9 +890,19 @@ pub async fn configure_provider_dialog() -> anyhow::Result<bool> {
         .unwrap_or(false);
     let toolshim_model = std::env::var("GOSLING_TOOLSHIM_OLLAMA_MODEL").ok();
 
-    match test_provider_configuration(provider_name, &model, toolshim_enabled, toolshim_model).await
+    match draft
+        .resolve(test_provider_configuration(
+            provider_name,
+            &model,
+            toolshim_enabled,
+            toolshim_model,
+        ))
+        .await
     {
         Ok(()) => {
+            if !draft.save(config)? {
+                return Ok(false);
+            }
             gosling::config::set_active_provider(config, provider_name, &model)?;
             print_config_file_saved()?;
             Ok(true)
@@ -927,13 +1025,14 @@ fn prompt_extension_name(placeholder: &str) -> anyhow::Result<String> {
     )
 }
 
-fn collect_env_vars() -> anyhow::Result<(HashMap<String, String>, Vec<String>)> {
-    let envs = HashMap::new();
-    let mut env_keys = Vec::new();
-    let config = Config::global();
+/// Values are stored with the extension (see `set_extension_with_secrets`), so a
+/// name like `OPENAI_API_KEY` never replaces the provider's or another
+/// extension's credential. (GSL-PT-20260927-C20)
+fn collect_env_vars() -> anyhow::Result<Vec<(String, Value)>> {
+    let mut secrets = Vec::new();
 
     if !cliclack::confirm("Would you like to add environment variables?").interact()? {
-        return Ok((envs, env_keys));
+        return Ok(secrets);
     }
 
     loop {
@@ -945,17 +1044,14 @@ fn collect_env_vars() -> anyhow::Result<(HashMap<String, String>, Vec<String>)> 
             .mask('▪')
             .interact()?;
 
-        if !try_store_secret(config, &key, value)? {
-            return Err(anyhow::anyhow!("Failed to store secret"));
-        }
-        env_keys.push(key);
+        secrets.push((key, Value::String(value)));
 
         if !cliclack::confirm("Add another environment variable?").interact()? {
             break;
         }
     }
 
-    Ok((envs, env_keys))
+    Ok(secrets)
 }
 
 fn collect_headers() -> anyhow::Result<HashMap<String, String>> {
@@ -1069,7 +1165,8 @@ async fn configure_stdio_extension() -> anyhow::Result<()> {
     let args = parts;
 
     let description = prompt_extension_description()?;
-    let (envs, env_keys) = collect_env_vars()?;
+    let secrets = collect_env_vars()?;
+    let env_keys = secrets.iter().map(|(key, _)| key.clone()).collect();
 
     let entry = ExtensionEntry {
         enabled: true,
@@ -1078,7 +1175,7 @@ async fn configure_stdio_extension() -> anyhow::Result<()> {
             name: name.clone(),
             cmd,
             args,
-            envs: Envs::new(envs),
+            envs: Envs::default(),
             env_keys,
             description,
             timeout: Some(timeout),
@@ -1088,7 +1185,7 @@ async fn configure_stdio_extension() -> anyhow::Result<()> {
         },
     };
     gosling::config::extension_allowlist::enforce_extension(&entry.config).await?;
-    set_extension(entry)?;
+    set_extension_with_secrets(entry, &secrets)?;
 
     cliclack::outro(format!("Added {} extension", style(name).green()))?;
     Ok(())
@@ -2238,4 +2335,121 @@ fn print_config_file_saved() -> anyhow::Result<()> {
         config.path()
     ))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn file_config(dir: &tempfile::TempDir) -> Config {
+        Config::new_with_file_secrets(
+            dir.path().join("config.yaml"),
+            dir.path().join("secrets.yaml"),
+        )
+        .unwrap()
+    }
+
+    fn provider_key(name: &str, secret: bool) -> ConfigKey {
+        ConfigKey::new(name, true, secret, None, true)
+    }
+
+    fn stored_files(dir: &tempfile::TempDir) -> (Vec<u8>, Vec<u8>) {
+        (
+            std::fs::read(dir.path().join("config.yaml")).unwrap(),
+            std::fs::read(dir.path().join("secrets.yaml")).unwrap(),
+        )
+    }
+
+    #[tokio::test]
+    async fn an_unfinished_provider_setup_is_checked_with_its_values_but_saves_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = file_config(&dir);
+        config
+            .set_param("SETUP_TEST_HOST", "http://saved-host")
+            .unwrap();
+        config
+            .set_secret("SETUP_TEST_API_KEY", &"saved-key")
+            .unwrap();
+        let before = stored_files(&dir);
+
+        let mut draft = ProviderSetupDraft::default();
+        draft.set(&provider_key("SETUP_TEST_API_KEY", true), "new-key".into());
+        draft.set(
+            &provider_key("SETUP_TEST_HOST", false),
+            "http://new-host".into(),
+        );
+        draft.set_param("GOSLING_THINKING_EFFORT", Value::String("high".into()));
+        let seen_by_checks = draft
+            .resolve(async {
+                (
+                    config.get_param::<String>("SETUP_TEST_HOST").unwrap(),
+                    config.get_secret::<String>("SETUP_TEST_API_KEY").unwrap(),
+                    config.get_gosling_thinking_effort(),
+                )
+            })
+            .await;
+        drop(draft);
+
+        assert_eq!(
+            seen_by_checks,
+            (
+                "http://new-host".to_string(),
+                "new-key".to_string(),
+                Some(ThinkingEffort::High)
+            )
+        );
+        assert_eq!(stored_files(&dir), before);
+        assert_eq!(
+            config.get_param::<String>("SETUP_TEST_HOST").unwrap(),
+            "http://saved-host"
+        );
+        assert_eq!(
+            config.get_secret::<String>("SETUP_TEST_API_KEY").unwrap(),
+            "saved-key"
+        );
+    }
+
+    #[test]
+    fn the_saved_model_is_offered_first_when_the_provider_does_not_list_it() {
+        let listed = vec!["playtest-model".to_string(), "playtest-model-b".to_string()];
+
+        assert_eq!(
+            offered_models(listed.clone(), Some("fixture/custom-v1")),
+            vec!["fixture/custom-v1", "playtest-model", "playtest-model-b"]
+        );
+        assert_eq!(
+            offered_models(listed.clone(), Some("playtest-model-b")),
+            listed
+        );
+        assert_eq!(offered_models(listed.clone(), None), listed);
+    }
+
+    #[test]
+    fn a_completed_provider_setup_saves_its_values() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = file_config(&dir);
+        config
+            .set_param("SETUP_TEST_HOST", "http://saved-host")
+            .unwrap();
+        config
+            .set_secret("SETUP_TEST_API_KEY", &"saved-key")
+            .unwrap();
+
+        let mut draft = ProviderSetupDraft::default();
+        draft.set(&provider_key("SETUP_TEST_API_KEY", true), "new-key".into());
+        draft.set(
+            &provider_key("SETUP_TEST_HOST", false),
+            "http://new-host".into(),
+        );
+
+        assert!(draft.save(&config).unwrap());
+        assert_eq!(
+            config.get_param::<String>("SETUP_TEST_HOST").unwrap(),
+            "http://new-host"
+        );
+        assert_eq!(
+            config.get_secret::<String>("SETUP_TEST_API_KEY").unwrap(),
+            "new-key"
+        );
+    }
 }

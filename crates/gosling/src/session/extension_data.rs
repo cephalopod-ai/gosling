@@ -13,10 +13,23 @@ use utoipa::ToSchema;
 
 /// Extension data containing all extension states
 /// Keys are in format "extension_name.version" (e.g., "todo.v0")
-#[derive(Debug, Clone, Serialize, Deserialize, Default, ToSchema)]
+#[derive(Debug, Clone, Deserialize, Default, ToSchema)]
 pub struct ExtensionData {
     #[serde(flatten)]
     pub extension_states: HashMap<String, Value>,
+}
+
+impl Serialize for ExtensionData {
+    /// Keys in sorted order: the map's own iteration order differs from
+    /// process to process, which made stored rows and exports of an
+    /// unchanged session differ byte for byte.
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_map(
+            self.extension_states
+                .iter()
+                .collect::<std::collections::BTreeMap<_, _>>(),
+        )
+    }
 }
 
 impl ExtensionData {
@@ -107,11 +120,15 @@ pub enum AcpPromptRunState {
     Completed,
     Cancelled,
     Failed,
+    /// The run stopped without reaching an outcome (its process or client went away) and the
+    /// session has since been reopened, which closed the turn in history. Nothing is running any
+    /// more, but its effects are as unknown as an in-progress record's.
+    Interrupted,
 }
 
 impl AcpPromptRunState {
     pub fn has_terminal_outcome(&self) -> bool {
-        !matches!(self, Self::InProgress)
+        !matches!(self, Self::InProgress | Self::Interrupted)
     }
 }
 
@@ -266,6 +283,31 @@ impl EnabledExtensionsState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn extension_data_serializes_the_same_whatever_the_insertion_order() {
+        let keys = [
+            "todo.v0",
+            "enabled_extensions.v0",
+            "import_provenance.v1",
+            "a.v1",
+        ];
+        let serialized = |order: &[&str]| {
+            let mut data = ExtensionData::new();
+            for key in order {
+                data.extension_states
+                    .insert(key.to_string(), serde_json::json!({ "key": key }));
+            }
+            serde_json::to_string(&data).unwrap()
+        };
+
+        let forward = serialized(&keys);
+        let reversed: Vec<&str> = keys.iter().rev().copied().collect();
+        assert_eq!(forward, serialized(&reversed));
+        assert!(forward.starts_with(r#"{"a.v1":"#));
+        let round_trip: ExtensionData = serde_json::from_str(&forward).unwrap();
+        assert_eq!(round_trip.extension_states.len(), keys.len());
+    }
     use serde_json::json;
     use tempfile::NamedTempFile;
     use test_case::test_case;
@@ -396,6 +438,16 @@ mod tests {
             .unwrap();
         let completed = AcpPromptRunState::from_extension_data(&extension_data).unwrap();
         assert!(completed.has_terminal_outcome());
+
+        AcpPromptRunState::Interrupted
+            .to_extension_data(&mut extension_data)
+            .unwrap();
+        assert_eq!(
+            extension_data.get_extension_state("acp_prompt_run", "v1"),
+            Some(&json!("interrupted"))
+        );
+        let interrupted = AcpPromptRunState::from_extension_data(&extension_data).unwrap();
+        assert!(!interrupted.has_terminal_outcome());
     }
 
     #[test]

@@ -2,6 +2,8 @@ use rmcp::transport::auth::{AuthError, CredentialStore, StoredCredentials};
 
 use crate::config::Config;
 
+const SECRET_KEY_PREFIX: &str = "oauth_creds_";
+
 /// Gosling-specific credential store that uses the Config system
 ///
 /// This implementation stores OAuth credentials in the gosling configuration
@@ -17,8 +19,12 @@ impl GoslingCredentialStore {
         Self { name }
     }
 
+    pub(crate) fn is_secret_key(key: &str) -> bool {
+        key.starts_with(SECRET_KEY_PREFIX)
+    }
+
     fn secret_key(&self) -> String {
-        format!("oauth_creds_{}", self.name)
+        format!("{SECRET_KEY_PREFIX}{}", self.name)
     }
 }
 

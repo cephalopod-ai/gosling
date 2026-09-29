@@ -92,7 +92,7 @@ impl CursorAgentProvider {
             command: resolved_command,
             name: CURSOR_AGENT_PROVIDER_NAME.to_string(),
             working_dir,
-            gosling_mode: RwLock::new(config.get_gosling_mode().unwrap_or_default()),
+            gosling_mode: RwLock::new(config.effective_gosling_mode()),
         })
     }
 

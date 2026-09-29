@@ -418,7 +418,7 @@ impl ProviderDef for AntigravityProvider {
                 name: ANTIGRAVITY_PROVIDER_NAME.to_string(),
                 working_dir,
                 process: Arc::new(tokio::sync::Mutex::new(None)),
-                gosling_mode: RwLock::new(config.get_gosling_mode().unwrap_or_default()),
+                gosling_mode: RwLock::new(config.effective_gosling_mode()),
             })
         })
     }

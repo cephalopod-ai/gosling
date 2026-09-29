@@ -79,8 +79,21 @@ fn invalid_runtime_config_values_emit_actionable_warnings() {
             "Invalid GOSLING_AUTO_COMPACT_THRESHOLD",
         ),
         (
+            "GOSLING_AUTO_COMPACT_THRESHOLD: 5\n",
+            "Auto-compaction is disabled until it is corrected.",
+        ),
+        (
             "GOSLING_AUTO_COMPACT_REDUCTION: 5\n",
             "Invalid GOSLING_AUTO_COMPACT_REDUCTION",
+        ),
+        // GSL-PT-20260927-B19: the warning did not say what the runtime uses instead.
+        (
+            "GOSLING_AUTO_COMPACT_REDUCTION: 5\n",
+            "Falling back to the default 0.15.",
+        ),
+        (
+            "GOSLING_AUTO_COMPACT_REDUCTION: often\n",
+            "Falling back to the default 0.15.",
         ),
     ];
 
@@ -98,12 +111,15 @@ fn invalid_runtime_config_values_emit_actionable_warnings() {
 
 #[test]
 fn valid_runtime_config_values_do_not_warn() {
-    let root = TempDir::new().unwrap();
-    let output = gosling(
-        &root,
+    for config in [
         "GOSLING_MODE: auto\nGOSLING_MAX_TURNS: 5\nGOSLING_AUTO_COMPACT_THRESHOLD: 0.8\nGOSLING_AUTO_COMPACT_REDUCTION: 0.15\n",
-    );
+        // The reduction is a proportion of threshold usage, so it may exceed the threshold.
+        "GOSLING_AUTO_COMPACT_THRESHOLD: 0.5\nGOSLING_AUTO_COMPACT_REDUCTION: 0.9\n",
+    ] {
+        let root = TempDir::new().unwrap();
+        let output = gosling(&root, config);
 
-    assert!(output.status.success());
-    assert!(!String::from_utf8_lossy(&output.stderr).contains("Invalid GOSLING_"));
+        assert!(output.status.success());
+        assert!(!String::from_utf8_lossy(&output.stderr).contains("Invalid GOSLING_"));
+    }
 }

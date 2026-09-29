@@ -176,7 +176,7 @@ impl GoslingAcpAgent {
             Some(_) => SessionType::User,
             None => SessionType::Acp,
         };
-        let current_mode: GoslingMode = config.get_gosling_mode().unwrap_or_default();
+        let current_mode: GoslingMode = config.effective_gosling_mode();
 
         let session = self
             .session_manager

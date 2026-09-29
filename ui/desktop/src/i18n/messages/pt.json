@@ -4180,5 +4180,11 @@
   },
   "websiteLogins.usernameLabel": {
     "defaultMessage": "Username or email"
+  },
+  "goslingMessage.replyInterrupted": {
+    "defaultMessage": "Interrupted — this reply was cut off before it finished."
+  },
+  "toolCallWithResponse.toolNotRun": {
+    "defaultMessage": "Not run — the run ended before this tool started"
   }
 }

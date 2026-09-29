@@ -84,6 +84,18 @@ const GITHUB_COPILOT_DOC_URL: &str =
     "https://docs.github.com/en/copilot/using-github-copilot/ai-models";
 const DEFAULT_GITHUB_HOST: &str = "github.com";
 const DEFAULT_GITHUB_COPILOT_CLIENT_ID: &str = "Iv1.b507a08c87ecfe98";
+const GITHUB_COPILOT_SIGN_IN_REQUIRED: &str =
+    "GitHub Copilot sign-in required to list its models: run `gosling configure` and select GitHub Copilot";
+
+/// Whether a token lookup may start the GitHub device flow when no sign-in is stored.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SignIn {
+    /// Real requests.
+    Allowed,
+    /// Model listing (which the Desktop runs in the background) and checks of an
+    /// existing sign-in: never open a browser, report that a sign-in is required.
+    Never,
+}
 
 fn normalize_host(host: &str) -> String {
     let host = host.trim_end_matches('/');
@@ -106,6 +118,10 @@ fn token_secret_key(host: &str) -> String {
         let safe_host = host.replace(['/', ':', '.'], "_");
         format!("GITHUB_COPILOT_TOKEN__{}", safe_host)
     }
+}
+
+pub(crate) fn is_token_secret_key(key: &str) -> bool {
+    key == "GITHUB_COPILOT_TOKEN" || key.starts_with("GITHUB_COPILOT_TOKEN__")
 }
 
 /// Whether a token is stored under the key the *currently configured*
@@ -313,7 +329,7 @@ impl GithubCopilotProvider {
         payload: &mut Value,
         has_images: bool,
     ) -> Result<Response, ProviderError> {
-        let (endpoint, token) = self.get_api_info().await?;
+        let (endpoint, token) = self.get_api_info(SignIn::Allowed).await?;
         let auth = AuthMethod::BearerToken(token);
         let mut headers = self.get_github_headers();
         if has_images {
@@ -331,7 +347,7 @@ impl GithubCopilotProvider {
             .map_err(|e| e.into())
     }
 
-    async fn get_api_info(&self) -> Result<(String, String)> {
+    async fn get_api_info(&self, sign_in: SignIn) -> Result<(String, String), ProviderError> {
         let guard = self.mu.lock().await;
 
         if let Some(state) = guard.borrow().as_ref() {
@@ -352,8 +368,19 @@ impl GithubCopilotProvider {
         const MAX_ATTEMPTS: i32 = 3;
         for attempt in 0..MAX_ATTEMPTS {
             tracing::trace!("attempt {} to refresh api info", attempt + 1);
-            let info = match self.refresh_api_info().await {
+            let info = match self.refresh_api_info(sign_in).await {
                 Ok(data) => data,
+                Err(err)
+                    if sign_in == SignIn::Never
+                        && matches!(
+                            err.downcast_ref::<ConfigError>(),
+                            Some(ConfigError::NotFound(_))
+                        ) =>
+                {
+                    return Err(ProviderError::Authentication(
+                        GITHUB_COPILOT_SIGN_IN_REQUIRED.to_string(),
+                    ));
+                }
                 Err(err) => {
                     tracing::warn!("failed to refresh api info: {}", err);
                     continue;
@@ -365,24 +392,22 @@ impl GithubCopilotProvider {
             guard.replace(Some(new_state.clone()));
             return Ok((new_state.info.endpoints.api, new_state.info.token));
         }
-        Err(anyhow!("failed to get api info after 3 attempts"))
+        Err(anyhow!("failed to get api info after 3 attempts").into())
     }
 
-    async fn refresh_api_info(&self) -> Result<CopilotTokenInfo> {
+    async fn refresh_api_info(&self, sign_in: SignIn) -> Result<CopilotTokenInfo> {
         let config = Config::global();
         let token = match config.get_secret::<String>(&self.token_secret_key) {
             Ok(token) => token,
-            Err(err) => match err {
-                ConfigError::NotFound(_) => {
-                    let token = self
-                        .get_access_token()
-                        .await
-                        .context("unable to login into github")?;
-                    config.set_secret(&self.token_secret_key, &token)?;
-                    token
-                }
-                _ => return Err(err.into()),
-            },
+            Err(ConfigError::NotFound(_)) if sign_in == SignIn::Allowed => {
+                let token = self
+                    .get_access_token()
+                    .await
+                    .context("unable to login into github")?;
+                config.set_secret(&self.token_secret_key, &token)?;
+                token
+            }
+            Err(err) => return Err(err.into()),
         };
         let resp = self
             .client
@@ -652,7 +677,7 @@ impl Provider for GithubCopilotProvider {
     }
 
     async fn fetch_supported_models(&self) -> Result<Vec<String>, ProviderError> {
-        let (endpoint, token) = self.get_api_info().await?;
+        let (endpoint, token) = self.get_api_info(SignIn::Never).await?;
         let url = format!("{}/models", endpoint);
 
         let mut headers = http::HeaderMap::new();
@@ -697,7 +722,7 @@ impl Provider for GithubCopilotProvider {
         let config = Config::global();
 
         if config.get_secret::<String>(&self.token_secret_key).is_ok() {
-            match self.refresh_api_info().await {
+            match self.refresh_api_info(SignIn::Never).await {
                 Ok(_) => return Ok(()),
                 Err(_) => {
                     tracing::debug!("Existing token is invalid, starting OAuth flow");
@@ -930,6 +955,130 @@ mod tests {
             urls.copilot_token_url,
             "https://api.my-enterprise.ghe.com/copilot_internal/v2/token"
         );
+    }
+
+    const TEST_TOKEN_SECRET_KEY: &str = "GITHUB_COPILOT_TOKEN__copilot_test_host";
+
+    fn provider_against(
+        server: &wiremock::MockServer,
+        cache_dir: &std::path::Path,
+    ) -> GithubCopilotProvider {
+        GithubCopilotProvider {
+            client: Client::new(),
+            cache: DiskCache {
+                cache_path: cache_dir.join("info.json"),
+            },
+            mu: tokio::sync::Mutex::new(RefCell::new(None)),
+            urls: GithubCopilotUrls {
+                device_code_url: format!("{}/login/device/code", server.uri()),
+                access_token_url: format!("{}/login/oauth/access_token", server.uri()),
+                copilot_token_url: format!("{}/copilot_internal/v2/token", server.uri()),
+            },
+            client_id: "test-client".to_string(),
+            name: GITHUB_COPILOT_PROVIDER_NAME.to_string(),
+            tls_config: None,
+            token_secret_key: TEST_TOKEN_SECRET_KEY.to_string(),
+        }
+    }
+
+    // The device-code endpoint answers 500, so an attempted sign-in fails before
+    // it could open a browser or touch the clipboard.
+    async fn mount_failing_device_code(
+        server: &wiremock::MockServer,
+        expected_calls: impl Into<wiremock::Times>,
+    ) {
+        use wiremock::matchers::{method, path};
+        wiremock::Mock::given(method("POST"))
+            .and(path("/login/device/code"))
+            .respond_with(wiremock::ResponseTemplate::new(500))
+            .expect(expected_calls)
+            .mount(server)
+            .await;
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn listing_models_without_a_sign_in_never_starts_the_device_flow() {
+        let root = tempfile::tempdir().unwrap();
+        let root_path = root.path().to_string_lossy().to_string();
+        let _env = env_lock::lock_env([("GOSLING_PATH_ROOT", Some(root_path.as_str()))]);
+        let server = wiremock::MockServer::start().await;
+        mount_failing_device_code(&server, 0).await;
+        let provider = provider_against(&server, root.path());
+
+        let error = provider.fetch_supported_models().await.unwrap_err();
+
+        assert_eq!(
+            error,
+            ProviderError::Authentication(GITHUB_COPILOT_SIGN_IN_REQUIRED.to_string())
+        );
+        server.verify().await;
+        assert!(Config::global()
+            .get_secret::<String>(TEST_TOKEN_SECRET_KEY)
+            .is_err());
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn listing_models_with_a_stored_sign_in_exchanges_it_without_the_device_flow() {
+        use wiremock::matchers::{header, method, path};
+        let root = tempfile::tempdir().unwrap();
+        let root_path = root.path().to_string_lossy().to_string();
+        let _env = env_lock::lock_env([("GOSLING_PATH_ROOT", Some(root_path.as_str()))]);
+        let server = wiremock::MockServer::start().await;
+        mount_failing_device_code(&server, 0).await;
+        wiremock::Mock::given(method("GET"))
+            .and(path("/copilot_internal/v2/token"))
+            .and(header("authorization", "bearer ghu_stored"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(json!({
+                "token": "copilot-api-token",
+                "expires_at": 4_102_444_800_i64,
+                "refresh_in": 1500,
+                "endpoints": {"api": server.uri()}
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        wiremock::Mock::given(method("GET"))
+            .and(path("/models"))
+            .and(header("authorization", "Bearer copilot-api-token"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(json!({
+                "data": [{"id": "gpt-4o"}, {"id": "claude-sonnet-4"}]
+            })))
+            .mount(&server)
+            .await;
+        Config::global()
+            .set_secret(TEST_TOKEN_SECRET_KEY, &"ghu_stored".to_string())
+            .unwrap();
+        let provider = provider_against(&server, root.path());
+
+        let models = provider.fetch_supported_models().await.unwrap();
+
+        assert_eq!(models, vec!["claude-sonnet-4", "gpt-4o"]);
+        server.verify().await;
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn a_request_without_a_sign_in_still_starts_the_device_flow() {
+        let root = tempfile::tempdir().unwrap();
+        let root_path = root.path().to_string_lossy().to_string();
+        let _env = env_lock::lock_env([("GOSLING_PATH_ROOT", Some(root_path.as_str()))]);
+        let server = wiremock::MockServer::start().await;
+        let provider = provider_against(&server, root.path());
+        mount_failing_device_code(&server, 1..).await;
+
+        let error = provider
+            .get_api_info(SignIn::Allowed)
+            .await
+            .unwrap_err()
+            .to_string();
+
+        assert!(
+            error.contains("failed to get api info after 3 attempts"),
+            "{error}"
+        );
+        server.verify().await;
     }
 
     #[test]

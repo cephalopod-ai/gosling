@@ -3,8 +3,8 @@ use crate::config::extensions::get_enabled_extensions;
 use crate::config::paths::Paths;
 use crate::prompt_template::list_templates;
 use crate::providers::utils::{LLM_LOG_SESSION_ID_KEY, LOGS_TO_KEEP};
+use crate::session::redaction::installation_secret_redactor;
 use crate::session::SessionManager;
-use gosling_providers::secret_redaction::redact_secrets;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
@@ -212,22 +212,6 @@ fn llm_log_session_id(path: &std::path::Path) -> Option<String> {
         .map(String::from)
 }
 
-fn redact_json_strings(value: serde_json::Value) -> serde_json::Value {
-    match value {
-        serde_json::Value::String(text) => serde_json::Value::String(redact_secrets(&text)),
-        serde_json::Value::Array(values) => {
-            serde_json::Value::Array(values.into_iter().map(redact_json_strings).collect())
-        }
-        serde_json::Value::Object(fields) => serde_json::Value::Object(
-            fields
-                .into_iter()
-                .map(|(key, value)| (key, redact_json_strings(value)))
-                .collect(),
-        ),
-        value => value,
-    }
-}
-
 fn llm_log_index(path: &std::path::Path) -> Option<usize> {
     let name = path
         .file_name()
@@ -320,6 +304,11 @@ pub async fn generate_diagnostics(
     let system_info = SystemInfo::collect();
     let is_full = matches!(level, DiagnosticsLevel::Full);
     let mut errors: Vec<DiagnosticsError> = Vec::new();
+    let redactor = if is_full {
+        installation_secret_redactor().await
+    } else {
+        Default::default()
+    };
 
     // Session export/parse failures are recorded into `errors` instead of aborting
     // the whole report: a diagnostics report is meant to be a best-effort snapshot,
@@ -332,7 +321,7 @@ pub async fn generate_diagnostics(
                     if let Some(object) = value.as_object_mut() {
                         object.remove(crate::session::session_manager::NATIVE_PLAN_HISTORY_KEY);
                     }
-                    Some(redact_json_strings(value))
+                    Some(redactor.redact_json(value))
                 }
                 Err(e) => {
                     tracing::warn!(
@@ -405,7 +394,7 @@ pub async fn generate_diagnostics(
     let config = if is_full {
         let config_yaml = if config_path.exists() {
             match read_capped(&config_path, CONFIG_MAX_BYTES) {
-                Ok(content) => Some(redact_secrets(&content)),
+                Ok(content) => Some(redactor.redact(&content)),
                 Err(e) => {
                     errors.push(DiagnosticsError {
                         path: Some(config_path.display().to_string()),
@@ -432,7 +421,7 @@ pub async fn generate_diagnostics(
             match read_tail_capped(&path, SERVER_LOG_TAIL_LINES, SERVER_LOG_MAX_BYTES) {
                 Ok((content, truncated)) => Some(DiagnosticsTextFile {
                     path: path.display().to_string(),
-                    content: redact_secrets(&content),
+                    content: redactor.redact_json_lines(&content),
                     truncated,
                 }),
                 Err(e) => {
@@ -452,7 +441,7 @@ pub async fn generate_diagnostics(
                     let truncated = was_truncated(&content);
                     Some(DiagnosticsTextFile {
                         path: path.display().to_string(),
-                        content: redact_secrets(&content),
+                        content: redactor.redact_json_lines(&content),
                         truncated,
                     })
                 }
@@ -661,6 +650,93 @@ mod tests {
             assert!(!bundle.contains("abcdefghijklmnopqrstuvwxyz0123"));
             assert!(bundle.contains("tool said [REDACTED]"));
             assert!(report.errors.is_empty(), "{:?}", report.errors);
+        })
+        .await;
+    }
+
+    /// GSL-PT-20260927-D05: the bundle kept the configured provider key a tool
+    /// echoed, bare `gsk_`/`xai-`/`hf_` keys, and a key after an escaped
+    /// newline in the request log.
+    #[tokio::test]
+    async fn full_report_redacts_configured_secret_values_and_provider_key_shapes() {
+        use crate::config::paths::RuntimePaths;
+        use crate::config::GoslingMode;
+        use crate::conversation::message::Message;
+        use crate::providers::utils::RequestLog;
+        use crate::session::SessionType;
+        use gosling_providers::request_log::RequestLogger;
+
+        const MARKERS: [&str; 6] = [
+            "FAKESECRET-AC04-KEY-q7w8",
+            "FAKESECRET-AC04-HDR-t9y0",
+            "gsk_FAKEAC04groqKEY1234567890abcdef",
+            "xai-FAKEAC04xaiKEY1234567890abcdef",
+            "hf_FAKEAC04hfKEY1234567890abcdef",
+            "sk-ant-FAKEAC04anthropic1234567890",
+        ];
+        let root = TempDir::new().unwrap();
+        let config_dir = root.path().join("config");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        std::fs::write(
+            config_dir.join("config.yaml"),
+            "OPENAI_API_KEY: FAKESECRET-AC04-KEY-q7w8\n",
+        )
+        .unwrap();
+        std::fs::write(
+            config_dir.join("secrets.yaml"),
+            "OPENAI_API_KEY: FAKESECRET-AC04-KEY-q7w8\nOPENAI_CUSTOM_HEADERS: \"X-Playtest-Token=FAKESECRET-AC04-HDR-t9y0\"\n",
+        )
+        .unwrap();
+        let runtime_paths = RuntimePaths::new(
+            config_dir,
+            root.path().join("data"),
+            root.path().join("state"),
+        );
+        Paths::scope(runtime_paths, async {
+            let session_manager = SessionManager::new(root.path().join("sessions"));
+            let session = session_manager
+                .create_session(
+                    root.path().to_path_buf(),
+                    "keyecho".to_string(),
+                    SessionType::User,
+                    GoslingMode::Auto,
+                )
+                .await
+                .unwrap();
+            session_manager
+                .add_message(
+                    &session.id,
+                    &Message::assistant().with_text(format!(
+                        "tool echoed FAKESECRET-AC04-KEY-q7w8 and header FAKESECRET-AC04-HDR-t9y0\n{}",
+                        MARKERS[2..].join("\n")
+                    )),
+                )
+                .await
+                .unwrap();
+
+            let logger = RequestLog::new(LOGS_TO_KEEP).unwrap();
+            let mut handle = crate::session_context::with_session_id(
+                Some(session.id.clone()),
+                async { logger.start().unwrap() },
+            )
+            .await;
+            let response = serde_json::json!({
+                "tool_output": format!("key FAKESECRET-AC04-KEY-q7w8\n{}", MARKERS[2..].join("\n"))
+            });
+            handle.write(&response.to_string()).unwrap();
+            drop(handle);
+
+            let report = generate_diagnostics(&session_manager, &session.id, DiagnosticsLevel::Full)
+                .await
+                .unwrap();
+
+            let bundle = serde_json::to_string(&report).unwrap();
+            for marker in MARKERS {
+                assert!(!bundle.contains(marker), "{marker} leaked: {bundle}");
+            }
+            assert_eq!(report.logs.llm.len(), 1, "{:?}", report.logs.llm);
+            assert!(report.logs.llm[0].content.contains("[REDACTED]"));
+            assert!(bundle.contains("tool echoed [REDACTED] and header [REDACTED]"));
         })
         .await;
     }

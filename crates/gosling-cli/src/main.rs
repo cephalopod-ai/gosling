@@ -15,11 +15,10 @@ fn enable_windows_vt_processing() {
 }
 
 async fn run() -> Result<()> {
-    if let Err(e) = gosling_cli::logging::setup_logging(None) {
-        eprintln!("Warning: Failed to initialize logging: {}", e);
-    }
-
     let result = cli().await;
+    gosling::session::SessionManager::instance()
+        .shutdown()
+        .await;
 
     #[cfg(feature = "otel")]
     if gosling::otel::otlp::is_otlp_initialized() {

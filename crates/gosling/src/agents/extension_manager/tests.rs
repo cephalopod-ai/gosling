@@ -1591,8 +1591,8 @@ fn test_oauth_fallback_on_unexpected_response_http_401_prefix() {
     assert!(should_attempt_oauth_fallback(&Err(err)));
 }
 
-#[test]
-fn resolve_static_oauth_client_uses_registered_client_values() {
+#[tokio::test]
+async fn resolve_static_oauth_client_uses_registered_client_values() {
     let config_dir = tempdir().unwrap();
     let config = Config::new_with_file_secrets(
         config_dir.path().join("config.yaml"),
@@ -1612,8 +1612,10 @@ fn resolve_static_oauth_client_uses_registered_client_values() {
         Some("MCP_CLIENT_SECRET"),
         &["tools.read".to_string()],
         &envs,
+        "oauth-server",
         &config,
     )
+    .await
     .unwrap()
     .unwrap();
 
@@ -1622,8 +1624,8 @@ fn resolve_static_oauth_client_uses_registered_client_values() {
     assert_eq!(resolved.scopes, vec!["tools.read"]);
 }
 
-#[test]
-fn resolve_static_oauth_client_rejects_orphaned_oauth_fields() {
+#[tokio::test]
+async fn resolve_static_oauth_client_rejects_orphaned_oauth_fields() {
     let config_dir = tempdir().unwrap();
     let config = Config::new_with_file_secrets(
         config_dir.path().join("config.yaml"),
@@ -1636,15 +1638,17 @@ fn resolve_static_oauth_client_rejects_orphaned_oauth_fields() {
         Some("MCP_CLIENT_SECRET"),
         &[],
         &HashMap::new(),
+        "oauth-server",
         &config,
     )
+    .await
     .unwrap_err();
 
     assert!(error.to_string().contains("require client_id"));
 }
 
-#[test]
-fn resolve_static_oauth_client_reads_client_secret_from_config() {
+#[tokio::test]
+async fn resolve_static_oauth_client_reads_client_secret_from_config() {
     let config_dir = tempdir().unwrap();
     let config = Config::new_with_file_secrets(
         config_dir.path().join("config.yaml"),
@@ -1660,12 +1664,42 @@ fn resolve_static_oauth_client_reads_client_secret_from_config() {
         Some("MCP_CLIENT_SECRET"),
         &[],
         &HashMap::new(),
+        "oauth-server",
         &config,
     )
+    .await
     .unwrap()
     .unwrap();
 
     assert_eq!(resolved.client_secret.as_deref(), Some("registered-secret"));
+}
+
+#[tokio::test]
+async fn resolve_static_oauth_client_never_sends_a_provider_key_as_client_secret() {
+    let _guard = env_lock::lock_env([("OPENAI_API_KEY", None::<&str>)]);
+    let config_dir = tempdir().unwrap();
+    let config = Config::new_with_file_secrets(
+        config_dir.path().join("config.yaml"),
+        config_dir.path().join("secrets.yaml"),
+    )
+    .unwrap();
+    config.set("OPENAI_API_KEY", &"provider-key", true).unwrap();
+
+    let error = resolve_static_oauth_client(
+        Some("registered-client"),
+        Some("OPENAI_API_KEY"),
+        &[],
+        &HashMap::new(),
+        "oauth-server",
+        &config,
+    )
+    .await
+    .unwrap_err();
+
+    assert!(
+        error.to_string().contains("keeps for its own use"),
+        "{error}"
+    );
 }
 
 #[tokio::test]

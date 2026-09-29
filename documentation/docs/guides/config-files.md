@@ -16,7 +16,7 @@ The configuration files allow you to set default behaviors, configure language m
 ## Configuration Files
 
 - **config.yaml** - Provider, model, extensions, and general settings
-- **permission.yaml** - Tool permission levels configured via `gosling configure`
+- **permission.yaml** - Tool permission levels configured via `gosling configure`. If this file cannot be read or parsed, gosling still starts but denies tool calls until it is fixed or removed; the CLI, `gosling doctor`, and each denial name the file
 - **secrets.yaml** - API keys and secrets (when gosling is using [file-based secret storage](#security-considerations))
 - **permissions/tool_permissions.json** - Runtime permission decisions (auto-managed)
 - **prompts/** - Customized [prompt templates](/docs/guides/context-engineering/prompt-templates)
@@ -32,13 +32,13 @@ The following settings can be configured at the root level of your config.yaml f
 
 | Setting | Purpose | Values | Default | Required |
 |---------|---------|---------|---------|-----------|
-| `GOSLING_PROVIDER` | Primary [LLM provider](/docs/getting-started/providers) | "anthropic", "openai", etc. | None | Yes |
-| `GOSLING_MODEL` | Default model to use | Model name (e.g., "claude-3.5-sonnet", "gpt-4") | None | Yes |
+| `active_provider` | Primary [LLM provider](/docs/getting-started/providers) (see [Provider and Model](#provider-and-model)) | "anthropic", "openai", etc. | None | Yes |
+| `providers.<name>.model` | Default model for that provider | Model name (e.g., "claude-3.5-sonnet", "gpt-4") | None | Yes |
 | `GOSLING_FAILOVER_PROVIDER` | Optional fallback for transient outages or an unavailable selected model on Gosling-managed API turns | "ollama", "openrouter", etc. | Disabled | No |
 | `GOSLING_FAILOVER_MODEL` | Model paired with `GOSLING_FAILOVER_PROVIDER` | Provider model name | Disabled | No |
 | `GOSLING_TEMPERATURE` | Model response randomness | Float between 0.0 and 1.0 | Model-specific | No |
 | `GOSLING_MAX_TOKENS` | Maximum number of tokens for each model response (truncates longer responses) | Positive integer | Model-specific | No |
-| `GOSLING_MODE` | [Tool execution behavior](/docs/guides/managing-tools/gosling-permissions) | "auto", "approve", "chat", "smart_approve" | "auto" | No |
+| `GOSLING_MODE` | [Tool execution behavior](/docs/guides/managing-tools/gosling-permissions). An unrecognized value (for example a typo) makes new sessions use "approve" until it is corrected | "auto", "approve", "chat", "smart_approve" | "auto" | No |
 | `GOSLING_CODE_EXECUTION_RUNTIME` | Allow or block [Code Mode](/docs/guides/managing-tools/code-mode) runtime loading for new gosling processes | "enabled", "disabled" | "enabled" | No |
 | `GOSLING_MAX_TURNS` | [Maximum number of turns](/docs/guides/sessions/smart-context-management#maximum-turns) allowed without user input | Integer (e.g., 10, 50, 100) | 1000 | No |
 | `GOSLING_PLANNER_PROVIDER` | Legacy CLI planning compatibility assertion | Exact active `GOSLING_PROVIDER` value | Unset; planning uses the active provider | No |
@@ -64,14 +64,32 @@ The following settings can be configured at the root level of your config.yaml f
 
 Additional [environment variables](/docs/guides/environment-variables) may also be supported in config.yaml.
 
+### Provider and Model
+
+`gosling configure` and gosling Desktop store the active provider in `active_provider` and each
+provider's model under `providers:`, as in the example below. Older configurations use root-level
+`GOSLING_PROVIDER` and `GOSLING_MODEL` keys instead. gosling still reads those keys when
+`active_provider` or the provider's `model` is not set, and moves them into the `providers:` block
+the next time it saves settings.
+
+Once `active_provider` and a model under `providers:` exist, root-level `GOSLING_PROVIDER` or
+`GOSLING_MODEL` values that differ from them have no effect: new sessions, `gosling doctor`, and
+`gosling info -v` report them as ignored, and gosling removes them the next time it saves settings.
+Edit `active_provider` or `providers.<name>.model` instead, or run `gosling configure`. The
+`GOSLING_PROVIDER` and `GOSLING_MODEL` environment variables still override the file.
+
 ## Example Configuration
 
 Here's a basic example of a config.yaml file:
 
 ```yaml
 # Model Configuration
-GOSLING_PROVIDER: "anthropic"
-GOSLING_MODEL: "claude-4.5-sonnet"
+active_provider: "anthropic"
+providers:
+  anthropic:
+    enabled: true
+    configured: true
+    model: "claude-4.5-sonnet"
 GOSLING_FAILOVER_PROVIDER: "ollama"
 GOSLING_FAILOVER_MODEL: "qwen3-coder:latest"
 GOSLING_TEMPERATURE: 0.7
@@ -173,12 +191,41 @@ extensions:
 
 Use the `available_tools` field to limit which tools are loaded from an extension. List the tool names you want — only those will be available to gosling. Leave it empty (the default) to load all tools. This can help reduce token overhead in sessions where you only need a subset of an extension's capabilities.
 
+## Extension Secrets
+
+`env_keys` names the secrets an extension needs. Values you supply for an
+extension — `gosling mcp install --secret`, the environment variables entered in
+`gosling configure`, or inline `env` values sent with an ACP
+`config/extensions/add` request — are stored in gosling's secret store (keyring
+or `secrets.yaml`) for that extension only. Installing another extension that
+uses the same variable name, or a variable named like a provider key such as
+`OPENAI_API_KEY`, never replaces another extension's or the provider's value,
+and removing an extension deletes the values stored for it.
+
+When an extension starts, gosling resolves each `env_keys` entry in this order:
+
+1. The process environment of gosling itself.
+2. The value stored for this extension.
+3. A value stored under the bare variable name by an earlier gosling version, or
+   one saved through the Desktop extension form. These keep working, are shared
+   by every extension that names them, and are not deleted when an extension is
+   removed.
+4. A declared [secret source](#secret-sources).
+
+Credentials gosling keeps for its own use are never passed to an extension just
+because its configuration names them: provider keys (for example
+`OPENAI_API_KEY` or `ANTHROPIC_API_KEY`, whether stored or exported in the
+environment), dictation keys, saved website-login passwords, MCP OAuth tokens,
+workspace credential profiles, and other extensions' stored values. An extension
+that needs such a variable fails to start and names it. To give an extension its
+own value, store it for that extension, for example
+`gosling mcp install <name> --cmd <command> --secret OPENAI_API_KEY` after
+exporting the value you want it to use, or use a declared secret source.
+
 ## Secret Sources
 
-`env_keys` names the secrets an extension needs. gosling resolves each one from
-the environment, then from its own keyring, then from the secrets file. When the
-credential belongs to another program, `secret_sources` lets gosling read it
-from that program's OS keychain item instead of holding a second copy:
+When the credential belongs to another program, `secret_sources` lets gosling
+read it from that program's OS keychain item instead of holding a second copy:
 
 ```yaml
 secret_sources:
@@ -198,7 +245,9 @@ extensions:
 The map is keyed by the same names the extension lists in `env_keys`. A source
 is consulted only when the environment and gosling's own store have nothing,
 so it never overrides a value you set explicitly, and a missing or malformed
-`secret_sources` block leaves every other extension unaffected.
+`secret_sources` block leaves every other extension unaffected. Because you
+declare a source explicitly, it is also used for names that gosling would
+otherwise keep from extensions (see [Extension Secrets](#extension-secrets)).
 
 Prefer this over the two alternatives when another program owns the credential.
 Copying the value into gosling's keyring makes each rotation a two-step
@@ -268,7 +317,8 @@ Direct edits to config files usually require restarting gosling to take effect f
 gosling info -v
 ```
 
-This will show all active settings and their current values.
+This shows the values in your config files, the provider and model gosling will actually use, and
+any root-level `GOSLING_PROVIDER` / `GOSLING_MODEL` values that are being ignored.
 
 ## See Also
 

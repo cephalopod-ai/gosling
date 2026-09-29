@@ -116,6 +116,50 @@ pub const CHAT_MODE_TOOL_SKIPPED_RESPONSE: &str = "Let the user know the tool ca
                                         2. **Outline Steps** - Break down the steps.\n \
                                         If needed, adjust the explanation based on user preferences or questions.";
 
+/// Opens the result of a call an inspector or the permission policy denied; the reason follows.
+pub const POLICY_DENIED_RESPONSE_PREFIX: &str = "Tool denied by policy: ";
+
+/// Result of a call the permission policy denied without an inspector naming a reason.
+pub const PERMISSION_DENIED_RESPONSE: &str = "Tool denied by current permissions.";
+
+/// Why a tool call was answered with an error result without the tool running.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolCallRefusal<'a> {
+    /// An inspector (permissions, repetition, egress, security, working-directory scope) denied
+    /// the call. `None` when the permission policy gave no reason.
+    Denied { reason: Option<&'a str> },
+    /// The user declined the call at an approval prompt.
+    DeclinedByUser,
+    /// A delegated subagent's call needed an approval nobody can give.
+    ApprovalUnavailableInSubagent,
+    /// Chat mode answers tool calls without running them.
+    SkippedInChatMode,
+}
+
+impl<'a> ToolCallRefusal<'a> {
+    /// The refusal a tool result records, or `None` for the result of a tool that ran.
+    pub fn of(result: &'a CallToolResult) -> Option<Self> {
+        if result.is_error != Some(true) {
+            return None;
+        }
+        let [content] = result.content.as_slice() else {
+            return None;
+        };
+        let text = content.as_text()?.text.as_str();
+        match text {
+            DECLINED_RESPONSE => Some(Self::DeclinedByUser),
+            SUBAGENT_APPROVAL_UNAVAILABLE_RESPONSE => Some(Self::ApprovalUnavailableInSubagent),
+            CHAT_MODE_TOOL_SKIPPED_RESPONSE => Some(Self::SkippedInChatMode),
+            PERMISSION_DENIED_RESPONSE => Some(Self::Denied { reason: None }),
+            _ => text
+                .strip_prefix(POLICY_DENIED_RESPONSE_PREFIX)
+                .map(|reason| Self::Denied {
+                    reason: Some(reason),
+                }),
+        }
+    }
+}
+
 impl Agent {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn handle_approval_tool_requests<'a>(
@@ -672,5 +716,61 @@ mod permission_regression_tests {
             permissions.get_user_permission("fixture__unavailable"),
             None
         );
+    }
+}
+
+#[cfg(test)]
+mod refusal_tests {
+    use super::*;
+
+    fn error_result(text: &str) -> CallToolResult {
+        CallToolResult::error(vec![Content::text(text)])
+    }
+
+    #[test]
+    fn each_refusal_is_recognised_from_the_result_the_agent_records() {
+        let policy = error_result(&format!(
+            "{POLICY_DENIED_RESPONSE_PREFIX}User permission denies this tool"
+        ));
+        assert_eq!(
+            ToolCallRefusal::of(&policy),
+            Some(ToolCallRefusal::Denied {
+                reason: Some("User permission denies this tool")
+            })
+        );
+        let permissions = error_result(PERMISSION_DENIED_RESPONSE);
+        assert_eq!(
+            ToolCallRefusal::of(&permissions),
+            Some(ToolCallRefusal::Denied { reason: None })
+        );
+        let declined = error_result(DECLINED_RESPONSE);
+        assert_eq!(
+            ToolCallRefusal::of(&declined),
+            Some(ToolCallRefusal::DeclinedByUser)
+        );
+        let subagent = error_result(SUBAGENT_APPROVAL_UNAVAILABLE_RESPONSE);
+        assert_eq!(
+            ToolCallRefusal::of(&subagent),
+            Some(ToolCallRefusal::ApprovalUnavailableInSubagent)
+        );
+        let chat = error_result(CHAT_MODE_TOOL_SKIPPED_RESPONSE);
+        assert_eq!(
+            ToolCallRefusal::of(&chat),
+            Some(ToolCallRefusal::SkippedInChatMode)
+        );
+    }
+
+    #[test]
+    fn a_tool_that_ran_is_never_reported_as_refused() {
+        assert_eq!(ToolCallRefusal::of(&error_result("disk full")), None);
+        assert_eq!(
+            ToolCallRefusal::of(&CallToolResult::success(vec![Content::text(
+                DECLINED_RESPONSE
+            )])),
+            None
+        );
+        let mut two_blocks = error_result(PERMISSION_DENIED_RESPONSE);
+        two_blocks.content.push(Content::text("stderr"));
+        assert_eq!(ToolCallRefusal::of(&two_blocks), None);
     }
 }

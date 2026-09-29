@@ -13,9 +13,11 @@ use gosling::config::Config;
 #[cfg(feature = "nostr")]
 use gosling::session::nostr_share;
 use gosling::session::{
-    generate_diagnostics, DiagnosticsLevel, Session, SessionManager, SessionType,
+    generate_diagnostics, installation_secret_redactor, redact_session_export, DiagnosticsLevel,
+    Session, SessionManager, SessionType,
 };
 use gosling::utils::safe_truncate;
+use gosling_providers::secret_redaction::SecretRedactor;
 use regex::Regex;
 use std::fmt::Write as FmtWrite;
 use std::fs;
@@ -153,6 +155,7 @@ pub async fn handle_session_remove(
         if visible_sessions.is_empty() {
             return Err(anyhow::anyhow!("No sessions found."));
         }
+        ensure_session_picker_terminal("--session-id <ID>, --name <NAME> or --regex <PATTERN>")?;
         matched_sessions = prompt_interactive_session_removal(&visible_sessions)?;
     }
 
@@ -249,6 +252,7 @@ pub async fn handle_session_export(
     format: String,
     nostr: bool,
     #[cfg_attr(not(feature = "nostr"), allow(unused_variables))] relays: Vec<String>,
+    redact: bool,
 ) -> Result<()> {
     let session_manager = SessionManager::instance();
     let session = match session_manager.get_session(&session_id, true).await {
@@ -262,7 +266,13 @@ pub async fn handle_session_export(
         }
     };
 
-    let output = serialize_session_export(&session_manager, &session, &format).await?;
+    let redactor = if redact {
+        Some(installation_secret_redactor().await)
+    } else {
+        None
+    };
+    let output =
+        serialize_session_export(&session_manager, &session, &format, redactor.as_ref()).await?;
 
     #[cfg(feature = "nostr")]
     if nostr {
@@ -301,10 +311,17 @@ pub async fn handle_session_export(
             format!("Failed to write to output file: {}", output_path.display())
         })?;
         println!("Session exported to {}", output_path.display());
-        println!(
-            "This file contains the full conversation and may include secrets \
-             pasted into the session. Review before sharing."
-        );
+        if redact {
+            println!(
+                "Stored secrets and credential-shaped text were replaced with [REDACTED]. \
+                 Review before sharing."
+            );
+        } else {
+            println!(
+                "This file contains the full conversation and may include secrets \
+                 pasted into the session. Review before sharing."
+            );
+        }
     } else {
         println!("{}", output);
     }
@@ -598,7 +615,7 @@ fn render_context_history_markdown(
         };
         let _ = writeln!(
             output,
-            "## Snapshot #{}\n\n- Created: {}\n- Trigger: {}\n- Effect: {}\n- Model: {}\n- Context estimate: {} → {} tokens\n- Source messages: {}\n- Retention: {}\n- Summary hash: `{}`\n\n{}\n",
+            "## Snapshot #{}\n\n- Created: {}\n- Trigger: {}\n- Effect: {}\n- Model: {}\n- Conversation estimate: {} → {} tokens (system prompt and tools not included)\n- Source messages: {}\n- Retention: {}\n- Summary hash: `{}`\n\n{}\n",
             revision.generation,
             revision.created_at,
             trigger,
@@ -615,26 +632,46 @@ fn render_context_history_markdown(
     output
 }
 
+/// With a redactor, the export is prepared the way diagnostics bundles are:
+/// secrets are replaced with `[REDACTED]` (GSL-PT-20260927-D06, C15).
 async fn serialize_session_export(
     session_manager: &SessionManager,
     session: &Session,
     format: &str,
+    redactor: Option<&SecretRedactor>,
 ) -> Result<String> {
     match format {
         // Native JSON is a transactional core export, not merely Session
         // serialization: it also carries plan_history_v1 and future native
         // adjuncts that must round-trip with the transcript.
-        "json" => session_manager.export_session(&session.id).await,
-        "yaml" => Ok(serde_yaml::to_string(session)?),
+        "json" => {
+            let exported = session_manager.export_session(&session.id).await?;
+            match redactor {
+                Some(redactor) => Ok(serde_json::to_string_pretty(&redact_session_export(
+                    serde_json::from_str(&exported)?,
+                    redactor,
+                ))?),
+                None => Ok(exported),
+            }
+        }
+        "yaml" => match redactor {
+            Some(redactor) => Ok(serde_yaml::to_string(&redact_session_export(
+                serde_json::to_value(session)?,
+                redactor,
+            ))?),
+            None => Ok(serde_yaml::to_string(session)?),
+        },
         "markdown" => {
             let conversation = session
                 .conversation
                 .as_ref()
                 .ok_or_else(|| anyhow::anyhow!("Session has no messages"))?;
-            Ok(export_session_to_markdown(
-                conversation.messages().to_vec(),
-                &session.name,
-            ))
+            let markdown =
+                export_session_to_markdown(conversation.messages().to_vec(), &session.name);
+            Ok(match redactor {
+                Some(redactor) => redactor.redact(&markdown),
+                None => markdown,
+            })
         }
         _ => Err(anyhow::anyhow!("Unsupported format: {format}")),
     }
@@ -686,6 +723,15 @@ pub async fn handle_session_import(
         gosling::session::session_manager::SessionImportOutcome::Imported(session) => {
             println!("Session imported:");
             println!("{} - {}", session.id, session.name);
+            println!(
+                "Mode: {}{}. Change the mode with /mode after resuming.",
+                session.gosling_mode,
+                if session.restrict_tools_to_working_dirs {
+                    ", tools restricted to its working directory"
+                } else {
+                    ""
+                }
+            );
         }
         gosling::session::session_manager::SessionImportOutcome::AlreadyImported(session) => {
             println!("Session already imported from this exact source:");
@@ -840,7 +886,7 @@ mod session_export_tests {
             .unwrap();
         let loaded = manager.get_session(&session.id, true).await.unwrap();
 
-        let json = serialize_session_export(&manager, &loaded, "json")
+        let json = serialize_session_export(&manager, &loaded, "json", None)
             .await
             .unwrap();
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
@@ -850,7 +896,7 @@ mod session_export_tests {
             value["plan_history_v1"]["plans"][0]["revisions"][0]["contentMarkdown"],
             "# Persist me"
         );
-        assert!(!serialize_session_export(&manager, &loaded, "yaml")
+        assert!(!serialize_session_export(&manager, &loaded, "yaml", None)
             .await
             .unwrap()
             .contains("plan_history_v1"));
@@ -988,6 +1034,17 @@ fn export_session_to_markdown(
     }
 
     markdown_output
+}
+
+/// Session pickers draw on stderr and read keys from the terminal; without one they fail with a
+/// bare I/O error ("not connected") that does not say how to pick a session instead.
+pub fn ensure_session_picker_terminal(selectors: &str) -> Result<()> {
+    if io::stdin().is_terminal() && io::stderr().is_terminal() {
+        return Ok(());
+    }
+    anyhow::bail!(
+        "No session was specified and there is no interactive terminal for the session picker. Pass {selectors}."
+    )
 }
 
 /// Prompt the user to interactively select a session

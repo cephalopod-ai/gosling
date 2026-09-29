@@ -39,9 +39,10 @@ pub struct SkillFrontmatter {
     pub metadata: HashMap<String, Value>,
 }
 
-/// Canonical writable location for global user skills: `~/.agents/skills`.
+/// Canonical writable location for global user skills: `~/.agents/skills`
+/// (`<GOSLING_PATH_ROOT>/.agents/skills` under a path root).
 pub fn global_skills_dir() -> Option<PathBuf> {
-    dirs::home_dir().map(|h| h.join(".agents").join("skills"))
+    Paths::home_dir().map(|h| h.join(".agents").join("skills"))
 }
 
 /// Canonical writable location for project-scoped skills:
@@ -217,7 +218,7 @@ fn inferred_discoverable_skill_root(path: &Path) -> Option<PathBuf> {
         global_roots.push(global_root);
     }
     global_roots.push(Paths::config_dir().join("skills"));
-    if let Some(home) = dirs::home_dir() {
+    if let Some(home) = Paths::home_dir() {
         global_roots.push(home.join(".claude").join("skills"));
         global_roots.push(home.join(".config").join("agents").join("skills"));
     }
@@ -343,7 +344,7 @@ fn project_skill_dirs(working_dir: Option<&Path>) -> Vec<PathBuf> {
 
 fn global_skill_dirs() -> Vec<(PathBuf, SkillSourceKind)> {
     let mut skill_dirs = Vec::new();
-    let home = dirs::home_dir();
+    let home = Paths::home_dir();
     if let Some(h) = home.as_ref() {
         skill_dirs.push((h.join(".agents").join("skills"), SkillSourceKind::User));
     }

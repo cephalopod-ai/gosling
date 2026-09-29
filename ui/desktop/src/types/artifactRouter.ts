@@ -10,6 +10,7 @@ export interface ArtifactRoutingOutput {
 export interface ArtifactRoutingConfig {
   artifactFiles?: string[];
   outputs: ArtifactRoutingOutput[];
+  sessionId?: string;
   workspaceId?: string;
   workspaceName?: string;
 }

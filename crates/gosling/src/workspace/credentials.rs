@@ -23,6 +23,25 @@ impl WorkspaceService {
         Ok(effective_profiles(&document))
     }
 
+    /// Profiles as a credential picker presents them: an alias whose provider is
+    /// no longer set up (see `set_up_alias_profile`) is listed as `Missing`.
+    /// Stored profiles and credential resolution are unchanged, so an existing
+    /// binding or pinned chat behaves exactly as before.
+    pub async fn listed_credential_profiles(&self) -> Result<Vec<CredentialProfile>> {
+        let mut profiles = self.credential_profiles()?;
+        for profile in &mut profiles {
+            if profile.source == CredentialProfileSource::GlobalConfigurationAlias
+                && profile.status == CredentialProfileStatus::Configured
+                && set_up_alias_profile(&profile.provider_or_service_id)
+                    .await
+                    .is_none()
+            {
+                profile.status = CredentialProfileStatus::Missing;
+            }
+        }
+        Ok(profiles)
+    }
+
     pub fn profile_usage(&self, profile_id: &str) -> Result<Vec<(String, String)>> {
         let document = self.store.load()?;
         Ok(document
@@ -339,7 +358,7 @@ impl WorkspaceService {
         }
         let provider = Config::global().get_gosling_provider().ok();
         let profile = if let Some(provider) = provider {
-            global_alias_profile(&provider).await?
+            set_up_alias_profile(&provider).await
         } else {
             None
         };
@@ -378,22 +397,21 @@ impl WorkspaceService {
         })
     }
 
-    /// Record an alias profile for every provider whose credentials are already
-    /// complete in global configuration, so a workspace can bind a key the user
-    /// saved on the Providers screen instead of re-entering it here. The secret
-    /// itself stays in global storage; only the reference is recorded.
+    /// Record an alias profile for every provider the user has set up in global
+    /// configuration, so a workspace can bind a key the user saved on the
+    /// Providers screen instead of re-entering it here. The secret itself stays
+    /// in global storage; only the reference is recorded.
     ///
     /// A provider whose credentials are later removed keeps its profile, which
     /// recomputes to `Missing` rather than vanishing, so an existing binding
     /// reports that it needs relinking instead of silently resolving to nothing.
     pub async fn sync_global_alias_profiles(&self) -> Result<()> {
-        let discovered = crate::providers::providers()
-            .await
-            .into_iter()
-            .filter_map(|(metadata, _)| {
-                alias_profile_from_declared(&metadata.name, &metadata.config_keys)
-            })
-            .collect::<Vec<_>>();
+        let mut discovered = Vec::new();
+        for (metadata, _) in crate::providers::providers().await {
+            if let Some(alias) = set_up_alias_profile(&metadata.name).await {
+                discovered.push(alias);
+            }
+        }
         if discovered.is_empty() {
             return Ok(());
         }
@@ -423,15 +441,13 @@ impl WorkspaceService {
     }
 }
 
-async fn global_alias_profile(provider: &str) -> Result<Option<(CredentialProfile, Vec<String>)>> {
-    let entry = match crate::providers::get_from_registry(provider).await {
-        Ok(entry) => entry,
-        Err(_) => return Ok(None),
-    };
-    Ok(alias_profile_from_declared(
-        provider,
-        &entry.metadata().config_keys,
-    ))
+/// The alias profile for `provider` when the user has set it up: its declared
+/// keys qualify (see `alias_profile_from_declared`) and the provider inventory
+/// reports it configured, the same test the provider lists use.
+async fn set_up_alias_profile(provider: &str) -> Option<(CredentialProfile, Vec<String>)> {
+    let entry = crate::providers::get_from_registry(provider).await.ok()?;
+    let alias = alias_profile_from_declared(provider, &entry.metadata().config_keys)?;
+    entry.inventory_configured().then_some(alias)
 }
 
 /// Adds alias profiles the document does not already carry. Re-running with the
@@ -464,8 +480,10 @@ fn merge_alias_profiles(
 
 /// An alias profile points at the provider's own global config keys instead of
 /// copying the secret into workspace storage, so it only exists while those
-/// keys are complete. Returns `None` otherwise, which is what keeps a
-/// half-configured provider out of the selectable list.
+/// keys are complete and at least one of them holds a value the user supplied.
+/// Returns `None` otherwise, which is what keeps a half-configured provider out
+/// of the selectable list — and a provider whose keys are all optional or
+/// defaulted, which is trivially complete without the user setting anything.
 fn alias_profile_from_declared(
     provider: &str,
     declared: &[crate::providers::base::ConfigKey],
@@ -475,7 +493,7 @@ fn alias_profile_from_declared(
         .filter(|key| key.secret && Config::global().get_secret::<Value>(&key.name).is_ok())
         .map(|key| key.name.clone())
         .collect::<Vec<_>>();
-    let non_secret_fields = declared
+    let non_secret_fields: BTreeMap<String, String> = declared
         .iter()
         .filter(|key| !key.secret)
         .filter_map(|key| {
@@ -485,6 +503,9 @@ fn alias_profile_from_declared(
                 .map(|value| (key.name.clone(), config_value_string(value)))
         })
         .collect();
+    if configured.is_empty() && non_secret_fields.is_empty() {
+        return None;
+    }
     let mut profile = CredentialProfile {
         id: format!("global-provider::{provider}"),
         name: format!("Current {provider} configuration"),
@@ -624,8 +645,14 @@ fn profile_order(left: &CredentialProfile, right: &CredentialProfile) -> std::cm
         .then_with(|| left.id.cmp(&right.id))
 }
 
+const PROFILE_SECRET_KEY_PREFIX: &str = "workspace-credential::";
+
 fn profile_secret_key(profile_id: &str, field: &str) -> String {
-    format!("workspace-credential::{profile_id}::{field}")
+    format!("{PROFILE_SECRET_KEY_PREFIX}{profile_id}::{field}")
+}
+
+pub(crate) fn is_profile_secret_key(key: &str) -> bool {
+    key.starts_with(PROFILE_SECRET_KEY_PREFIX)
 }
 
 async fn declared_provider_keys(provider: &str) -> Result<Vec<crate::providers::base::ConfigKey>> {
@@ -794,5 +821,153 @@ mod tests {
         assert!(!document
             .workspace_profile_required_secret_fields
             .contains_key("global-provider::featherless"));
+    }
+
+    const OLLAMA_ALIAS: &str = "global-provider::ollama";
+
+    fn alias_status(
+        profiles: &[CredentialProfile],
+        profile_id: &str,
+    ) -> Option<CredentialProfileStatus> {
+        profiles
+            .iter()
+            .find(|profile| profile.id == profile_id)
+            .map(|profile| profile.status)
+    }
+
+    // Ollama declares OLLAMA_HOST as required with a default, so its keys are
+    // trivially complete; the provider inventory only counts it as configured
+    // once a host is actually set.
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn a_provider_that_is_not_set_up_gets_no_alias_profile() {
+        let _env = env_lock::lock_env([("OLLAMA_HOST", None::<&str>)]);
+        let data = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let service = WorkspaceService::initialize(data.path(), root.path())
+            .await
+            .unwrap();
+
+        service.sync_global_alias_profiles().await.unwrap();
+
+        let listed = service.listed_credential_profiles().await.unwrap();
+        assert_eq!(alias_status(&listed, OLLAMA_ALIAS), None);
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn a_configured_provider_gets_a_configured_alias_profile() {
+        let _env = env_lock::lock_env([("OLLAMA_HOST", Some("http://127.0.0.1:9"))]);
+        let data = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let service = WorkspaceService::initialize(data.path(), root.path())
+            .await
+            .unwrap();
+
+        service.sync_global_alias_profiles().await.unwrap();
+
+        let listed = service.listed_credential_profiles().await.unwrap();
+        assert_eq!(
+            alias_status(&listed, OLLAMA_ALIAS),
+            Some(CredentialProfileStatus::Configured)
+        );
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn a_stored_alias_whose_provider_is_no_longer_set_up_is_listed_as_missing() {
+        let data = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let service = WorkspaceService::initialize(data.path(), root.path())
+            .await
+            .unwrap();
+        {
+            let _env = env_lock::lock_env([("OLLAMA_HOST", Some("http://127.0.0.1:9"))]);
+            service.sync_global_alias_profiles().await.unwrap();
+        }
+
+        let _env = env_lock::lock_env([("OLLAMA_HOST", None::<&str>)]);
+        service.sync_global_alias_profiles().await.unwrap();
+
+        let listed = service.listed_credential_profiles().await.unwrap();
+        assert_eq!(
+            alias_status(&listed, OLLAMA_ALIAS),
+            Some(CredentialProfileStatus::Missing)
+        );
+        // Only the listing changes: a binding or chat already pinned to the
+        // alias resolves exactly as before.
+        let stored = service.credential_profiles().unwrap();
+        assert_eq!(
+            alias_status(&stored, OLLAMA_ALIAS),
+            Some(CredentialProfileStatus::Configured)
+        );
+        assert_eq!(
+            service.profile_resolution(OLLAMA_ALIAS).unwrap().provider,
+            "ollama"
+        );
+    }
+
+    const GEMINI_CLI_ALIAS: &str = "global-provider::gemini-cli";
+
+    // gemini-cli's only key is required but defaulted, and the inventory counts
+    // that as configured, so nothing the user set is needed for it to look
+    // "complete".
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn a_provider_whose_keys_are_only_defaulted_gets_no_alias_profile() {
+        let _env = env_lock::lock_env([("GEMINI_CLI_COMMAND", None::<&str>)]);
+        let data = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let service = WorkspaceService::initialize(data.path(), root.path())
+            .await
+            .unwrap();
+
+        service.sync_global_alias_profiles().await.unwrap();
+
+        let listed = service.listed_credential_profiles().await.unwrap();
+        assert_eq!(alias_status(&listed, GEMINI_CLI_ALIAS), None);
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn an_alias_recorded_for_a_provider_nothing_was_set_up_for_is_listed_as_missing() {
+        let _env = env_lock::lock_env([("GEMINI_CLI_COMMAND", None::<&str>)]);
+        let data = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let service = WorkspaceService::initialize(data.path(), root.path())
+            .await
+            .unwrap();
+        // What earlier builds recorded for such a provider on every listing.
+        service
+            .store
+            .mutate(|document| {
+                merge_alias_profiles(
+                    document,
+                    &[(
+                        CredentialProfile {
+                            id: GEMINI_CLI_ALIAS.into(),
+                            name: "Current gemini-cli configuration".into(),
+                            provider_or_service_id: "gemini-cli".into(),
+                            status: CredentialProfileStatus::Configured,
+                            source: CredentialProfileSource::GlobalConfigurationAlias,
+                            ..CredentialProfile::default()
+                        },
+                        Vec::new(),
+                    )],
+                );
+                Ok(())
+            })
+            .unwrap();
+
+        let listed = service.listed_credential_profiles().await.unwrap();
+        assert_eq!(
+            alias_status(&listed, GEMINI_CLI_ALIAS),
+            Some(CredentialProfileStatus::Missing)
+        );
+        let stored = service.credential_profiles().unwrap();
+        assert_eq!(
+            alias_status(&stored, GEMINI_CLI_ALIAS),
+            Some(CredentialProfileStatus::Configured)
+        );
     }
 }

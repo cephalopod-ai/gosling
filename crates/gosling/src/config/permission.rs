@@ -103,33 +103,30 @@ const EGRESS_DOMAIN_PERMISSION: &str = "egress_domain";
 const ACP_PROVIDER_PERMISSION: &str = "acp_provider";
 
 impl PermissionManager {
-    /// Validates an existing policy at startup, panicking if it cannot be read or parsed.
+    /// Reports an existing policy that cannot be read instead of refusing to start:
+    /// every lookup already fails closed, and `policy_problem` names the file.
     pub fn new(config_dir: PathBuf) -> Self {
-        let permission_path = config_dir.join(PERMISSION_FILE);
-        let _: HashMap<String, PermissionConfig> = if permission_path.exists() {
-            let file_contents =
-                fs::read_to_string(&permission_path).expect("Failed to read permission.yaml");
-            serde_yaml::from_str(&file_contents).unwrap_or_else(|e| {
-                tracing::error!(
-                    "Failed to parse {}: {}. Refusing to start with corrupted permission config.",
-                    permission_path.display(),
-                    e,
-                );
-                panic!(
-                    "Corrupted permission config at {}. Fix or remove the file to continue.",
-                    permission_path.display(),
-                );
-            })
-        } else {
-            // Directory creation failure is deferred to the normal read/write error paths.
-            if let Err(e) = fs::create_dir_all(&config_dir) {
-                tracing::error!("Failed to create config directory {config_dir:?}: {e}");
-            }
-            HashMap::new()
+        let manager = PermissionManager {
+            config_path: config_dir.join(PERMISSION_FILE),
         };
-        PermissionManager {
-            config_path: permission_path,
+        if manager.config_path.exists() {
+            if let Some(problem) = manager.policy_problem() {
+                tracing::error!(security.event_type = "permission_read_failed", "{problem}");
+            }
+        } else if let Err(e) = fs::create_dir_all(&config_dir) {
+            // Directory creation failure is deferred to the normal read/write error paths.
+            tracing::error!("Failed to create config directory {config_dir:?}: {e}");
         }
+        manager
+    }
+
+    /// Why the stored policy cannot be used, naming the file; `None` when it reads cleanly.
+    pub fn policy_problem(&self) -> Option<String> {
+        let error = self.read_permissions_snapshot().err()?;
+        Some(format!(
+            "Permission policy {} could not be read ({error}). Tool calls are denied until the file is fixed or removed.",
+            self.config_path.display()
+        ))
     }
 
     pub fn instance() -> Arc<PermissionManager> {
@@ -421,6 +418,27 @@ impl PermissionManager {
             }
         })
     }
+
+    /// Drops the Always Allow grants in an extension's tool namespace. Never Allow
+    /// and Ask Before entries stay because they only restrict.
+    pub fn revoke_extension_grants(&self, extension_name: &str) -> anyhow::Result<()> {
+        let prefix = format!("{extension_name}__");
+        let is_grant = |principal: &String| principal.starts_with(prefix.as_str());
+        let has_grants = self
+            .read_permissions_snapshot()?
+            .values()
+            .any(|permission_config| permission_config.always_allow.iter().any(is_grant));
+        if !has_grants {
+            return Ok(());
+        }
+        self.mutate_permissions(|map| {
+            for permission_config in map.values_mut() {
+                permission_config
+                    .always_allow
+                    .retain(|principal| !is_grant(principal));
+            }
+        })
+    }
 }
 
 fn acp_provider_principal(provider_name: &str, tool_name: &str) -> String {
@@ -657,6 +675,47 @@ mod tests {
             .contains(&"prefix-extra__tool4".to_string()));
     }
 
+    /// GSL-PT-20260927-C22: replacing the server behind an extension name must
+    /// not inherit its Always Allow grants; restrictive entries stay.
+    #[test]
+    fn revoking_extension_grants_keeps_restrictions_and_other_extensions() {
+        let (manager, temp_dir) = create_test_permission_manager();
+        assert!(manager.revoke_extension_grants("fxone").is_ok());
+        assert!(!temp_dir.path().join(PERMISSION_FILE).exists());
+
+        manager
+            .bulk_update_user_permissions(&[
+                ("fxone__fx_write".to_string(), PermissionLevel::AlwaysAllow),
+                ("fxone__fx_read".to_string(), PermissionLevel::AskBefore),
+                ("fxone__fx_delete".to_string(), PermissionLevel::NeverAllow),
+                ("fxtwo__fx_write".to_string(), PermissionLevel::AlwaysAllow),
+                (
+                    "fxone-extra__fx_write".to_string(),
+                    PermissionLevel::AlwaysAllow,
+                ),
+            ])
+            .unwrap();
+
+        manager.revoke_extension_grants("fxone").unwrap();
+
+        assert_eq!(manager.get_user_permission("fxone__fx_write"), None);
+        assert_eq!(
+            manager.get_user_permission("fxone__fx_read"),
+            Some(PermissionLevel::AskBefore)
+        );
+        assert_eq!(
+            manager.get_user_permission("fxone__fx_delete"),
+            Some(PermissionLevel::NeverAllow)
+        );
+        for other in ["fxtwo__fx_write", "fxone-extra__fx_write"] {
+            assert_eq!(
+                manager.get_user_permission(other),
+                Some(PermissionLevel::AlwaysAllow),
+                "{other}"
+            );
+        }
+    }
+
     #[test]
     fn test_remove_extension_fails_closed_when_storage_is_unreadable() {
         let (manager, _temp_dir) = create_test_permission_manager();
@@ -718,13 +777,38 @@ mod tests {
         assert_eq!(manager.get_user_permission("unknown"), None);
     }
 
+    /// GSL-PT-20260927-S18: a corrupt policy used to panic every CLI/ACP start and
+    /// hang a WebSocket `initialize`; it now fails closed and names the file.
     #[test]
-    #[should_panic(expected = "Corrupted permission config")]
-    fn test_corrupted_permission_file_panics() {
+    fn a_corrupted_permission_file_fails_closed_and_names_the_file() {
         let temp_dir = TempDir::new().unwrap();
         let permission_path = temp_dir.path().join(PERMISSION_FILE);
-        fs::write(&permission_path, "{{invalid yaml: [broken").unwrap();
-        PermissionManager::new(temp_dir.path().to_path_buf());
+        fs::write(&permission_path, "user: [unclosed\n  - : :\n").unwrap();
+
+        let manager = PermissionManager::new(temp_dir.path().to_path_buf());
+
+        assert_eq!(
+            manager.get_user_permission("shell"),
+            Some(PermissionLevel::NeverAllow)
+        );
+        let problem = manager
+            .policy_problem()
+            .expect("corrupt policy is reported");
+        assert!(
+            problem.contains(&permission_path.display().to_string()),
+            "{problem}"
+        );
+        assert!(manager
+            .update_user_permission("shell", PermissionLevel::AlwaysAllow)
+            .is_err());
+        assert_eq!(
+            fs::read_to_string(&permission_path).unwrap(),
+            "user: [unclosed\n  - : :\n"
+        );
+
+        fs::remove_file(&permission_path).unwrap();
+        assert_eq!(manager.policy_problem(), None);
+        assert_eq!(manager.get_user_permission("shell"), None);
     }
 
     use test_case::test_case;

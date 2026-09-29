@@ -283,6 +283,7 @@ async function validateArtifactRoutingConfig(
   config: ArtifactRoutingConfig
 ): Promise<ArtifactRoutingConfig | null> {
   if (
+    (config.sessionId !== undefined && typeof config.sessionId !== 'string') ||
     (config.workspaceId !== undefined && typeof config.workspaceId !== 'string') ||
     (config.workspaceName !== undefined && typeof config.workspaceName !== 'string') ||
     (config.workspaceId === undefined) !== (config.workspaceName === undefined) ||
@@ -1078,7 +1079,7 @@ const createChat = async (
       const leaseCertificateTrust = externalCertificateTrust;
       externalCertificateTrust = null;
       goslingServeLease = goslingServeLeases.createExternal(
-        acpWebSocketUrlFromHttpBase(externalBaseUrl, serverSecret),
+        acpWebSocketUrlFromHttpBase(externalBaseUrl),
         serverSecret,
         leaseCertificateTrust ? async () => leaseCertificateTrust.release() : undefined
       );

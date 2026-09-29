@@ -23,7 +23,8 @@ use super::frontend_tool_result_router::{
 use super::mcp_client::GoslingMcpHostInfo;
 use super::tool_confirmation_router::ToolConfirmationRouter;
 use super::tool_execution::{
-    ToolCallResult, CHAT_MODE_TOOL_SKIPPED_RESPONSE, SUBAGENT_APPROVAL_UNAVAILABLE_RESPONSE,
+    ToolCallResult, CHAT_MODE_TOOL_SKIPPED_RESPONSE, PERMISSION_DENIED_RESPONSE,
+    POLICY_DENIED_RESPONSE_PREFIX, SUBAGENT_APPROVAL_UNAVAILABLE_RESPONSE,
 };
 use crate::action_required_manager::ElicitationOutcome;
 use crate::agents::extension::{ExtensionConfig, ExtensionResult, ToolInfo};
@@ -85,6 +86,10 @@ const DEFAULT_STOP_HOOK_BLOCK_CAP: u32 = 8;
 // grind goal that never completes re-injects "keep working" on every no-tool
 // turn, run after run, relying solely on the shared 1000-turn ceiling to end it.
 const DEFAULT_MAX_GRIND_NUDGES: u32 = 50;
+// Repetition protection denies each repeated call, but the model can keep asking
+// for it: without a turn budget that loop ran until `max_turns` (1000 provider
+// requests by default). After this many denials in one turn the turn stops.
+const MAX_REPETITION_DENIALS_PER_TURN: usize = 3;
 const COMPACTION_THINKING_TEXT: &str = "gosling is compacting the conversation...";
 const MAX_TURNS_MESSAGE: &str = "I've reached the maximum number of actions I can do without user input. Would you like me to continue?";
 const MAX_GRIND_NUDGES_MESSAGE: &str = "I've kept working on the grind goal without completing it after many attempts. Stopping to avoid an unbounded loop — let me know if you'd like me to continue.";
@@ -491,11 +496,17 @@ fn auto_compaction_started_message(
 fn auto_compaction_completed_message(
     before: &ContextUsageSnapshot,
     after_tokens: usize,
+    request_overhead: usize,
     plan: &AutoCompactionPlan,
 ) -> String {
+    let overhead_note = if request_overhead > 0 {
+        format!(", including {request_overhead} tokens of system prompt and tool definitions")
+    } else {
+        String::new()
+    };
     if after_tokens >= before.current_tokens {
         return format!(
-            "Compaction finished but did not reduce the active context: it is still estimated at {} / {} tokens ({:.1}%).",
+            "Compaction finished but did not reduce the active context: it is still estimated at {} / {} tokens ({:.1}%){overhead_note}.",
             after_tokens,
             before.context_limit,
             usage_percentage(after_tokens, before.context_limit),
@@ -503,7 +514,7 @@ fn auto_compaction_completed_message(
     }
     match plan.target_tokens {
         Some(target) => format!(
-            "Compaction complete: active context is now estimated at {} / {} tokens ({:.1}%). It started at {} tokens; the raw-context target was {} tokens.",
+            "Compaction complete: active context is now estimated at {} / {} tokens ({:.1}%){overhead_note}. It started at {} tokens; the raw-context target was {} tokens.",
             after_tokens,
             before.context_limit,
             usage_percentage(after_tokens, before.context_limit),
@@ -511,7 +522,7 @@ fn auto_compaction_completed_message(
             target,
         ),
         None => format!(
-            "Compaction complete: active context is now estimated at {} / {} tokens ({:.1}%). It started at {} tokens.",
+            "Compaction complete: active context is now estimated at {} / {} tokens ({:.1}%){overhead_note}. It started at {} tokens.",
             after_tokens,
             before.context_limit,
             usage_percentage(after_tokens, before.context_limit),
@@ -585,7 +596,7 @@ impl Agent {
         let agent_config = AgentConfig::new(
             Arc::new(SessionManager::instance()),
             PermissionManager::instance(),
-            config.get_gosling_mode().unwrap_or_default(),
+            config.effective_gosling_mode(),
             config.get_gosling_disable_session_naming().unwrap_or(false),
             GoslingPlatform::GoslingCli,
         )

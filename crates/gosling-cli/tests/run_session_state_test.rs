@@ -68,6 +68,31 @@ fn serve(mut stream: TcpStream, chat_requests: &AtomicUsize) {
                 "application/json",
                 "{\"error\":{\"message\":\"forced provider failure\"}}".to_string(),
             )
+        } else if body.contains("C11-CALL-TREE")
+            && body.contains("\"tools\"")
+            && body.contains("\"stream\":true")
+        {
+            let tool_call = serde_json::json!({
+                "id": "r",
+                "object": "chat.completion.chunk",
+                "created": 0,
+                "model": "gpt-4o",
+                "choices": [{
+                    "index": 0,
+                    "delta": {"role": "assistant", "tool_calls": [{
+                        "index": 0,
+                        "id": "call_c11",
+                        "type": "function",
+                        "function": {"name": "tree", "arguments": "{\"path\": \".\"}"},
+                    }]},
+                    "finish_reason": "tool_calls",
+                }],
+            });
+            (
+                "200 OK",
+                "text/event-stream",
+                format!("data: {tool_call}\n\ndata: [DONE]\n\n"),
+            )
         } else if body.contains("\"stream\":true") {
             let chunk = |delta: &str, finish: &str| {
                 format!(
@@ -241,6 +266,99 @@ fn resume_keeps_the_sessions_stored_permission_mode() {
     );
 }
 
+fn listed_sessions(env: &Env) -> Vec<(String, u64)> {
+    let output = env.run_ok(env.root.path(), &["session", "list", "--format", "json"]);
+    let sessions: Vec<serde_json::Value> = serde_json::from_slice(&output.stdout).unwrap();
+    sessions
+        .iter()
+        .map(|session| {
+            (
+                session["id"].as_str().unwrap().to_string(),
+                session["message_count"].as_u64().unwrap(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn a_start_that_fails_before_its_first_turn_leaves_no_session() {
+    let env = Env::new();
+    let cwd = env.root.path();
+    let kept = env.run_ok(cwd, &["run", "-n", "kept", "-t", "hi"]);
+    let kept_id = banner_session_id(&kept);
+
+    for args in [
+        &["run", "-t", "Say READY"][..],
+        &["run", "-n", "named-start", "-t", "Say READY"][..],
+        &["session"][..],
+    ] {
+        let failed = env
+            .command(cwd, args)
+            .env("GOSLING_PROVIDER", "nonsense-prov")
+            .output()
+            .unwrap();
+        assert!(!failed.status.success(), "{args:?} must fail to start");
+    }
+    std::fs::write(
+        env.root.path().join("config").join("config.yaml"),
+        "GOSLING_MODEL: gpt-4o\n",
+    )
+    .unwrap();
+    let unconfigured = env.gosling(cwd, &["run", "-t", "Say READY"]);
+    assert!(!unconfigured.status.success());
+
+    let resume_failure = env.gosling(
+        cwd,
+        &[
+            "run",
+            "-r",
+            "--session-id",
+            &kept_id,
+            "--provider",
+            "nonsense-prov",
+            "-t",
+            "again",
+        ],
+    );
+    assert!(!resume_failure.status.success());
+
+    assert_eq!(listed_sessions(&env), vec![(kept_id, 2)]);
+}
+
+/// GSL-PT-20260927-G130: an unreadable GOSLING_MODE used to start Autonomous
+/// sessions silently; it must fall back to asking before every tool call.
+#[test]
+fn invalid_mode_starts_sessions_that_ask_before_tools() {
+    let env = Env::new();
+    let cwd = env.root.path();
+
+    for (value, session_name) in [("yolo", "invalid-yolo"), ("aprove", "invalid-typo")] {
+        let created = env
+            .command(cwd, &["run", "-n", session_name, "-t", "hi"])
+            .env("GOSLING_MODE", value)
+            .output()
+            .unwrap();
+        assert!(created.status.success());
+        let stderr = String::from_utf8_lossy(&created.stderr);
+        assert!(
+            stderr.contains("Invalid GOSLING_MODE") && stderr.contains("New sessions use approve"),
+            "stderr: {stderr}"
+        );
+        assert_eq!(
+            env.export(&banner_session_id(&created))["gosling_mode"],
+            "approve",
+            "{value}"
+        );
+    }
+
+    let unset = env.run_ok(cwd, &["run", "-n", "unset-mode", "-t", "hi"]);
+    assert!(!String::from_utf8_lossy(&unset.stderr).contains("Invalid GOSLING_MODE"));
+    assert_eq!(
+        env.export(&banner_session_id(&unset))["gosling_mode"],
+        "auto"
+    );
+}
+
 #[test]
 fn resuming_from_another_directory_moves_the_session_to_it() {
     let env = Env::new();
@@ -258,8 +376,66 @@ fn resuming_from_another_directory_moves_the_session_to_it() {
     assert_eq!(env.export(&id)["working_dir"], dir_a.to_str().unwrap());
 
     let moved = env.run_ok(&dir_b, &["run", "-r", "-n", "wd", "-t", "other dir"]);
-    assert!(String::from_utf8_lossy(&moved.stderr).contains("Staying in current directory"));
+    let warning = String::from_utf8_lossy(&moved.stderr);
+    assert!(warning.contains("Staying in current directory"));
+    assert!(warning.contains(&format!(
+        "the session's working directory is now {}",
+        dir_b.display()
+    )));
     assert_eq!(env.export(&id)["working_dir"], dir_b.to_str().unwrap());
+}
+
+#[test]
+fn resuming_a_restricted_session_elsewhere_keeps_its_working_directory() {
+    let env = Env::new();
+    let trusted = env.root.path().join("trusted");
+    let elsewhere = env.root.path().join("elsewhere");
+    std::fs::create_dir_all(&trusted).unwrap();
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    let trusted = trusted.canonicalize().unwrap();
+    let elsewhere = elsewhere.canonicalize().unwrap();
+
+    let source = env.run_ok(&trusted, &["run", "-n", "source", "-t", "hi"]);
+    let export_path = env.root.path().join("source.json");
+    env.run_ok(
+        env.root.path(),
+        &[
+            "session",
+            "export",
+            "--session-id",
+            &banner_session_id(&source),
+            "--format",
+            "json",
+            "-o",
+            export_path.to_str().unwrap(),
+        ],
+    );
+    let imported = env.run_ok(
+        &elsewhere,
+        &[
+            "session",
+            "import",
+            export_path.to_str().unwrap(),
+            "--working-dir",
+            trusted.to_str().unwrap(),
+        ],
+    );
+    let imported_id = banner_session_id(&imported);
+    assert_eq!(
+        env.export(&imported_id)["working_dir"],
+        trusted.to_str().unwrap()
+    );
+
+    let resumed = env.run_ok(
+        &elsewhere,
+        &["run", "-r", "--session-id", &imported_id, "-t", "again"],
+    );
+
+    assert!(String::from_utf8_lossy(&resumed.stderr)
+        .contains("restricted to its working directory; switching to"));
+    let after = env.export(&imported_id);
+    assert_eq!(after["working_dir"], trusted.to_str().unwrap());
+    assert_eq!(after["restrict_tools_to_working_dirs"], true);
 }
 
 #[test]
@@ -270,16 +446,23 @@ fn no_session_run_leaves_nothing_resumable() {
     let response_marker = "CX07-NO-SESSION-RESPONSE-20260913";
 
     let ephemeral = env.run_ok(cwd, &["run", "--no-session", "-t", marker]);
-    let id = banner_session_id(&ephemeral);
     assert_eq!(
         env.mock.chat_requests.load(Ordering::SeqCst),
         1,
         "a --no-session run must not make a title-generation request"
     );
+    // GSL-PT-20260927-E12: the banner announced "new session" with an id that
+    // could never be resumed.
+    let banner = String::from_utf8_lossy(&ephemeral.stdout);
+    assert!(banner.contains("ephemeral"), "{banner}");
+    assert!(
+        !banner
+            .split(|c: char| !(c.is_ascii_digit() || c == '_'))
+            .any(|token| token.len() > 9 && token.as_bytes()[8] == b'_'),
+        "a --no-session run must not announce a session id: {banner}"
+    );
 
-    let export = env.gosling(cwd, &["session", "export", "--session-id", &id]);
-    assert!(!export.status.success());
-    let resume = env.gosling(cwd, &["run", "-r", "--session-id", &id, "-t", "probe"]);
+    let resume = env.gosling(cwd, &["run", "-r", "-t", "probe"]);
     assert!(!resume.status.success());
     assert_eq!(
         files_containing(env.root.path(), marker.as_bytes()),
@@ -401,4 +584,198 @@ fn configure_refuses_a_config_file_it_cannot_parse() {
     assert!(stderr.contains("could not be parsed"), "{stderr}");
     assert!(stderr.contains(config_file.to_str().unwrap()), "{stderr}");
     assert_eq!(env.mock.chat_requests.load(Ordering::SeqCst), 0);
+}
+
+/// GSL-PT-20260927-S18: a corrupt permission policy used to panic `run`; it
+/// now runs with tools denied and names the unreadable file.
+#[test]
+fn corrupt_permission_policy_is_reported_instead_of_panicking() {
+    let env = Env::new();
+    let policy = env.root.path().join("config").join("permission.yaml");
+    std::fs::write(&policy, "user: [unclosed\n  - : :\n").unwrap();
+
+    let output = env.gosling(env.root.path(), &["run", "--no-session", "-t", "hi"]);
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "stdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(stdout.contains("MOCK-REPLY"), "stdout: {stdout}");
+    assert!(!stderr.contains("panicked"), "stderr: {stderr}");
+    assert!(
+        stderr.contains(&format!(
+            "Permission policy {} could not be read",
+            policy.display()
+        )),
+        "stderr: {stderr}"
+    );
+}
+
+/// GSL-PT-20260927-C11 / E-N4: the non-interactive denial named the configured
+/// default mode, not the mode stored on the session that actually asked.
+#[test]
+fn non_interactive_denial_names_the_sessions_own_mode() {
+    let env = Env::new();
+    let cwd = env.root.path();
+    let created = env
+        .command(cwd, &["run", "-n", "c11", "-t", "hi"])
+        .env("GOSLING_MODE", "approve")
+        .output()
+        .unwrap();
+    assert!(created.status.success());
+
+    let denied = env
+        .command(cwd, &["run", "-r", "-n", "c11", "-t", "C11-CALL-TREE"])
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap();
+
+    let stderr = String::from_utf8_lossy(&denied.stderr);
+    assert!(!denied.status.success(), "stderr: {stderr}");
+    assert!(
+        stderr.contains("Tool approval required in non-interactive mode with GoslingMode::approve"),
+        "stderr: {stderr}"
+    );
+}
+
+/// GSL-PT-20260927-C11: imports start in approve mode with tools restricted to
+/// their working directory; the command must say so.
+#[test]
+fn import_reports_the_imported_sessions_mode() {
+    let env = Env::new();
+    let cwd = env.root.path();
+    let created = env.run_ok(cwd, &["run", "-n", "to-export", "-t", "hi"]);
+    let exported = env.export(&banner_session_id(&created));
+    let file = env.root.path().join("export.json");
+    std::fs::write(&file, exported.to_string()).unwrap();
+
+    let imported = env.run_ok(cwd, &["session", "import", file.to_str().unwrap()]);
+
+    let stdout = String::from_utf8_lossy(&imported.stdout);
+    assert!(
+        stdout.contains("Mode: approve, tools restricted to its working directory"),
+        "stdout: {stdout}"
+    );
+}
+
+/// GSL-PT-20260927-A05 / S12: with a config file that fails to parse, `run`
+/// blamed a missing provider and sent the operator to `gosling configure`,
+/// which refuses to run on that file.
+#[test]
+fn run_names_an_unparsable_config_instead_of_a_missing_provider() {
+    let env = Env::new();
+    let config_file = env.root.path().join("config").join("config.yaml");
+    std::fs::write(
+        &config_file,
+        "GOSLING_PROVIDER: openai\nGOSLING_MODEL: gpt-4o\nGOSLING_CLI_SHOW_COST: [unclosed\n  - : :\n",
+    )
+    .unwrap();
+
+    let broken = env.gosling(env.root.path(), &["run", "--no-session", "-t", "hi"]);
+    let stderr = String::from_utf8_lossy(&broken.stderr);
+    assert!(!broken.status.success());
+    assert!(stderr.contains("could not be parsed"), "{stderr}");
+    assert!(stderr.contains(config_file.to_str().unwrap()), "{stderr}");
+    assert!(!stderr.contains("gosling configure"), "{stderr}");
+
+    std::fs::write(&config_file, "GOSLING_MODE: auto\n").unwrap();
+    let unconfigured = env.gosling(env.root.path(), &["run", "--no-session", "-t", "hi"]);
+    let stderr = String::from_utf8_lossy(&unconfigured.stderr);
+    assert!(!unconfigured.status.success());
+    assert!(
+        stderr.contains("No provider configured. Run 'gosling configure' first."),
+        "{stderr}"
+    );
+    assert_eq!(env.mock.chat_requests.load(Ordering::SeqCst), 0);
+}
+
+/// GSL-PT-20260927-D06: exports carried raw secrets from the conversation that
+/// `session diagnostics` redacts; the configured provider key (from the
+/// environment here) has no shape the patterns know.
+#[test]
+fn session_exports_redact_secrets_unless_asked_not_to() {
+    const PROVIDER_KEY: &str = "FAKESECRET-EXPORT-KEY-0042";
+    const PASTED: &str = "sk-proj-FAKESE02abcdef1234567890XYZ";
+    let env = Env::new();
+    let gosling = |args: &[&str]| {
+        env.command(env.root.path(), args)
+            .env("OPENAI_API_KEY", PROVIDER_KEY)
+            .output()
+            .unwrap()
+    };
+    let prompt = format!("pasted {PROVIDER_KEY} and {PASTED} here");
+    let run = gosling(&["run", "-t", &prompt]);
+    assert!(
+        run.status.success(),
+        "{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    let id = banner_session_id(&run);
+
+    for format in ["json", "yaml", "markdown"] {
+        let export = gosling(&["session", "export", "--session-id", &id, "--format", format]);
+        let stdout = String::from_utf8_lossy(&export.stdout);
+        assert!(export.status.success(), "{format}: {stdout}");
+        assert!(
+            stdout.contains("pasted [REDACTED] and [REDACTED] here"),
+            "{format}: {stdout}"
+        );
+        assert!(!stdout.contains(PROVIDER_KEY), "{format}: {stdout}");
+        assert!(!stdout.contains(PASTED), "{format}: {stdout}");
+    }
+
+    let raw = gosling(&[
+        "session",
+        "export",
+        "--session-id",
+        &id,
+        "--format",
+        "json",
+        "--no-redact",
+    ]);
+    assert!(raw.status.success());
+    assert!(String::from_utf8_lossy(&raw.stdout).contains(&prompt));
+
+    let shared_raw = gosling(&[
+        "session",
+        "export",
+        "--session-id",
+        &id,
+        "--nostr",
+        "--no-redact",
+    ]);
+    assert!(!shared_raw.status.success());
+}
+
+/// GSL-PT-20260927-A03: after `gosling configure` wrote `active_provider` and
+/// `providers.<name>.model`, a hand edit of the documented root-level
+/// `GOSLING_MODEL` was silently ignored and `info -v` showed the derived value
+/// under that key.
+#[test]
+fn ignored_root_level_model_edits_are_reported() {
+    let env = Env::new();
+    let legacy_only = env.run_ok(env.root.path(), &["run", "--no-session", "-t", "hi"]);
+    assert!(!String::from_utf8_lossy(&legacy_only.stderr).contains("is ignored"));
+
+    std::fs::write(
+        env.root.path().join("config").join("config.yaml"),
+        "active_provider: openai\nproviders:\n  openai:\n    enabled: true\n    model: gpt-4o\n    configured: true\nGOSLING_MODEL: hand-edited-model\n",
+    )
+    .unwrap();
+    let expected = "GOSLING_MODEL: hand-edited-model in the config is ignored because providers.openai.model: gpt-4o takes precedence";
+
+    let run = env.run_ok(env.root.path(), &["run", "--no-session", "-t", "hi"]);
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(stderr.contains(&format!("Warning: {expected}")), "{stderr}");
+
+    let info = env.run_ok(env.root.path(), &["info", "-v"]);
+    let stdout = String::from_utf8_lossy(&info.stdout);
+    assert!(
+        stdout.contains("GOSLING_MODEL: hand-edited-model"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("Effective Provider:"), "{stdout}");
+    assert!(stdout.contains(expected), "{stdout}");
 }

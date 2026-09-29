@@ -60,6 +60,14 @@ pub use task_tracking::{BackgroundTask, CompletedTask};
 
 pub static EXTENSION_NAME: &str = "summon";
 
+const DELEGATE_TOOL_NAME: &str = "delegate";
+
+/// Whether a listed tool is this extension's `delegate` tool.
+pub fn is_delegate_tool(tool: &Tool) -> bool {
+    tool.name == DELEGATE_TOOL_NAME
+        && crate::agents::extension_manager::get_tool_owner(tool).as_deref() == Some(EXTENSION_NAME)
+}
+
 const SUBAGENT_DESCRIPTION_BUDGET: usize = 160;
 
 const TASK_LABEL_BUDGET: usize = 60;
@@ -786,6 +794,60 @@ You review code."#;
         assert_eq!(delegate_mode(true), GoslingMode::Chat);
         assert!(delegate_mode_notice(GoslingMode::Auto).is_empty());
         assert!(delegate_mode_notice(GoslingMode::Chat).contains("tool calls are disabled"));
+    }
+
+    /// GSL-PT-20260927-E03: one approval of `delegate` in a non-Autonomous
+    /// session used to start an Auto subagent that ran shell/write unprompted.
+    #[tokio::test]
+    async fn test_delegate_is_refused_unless_the_parent_session_is_autonomous() {
+        let client = SummonClient::new(create_test_context()).unwrap();
+        let working_dir = TempDir::new().unwrap();
+        for (mode, run_async) in [
+            (GoslingMode::Approve, false),
+            (GoslingMode::Approve, true),
+            (GoslingMode::SmartApprove, false),
+            (GoslingMode::SmartApprove, true),
+            (GoslingMode::Chat, false),
+            (GoslingMode::Auto, false),
+            (GoslingMode::Auto, true),
+        ] {
+            let session = client
+                .context
+                .session_manager
+                .create_session(
+                    working_dir.path().to_path_buf(),
+                    format!("delegate-gate-{mode}"),
+                    SessionType::User,
+                    mode,
+                )
+                .await
+                .unwrap();
+            let args = serde_json::json!({
+                "instructions": "write a file",
+                "extensions": ["developer"],
+                "async": run_async,
+            });
+
+            let err = client
+                .handle_delegate(
+                    &session.id,
+                    args.as_object().cloned(),
+                    CancellationToken::new(),
+                )
+                .await
+                .unwrap_err();
+
+            let refused = err.contains("only available in Autonomous (auto) mode");
+            assert_eq!(
+                refused,
+                mode != GoslingMode::Auto,
+                "{mode}/{run_async}: {err}"
+            );
+            if refused {
+                assert!(err.contains(&format!("in {mode} mode")), "{err}");
+            }
+            assert!(client.background_tasks.lock().await.is_empty());
+        }
     }
 
     #[tokio::test]

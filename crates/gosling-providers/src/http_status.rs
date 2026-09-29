@@ -191,7 +191,7 @@ pub fn is_context_length_exceeded_message(text: &str) -> bool {
 /// secret-shaped values back, so they are redacted and bounded first.
 const MAX_PROVIDER_ERROR_CHARS: usize = 2_000;
 
-fn redact_provider_error_text(text: &str) -> String {
+pub(crate) fn redact_provider_error_text(text: &str) -> String {
     let redacted = redact_secrets(text);
     if redacted.chars().count() <= MAX_PROVIDER_ERROR_CHARS {
         return redacted;

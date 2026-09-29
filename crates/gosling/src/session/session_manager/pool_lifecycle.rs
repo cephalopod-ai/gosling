@@ -23,6 +23,7 @@ use tracing::warn;
 
 static FIRST_INIT_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 const INIT_LOCK_FILE: &str = ".sessions-init.lock";
+const SHUTDOWN_GRACE: std::time::Duration = std::time::Duration::from_secs(5);
 
 #[cfg(unix)]
 fn prepare_session_directory_with<F>(path: &Path, set_permissions: F) -> std::io::Result<()>
@@ -106,6 +107,7 @@ impl SessionStorage {
             active_tool_operations: std::sync::Mutex::new(HashSet::new()),
             plan_updates,
             plan_source_hash_cache: std::sync::Mutex::new(std::collections::HashMap::new()),
+            lease_releases_in_flight: tokio::sync::watch::channel(0).0,
         }
     }
 
@@ -139,7 +141,7 @@ impl SessionStorage {
                 .await?;
 
                 if schema_exists {
-                    Self::run_migrations(&self.pool).await?;
+                    Self::run_migrations(&self.pool, &self.session_dir.join(DB_NAME)).await?;
                 } else {
                     Self::create_schema(&self.pool).await?;
                 }
@@ -185,6 +187,44 @@ impl SessionStorage {
         let storage = Self::new(session_dir.to_path_buf());
         storage.pool().await?;
         Ok(storage)
+    }
+
+    /// Graceful-exit flush. Waits (bounded) for turn-lease releases that are
+    /// still running, so the process does not exit and leave its lease rows
+    /// behind, then moves the write-ahead log into `sessions.db` and closes
+    /// the pool. Without this, everything a short-lived process wrote stayed
+    /// in `sessions.db-wal`, and a copy of `sessions.db` alone had no schema.
+    pub(crate) async fn shutdown(&self) {
+        let mut releases = self.lease_releases_in_flight.subscribe();
+        let _ = tokio::time::timeout(
+            SHUTDOWN_GRACE,
+            releases.wait_for(|in_flight| *in_flight == 0),
+        )
+        .await;
+        if self.initialized.get().is_none() {
+            return;
+        }
+        let flush = async {
+            if let Err(error) = self.checkpoint_without_waiting().await {
+                warn!("session store checkpoint on shutdown failed: {error}");
+            }
+            self.pool.close().await;
+        };
+        let _ = tokio::time::timeout(SHUTDOWN_GRACE, flush).await;
+    }
+
+    /// Another process may still be using the store; with no busy wait, a
+    /// checkpoint it blocks copies what it can instead of stalling the exit.
+    async fn checkpoint_without_waiting(&self) -> Result<()> {
+        let mut connection = self.pool.acquire().await?;
+        sqlx::query("PRAGMA busy_timeout = 0")
+            .execute(&mut *connection)
+            .await?;
+        sqlx::query("PRAGMA wal_checkpoint(TRUNCATE)")
+            .execute(&mut *connection)
+            .await?;
+        connection.close().await?;
+        Ok(())
     }
 }
 

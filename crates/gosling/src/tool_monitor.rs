@@ -1,5 +1,6 @@
+use crate::agents::DECLINED_RESPONSE;
 use crate::config::GoslingMode;
-use crate::conversation::message::{Message, MessageContent, ToolRequest};
+use crate::conversation::message::{Message, MessageContent, ToolRequest, ToolResponse};
 use crate::tool_inspection::{InspectionAction, InspectionResult, ToolInspector};
 use anyhow::Result;
 use async_trait::async_trait;
@@ -7,6 +8,8 @@ use rmcp::model::CallToolRequestParams;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Mutex;
+
+const REPETITION_INSPECTOR_NAME: &str = "repetition";
 
 // Helper struct for internal tracking
 #[derive(Debug, Clone)]
@@ -41,6 +44,33 @@ pub struct RepetitionInspector {
 struct RepetitionState {
     last_call: Option<InternalToolCall>,
     repeat_count: u32,
+    /// Calls inspected this turn whose result has not been seen yet, by request id.
+    awaiting_result: HashMap<String, InternalToolCall>,
+    /// Calls that failed earlier in this turn.
+    failed_calls: Vec<InternalToolCall>,
+}
+
+impl RepetitionState {
+    /// A call's result is appended before the next inspection, so the newest
+    /// response to its request id is that call's result even when a provider
+    /// reuses tool-call ids.
+    fn record_results(&mut self, messages: &[Message]) {
+        let responses = messages
+            .iter()
+            .rev()
+            .flat_map(|message| message.content.iter().rev())
+            .filter_map(MessageContent::as_tool_response);
+        for response in responses {
+            if self.awaiting_result.is_empty() {
+                break;
+            }
+            if let Some(call) = self.awaiting_result.remove(&response.id) {
+                if tool_call_failed(response) {
+                    self.failed_calls.push(call);
+                }
+            }
+        }
+    }
 }
 
 impl RepetitionInspector {
@@ -90,44 +120,38 @@ impl RepetitionInspector {
     pub fn reset(&mut self) {
         self.states.get_mut().unwrap().clear();
     }
+
+    /// Repetition protection guards one autonomous run. A new user turn starts
+    /// clean, so the user can have a call retried that failed or repeated in an
+    /// earlier turn, e.g. after fixing what made it fail.
+    pub fn start_turn(&self, session_id: &str) {
+        self.states.lock().unwrap().remove(session_id);
+    }
 }
 
-fn failed_tool_calls(messages: &[Message]) -> Vec<InternalToolCall> {
-    let mut requests = HashMap::new();
-    let mut failed = Vec::new();
-    for message in messages {
-        for content in &message.content {
-            match content {
-                MessageContent::ToolRequest(request) => {
-                    if let Ok(tool_call) = &request.tool_call {
-                        requests.insert(
-                            request.id.as_str(),
-                            InternalToolCall::from_tool_call(tool_call),
-                        );
-                    }
-                }
-                MessageContent::ToolResponse(response) => {
-                    let response_failed = match &response.tool_result {
-                        Err(_) => true,
-                        Ok(result) => result.is_error == Some(true),
-                    };
-                    if response_failed {
-                        if let Some(request) = requests.get(response.id.as_str()) {
-                            failed.push(request.clone());
-                        }
-                    }
-                }
-                _ => {}
-            }
+pub fn is_repetition_denial(result: &InspectionResult) -> bool {
+    result.inspector_name == REPETITION_INSPECTOR_NAME && result.action == InspectionAction::Deny
+}
+
+fn tool_call_failed(response: &ToolResponse) -> bool {
+    match &response.tool_result {
+        Err(_) => true,
+        // A declined call never ran, so asking again must reach the user.
+        Ok(result) => {
+            result.is_error == Some(true)
+                && !result.content.iter().any(|content| {
+                    content
+                        .as_text()
+                        .is_some_and(|text| text.text == DECLINED_RESPONSE)
+                })
         }
     }
-    failed
 }
 
 #[async_trait]
 impl ToolInspector for RepetitionInspector {
     fn name(&self) -> &'static str {
-        "repetition"
+        REPETITION_INSPECTOR_NAME
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -142,14 +166,20 @@ impl ToolInspector for RepetitionInspector {
         _gosling_mode: GoslingMode,
     ) -> Result<Vec<InspectionResult>> {
         let mut results = Vec::new();
-        let failed_calls = failed_tool_calls(messages);
         let mut states = self.states.lock().unwrap();
         let state = states.entry(session_id.to_string()).or_default();
+        state.record_results(messages);
 
         for tool_request in tool_requests {
             if let Ok(tool_call) = &tool_request.tool_call {
                 let current = InternalToolCall::from_tool_call(tool_call);
-                let repeated_failure = failed_calls.iter().any(|failed| failed.matches(&current));
+                let repeated_failure = state
+                    .failed_calls
+                    .iter()
+                    .any(|failed| failed.matches(&current));
+                state
+                    .awaiting_result
+                    .insert(tool_request.id.clone(), current);
                 if repeated_failure || !self.record_tool_call(state, tool_call) {
                     results.push(InspectionResult {
                         tool_request_id: tool_request.id.clone(),
@@ -163,7 +193,7 @@ impl ToolInspector for RepetitionInspector {
                             format!("Tool '{}' has exceeded maximum repetitions", tool_call.name)
                         },
                         confidence: 1.0,
-                        inspector_name: "repetition".to_string(),
+                        inspector_name: REPETITION_INSPECTOR_NAME.to_string(),
                         finding_id: Some("REP-001".to_string()),
                         metadata: None,
                     });
@@ -179,8 +209,9 @@ impl ToolInspector for RepetitionInspector {
 mod tests {
     use super::*;
     use crate::conversation::message::ToolRequest;
+    use crate::mcp_utils::ToolResult;
     use crate::tool_inspection::ToolInspector;
-    use rmcp::model::{ErrorCode, ErrorData};
+    use rmcp::model::{CallToolResult, Content, ErrorCode, ErrorData};
     use rmcp::object;
 
     fn request(id: &str, value: u32) -> ToolRequest {
@@ -219,39 +250,126 @@ mod tests {
             .is_empty());
     }
 
+    fn failing_request(id: &str) -> ToolRequest {
+        ToolRequest {
+            id: id.into(),
+            tool_call: Ok(CallToolRequestParams::new("Markdown")
+                .with_arguments(object!({ "selector": "main", "source": "invalid" }))),
+            metadata: None,
+            tool_meta: None,
+        }
+    }
+
+    fn answered(request: &ToolRequest, result: ToolResult<CallToolResult>) -> Vec<Message> {
+        vec![
+            Message::assistant().with_tool_request(request.id.clone(), request.tool_call.clone()),
+            Message::user().with_tool_response(request.id.clone(), result),
+        ]
+    }
+
+    fn invalid_params() -> ToolResult<CallToolResult> {
+        Err(ErrorData::new(
+            ErrorCode::INVALID_PARAMS,
+            "unexpected field `source`",
+            None,
+        ))
+    }
+
+    async fn denials(
+        inspector: &RepetitionInspector,
+        request: ToolRequest,
+        messages: &[Message],
+    ) -> Vec<InspectionResult> {
+        inspector
+            .inspect("session", &[request], messages, GoslingMode::Auto)
+            .await
+            .unwrap()
+    }
+
     #[tokio::test]
     async fn live_inspector_denies_an_identical_failed_call_but_allows_a_correction() {
         let inspector = RepetitionInspector::new(Some(3));
-        let failed_call = CallToolRequestParams::new("Markdown")
-            .with_arguments(object!({ "selector": "main", "source": "invalid" }));
-        let failure = ErrorData::new(ErrorCode::INVALID_PARAMS, "unexpected field `source`", None);
-        let messages = vec![
-            Message::assistant().with_tool_request("failed", Ok(failed_call.clone())),
-            Message::user().with_tool_response("failed", Err(failure)),
-        ];
+        let failed = failing_request("failed");
+        assert!(denials(&inspector, failed.clone(), &[]).await.is_empty());
+        let messages = answered(&failed, invalid_params());
 
-        let repeated = ToolRequest {
-            id: "repeat".into(),
-            tool_call: Ok(failed_call),
-            metadata: None,
-            tool_meta: None,
-        };
-        let denied = inspector
-            .inspect("session", &[repeated], &messages, GoslingMode::Auto)
-            .await
-            .unwrap();
+        let denied = denials(&inspector, failing_request("repeat"), &messages).await;
         assert_eq!(denied.len(), 1);
         assert!(denied[0].reason.contains("already failed"));
+        assert!(is_repetition_denial(&denied[0]));
 
-        assert!(inspector
-            .inspect(
-                "session",
-                &[request("corrected", 2)],
-                &messages,
-                GoslingMode::Auto,
-            )
+        assert!(denials(&inspector, request("corrected", 2), &messages)
             .await
-            .unwrap()
+            .is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_failure_is_remembered_only_for_the_turn_it_happened_in() {
+        let inspector = RepetitionInspector::new(Some(3));
+        let failed = failing_request("failed");
+        assert!(denials(&inspector, failed.clone(), &[]).await.is_empty());
+        let messages = answered(&failed, invalid_params());
+
+        inspector.start_turn("session");
+
+        assert!(denials(&inspector, failing_request("next-turn"), &messages)
+            .await
+            .is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_declined_call_is_asked_again_rather_than_denied_as_failed() {
+        let inspector = RepetitionInspector::new(Some(3));
+        let declined = failing_request("declined");
+        assert!(denials(&inspector, declined.clone(), &[]).await.is_empty());
+        let messages = answered(
+            &declined,
+            Ok(CallToolResult::error(vec![Content::text(
+                DECLINED_RESPONSE,
+            )])),
+        );
+
+        assert!(
+            denials(&inspector, failing_request("asked-again"), &messages)
+                .await
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn a_new_turn_restarts_the_consecutive_repetition_count() {
+        let inspector = RepetitionInspector::new(Some(3));
+        for id in ["one", "two", "three"] {
+            assert!(denials(&inspector, request(id, 1), &[]).await.is_empty());
+        }
+
+        inspector.start_turn("session");
+
+        assert!(denials(&inspector, request("next-turn", 1), &[])
+            .await
+            .is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_reused_tool_call_id_keeps_each_call_paired_with_its_own_result() {
+        let inspector = RepetitionInspector::new(Some(3));
+        let failed = failing_request("reused");
+        assert!(denials(&inspector, failed.clone(), &[]).await.is_empty());
+        let mut messages = answered(&failed, invalid_params());
+        let succeeded = request("reused", 2);
+        assert!(denials(&inspector, succeeded.clone(), &messages)
+            .await
+            .is_empty());
+        messages.extend(answered(
+            &succeeded,
+            Ok(CallToolResult::success(vec![Content::text("ok")])),
+        ));
+
+        let denied = denials(&inspector, failing_request("again"), &messages).await;
+        assert_eq!(denied.len(), 1);
+        assert!(denied[0].reason.contains("already failed"));
+        assert!(denials(&inspector, request("reused-ok", 2), &messages)
+            .await
             .is_empty());
     }
 }

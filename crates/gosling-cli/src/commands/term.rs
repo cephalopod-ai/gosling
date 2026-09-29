@@ -200,7 +200,7 @@ pub async fn handle_term_init(
                     working_dir,
                     "Gosling Term Session".to_string(),
                     SessionType::Terminal,
-                    Config::global().get_gosling_mode().unwrap_or_default(),
+                    Config::global().effective_gosling_mode(),
                 )
                 .await?;
 

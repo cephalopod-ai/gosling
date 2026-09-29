@@ -944,40 +944,51 @@ impl ChatGptCodexAuthProvider {
     }
 
     async fn get_valid_token(&self) -> Result<TokenData> {
-        if let Some(mut token_data) = self.cache.load() {
-            if token_data.expires_at > Utc::now() + chrono::Duration::seconds(60) {
-                return Ok(token_data);
-            }
-
-            tracing::debug!("Token expired, attempting refresh");
-            match refresh_access_token_with_issuer(ISSUER, &token_data.refresh_token).await {
-                Ok(new_tokens) => {
-                    token_data.access_token = new_tokens.access_token;
-                    token_data.refresh_token = new_tokens.refresh_token;
-                    if new_tokens.id_token.is_some() {
-                        token_data.id_token = new_tokens.id_token;
-                    }
-                    token_data.expires_at = Utc::now()
-                        + chrono::Duration::seconds(new_tokens.expires_in.unwrap_or(3600));
-                    if token_data.account_id.is_none() {
-                        token_data.account_id =
-                            extract_account_id(&token_data, self.state.as_ref()).await;
-                    }
-                    self.cache.save(&token_data)?;
-                    tracing::info!("Token refreshed successfully");
-                    return Ok(token_data);
-                }
-                Err(e) => {
-                    tracing::warn!("Token refresh failed, will re-authenticate: {}", e);
-                    self.cache.clear();
-                }
-            }
+        if let Some(token_data) = self.signed_in_token().await? {
+            return Ok(token_data);
         }
 
         tracing::info!("Starting OAuth flow for ChatGPT Codex");
         let token_data = perform_oauth_flow(self.state.as_ref()).await?;
         self.cache.save(&token_data)?;
         Ok(token_data)
+    }
+
+    /// The cached sign-in, refreshed when it is about to expire, or `None` when
+    /// the user has to sign in again. Never opens the browser: only
+    /// `get_valid_token` (a real request) and `configure_oauth` may do that.
+    async fn signed_in_token(&self) -> Result<Option<TokenData>> {
+        let Some(mut token_data) = self.cache.load() else {
+            return Ok(None);
+        };
+        if token_data.expires_at > Utc::now() + chrono::Duration::seconds(60) {
+            return Ok(Some(token_data));
+        }
+
+        tracing::debug!("Token expired, attempting refresh");
+        match refresh_access_token_with_issuer(ISSUER, &token_data.refresh_token).await {
+            Ok(new_tokens) => {
+                token_data.access_token = new_tokens.access_token;
+                token_data.refresh_token = new_tokens.refresh_token;
+                if new_tokens.id_token.is_some() {
+                    token_data.id_token = new_tokens.id_token;
+                }
+                token_data.expires_at =
+                    Utc::now() + chrono::Duration::seconds(new_tokens.expires_in.unwrap_or(3600));
+                if token_data.account_id.is_none() {
+                    token_data.account_id =
+                        extract_account_id(&token_data, self.state.as_ref()).await;
+                }
+                self.cache.save(&token_data)?;
+                tracing::info!("Token refreshed successfully");
+                Ok(Some(token_data))
+            }
+            Err(e) => {
+                tracing::warn!("Token refresh failed, will re-authenticate: {}", e);
+                self.cache.clear();
+                Ok(None)
+            }
+        }
     }
 }
 
@@ -1029,15 +1040,24 @@ impl ChatGptCodexProvider {
         })
     }
 
+    /// Model catalog and context-limit lookups (the Desktop lists models as soon as
+    /// a provider is selected) use the existing sign-in only; without one the
+    /// callers fall back to the offline catalog instead of opening a browser.
     async fn fetch_route_models(&self) -> Result<&[ChatGptCodexRouteModel], ProviderError> {
         let models = self
             .route_models
             .get_or_try_init(|| async {
                 let token_data = self
                     .auth_provider
-                    .get_valid_token()
+                    .signed_in_token()
                     .await
-                    .map_err(|e| ProviderError::Authentication(e.to_string()))?;
+                    .map_err(|e| ProviderError::Authentication(e.to_string()))?
+                    .ok_or_else(|| {
+                        ProviderError::Authentication(
+                            "ChatGPT Codex sign-in required to load its live model catalog"
+                                .to_string(),
+                        )
+                    })?;
                 let mut headers = reqwest::header::HeaderMap::new();
                 if let Some(account_id) = &token_data.account_id {
                     headers.insert(
@@ -1363,6 +1383,96 @@ mod tests {
                 & 0o777;
             assert_eq!(mode, 0o600);
         }
+    }
+
+    fn provider_with_auth_state(state: Arc<ChatGptCodexAuthState>) -> ChatGptCodexProvider {
+        ChatGptCodexProvider {
+            auth_provider: Arc::new(ChatGptCodexAuthProvider::new(state)),
+            name: CHATGPT_CODEX_PROVIDER_NAME.to_string(),
+            client: reqwest::Client::new(),
+            request_builder: crate::session_context::session_id_request_builder(),
+            route_models: TokioOnceCell::new(),
+        }
+    }
+
+    // Each test holds its auth state's sign-in lock, so an attempt to start the
+    // browser sign-in fails at once with "already in progress" instead of opening
+    // a browser.
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn listing_models_without_a_sign_in_uses_the_offline_catalog_without_starting_sign_in() {
+        let root = tempfile::tempdir().unwrap();
+        let root_path = root.path().to_string_lossy().to_string();
+        let _env = env_lock::lock_env([("GOSLING_PATH_ROOT", Some(root_path.as_str()))]);
+        let state = Arc::new(ChatGptCodexAuthState::new());
+        let _sign_in = state.oauth_mutex.try_lock().unwrap();
+        let provider = provider_with_auth_state(Arc::clone(&state));
+
+        let route_error = provider.fetch_route_models().await.unwrap_err().to_string();
+        assert!(
+            !route_error.contains("already in progress"),
+            "a catalog lookup tried to start the browser sign-in: {route_error}"
+        );
+        assert!(route_error.contains("sign-in required"), "{route_error}");
+
+        let offline: Vec<String> = known_model_names().into_iter().map(String::from).collect();
+        assert_eq!(provider.fetch_supported_models().await.unwrap(), offline);
+        let infos = provider.fetch_supported_model_info().await.unwrap();
+        assert_eq!(
+            infos
+                .into_iter()
+                .map(|model| model.name)
+                .collect::<Vec<_>>(),
+            offline
+        );
+        assert!(!TokenCache::new().has_token());
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn a_request_without_a_sign_in_still_starts_sign_in() {
+        let root = tempfile::tempdir().unwrap();
+        let root_path = root.path().to_string_lossy().to_string();
+        let _env = env_lock::lock_env([("GOSLING_PATH_ROOT", Some(root_path.as_str()))]);
+        let state = Arc::new(ChatGptCodexAuthState::new());
+        let _sign_in = state.oauth_mutex.try_lock().unwrap();
+        let provider = provider_with_auth_state(Arc::clone(&state));
+
+        let error = provider
+            .auth_provider
+            .get_valid_token()
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("already in progress"), "{error}");
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn a_current_sign_in_is_used_as_is() {
+        let root = tempfile::tempdir().unwrap();
+        let root_path = root.path().to_string_lossy().to_string();
+        let _env = env_lock::lock_env([("GOSLING_PATH_ROOT", Some(root_path.as_str()))]);
+        TokenCache::new()
+            .save(&TokenData {
+                access_token: "access".to_string(),
+                refresh_token: "refresh".to_string(),
+                id_token: None,
+                expires_at: Utc::now() + chrono::Duration::hours(1),
+                account_id: Some("account".to_string()),
+            })
+            .unwrap();
+        let state = Arc::new(ChatGptCodexAuthState::new());
+        let _sign_in = state.oauth_mutex.try_lock().unwrap();
+        let provider = provider_with_auth_state(Arc::clone(&state));
+
+        let signed_in = provider.auth_provider.signed_in_token().await.unwrap();
+        assert_eq!(
+            signed_in.map(|token| token.access_token).as_deref(),
+            Some("access")
+        );
+        let token = provider.auth_provider.get_valid_token().await.unwrap();
+        assert_eq!(token.access_token, "access");
     }
 
     #[test_case(

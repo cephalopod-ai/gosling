@@ -7,6 +7,7 @@ use crate::conversation::message::{Message, ToolRequest};
 use crate::permission::permission_inspector::PermissionInspector;
 use crate::permission::permission_judge::PermissionCheckResult;
 use crate::security::egress_inspector::EgressInspector;
+use crate::tool_monitor::RepetitionInspector;
 
 /// Result of inspecting a tool call
 #[derive(Debug, Clone)]
@@ -198,6 +199,20 @@ impl ToolInspectionManager {
             .iter()
             .find(|inspector| inspector.name() == "egress")
             .and_then(|inspector| inspector.as_any().downcast_ref::<EgressInspector>())
+    }
+
+    fn get_repetition_inspector(&self) -> Option<&RepetitionInspector> {
+        self.inspectors
+            .iter()
+            .find(|inspector| inspector.name() == "repetition")
+            .and_then(|inspector| inspector.as_any().downcast_ref::<RepetitionInspector>())
+    }
+
+    /// Called once per user turn, before that turn's first inspection.
+    pub fn start_turn(&self, session_id: &str) {
+        if let Some(inspector) = self.get_repetition_inspector() {
+            inspector.start_turn(session_id);
+        }
     }
 
     pub fn apply_tool_annotations(&self, tools: &[rmcp::model::Tool]) {

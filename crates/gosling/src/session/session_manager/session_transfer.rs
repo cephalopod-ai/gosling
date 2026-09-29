@@ -261,14 +261,16 @@ impl SessionStorage {
         let new_session = Self::create_session_in_tx(
             &mut tx,
             original_session.working_dir.clone(),
-            new_name,
+            new_name.clone(),
             original_session.session_type,
             original_session.gosling_mode,
         )
         .await?;
 
+        // The caller chose this name; automatic titling must not replace it.
         let mut builder = session_manager
             .update(&new_session.id)
+            .user_provided_name(new_name)
             .extension_data(original_session.extension_data)
             .restrict_tools_to_working_dirs(original_session.restrict_tools_to_working_dirs);
 

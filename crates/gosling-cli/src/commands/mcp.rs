@@ -1,5 +1,6 @@
 use anyhow::{bail, Context, Result};
 use etcetera::{choose_app_strategy, AppStrategy, AppStrategyArgs};
+use gosling::agents::extension_manager::extension_secret_available;
 use gosling::agents::{extension::Envs, ExtensionConfig};
 use gosling::config::extensions::{
     get_all_extension_names, get_all_extensions, name_to_key, remove_extension_and_permissions,
@@ -62,7 +63,7 @@ pub async fn handle_install(args: InstallArgs) -> Result<()> {
     let supplied_secret_keys = secret_keys.iter().cloned().collect::<HashSet<_>>();
     apply_overrides(&mut entry.config, &args, env_pairs, secret_keys)?;
     if args.from_goose {
-        let unresolved = unresolved_env_keys(&entry.config, &supplied_secret_keys);
+        let unresolved = unresolved_env_keys(&entry.config, &supplied_secret_keys).await;
         if !unresolved.is_empty() {
             bail!(
                 "Goose extension '{}' references secrets unavailable to gosling: {}. Goose keyring values are not copied; export each key and pass --secret KEY, or use --secret KEY=VALUE",
@@ -265,7 +266,7 @@ fn merge_env_keys(env_keys: &mut Vec<String>, additions: Vec<String>) {
     }
 }
 
-fn unresolved_env_keys(
+async fn unresolved_env_keys(
     config: &ExtensionConfig,
     supplied_secret_keys: &HashSet<String>,
 ) -> Vec<String> {
@@ -275,19 +276,15 @@ fn unresolved_env_keys(
         _ => return Vec::new(),
     };
     let direct_envs = envs.get_env();
-    let mut unresolved = env_keys
-        .iter()
-        .filter(|key| {
-            let key = key.as_str();
-            !direct_envs.contains_key(key)
-                && !supplied_secret_keys.contains(key)
-                && Config::global()
-                    .get(key, true)
-                    .ok()
-                    .is_none_or(|value| value.as_str().is_none())
-        })
-        .cloned()
-        .collect::<Vec<_>>();
+    let mut unresolved = Vec::new();
+    for key in env_keys {
+        if direct_envs.contains_key(key) || supplied_secret_keys.contains(key) {
+            continue;
+        }
+        if !extension_secret_available(Config::global(), &config.name(), key).await {
+            unresolved.push(key.clone());
+        }
+    }
     unresolved.sort();
     unresolved.dedup();
     unresolved

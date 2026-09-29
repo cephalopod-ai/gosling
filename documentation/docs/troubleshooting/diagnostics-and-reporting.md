@@ -94,7 +94,7 @@ The diagnostics JSON file contains structured sections:
 - **Log Files**: Recent application logs for debugging
 
 :::warning Privacy Notice
-Diagnostics bundles contain your session messages and system information. If your session includes sensitive data (API keys, personal information, proprietary code), review the contents before sharing publicly.
+Diagnostics bundles contain your session messages and system information. Values in gosling's secret store, provider keys set in the environment, and credential-shaped text (API keys, bearer tokens, `password=`-style assignments) are replaced with `[REDACTED]`, but redaction cannot recognize every secret, personal detail, or piece of proprietary code. Review the contents before sharing publicly.
 :::
 
 ## Bug Reports

@@ -120,11 +120,15 @@ pub enum ConfigError {
 
 pub const GOSLING_CODE_EXECUTION_RUNTIME_KEY: &str = "GOSLING_CODE_EXECUTION_RUNTIME";
 
+/// The mode used when `GOSLING_MODE` is set but unreadable.
+pub const INVALID_GOSLING_MODE_FALLBACK: GoslingMode = GoslingMode::Approve;
+
 #[derive(Debug, Clone, Default)]
 pub struct ConfigResolutionScope {
     scoped_keys: HashSet<String>,
     secret_keys: HashMap<String, String>,
     parameter_values: HashMap<String, Value>,
+    secret_values: HashMap<String, Value>,
 }
 
 impl ConfigResolutionScope {
@@ -137,6 +141,25 @@ impl ConfigResolutionScope {
             scoped_keys: scoped_keys.into_iter().collect(),
             secret_keys,
             parameter_values,
+            secret_values: HashMap::new(),
+        }
+    }
+
+    /// Resolves these parameters and secrets to values that are not saved yet,
+    /// so settings can be checked before they are written anywhere.
+    pub fn unsaved(
+        parameter_values: HashMap<String, Value>,
+        secret_values: HashMap<String, Value>,
+    ) -> Self {
+        Self {
+            scoped_keys: parameter_values
+                .keys()
+                .chain(secret_values.keys())
+                .cloned()
+                .collect(),
+            secret_keys: HashMap::new(),
+            parameter_values,
+            secret_values,
         }
     }
 
@@ -313,21 +336,9 @@ impl Default for Config {
         config_paths.extend(additional_config_paths_from_env());
         config_paths.push(user_config_path.clone());
 
-        let no_secrets_config = Self {
-            config_paths: config_paths.clone(),
-            secrets: SecretStorage::File {
-                path: Default::default(),
-            },
-            guard: Mutex::new(()),
-            secrets_cache: Arc::new(Mutex::new(None)),
-            param_cache: Mutex::new(None),
-        };
-
         let keyring_disabled = cfg!(test)
             || env::var("GOSLING_DISABLE_KEYRING").is_ok()
-            || no_secrets_config
-                .get_param::<serde_yaml::Value>("GOSLING_DISABLE_KEYRING")
-                .is_ok_and(|v| keyring_disabled_value(&v));
+            || keyring_disabled_in_config(&config_paths);
         let secrets = secret_storage(&config_dir, keyring_disabled, default_keyring_service());
         Self {
             config_paths,
@@ -479,17 +490,37 @@ fn merge_nested_entries(base: &mut Mapping, overlay: &Mapping) {
     }
 }
 
-/// Read the GOSLING_DISABLE_KEYRING flag from the config file.
+const DISABLE_KEYRING_KEY: &str = "GOSLING_DISABLE_KEYRING";
+
+/// Read the GOSLING_DISABLE_KEYRING flag the way the merged config would: the
+/// last layer that sets it wins.
 ///
-/// Called before Config is fully initialised, so we do a minimal raw read
-/// rather than going through `get_param`.  All errors are treated as `false`
-/// (keyring stays enabled) so a missing/malformed file is never fatal here.
-fn keyring_disabled_in_config(config_path: &Path) -> bool {
-    std::fs::read_to_string(config_path)
-        .ok()
-        .and_then(|s| parse_yaml_content(&s).ok())
-        .and_then(|m| m.get("GOSLING_DISABLE_KEYRING").map(keyring_disabled_value))
-        .unwrap_or(false)
+/// Reads skip a layer that fails to parse, so a syntax error anywhere in
+/// config.yaml used to drop a `GOSLING_DISABLE_KEYRING: true` it contained and
+/// silently switch secret storage to the OS keychain. For such a layer the flag
+/// is taken from its own top-level line instead. (GSL-PT-20260927-S13)
+fn keyring_disabled_in_config(config_paths: &[PathBuf]) -> bool {
+    let mut disabled = false;
+    for path in config_paths {
+        let Ok(content) = std::fs::read_to_string(path) else {
+            continue;
+        };
+        let value = match parse_yaml_content(&content) {
+            Ok(values) => values.get(DISABLE_KEYRING_KEY).cloned(),
+            Err(_) => top_level_value_in_unparsable_yaml(&content, DISABLE_KEYRING_KEY),
+        };
+        if let Some(value) = value {
+            disabled = keyring_disabled_value(&value);
+        }
+    }
+    disabled
+}
+
+fn top_level_value_in_unparsable_yaml(content: &str, key: &str) -> Option<serde_yaml::Value> {
+    content.lines().rev().find_map(|line| {
+        let value = line.strip_prefix(key)?.trim_start().strip_prefix(':')?;
+        serde_yaml::from_str(value).ok()
+    })
 }
 
 #[cfg(feature = "system-keyring")]
@@ -561,7 +592,7 @@ impl Config {
         let config_path = config_path.as_ref().to_path_buf();
         let keyring_disabled = cfg!(test)
             || env::var("GOSLING_DISABLE_KEYRING").is_ok()
-            || keyring_disabled_in_config(&config_path);
+            || keyring_disabled_in_config(std::slice::from_ref(&config_path));
         let config_dir = config_path
             .parent()
             .map(Path::to_path_buf)
@@ -626,6 +657,20 @@ impl Config {
 
     pub fn path(&self) -> String {
         self.write_path().to_string_lossy().to_string()
+    }
+
+    /// Where secrets are stored, for messages shown to the user. Secrets never
+    /// go to the file `path()` names.
+    pub fn secret_storage_location(&self) -> String {
+        match &self.secrets {
+            #[cfg(feature = "system-keyring")]
+            SecretStorage::Keyring { .. } if !KEYRING_RUNTIME_DISABLED.load(Ordering::Relaxed) => {
+                "the system keyring".to_string()
+            }
+            #[cfg(feature = "system-keyring")]
+            SecretStorage::Keyring { .. } => Self::secrets_file_path().display().to_string(),
+            SecretStorage::File { path } => path.display().to_string(),
+        }
     }
 
     /// Reads skip a config file that fails to parse, so a caller about to act on
@@ -733,13 +778,20 @@ impl Config {
         Ok(merged)
     }
 
-    pub fn all_values(&self) -> Result<HashMap<String, Value>, ConfigError> {
+    /// The merged config files' values, without the derived provider and model.
+    pub fn file_values(&self) -> Result<HashMap<String, Value>, ConfigError> {
         let config_values = self.load()?;
-        let mut map = HashMap::from_iter(config_values.iter().filter_map(|(k, v)| {
-            k.as_str()
-                .map(|k| k.to_string())
-                .zip(serde_json::to_value(v).ok())
-        }));
+        Ok(HashMap::from_iter(config_values.iter().filter_map(
+            |(k, v)| {
+                k.as_str()
+                    .map(|k| k.to_string())
+                    .zip(serde_json::to_value(v).ok())
+            },
+        )))
+    }
+
+    pub fn all_values(&self) -> Result<HashMap<String, Value>, ConfigError> {
+        let mut map = self.file_values()?;
 
         if let Ok(provider) = self.get_gosling_provider() {
             map.insert("GOSLING_PROVIDER".to_string(), Value::String(provider));
@@ -1139,6 +1191,14 @@ impl Config {
     /// - The value cannot be deserialized into the requested type
     /// - There is an error accessing the keyring
     pub fn get_secret<T: for<'de> Deserialize<'de>>(&self, key: &str) -> Result<T, ConfigError> {
+        if let Some(value) = CONFIG_RESOLUTION_SCOPE
+            .try_with(|scope| scope.secret_values.get(key).cloned())
+            .ok()
+            .flatten()
+        {
+            return Ok(serde_json::from_value(value)?);
+        }
+
         if let Some(stored_key) = CONFIG_RESOLUTION_SCOPE
             .try_with(|scope| {
                 scope
@@ -1520,6 +1580,25 @@ impl Config {
         }
     }
 
+    /// The configured default mode. A value that cannot be read (for example a
+    /// typo such as `aprove`) must never grant unattended tool execution, so it
+    /// falls back to [`INVALID_GOSLING_MODE_FALLBACK`] instead of the Autonomous
+    /// default that applies when the key is unset.
+    pub fn effective_gosling_mode(&self) -> GoslingMode {
+        match self.resolve_gosling_mode() {
+            Ok(mode) => mode,
+            Err(error) => {
+                tracing::warn!(
+                    key = "GOSLING_MODE",
+                    error = %error,
+                    fallback = %INVALID_GOSLING_MODE_FALLBACK,
+                    "Invalid GOSLING_MODE; new sessions ask before every tool call until it is fixed"
+                );
+                INVALID_GOSLING_MODE_FALLBACK
+            }
+        }
+    }
+
     pub fn resolve_gosling_code_execution_runtime(&self) -> CodeExecutionRuntime {
         match self.get_gosling_code_execution_runtime() {
             Ok(runtime) => runtime,
@@ -1655,6 +1734,73 @@ mod tests {
             Config::new(directory.path().join("config.yaml"), "gosling-unit-test").unwrap();
 
         assert!(matches!(config.secrets, SecretStorage::File { .. }));
+    }
+
+    fn config_layer(directory: &TempDir, name: &str, content: &str) -> PathBuf {
+        let path = directory.path().join(name);
+        std::fs::write(&path, content).unwrap();
+        path
+    }
+
+    /// GSL-PT-20260927-S13 / A06: a typo elsewhere in config.yaml made reads
+    /// skip the whole file, dropping `GOSLING_DISABLE_KEYRING: true` and
+    /// switching secret storage to the OS keychain.
+    #[test]
+    fn a_config_that_fails_to_parse_keeps_the_keyring_disabled() {
+        let directory = TempDir::new().unwrap();
+        for broken in [
+            "GOSLING_DISABLE_KEYRING: true\nGOSLING_PROVIDER: openai\nGOSLING_CLI_SHOW_COST: [unclosed\n  - : :\n",
+            "GOSLING_CLI_SHOW_COST: true\n  GOSLING_CLI_NEWLINE_KEY: n\nGOSLING_DISABLE_KEYRING: \"true\" # file secrets\n",
+        ] {
+            let path = config_layer(&directory, "config.yaml", broken);
+            assert!(
+                parse_yaml_content(broken).is_err(),
+                "fixture must not parse: {broken}"
+            );
+
+            let disabled = keyring_disabled_in_config(std::slice::from_ref(&path));
+            assert!(disabled, "{broken}");
+            assert!(matches!(
+                secret_storage(directory.path(), disabled, "gosling-unit-test"),
+                SecretStorage::File { .. }
+            ));
+        }
+    }
+
+    #[test]
+    fn keyring_flag_reads_are_unchanged_for_parsable_and_flagless_layers() {
+        let directory = TempDir::new().unwrap();
+        let disabled_by_system =
+            config_layer(&directory, "system.yaml", "GOSLING_DISABLE_KEYRING: true\n");
+        let user_off = config_layer(&directory, "off.yaml", "GOSLING_DISABLE_KEYRING: false\n");
+        let user_flagless = config_layer(&directory, "flagless.yaml", "GOSLING_MODE: auto\n");
+        let broken_flagless = config_layer(
+            &directory,
+            "broken-flagless.yaml",
+            "GOSLING_MODE: [auto\n# GOSLING_DISABLE_KEYRING: true\nnested:\n  GOSLING_DISABLE_KEYRING: true\n",
+        );
+        let missing = directory.path().join("missing.yaml");
+
+        assert!(!keyring_disabled_in_config(std::slice::from_ref(&missing)));
+        assert!(!keyring_disabled_in_config(std::slice::from_ref(
+            &user_flagless
+        )));
+        assert!(!keyring_disabled_in_config(std::slice::from_ref(
+            &broken_flagless
+        )));
+        assert!(!keyring_disabled_in_config(&[
+            disabled_by_system.clone(),
+            user_off
+        ]));
+        assert!(keyring_disabled_in_config(&[
+            disabled_by_system.clone(),
+            user_flagless,
+            missing
+        ]));
+        assert!(keyring_disabled_in_config(&[
+            disabled_by_system,
+            broken_flagless
+        ]));
     }
 
     #[test]
@@ -3360,6 +3506,50 @@ extensions:
         assert!(matches!(result, Err(ConfigError::NotFound(_))));
     }
 
+    #[tokio::test]
+    async fn unsaved_values_resolve_inside_the_scope_without_being_stored() {
+        let temp = TempDir::new().unwrap();
+        let config = Config::new_with_file_secrets(
+            temp.path().join("config.yaml"),
+            temp.path().join("secrets.yaml"),
+        )
+        .unwrap();
+        config.set_param("UNSAVED_HOST", "saved-host").unwrap();
+        config.set_secret("UNSAVED_KEY", &"saved-key").unwrap();
+        config.set_param("OTHER_PARAM", "other").unwrap();
+        let scope = ConfigResolutionScope::unsaved(
+            HashMap::from([(
+                "UNSAVED_HOST".to_string(),
+                Value::String("new-host".to_string()),
+            )]),
+            HashMap::from([(
+                "UNSAVED_KEY".to_string(),
+                Value::String("new-key".to_string()),
+            )]),
+        );
+
+        let (host, key, other) = Config::with_resolution_scope(scope, async {
+            (
+                config.get_param::<String>("UNSAVED_HOST"),
+                config.get_secret::<String>("UNSAVED_KEY"),
+                config.get_param::<String>("OTHER_PARAM"),
+            )
+        })
+        .await;
+
+        assert_eq!(host.unwrap(), "new-host");
+        assert_eq!(key.unwrap(), "new-key");
+        assert_eq!(other.unwrap(), "other");
+        assert_eq!(
+            config.get_param::<String>("UNSAVED_HOST").unwrap(),
+            "saved-host"
+        );
+        assert_eq!(
+            config.get_secret::<String>("UNSAVED_KEY").unwrap(),
+            "saved-key"
+        );
+    }
+
     #[test]
     fn resolve_gosling_mode_defaults_only_when_unset() {
         let config = new_test_config();
@@ -3370,5 +3560,27 @@ extensions:
             config.resolve_gosling_mode(),
             Err(ConfigError::DeserializeError(_))
         ));
+    }
+
+    /// GSL-PT-20260927-G130: an unreadable mode such as `yolo` or the typo
+    /// `aprove` used to become Autonomous through `unwrap_or_default`.
+    #[test]
+    fn effective_gosling_mode_fails_closed_only_for_unreadable_values() {
+        let _guard = env_lock::lock_env([("GOSLING_MODE", None::<&str>)]);
+        let config = new_test_config();
+        assert_eq!(config.effective_gosling_mode(), GoslingMode::Auto);
+
+        for (value, expected) in [
+            ("yolo", GoslingMode::Approve),
+            ("aprove", GoslingMode::Approve),
+            ("Auto", GoslingMode::Approve),
+            ("auto", GoslingMode::Auto),
+            ("smart_approve", GoslingMode::SmartApprove),
+            ("approve", GoslingMode::Approve),
+            ("chat", GoslingMode::Chat),
+        ] {
+            config.set_param("GOSLING_MODE", value).unwrap();
+            assert_eq!(config.effective_gosling_mode(), expected, "{value}");
+        }
     }
 }

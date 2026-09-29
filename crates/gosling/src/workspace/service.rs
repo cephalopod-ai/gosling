@@ -75,6 +75,13 @@ impl WorkspaceService {
         Ok(service)
     }
 
+    /// Whether `data_dir` already holds a workspace store. When it does not,
+    /// `initialize` creates one whose Default workspace is
+    /// `default_working_folder`.
+    pub fn store_exists(data_dir: &Path) -> bool {
+        WorkspaceStore::new(data_dir).exists()
+    }
+
     pub fn list(&self) -> Result<(Vec<WorkspaceWithValidation>, String, String)> {
         let document = self.store.load()?;
         let profiles = super::credentials::effective_profiles(&document);

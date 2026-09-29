@@ -1,7 +1,8 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use futures::StreamExt;
-use gosling::agents::{Agent, AgentEvent, SessionConfig};
+use gosling::agents::{Agent, AgentConfig, AgentEvent, GoslingPlatform, SessionConfig};
+use gosling::config::permission::PermissionManager;
 use gosling::config::GoslingMode;
 use gosling::conversation::message::{Message, MessageContent};
 use gosling::conversation::Conversation;
@@ -1958,6 +1959,334 @@ async fn failed_compaction_publishes_terminal_error_for_manual_and_automatic_pat
             .messages()
             .iter()
             .any(|m| m.as_concat_text() == "Keep original history" && m.is_agent_visible()));
+    }
+    Ok(())
+}
+
+fn has_tool_response(message: &Message) -> bool {
+    message
+        .content
+        .iter()
+        .any(|content| matches!(content, MessageContent::ToolResponse(_)))
+}
+
+fn has_tool_request(message: &Message) -> bool {
+    message
+        .content
+        .iter()
+        .any(|content| matches!(content, MessageContent::ToolRequest(_)))
+}
+
+/// Calls its tool whenever the newest request has no tool result after it —
+/// the way a model treats a request it believes is unanswered — and answers
+/// once the result is in context. The first request reports usage above the
+/// auto-compaction threshold so the next loop iteration compacts mid-turn.
+struct InFlightToolProvider {
+    has_compacted: Arc<AtomicBool>,
+    tool_calls_issued: Arc<AtomicUsize>,
+    requests_after_compaction: Arc<std::sync::Mutex<Vec<Vec<Message>>>>,
+    tool_argument: String,
+}
+
+impl InFlightToolProvider {
+    fn new(tool_argument: String) -> Self {
+        Self {
+            has_compacted: Arc::new(AtomicBool::new(false)),
+            tool_calls_issued: Arc::new(AtomicUsize::new(0)),
+            requests_after_compaction: Arc::new(std::sync::Mutex::new(Vec::new())),
+            tool_argument,
+        }
+    }
+}
+
+#[async_trait]
+impl Provider for InFlightToolProvider {
+    async fn stream(
+        &self,
+        _model_config: &ModelConfig,
+        system_prompt: &str,
+        messages: &[Message],
+        _tools: &[Tool],
+    ) -> Result<MessageStream, ProviderError> {
+        if system_prompt.contains("llm context limit was reached") {
+            self.has_compacted.store(true, Ordering::SeqCst);
+            return Ok(stream_from_single_message(
+                Message::assistant().with_text("<mock summary of conversation>"),
+                ProviderUsage::new(
+                    "mock-in-flight".to_string(),
+                    Usage::new(Some(2_000), Some(200), Some(2_200)),
+                ),
+            ));
+        }
+
+        let compacted = self.has_compacted.load(Ordering::SeqCst);
+        if compacted {
+            self.requests_after_compaction
+                .lock()
+                .unwrap()
+                .push(messages.to_vec());
+        }
+        let latest_request = messages.iter().rposition(|message| {
+            message.role == rmcp::model::Role::User && !has_tool_response(message)
+        });
+        let tool_already_ran =
+            latest_request.is_some_and(|index| messages[index + 1..].iter().any(has_tool_response));
+        let total = if compacted { 5_000 } else { 110_000 };
+        let usage = ProviderUsage::new(
+            "mock-in-flight".to_string(),
+            Usage::new(Some(total - 100), Some(100), Some(total)),
+        );
+        let reply = if tool_already_ran {
+            Message::assistant().with_text("The side effect was recorded once.")
+        } else {
+            let call = self.tool_calls_issued.fetch_add(1, Ordering::SeqCst);
+            let arguments = serde_json::Map::from_iter([(
+                "entry".to_string(),
+                serde_json::Value::String(self.tool_argument.clone()),
+            )]);
+            Message::assistant().with_tool_request(
+                format!("call_{call}"),
+                Ok(CallToolRequestParams::new("record_side_effect").with_arguments(arguments)),
+            )
+        };
+        Ok(stream_from_single_message(reply, usage))
+    }
+
+    fn get_name(&self) -> &str {
+        "mock-in-flight"
+    }
+}
+
+const IN_FLIGHT_PROMPT: &str = "Record the side effect once";
+
+async fn in_flight_tool_agent(
+    provider: Arc<InFlightToolProvider>,
+) -> Result<(TempDir, Agent, String)> {
+    let temp_dir = TempDir::new()?;
+    let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
+    let agent = Agent::with_config(AgentConfig::new(
+        session_manager,
+        Arc::new(PermissionManager::new(temp_dir.path().to_path_buf())),
+        GoslingMode::Auto,
+        true,
+        GoslingPlatform::GoslingCli,
+    ));
+    let session = setup_test_session_with_usage(
+        &agent,
+        &temp_dir,
+        "in-flight-tool-turn",
+        vec![
+            Message::user().with_text("Hello"),
+            Message::assistant().with_text("Hi there"),
+        ],
+        Usage::new(Some(49_900), Some(100), Some(50_000)),
+    )
+    .await?;
+    agent
+        .update_provider(provider, ModelConfig::new("mock-model"), &session.id)
+        .await?;
+    Ok((temp_dir, agent, session.id))
+}
+
+fn bounded_turn(session_id: &str) -> SessionConfig {
+    SessionConfig {
+        id: session_id.to_string(),
+        max_turns: Some(6),
+        compacted_context: false,
+        tail_limit: None,
+    }
+}
+
+async fn run_in_flight_tool_turn(provider: Arc<InFlightToolProvider>) -> Result<TurnEvents> {
+    let (_temp_dir, agent, session_id) = in_flight_tool_agent(provider).await?;
+
+    let reply_stream = agent
+        .reply(
+            Message::user().with_text(IN_FLIGHT_PROMPT),
+            bounded_turn(&session_id),
+            None,
+        )
+        .await?;
+    tokio::pin!(reply_stream);
+    let mut events = TurnEvents::default();
+    while let Some(event) = reply_stream.next().await {
+        if let AgentEvent::Message(message) = event? {
+            events
+                .terminal_errors
+                .extend(message.metadata.terminal_error.clone());
+            events.texts.push(message.as_concat_text());
+        }
+    }
+    Ok(events)
+}
+
+/// GSL-PT-20260927-B08: compaction inside a tool loop folded the completed
+/// tool call into the summary and re-appended the request after it, so the
+/// same (non-idempotent) tool ran again.
+#[tokio::test]
+#[serial]
+async fn in_loop_compaction_does_not_repeat_a_completed_tool_call() -> Result<()> {
+    let _threshold = pin_auto_compact_threshold();
+    let provider = Arc::new(InFlightToolProvider::new("release note".to_string()));
+
+    let events = run_in_flight_tool_turn(provider.clone()).await?;
+
+    assert!(provider.has_compacted.load(Ordering::SeqCst));
+    assert_eq!(provider.tool_calls_issued.load(Ordering::SeqCst), 1);
+    assert!(
+        events.terminal_errors.is_empty(),
+        "{:?}",
+        events.terminal_errors
+    );
+    assert!(events
+        .texts
+        .iter()
+        .any(|text| text == "The side effect was recorded once."));
+
+    let requests = provider.requests_after_compaction.lock().unwrap();
+    let first = requests.first().expect("a request follows the compaction");
+    let summary = first
+        .iter()
+        .position(|message| {
+            message
+                .as_concat_text()
+                .contains("<mock summary of conversation>")
+        })
+        .expect("summary sent");
+    let request = first
+        .iter()
+        .position(|message| {
+            message
+                .as_concat_text()
+                .contains("Record the side effect once")
+        })
+        .expect("request sent");
+    assert!(summary < request, "{first:?}");
+    assert!(has_tool_request(&first[request + 1]), "{first:?}");
+    assert!(has_tool_response(&first[request + 2]), "{first:?}");
+    Ok(())
+}
+
+#[tokio::test]
+#[serial]
+async fn in_flight_turn_that_outgrows_the_window_stops_without_repeating_tools() -> Result<()> {
+    let _threshold = pin_auto_compact_threshold();
+    let provider = Arc::new(InFlightToolProvider::new(over_limit_prompt().await?));
+
+    let events = run_in_flight_tool_turn(provider.clone()).await?;
+
+    assert!(provider.has_compacted.load(Ordering::SeqCst));
+    assert_eq!(provider.tool_calls_issued.load(Ordering::SeqCst), 1);
+    assert_eq!(events.terminal_errors.len(), 1, "{:?}", events.texts);
+    assert!(
+        events.terminal_errors[0]
+            .starts_with("This turn no longer fits mock-model's context window"),
+        "{:?}",
+        events.terminal_errors
+    );
+    assert!(provider
+        .requests_after_compaction
+        .lock()
+        .unwrap()
+        .is_empty());
+    Ok(())
+}
+
+struct CompactionReport {
+    notice_tokens: usize,
+    context_tokens: usize,
+    message_tokens: usize,
+}
+
+fn estimate_in_notice(notice: &str) -> Option<usize> {
+    let (_, rest) = notice.split_once("estimated at ")?;
+    rest.split_whitespace().next()?.parse().ok()
+}
+
+async fn compaction_report(
+    agent: &Agent,
+    session_id: &str,
+    prompt: &str,
+) -> Result<CompactionReport> {
+    let reply_stream = agent
+        .reply(
+            Message::user().with_text(prompt),
+            bounded_turn(session_id),
+            None,
+        )
+        .await?;
+    tokio::pin!(reply_stream);
+    let mut replaced = None;
+    let mut context_tokens = None;
+    let mut notice_tokens = None;
+    while let Some(event) = reply_stream.next().await {
+        match event? {
+            AgentEvent::HistoryReplaced(conversation) => replaced = Some(conversation),
+            AgentEvent::ContextUsage(usage) if replaced.is_some() && context_tokens.is_none() => {
+                context_tokens = Some(usage.current_tokens);
+            }
+            AgentEvent::Message(message) => {
+                for content in &message.content {
+                    if let Some(notification) = content.as_system_notification() {
+                        if notification.msg.starts_with("Compaction ") {
+                            notice_tokens = estimate_in_notice(&notification.msg);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    let replaced = replaced.expect("compaction replaced the history");
+    Ok(CompactionReport {
+        notice_tokens: notice_tokens.expect("completion notice"),
+        context_tokens: context_tokens.expect("context usage after compaction"),
+        message_tokens: gosling::context_mgmt::estimate_conversation_tokens(&replaced).await?,
+    })
+}
+
+/// GSL-PT-20260927-B10: the completion notice and the context usage reported
+/// after compaction counted messages only, although every request also
+/// carries the system prompt and tool definitions.
+#[tokio::test]
+#[serial]
+async fn compaction_reports_include_the_system_prompt_and_tools() -> Result<()> {
+    let _threshold = pin_auto_compact_threshold();
+
+    let pre_turn_dir = TempDir::new()?;
+    let pre_turn_agent = Agent::new();
+    let session = setup_test_session_with_usage(
+        &pre_turn_agent,
+        &pre_turn_dir,
+        "pre-turn-report",
+        vec![
+            Message::user().with_text("Hello"),
+            Message::assistant().with_text("Hi there"),
+        ],
+        Usage::new(Some(109_900), Some(100), Some(110_000)),
+    )
+    .await?;
+    pre_turn_agent
+        .update_provider(
+            Arc::new(ThresholdCompactionProvider::for_case1()),
+            ModelConfig::new("mock-model"),
+            &session.id,
+        )
+        .await?;
+    let pre_turn = compaction_report(&pre_turn_agent, &session.id, "Continue").await?;
+
+    let provider = Arc::new(InFlightToolProvider::new("release note".to_string()));
+    let (_in_loop_dir, in_loop_agent, session_id) = in_flight_tool_agent(provider).await?;
+    let in_loop = compaction_report(&in_loop_agent, &session_id, IN_FLIGHT_PROMPT).await?;
+
+    for (path, report) in [("pre-turn", pre_turn), ("in-loop", in_loop)] {
+        assert!(
+            report.notice_tokens > report.message_tokens,
+            "{path}: notice {} vs conversation {}",
+            report.notice_tokens,
+            report.message_tokens
+        );
+        assert_eq!(report.context_tokens, report.notice_tokens, "{path}");
     }
     Ok(())
 }

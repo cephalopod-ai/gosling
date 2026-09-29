@@ -6,13 +6,16 @@ use console::style;
 use gosling::agents::{Agent, AgentConfig, Container, ExtensionError, GoslingPlatform};
 use gosling::config::extensions::name_to_key;
 use gosling::config::{
+    ignored_legacy_model, ignored_legacy_provider, CodeExecutionRuntime, Config, ConfigError,
+    ExtensionConfig, GoslingMode, PermissionManager,
+};
+use gosling::config::{
     resolve_extensions_for_new_session, resolve_extensions_for_new_session_for_cwd,
 };
-use gosling::config::{Config, ExtensionConfig, GoslingMode, PermissionManager};
 use gosling::model_config::model_config_from_user_config;
 use gosling::providers::create;
 use gosling::session::session_manager::SessionType;
-use gosling::session::EnabledExtensionsState;
+use gosling::session::{EnabledExtensionsState, SessionNotFound};
 use rustyline::EditMode;
 use std::collections::BTreeSet;
 use std::process;
@@ -151,6 +154,7 @@ async fn load_extensions(
     agent: Agent,
     extensions_to_load: Vec<(String, ExtensionConfig)>,
     session_id: &str,
+    startup: &StartupGuard<'_>,
 ) -> Arc<Agent> {
     let mut set = JoinSet::new();
     let agent_ptr = Arc::new(agent);
@@ -160,7 +164,7 @@ async fn load_extensions(
         let agent_ptr = agent_ptr.clone();
         let cfg = extension.clone();
         let sid = session_id.to_string();
-        set.spawn(async move { (id, agent_ptr.add_extension(cfg, &sid).await) });
+        set.spawn(async move { (id, agent_ptr.start_extension(cfg, &sid).await) });
     }
 
     let get_message = |waiting_ids: &BTreeSet<usize>| {
@@ -192,6 +196,7 @@ async fn load_extensions(
             // initializing; exiting straight from the signal would orphan them.
             set.shutdown().await;
             spinner.clear();
+            startup.discard_created_session().await;
             process::exit(130);
         }
     } {
@@ -233,6 +238,13 @@ async fn load_extensions(
     agent_ptr
 }
 
+fn missing_setting_error(config: &Config, setting: &str) -> String {
+    match crate::commands::configure::unparsable_config_problem(config) {
+        Some(problem) => format!("Cannot start a session: {problem}, then try again."),
+        None => format!("No {setting} configured. Run 'gosling configure' first."),
+    }
+}
+
 struct ResolvedProviderConfig {
     provider_name: String,
     model_name: String,
@@ -244,47 +256,87 @@ fn resolve_provider_and_model(
     config: &Config,
     saved_provider: Option<String>,
     saved_model_config: Option<gosling_providers::model::ModelConfig>,
-) -> ResolvedProviderConfig {
+) -> Result<ResolvedProviderConfig, String> {
+    let ignored_settings = [
+        (session_config.provider.is_none() && saved_provider.is_none())
+            .then(|| ignored_legacy_provider(config))
+            .flatten(),
+        (session_config.model.is_none() && saved_model_config.is_none())
+            .then(|| ignored_legacy_model(config))
+            .flatten(),
+    ];
+    for note in ignored_settings.into_iter().flatten() {
+        eprintln!("{}", style(format!("Warning: {note}")).yellow());
+    }
+
     let provider_name = session_config
         .provider
         .clone()
         .or(saved_provider)
         .or_else(|| config.get_gosling_provider().ok())
-        .unwrap_or_else(|| {
-            output::render_error("No provider configured. Run 'gosling configure' first.");
-            process::exit(1);
-        });
+        .ok_or_else(|| missing_setting_error(config, "provider"))?;
 
     let model_name = session_config
         .model
         .clone()
         .or_else(|| saved_model_config.as_ref().map(|mc| mc.model_name.clone()))
         .or_else(|| config.get_gosling_model().ok())
-        .unwrap_or_else(|| {
-            output::render_error("No model configured. Run 'gosling configure' first.");
-            process::exit(1);
-        });
+        .ok_or_else(|| missing_setting_error(config, "model"))?;
 
     let model_config = if session_config.resume
         && saved_model_config
             .as_ref()
             .is_some_and(|mc| mc.model_name == model_name)
     {
-        let mut config = saved_model_config.unwrap();
-        config.normalize_effort_suffix();
-        config
+        // The saved limit may itself have come from an earlier run's
+        // GOSLING_CONTEXT_LIMIT, so a limit configured for this run replaces it.
+        let context_limit = config.get_gosling_context_limit().unwrap_or_else(|e| {
+            output::render_error(&format!("Failed to create model configuration: {}", e));
+            process::exit(1);
+        });
+        let mut saved = saved_model_config
+            .unwrap()
+            .with_context_limit(context_limit);
+        saved.normalize_effort_suffix();
+        saved
     } else {
         gosling::model_config::model_config_from_user_config(&provider_name, &model_name)
-            .unwrap_or_else(|e| {
-                output::render_error(&format!("Failed to create model configuration: {}", e));
-                process::exit(1);
-            })
+            .map_err(|e| format!("Failed to create model configuration: {}", e))?
     };
 
-    ResolvedProviderConfig {
+    Ok(ResolvedProviderConfig {
         provider_name,
         model_name,
         model_config,
+    })
+}
+
+/// The session `build_session` was handed that this start itself created —
+/// a new session, or a fork — as opposed to one being resumed.
+fn session_created_for_this_start(session_config: &SessionBuilderConfig) -> Option<String> {
+    let created = session_config.fork || !(session_config.resume || session_config.no_session);
+    created.then(|| session_config.session_id.clone()).flatten()
+}
+
+/// A new session or a fork created for this start becomes the user's only
+/// once startup succeeds. A start that fails first removes it, so it cannot
+/// linger empty (or as an orphaned copy) and be picked by a later `--resume`.
+struct StartupGuard<'a> {
+    session_manager: &'a gosling::session::SessionManager,
+    created_session_id: Option<String>,
+}
+
+impl StartupGuard<'_> {
+    async fn discard_created_session(&self) {
+        if let Some(session_id) = &self.created_session_id {
+            let _ = self.session_manager.delete_session(session_id).await;
+        }
+    }
+
+    async fn fail<T>(&self, message: &str) -> T {
+        self.discard_created_session().await;
+        output::render_error(message);
+        process::exit(1)
     }
 }
 
@@ -322,9 +374,16 @@ async fn resolve_session_id(
                     process::exit(1);
                 }
                 Ok(_) => session_id.clone(),
-                Err(_) => {
+                Err(error) if error.downcast_ref::<SessionNotFound>().is_some() => {
                     output::render_error(&format!(
                         "Cannot resume session {} - no such session exists",
+                        style(session_id).cyan()
+                    ));
+                    process::exit(1);
+                }
+                Err(error) => {
+                    output::render_error(&format!(
+                        "Cannot resume session {}: {error}",
                         style(session_id).cyan()
                     ));
                     process::exit(1);
@@ -344,27 +403,82 @@ async fn resolve_session_id(
     }
 }
 
-async fn handle_resumed_session_workdir(agent: &Agent, session_id: &str, interactive: bool) {
-    let session = agent
+/// A turn that was killed mid-run is closed before the history is loaded, so
+/// it is shown as interrupted and never merged into the next prompt.
+async fn close_interrupted_turn(
+    session_manager: &gosling::session::session_manager::SessionManager,
+    session_id: &str,
+) {
+    let closed = match session_manager.recover_tool_operations(session_id).await {
+        Ok(_) => session_manager.close_interrupted_turn(session_id).await,
+        Err(e) => Err(e),
+    };
+    if let Err(e) = closed {
+        output::render_error(&format!("Failed to close the interrupted turn: {}", e));
+        process::exit(1);
+    }
+}
+
+async fn handle_resumed_session_workdir(
+    agent: &Agent,
+    session_id: &str,
+    interactive: bool,
+    startup: &StartupGuard<'_>,
+) {
+    let session = match agent
         .config
         .session_manager
         .get_session(session_id, false)
         .await
-        .unwrap_or_else(|e| {
-            output::render_error(&format!("Failed to read session metadata: {}", e));
-            process::exit(1);
-        });
+    {
+        Ok(session) => session,
+        Err(e) => {
+            startup
+                .fail(&format!("Failed to read session metadata: {}", e))
+                .await
+        }
+    };
 
-    let current_workdir = std::env::current_dir().unwrap_or_else(|e| {
-        output::render_error(&format!("Failed to get current working directory: {}", e));
-        process::exit(1);
-    });
+    let current_workdir = match std::env::current_dir() {
+        Ok(current_workdir) => current_workdir,
+        Err(e) => {
+            startup
+                .fail(&format!("Failed to get current working directory: {}", e))
+                .await
+        }
+    };
     if current_workdir == session.working_dir {
         return;
     }
 
+    // The working directory of a session restricted to it (every imported
+    // session) is the trust boundary its tools are held to, chosen when it
+    // was created; resuming from somewhere else must not move that boundary.
+    if session.restrict_tools_to_working_dirs {
+        match std::env::set_current_dir(&session.working_dir) {
+            Ok(()) => eprintln!(
+                "{}",
+                style(format!(
+                    "This session is restricted to its working directory; switching to {}.",
+                    session.working_dir.display()
+                ))
+                .yellow()
+            ),
+            Err(e) => eprintln!(
+                "{}",
+                style(format!(
+                    "Warning: This session is restricted to its working directory {}, which \
+                     cannot be entered ({e}); its tools stay limited to it.",
+                    session.working_dir.display()
+                ))
+                .yellow()
+            ),
+        }
+        return;
+    }
+
     if interactive {
-        let change_workdir = cliclack::confirm(format!(
+        let change_workdir = match cliclack::confirm(format!(
             "{} The original working directory of this session was set to {}. \
              Your current directory is {}. \
              Do you want to switch back to the original working directory?",
@@ -374,10 +488,14 @@ async fn handle_resumed_session_workdir(agent: &Agent, session_id: &str, interac
         ))
         .initial_value(true)
         .interact()
-        .unwrap_or_else(|e| {
-            output::render_error(&format!("Failed to get user input: {}", e));
-            process::exit(1);
-        });
+        {
+            Ok(change_workdir) => change_workdir,
+            Err(e) => {
+                startup
+                    .fail(&format!("Failed to get user input: {}", e))
+                    .await
+            }
+        };
 
         if change_workdir {
             if !session.working_dir.exists() {
@@ -397,9 +515,10 @@ async fn handle_resumed_session_workdir(agent: &Agent, session_id: &str, interac
             "{}",
             style(format!(
                 "Warning: Working directory differs from session (current: {}, session: {}). \
-                 Staying in current directory.",
+                 Staying in current directory; the session's working directory is now {}.",
                 current_workdir.display(),
-                session.working_dir.display()
+                session.working_dir.display(),
+                current_workdir.display()
             ))
             .yellow()
         );
@@ -409,20 +528,21 @@ async fn handle_resumed_session_workdir(agent: &Agent, session_id: &str, interac
     // process cwd, so staying put must be persisted to take effect.
     let effective_workdir = std::env::current_dir().unwrap_or(current_workdir);
     if effective_workdir != session.working_dir {
-        agent
+        if let Err(e) = agent
             .config
             .session_manager
             .update(session_id)
             .working_dir(effective_workdir)
             .apply()
             .await
-            .unwrap_or_else(|e| {
-                output::render_error(&format!(
+        {
+            startup
+                .fail(&format!(
                     "Failed to update session working directory: {}",
                     e
-                ));
-                process::exit(1);
-            });
+                ))
+                .await
+        }
     }
 }
 
@@ -464,12 +584,9 @@ async fn collect_extension_configs(
                 .split(',')
                 .any(|name| name_to_key(name.trim()) == "code_execution")
             {
-                return Err(ExtensionError::ConfigError(
-                    "Cannot start '--with-builtin code_execution': code execution runtime is \
-                     disabled by GOSLING_CODE_EXECUTION_RUNTIME=disabled. Set it to enabled and \
-                     restart Gosling to use Code Mode."
-                        .to_string(),
-                ));
+                return Err(ExtensionError::ConfigError(code_mode_unavailable(
+                    Config::global().get_gosling_code_execution_runtime(),
+                )));
             }
         }
     }
@@ -486,10 +603,32 @@ async fn collect_extension_configs(
     Ok(all)
 }
 
+/// Why `--with-builtin code_execution` cannot start, given the runtime setting as read. The
+/// runtime is disabled when the setting is absent or unreadable too, not only when it says so.
+fn code_mode_unavailable(setting: Result<CodeExecutionRuntime, ConfigError>) -> String {
+    let cause = match setting {
+        Ok(_) => "the code execution runtime is disabled by GOSLING_CODE_EXECUTION_RUNTIME=disabled"
+            .to_string(),
+        Err(ConfigError::NotFound(_)) => {
+            "the code execution runtime is off by default and GOSLING_CODE_EXECUTION_RUNTIME is not set"
+                .to_string()
+        }
+        Err(error) => format!(
+            "GOSLING_CODE_EXECUTION_RUNTIME is set to a value Gosling cannot use ({error}), so the \
+             code execution runtime stays disabled"
+        ),
+    };
+    format!(
+        "Cannot start '--with-builtin code_execution': {cause}. Set \
+         GOSLING_CODE_EXECUTION_RUNTIME=enabled and restart Gosling to use Code Mode."
+    )
+}
+
 async fn resolve_and_load_extensions(
     agent: Agent,
     extensions: Vec<ExtensionConfig>,
     session_id: &str,
+    startup: &StartupGuard<'_>,
 ) -> Arc<Agent> {
     for warning in gosling::config::get_warnings() {
         eprintln!("{}", style(format!("Warning: {}", warning)).yellow());
@@ -500,7 +639,7 @@ async fn resolve_and_load_extensions(
         .map(|cfg| (cfg.name(), cfg))
         .collect();
 
-    load_extensions(agent, extensions_to_load, session_id).await
+    load_extensions(agent, extensions_to_load, session_id, startup).await
 }
 
 async fn configure_session_prompts(
@@ -508,6 +647,7 @@ async fn configure_session_prompts(
     config: &Config,
     session_config: &SessionBuilderConfig,
     session_id: &str,
+    startup: &StartupGuard<'_>,
 ) {
     if let Err(e) = session.agent.persist_extension_state(session_id).await {
         tracing::warn!("Failed to save extension state: {}", e);
@@ -523,13 +663,17 @@ async fn configure_session_prompts(
     let system_prompt_file: Option<String> =
         config.get_param("GOSLING_SYSTEM_PROMPT_FILE_PATH").ok();
     if let Some(ref path) = system_prompt_file {
-        let override_prompt = std::fs::read_to_string(path).unwrap_or_else(|e| {
-            output::render_error(&format!(
-                "Failed to read system prompt file '{}': {}",
-                path, e
-            ));
-            process::exit(1);
-        });
+        let override_prompt = match std::fs::read_to_string(path) {
+            Ok(override_prompt) => override_prompt,
+            Err(e) => {
+                startup
+                    .fail(&format!(
+                        "Failed to read system prompt file '{}': {}",
+                        path, e
+                    ))
+                    .await
+            }
+        };
         session.agent.override_system_prompt(override_prompt).await;
     }
 }
@@ -555,7 +699,7 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
         let agent_config = AgentConfig::new(
             session_manager,
             PermissionManager::instance(),
-            config.get_gosling_mode().unwrap_or_default(),
+            config.effective_gosling_mode(),
             true,
             GoslingPlatform::GoslingCli,
         )
@@ -567,6 +711,9 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
     } else {
         (Agent::new(), None)
     };
+    if let Some(problem) = agent.config.permission_manager.policy_problem() {
+        eprintln!("Warning: {problem}");
+    }
     if let Some(max_repetitions) = session_config.max_tool_repetitions {
         agent.set_max_tool_repetitions(max_repetitions);
     }
@@ -576,6 +723,10 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
     }
 
     let session_manager = agent.config.session_manager.clone();
+    let startup = StartupGuard {
+        session_manager: &session_manager,
+        created_session_id: session_created_for_this_start(&session_config),
+    };
 
     let (saved_provider, saved_model_config) = if session_config.resume {
         if let Some(ref session_id) = session_config.session_id {
@@ -590,22 +741,32 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
         (None, None)
     };
 
-    let resolved =
-        resolve_provider_and_model(&session_config, config, saved_provider, saved_model_config);
+    let resolved = match resolve_provider_and_model(
+        &session_config,
+        config,
+        saved_provider,
+        saved_model_config,
+    ) {
+        Ok(resolved) => resolved,
+        Err(message) => startup.fail(&message).await,
+    };
 
     let session_id =
         resolve_session_id(&session_config, &session_manager, agent.config.gosling_mode).await;
 
     if session_config.resume {
-        handle_resumed_session_workdir(&agent, &session_id, session_config.interactive).await;
+        close_interrupted_turn(&session_manager, &session_id).await;
+        handle_resumed_session_workdir(&agent, &session_id, session_config.interactive, &startup)
+            .await;
     }
 
     let extensions_for_provider =
         match collect_extension_configs(&agent, &session_config, &session_id).await {
             Ok(exts) => exts,
             Err(e) => {
-                output::render_error(&format!("Failed to collect extensions: {}", e));
-                process::exit(1);
+                startup
+                    .fail(&format!("Failed to collect extensions: {}", e))
+                    .await
             }
         };
 
@@ -622,14 +783,18 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
                     && session_config.provider.is_none()
                     && is_provider_unavailable_error(&e) =>
             {
-                let fallback_provider = config.get_gosling_provider().unwrap_or_else(|_| {
-                    output::render_error("No provider configured. Run 'gosling configure' first.");
-                    process::exit(1);
-                });
-                let fallback_model = config.get_gosling_model().unwrap_or_else(|_| {
-                    output::render_error("No model configured. Run 'gosling configure' first.");
-                    process::exit(1);
-                });
+                let fallback_provider = match config.get_gosling_provider() {
+                    Ok(fallback_provider) => fallback_provider,
+                    Err(_) => {
+                        startup
+                            .fail(&missing_setting_error(config, "provider"))
+                            .await
+                    }
+                };
+                let fallback_model = match config.get_gosling_model() {
+                    Ok(fallback_model) => fallback_model,
+                    Err(_) => startup.fail(&missing_setting_error(config, "model")).await,
+                };
                 eprintln!(
                     "{}",
                     style(format!(
@@ -639,15 +804,17 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
                     ))
                     .yellow()
                 );
-                let fallback_model_config =
-                    model_config_from_user_config(fallback_provider.as_str(), &fallback_model)
-                        .unwrap_or_else(|e| {
-                            output::render_error(&format!(
-                                "Failed to create model configuration: {}",
-                                e
-                            ));
-                            process::exit(1);
-                        });
+                let fallback_model_config = match model_config_from_user_config(
+                    fallback_provider.as_str(),
+                    &fallback_model,
+                ) {
+                    Ok(fallback_model_config) => fallback_model_config,
+                    Err(e) => {
+                        startup
+                            .fail(&format!("Failed to create model configuration: {}", e))
+                            .await
+                    }
+                };
                 match create(&fallback_provider, extensions_for_provider.clone()).await {
                     Ok(provider) => (
                         provider,
@@ -655,49 +822,43 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
                         fallback_model,
                         fallback_model_config,
                     ),
-                    Err(e2) => {
-                        output::render_error(&format_provider_creation_error(&e2));
-                        process::exit(1);
-                    }
+                    Err(e2) => startup.fail(&format_provider_creation_error(&e2)).await,
                 }
             }
-            Err(e) => {
-                output::render_error(&format_provider_creation_error(&e));
-                process::exit(1);
-            }
+            Err(e) => startup.fail(&format_provider_creation_error(&e)).await,
         };
     tracing::info!("🤖 Using model: {}", effective_model_name);
 
-    agent
+    if let Err(e) = agent
         .update_provider(new_provider, effective_model_config, &session_id)
         .await
-        .unwrap_or_else(|e| {
-            output::render_error(&format!("Failed to initialize agent: {}", e));
-            process::exit(1);
-        });
+    {
+        startup
+            .fail(&format!("Failed to initialize agent: {}", e))
+            .await
+    }
 
     let session_mode = if session_config.resume {
-        session_manager
-            .get_session(&session_id, false)
-            .await
-            .map(|session| session.gosling_mode)
-            .unwrap_or_else(|e| {
-                output::render_error(&format!("Failed to read session metadata: {}", e));
-                process::exit(1);
-            })
+        match session_manager.get_session(&session_id, false).await {
+            Ok(session) => session.gosling_mode,
+            Err(e) => {
+                startup
+                    .fail(&format!("Failed to read session metadata: {}", e))
+                    .await
+            }
+        }
     } else {
         agent.config.gosling_mode
     };
-    agent
-        .update_gosling_mode(session_mode, &session_id)
-        .await
-        .unwrap_or_else(|e| {
-            output::render_error(&format!("Failed to set session mode: {}", e));
-            process::exit(1);
-        });
+    if let Err(e) = agent.update_gosling_mode(session_mode, &session_id).await {
+        startup
+            .fail(&format!("Failed to set session mode: {}", e))
+            .await
+    }
 
     // Extensions are loaded after session creation because we may change directory when resuming
-    let agent_ptr = resolve_and_load_extensions(agent, extensions_for_provider, &session_id).await;
+    let agent_ptr =
+        resolve_and_load_extensions(agent, extensions_for_provider, &session_id, &startup).await;
 
     let edit_mode = config
         .get_param::<String>("EDIT_MODE")
@@ -723,19 +884,22 @@ pub async fn build_session(session_config: SessionBuilderConfig) -> CliSession {
         session_config.stats,
     )
     .await;
+    session.quiet = session_config.quiet;
 
     if let Some((session_dir, transcript_suppression)) = ephemeral_state {
         session.use_ephemeral_state(session_dir, transcript_suppression);
     }
 
-    configure_session_prompts(&session, config, &session_config, &session_id).await;
+    configure_session_prompts(&session, config, &session_config, &session_id, &startup).await;
 
     if !session_config.quiet && session_config.output_format == "text" {
+        // A --no-session run lives in a throwaway store; its id can never be resumed.
         output::display_session_info(
             session_config.resume,
+            session_config.fork,
             &effective_provider_name,
             &effective_model_name,
-            &Some(session_id),
+            &(!session_config.no_session).then_some(session_id),
         );
     }
     session
@@ -759,13 +923,13 @@ fn is_secret_storage_error(e: &anyhow::Error) -> bool {
 fn format_provider_creation_error(e: &anyhow::Error) -> String {
     if is_secret_storage_error(e) {
         format!(
-            "Error {e}.\n\
+            "{e}.\n\
              Please check your system keychain and run 'gosling configure' again.\n\
              If your system is unable to use the keyring, please try setting secret key(s) via environment variables.\n\
              For more info, see: https://gosling-docs.ai/docs/troubleshooting/#keychainkeyring-errors"
         )
     } else {
-        format!("Error {e}.")
+        format!("{e}.")
     }
 }
 
@@ -796,6 +960,36 @@ mod tests {
         let rendered = format_provider_creation_error(&unrelated);
         assert!(!rendered.contains("system keychain"));
         assert!(rendered.contains("not offered by agent"));
+    }
+
+    #[test]
+    fn provider_creation_errors_carry_no_second_error_label() {
+        assert_eq!(
+            format_provider_creation_error(&anyhow::anyhow!("Unknown provider: bogus-prov")),
+            "Unknown provider: bogus-prov."
+        );
+    }
+
+    #[test]
+    fn the_code_mode_gate_names_why_the_runtime_is_off() {
+        let disabled = code_mode_unavailable(Ok(CodeExecutionRuntime::Disabled));
+        assert!(disabled.contains("disabled by GOSLING_CODE_EXECUTION_RUNTIME=disabled"));
+
+        let unset = code_mode_unavailable(Err(ConfigError::NotFound(
+            "GOSLING_CODE_EXECUTION_RUNTIME".into(),
+        )));
+        assert!(unset.contains("off by default and GOSLING_CODE_EXECUTION_RUNTIME is not set"));
+        assert!(!unset.contains("=disabled"));
+
+        let invalid = code_mode_unavailable(Err(ConfigError::DeserializeError(
+            "unknown variant `bogus`".into(),
+        )));
+        assert!(invalid.contains("unknown variant `bogus`"));
+        assert!(!invalid.contains("=disabled"));
+
+        for message in [disabled, unset, invalid] {
+            assert!(message.contains("Set GOSLING_CODE_EXECUTION_RUNTIME=enabled"));
+        }
     }
 
     #[test]
@@ -862,6 +1056,42 @@ mod tests {
         assert!(!config.fork);
     }
 
+    // GSL-PT-20260927-S04: the first GOSLING_CONTEXT_LIMIT used with a resumed
+    // session was saved with it and every later value was ignored.
+    #[test]
+    fn resumed_session_uses_the_context_limit_configured_for_this_run() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("config.yaml");
+        std::fs::write(
+            &config_path,
+            "GOSLING_PROVIDER: openai\nGOSLING_MODEL: playtest-model\n",
+        )
+        .unwrap();
+        let config =
+            Config::new_with_file_secrets(&config_path, dir.path().join("secrets.yaml")).unwrap();
+        let resume = SessionBuilderConfig {
+            resume: true,
+            ..SessionBuilderConfig::default()
+        };
+        let saved = gosling_providers::model::ModelConfig::new("playtest-model")
+            .with_context_limit(Some(10_000));
+        let resolved_limit = |limit: Option<&str>| {
+            let _env = env_lock::lock_env([("GOSLING_CONTEXT_LIMIT", limit)]);
+            resolve_provider_and_model(
+                &resume,
+                &config,
+                Some("openai".to_string()),
+                Some(saved.clone()),
+            )
+            .expect("provider and model resolve")
+            .model_config
+            .context_limit
+        };
+
+        assert_eq!(resolved_limit(Some("50000")), Some(50_000));
+        assert_eq!(resolved_limit(None), Some(10_000));
+    }
+
     #[test]
     fn test_truncate_with_ellipsis() {
         assert_eq!(truncate_with_ellipsis("abc", 5), "abc");
@@ -872,5 +1102,71 @@ mod tests {
         assert_eq!(truncate_with_ellipsis("hello world", 5), "hello…");
 
         assert_eq!(truncate_with_ellipsis("", 5), "");
+    }
+
+    #[test]
+    fn only_new_sessions_and_forks_count_as_created_for_this_start() {
+        let with_id = |resume: bool, fork: bool, no_session: bool| SessionBuilderConfig {
+            session_id: Some("20260928_7".to_string()),
+            resume,
+            fork,
+            no_session,
+            ..SessionBuilderConfig::default()
+        };
+
+        let created = |config: SessionBuilderConfig| session_created_for_this_start(&config);
+        assert_eq!(
+            created(with_id(false, false, false)).as_deref(),
+            Some("20260928_7")
+        );
+        assert_eq!(
+            created(with_id(true, true, false)).as_deref(),
+            Some("20260928_7")
+        );
+        assert_eq!(created(with_id(true, false, false)), None);
+        assert_eq!(created(with_id(false, false, true)), None);
+    }
+
+    #[tokio::test]
+    async fn a_failed_start_discards_only_the_session_it_created() {
+        let temp = tempfile::tempdir().unwrap();
+        let manager = gosling::session::SessionManager::new(temp.path().to_path_buf());
+        let mut ids = Vec::new();
+        for name in ["created", "resumed"] {
+            ids.push(
+                manager
+                    .create_session(
+                        temp.path().to_path_buf(),
+                        name.to_string(),
+                        SessionType::User,
+                        GoslingMode::Auto,
+                    )
+                    .await
+                    .unwrap()
+                    .id,
+            );
+        }
+
+        StartupGuard {
+            session_manager: &manager,
+            created_session_id: None,
+        }
+        .discard_created_session()
+        .await;
+        StartupGuard {
+            session_manager: &manager,
+            created_session_id: Some(ids[0].clone()),
+        }
+        .discard_created_session()
+        .await;
+
+        let remaining: Vec<String> = manager
+            .list_all_sessions()
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|session| session.id)
+            .collect();
+        assert_eq!(remaining, vec![ids[1].clone()]);
     }
 }

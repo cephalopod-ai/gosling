@@ -180,7 +180,7 @@ impl SessionStorage {
         Ok(Conversation::new_unvalidated(messages))
     }
 
-    fn row_to_message(
+    pub(super) fn row_to_message(
         role_str: String,
         content_json: String,
         created_timestamp: i64,
@@ -542,7 +542,8 @@ impl SessionStorage {
         .bind(message.created)
         .bind(metadata_json)
         .execute(&mut *tx)
-        .await?;
+        .await
+        .map_err(super::missing_session_as_not_found)?;
 
         sqlx::query("UPDATE sessions SET updated_at = datetime('now') WHERE id = ?")
             .bind(session_id)
@@ -632,7 +633,8 @@ impl SessionStorage {
             .bind(message.created)
             .bind(metadata_json)
             .execute(&mut **tx)
-            .await?;
+            .await
+            .map_err(super::missing_session_as_not_found)?;
         }
 
         sqlx::query("UPDATE sessions SET updated_at = datetime('now') WHERE id = ?")

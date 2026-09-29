@@ -1,5 +1,5 @@
 import React from 'react';
-import { Check, Clock3, LoaderCircle, X } from 'lucide-react';
+import { Ban, Check, Clock3, LoaderCircle, X } from 'lucide-react';
 import { defineMessages, useIntl } from '../i18n';
 import { cn } from '../utils';
 
@@ -10,7 +10,7 @@ const i18n = defineMessages({
   },
 });
 
-export type ToolCallStatus = 'pending' | 'loading' | 'success' | 'error';
+export type ToolCallStatus = 'pending' | 'loading' | 'success' | 'error' | 'not_run';
 
 interface ToolCallStatusIndicatorProps {
   status: ToolCallStatus;
@@ -30,6 +30,8 @@ export const ToolCallStatusIndicator: React.FC<ToolCallStatusIndicatorProps> = (
         return 'bg-red-500';
       case 'loading':
         return 'bg-yellow-500 animate-pulse';
+      case 'not_run':
+        return 'bg-amber-600';
       case 'pending':
       default:
         return 'bg-gray-400';
@@ -40,6 +42,7 @@ export const ToolCallStatusIndicator: React.FC<ToolCallStatusIndicatorProps> = (
     loading: LoaderCircle,
     success: Check,
     error: X,
+    not_run: Ban,
   }[status];
 
   return (
@@ -49,7 +52,7 @@ export const ToolCallStatusIndicator: React.FC<ToolCallStatusIndicatorProps> = (
         getStatusStyles(),
         className
       )}
-      aria-label={intl.formatMessage(i18n.toolStatus, { status })}
+      aria-label={intl.formatMessage(i18n.toolStatus, { status: status.replace(/_/g, ' ') })}
       data-status={status}
     >
       <StatusIcon

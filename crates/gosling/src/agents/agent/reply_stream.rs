@@ -5,6 +5,7 @@
 //! Clients: streamed events, retries, tool execution, and terminal behavior remain stable.
 
 use super::*;
+use crate::conversation::message::TurnLimit;
 use std::collections::HashSet;
 
 impl Agent {
@@ -38,6 +39,7 @@ impl Agent {
             implementation_reference,
             interaction_policy,
         } = invocation;
+        self.tool_inspection_manager.start_turn(&session_config.id);
         let context = self
             .prepare_reply_context(
                 &session.id,
@@ -58,6 +60,10 @@ impl Agent {
             model_config,
             interaction_policy,
         } = context;
+        self.subdirectory_hint_tracker
+            .lock()
+            .await
+            .remember_injected_hints(conversation.messages());
         // Kept separately (rather than only the merged `system_prompt`) so the
         // Context Manager can account for system vs. project-instructions
         // tokens as distinct slots instead of double-counting the addendum.
@@ -150,6 +156,7 @@ impl Agent {
             let mut failover_target = failover_target;
             let mut failover_attempted = false;
             let mut consecutive_stop_hook_blocks = 0u32;
+            let mut repetition_denials: Vec<String> = Vec::new();
             let stop_hook_block_cap = self.stop_hook_block_cap();
             let mut can_drain_pending_steers = false;
             let turn_started_at = chrono::Utc::now() - chrono::Duration::seconds(1);
@@ -198,7 +205,22 @@ impl Agent {
                 }
                 if turns_taken > max_turns {
                     last_assistant_text = MAX_TURNS_MESSAGE.to_string();
-                    yield AgentEvent::Message(Message::assistant().with_text(last_assistant_text.clone()));
+                    yield AgentEvent::Message(
+                        Message::assistant()
+                            .with_text(last_assistant_text.clone())
+                            .with_turn_limit(TurnLimit::MaxTurns),
+                    );
+                    break;
+                }
+                if repetition_denials.len() >= MAX_REPETITION_DENIALS_PER_TURN {
+                    last_assistant_text = repeated_tool_denials_message(
+                        repetition_denials.last().map(String::as_str).unwrap_or_default(),
+                    );
+                    yield AgentEvent::Message(
+                        Message::assistant()
+                            .with_text(last_assistant_text.clone())
+                            .with_turn_limit(TurnLimit::RepeatedToolDenials),
+                    );
                     break;
                 }
 
@@ -222,12 +244,14 @@ impl Agent {
                 )
                 .await?
                 {
-                    yield AgentEvent::ContextUsage(auto_compaction.usage.clone());
+                    let request_overhead = crate::context_mgmt::request_overhead_tokens(&system_prompt, &tools).await?;
+                    let reported_usage = auto_compaction.usage.clone().with_request_overhead(request_overhead);
+                    yield AgentEvent::ContextUsage(reported_usage.clone());
                     if let Some(plan) = auto_compaction.plan {
                         yield AgentEvent::Message(
                             Message::assistant().with_system_notification(
                                 SystemNotificationType::InlineMessage,
-                                auto_compaction_started_message(&auto_compaction.usage, &plan),
+                                auto_compaction_started_message(&reported_usage, &plan),
                             )
                         );
                         yield AgentEvent::Message(
@@ -249,12 +273,13 @@ impl Agent {
                                 conversation = compacted_conversation;
                                 token_accumulator.reset();
                                 let after_tokens = crate::context_mgmt::estimate_conversation_tokens(&conversation).await?;
+                                let reported_after_tokens = after_tokens + request_overhead;
                                 yield AgentEvent::HistoryReplaced(conversation.clone());
-                                yield AgentEvent::ContextUsage(context_usage_after_compaction(&auto_compaction.usage, after_tokens));
+                                yield AgentEvent::ContextUsage(context_usage_after_compaction(&reported_usage, reported_after_tokens));
                                 yield AgentEvent::Message(
                                     Message::assistant().with_system_notification(
                                         SystemNotificationType::InlineMessage,
-                                        auto_compaction_completed_message(&auto_compaction.usage, after_tokens, &plan),
+                                        auto_compaction_completed_message(&reported_usage, reported_after_tokens, request_overhead, &plan),
                                     )
                                 );
                                 if let Some(exceeded) = crate::context_mgmt::context_window_exceeded(
@@ -514,7 +539,10 @@ impl Agent {
                                             .unwrap_or(true);
                                         if is_new_message || checkpoint_due {
                                             session_manager
-                                                .upsert_message(&session_config.id, message)
+                                                .upsert_message(
+                                                    &session_config.id,
+                                                    &message.clone().with_incomplete(),
+                                                )
                                                 .await?;
                                             last_stream_checkpoint_at = Some(Instant::now());
                                             last_stream_checkpoint_id = message.id.clone();
@@ -723,6 +751,12 @@ impl Agent {
                                                 });
                                             (inspection_results, permission_check_result)
                                         };
+                                    repetition_denials.extend(
+                                        inspection_results
+                                            .iter()
+                                            .filter(|result| crate::tool_monitor::is_repetition_denial(result))
+                                            .map(|result| result.reason.clone()),
+                                    );
 
                                     Self::redirect_unapprovable_subagent_requests(
                                         gosling_mode,
@@ -1570,6 +1604,14 @@ impl Agent {
         }.instrument(reply_stream_span));
         Ok(inner)
     }
+}
+
+fn repeated_tool_denials_message(last_denial: &str) -> String {
+    format!(
+        "I stopped because I kept repeating tool calls that were denied as repeats \
+         (last: {last_denial}). Fix what made the call fail or change the request, then \
+         send a new message to continue."
+    )
 }
 
 fn configured_context_side_channels_allowed(

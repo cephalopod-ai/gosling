@@ -80,7 +80,7 @@ impl GeminiCliProvider {
             name: GEMINI_CLI_PROVIDER_NAME.to_string(),
             cli_session_id: Arc::new(OnceLock::new()),
             working_dir,
-            gosling_mode: RwLock::new(config.get_gosling_mode().unwrap_or_default()),
+            gosling_mode: RwLock::new(config.effective_gosling_mode()),
         })
     }
 

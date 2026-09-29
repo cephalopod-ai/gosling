@@ -441,6 +441,92 @@ extensions:
     assert!(!output.status.success(), "second remove should fail");
 }
 
+fn read_secrets(root: &TempDir) -> Value {
+    let content = std::fs::read_to_string(root.path().join("config").join("secrets.yaml"))
+        .expect("secrets.yaml should exist");
+    serde_yaml::from_str(&content).unwrap()
+}
+
+fn install_with_secret(root: &TempDir, name: &str, secret: &str) -> Output {
+    let output = gosling(
+        root,
+        &[
+            "mcp", "install", name, "--cmd", "server", "--secret", secret,
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    output
+}
+
+/// GSL-PT-20260927-C20: `--secret OPENAI_API_KEY=...` replaced gosling's own
+/// provider key, and a second extension naming the same variable replaced the
+/// first extension's value.
+#[test]
+fn install_secrets_never_replace_the_provider_key_or_another_extensions_value() {
+    let root = TempDir::new().unwrap();
+    write_config(&root, "extensions: {}\n");
+    std::fs::write(
+        root.path().join("config").join("secrets.yaml"),
+        "OPENAI_API_KEY: provider-key\n",
+    )
+    .unwrap();
+
+    install_with_secret(&root, "innocent", "OPENAI_API_KEY=ext-supplied-key");
+    install_with_secret(&root, "extx", "SHARED_TOKEN=token-for-x");
+    install_with_secret(&root, "exty", "SHARED_TOKEN=token-for-y");
+
+    let secrets = read_secrets(&root);
+    assert_eq!(secrets["OPENAI_API_KEY"].as_str(), Some("provider-key"));
+    assert_eq!(
+        secrets["extension-secret::innocent::OPENAI_API_KEY"].as_str(),
+        Some("ext-supplied-key")
+    );
+    assert_eq!(
+        secrets["extension-secret::extx::SHARED_TOKEN"].as_str(),
+        Some("token-for-x")
+    );
+    assert_eq!(
+        secrets["extension-secret::exty::SHARED_TOKEN"].as_str(),
+        Some("token-for-y")
+    );
+    assert!(secrets.get("SHARED_TOKEN").is_none());
+}
+
+/// GSL-PT-20260927-C21: removal left the extension's secrets behind.
+#[test]
+fn remove_deletes_the_extensions_own_secrets_only() {
+    let root = TempDir::new().unwrap();
+    write_config(&root, "extensions: {}\n");
+    std::fs::write(
+        root.path().join("config").join("secrets.yaml"),
+        "LEGACY_TOKEN: legacy-value\n",
+    )
+    .unwrap();
+    install_with_secret(&root, "doomed", "DOOMED_TOKEN=doomed-value");
+    install_with_secret(&root, "survivor", "DOOMED_TOKEN=survivor-value");
+
+    let output = gosling(&root, &["mcp", "remove", "doomed"]);
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let secrets = read_secrets(&root);
+    assert!(secrets
+        .get("extension-secret::doomed::DOOMED_TOKEN")
+        .is_none());
+    assert_eq!(
+        secrets["extension-secret::survivor::DOOMED_TOKEN"].as_str(),
+        Some("survivor-value")
+    );
+    assert_eq!(secrets["LEGACY_TOKEN"].as_str(), Some("legacy-value"));
+}
+
 #[test]
 fn remove_reports_config_persistence_failure() {
     let root = TempDir::new().unwrap();
@@ -542,4 +628,48 @@ fn config_dir_is_isolated_by_path_root() {
     let output = gosling(&root, &["mcp", "install", "isolated", "--cmd", "server"]);
     assert!(output.status.success());
     assert!(Path::new(&root.path().join("config").join("config.yaml")).exists());
+}
+
+/// GSL-PT-20260927-C22: an Always Allow grant made for one server must not
+/// carry over when `mcp install` replaces the server behind the same name.
+#[test]
+fn reinstalling_a_different_server_revokes_its_always_allow_grants() {
+    let root = TempDir::new().unwrap();
+    let install = |cmd: &str| {
+        let output = gosling(&root, &["mcp", "install", "fxone", "--cmd", cmd]);
+        assert!(
+            output.status.success(),
+            "stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    };
+    let policy = root.path().join("config").join("permission.yaml");
+    let user_policy = || -> Value {
+        let content = std::fs::read_to_string(&policy).unwrap();
+        serde_yaml::from_str::<Value>(&content).unwrap()["user"].clone()
+    };
+
+    install("python3 server-one.py");
+    std::fs::write(
+        &policy,
+        "user:\n  always_allow: [fxone__fx_write, fxtwo__fx_write]\n  ask_before: []\n  never_allow: [fxone__fx_delete]\n",
+    )
+    .unwrap();
+
+    install("python3 server-one.py");
+    assert_eq!(
+        user_policy()["always_allow"],
+        serde_yaml::from_str::<Value>("[fxone__fx_write, fxtwo__fx_write]").unwrap()
+    );
+
+    install("python3 replaced-server.py");
+    let user = user_policy();
+    assert_eq!(
+        user["always_allow"],
+        serde_yaml::from_str::<Value>("[fxtwo__fx_write]").unwrap()
+    );
+    assert_eq!(
+        user["never_allow"],
+        serde_yaml::from_str::<Value>("[fxone__fx_delete]").unwrap()
+    );
 }

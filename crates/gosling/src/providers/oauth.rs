@@ -16,6 +16,18 @@ use url::Url;
 static OAUTH_MUTEX: Lazy<TokioMutex<()>> = Lazy::new(|| TokioMutex::new(()));
 const UNKNOWN_TOKEN_EXPIRY_SECS: i64 = 300;
 
+tokio::task_local! {
+    static BROWSER_SIGN_IN_BLOCKED: ();
+}
+
+/// Runs `lookup` so that a token request inside it uses only the cached sign-in
+/// (refreshing it when needed) and fails instead of opening the browser. Model
+/// listing uses this: the Desktop lists models in the background, so only real
+/// requests may start a sign-in.
+pub(crate) async fn without_browser_sign_in<F: std::future::Future>(lookup: F) -> F::Output {
+    BROWSER_SIGN_IN_BLOCKED.scope((), lookup).await
+}
+
 /// Builds the HTTP client used for OIDC discovery and token exchange/refresh
 /// below. Without a timeout, a stalled OAuth/OIDC endpoint hangs the calling
 /// turn indefinitely (unlike the provider's own API client, which already
@@ -470,6 +482,12 @@ pub(crate) async fn get_oauth_token_async(
         }
     }
 
+    if BROWSER_SIGN_IN_BLOCKED.try_with(|_| ()).is_ok() {
+        anyhow::bail!(
+            "Databricks sign-in required to list its models: set DATABRICKS_TOKEN with `gosling configure`, or send a message to sign in through the browser"
+        );
+    }
+
     // Get endpoints and execute flow for a new token
     let endpoints = get_workspace_endpoints(host).await?;
     let flow = OAuthFlow::new(
@@ -519,6 +537,97 @@ mod tests {
         assert_eq!(endpoints.token_endpoint, "https://example.com/oauth2/token");
 
         Ok(())
+    }
+
+    const TEST_CLIENT_ID: &str = "test-client";
+    const TEST_REDIRECT_URL: &str = "http://localhost";
+
+    // OIDC discovery comes right before the browser is opened; answering 500
+    // keeps an attempted sign-in from getting that far.
+    async fn mount_failing_discovery(server: &MockServer, expected_calls: u64) {
+        Mock::given(method("GET"))
+            .and(path("/oidc/.well-known/oauth-authorization-server"))
+            .respond_with(ResponseTemplate::new(500))
+            .expect(expected_calls)
+            .mount(server)
+            .await;
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn a_lookup_without_browser_sign_in_reports_that_a_sign_in_is_required() {
+        let root = tempfile::tempdir().unwrap();
+        let root_path = root.path().to_string_lossy().to_string();
+        let _guard = env_lock::lock_env([("GOSLING_PATH_ROOT", Some(root_path.as_str()))]);
+        let server = MockServer::start().await;
+        mount_failing_discovery(&server, 0).await;
+        let scopes = vec!["all-apis".to_string()];
+
+        let error = without_browser_sign_in(get_oauth_token_async(
+            &server.uri(),
+            TEST_CLIENT_ID,
+            TEST_REDIRECT_URL,
+            &scopes,
+        ))
+        .await
+        .unwrap_err()
+        .to_string();
+
+        assert!(error.contains("Databricks sign-in required"), "{error}");
+        server.verify().await;
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn a_lookup_without_browser_sign_in_still_uses_the_cached_sign_in() {
+        let root = tempfile::tempdir().unwrap();
+        let root_path = root.path().to_string_lossy().to_string();
+        let _guard = env_lock::lock_env([("GOSLING_PATH_ROOT", Some(root_path.as_str()))]);
+        let server = MockServer::start().await;
+        mount_failing_discovery(&server, 0).await;
+        let scopes = vec!["all-apis".to_string()];
+        TokenCache::new(&server.uri(), TEST_CLIENT_ID, &scopes)
+            .save_token(&TokenData {
+                access_token: "cached-access".to_string(),
+                refresh_token: Some("cached-refresh".to_string()),
+                expires_at: Some(Utc::now() + chrono::Duration::hours(1)),
+            })
+            .unwrap();
+
+        let token = without_browser_sign_in(get_oauth_token_async(
+            &server.uri(),
+            TEST_CLIENT_ID,
+            TEST_REDIRECT_URL,
+            &scopes,
+        ))
+        .await
+        .unwrap();
+
+        assert_eq!(token, "cached-access");
+        server.verify().await;
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn a_lookup_for_a_request_still_starts_the_sign_in() {
+        let root = tempfile::tempdir().unwrap();
+        let root_path = root.path().to_string_lossy().to_string();
+        let _guard = env_lock::lock_env([("GOSLING_PATH_ROOT", Some(root_path.as_str()))]);
+        let server = MockServer::start().await;
+        mount_failing_discovery(&server, 1).await;
+        let scopes = vec!["all-apis".to_string()];
+
+        let error =
+            get_oauth_token_async(&server.uri(), TEST_CLIENT_ID, TEST_REDIRECT_URL, &scopes)
+                .await
+                .unwrap_err()
+                .to_string();
+
+        assert!(
+            error.contains("Failed to get OIDC configuration"),
+            "{error}"
+        );
+        server.verify().await;
     }
 
     #[tokio::test]

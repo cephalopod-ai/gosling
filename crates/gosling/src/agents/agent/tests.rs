@@ -49,12 +49,36 @@ fn auto_compaction_completion_does_not_claim_success_without_reduction() {
         tokens_to_remove: Some(210),
     };
 
-    let grew = auto_compaction_completed_message(&usage, 812, &plan);
+    let grew = auto_compaction_completed_message(&usage, 812, 0, &plan);
     assert!(grew.starts_with("Compaction finished but did not reduce the active context"));
     assert!(grew.contains("812 / 1000 tokens (81.2%)"));
 
-    assert!(auto_compaction_completed_message(&usage, 590, &plan)
+    assert!(auto_compaction_completed_message(&usage, 590, 0, &plan)
         .starts_with("Compaction complete: active context is now estimated at 590"));
+}
+
+// GSL-PT-20260927-B10 / S06: the figure includes the system prompt and tool
+// definitions, and says how much of it they are so it can be matched against
+// the conversation-only Context History estimate.
+#[test]
+fn auto_compaction_completion_names_the_request_overhead() {
+    let usage = ContextUsageSnapshot {
+        context_limit: 8_000,
+        current_tokens: 8_642,
+        last_request_tokens: Some(4_600),
+        estimated_tokens: 8_642,
+    };
+    let plan = AutoCompactionPlan {
+        threshold: 0.8,
+        reduction: 0.15,
+        target_tokens: Some(5_440),
+        tokens_to_remove: Some(3_202),
+    };
+
+    assert_eq!(
+        auto_compaction_completed_message(&usage, 5_053, 4_500, &plan),
+        "Compaction complete: active context is now estimated at 5053 / 8000 tokens (63.2%), including 4500 tokens of system prompt and tool definitions. It started at 8642 tokens; the raw-context target was 5440 tokens."
+    );
 }
 
 #[test]
@@ -965,6 +989,56 @@ async fn update_provider_propagates_active_mode() -> Result<()> {
         provider.updates.lock().await.as_slice(),
         &[(session.id, GoslingMode::Auto)]
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn starting_an_extension_leaves_saving_the_list_to_the_caller() -> Result<()> {
+    let temp_dir = tempfile::tempdir()?;
+    let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
+    let agent = Agent::with_config(AgentConfig::new(
+        session_manager.clone(),
+        Arc::new(PermissionManager::new(temp_dir.path().to_path_buf())),
+        GoslingMode::Auto,
+        true,
+        GoslingPlatform::GoslingCli,
+    ));
+    let session = session_manager
+        .create_session(
+            PathBuf::default(),
+            "start-then-save".to_string(),
+            SessionType::Hidden,
+            GoslingMode::Auto,
+        )
+        .await?;
+    agent
+        .update_provider(
+            Arc::new(CountingTextProvider::new()),
+            gosling_providers::model::ModelConfig::new("mock-model"),
+            &session.id,
+        )
+        .await?;
+    let developer = ExtensionConfig::Platform {
+        name: "developer".to_string(),
+        description: "Developer tools".to_string(),
+        display_name: Some("Developer".to_string()),
+        bundled: Some(true),
+        available_tools: vec![],
+    };
+
+    agent.start_extension(developer, &session.id).await?;
+    let started = session_manager.get_session(&session.id, false).await?;
+    assert!(EnabledExtensionsState::from_extension_data(&started.extension_data).is_none());
+
+    agent.persist_extension_state(&session.id).await?;
+    let saved = session_manager.get_session(&session.id, false).await?;
+    let names: Vec<String> = EnabledExtensionsState::from_extension_data(&saved.extension_data)
+        .expect("the caller's save records the started extension")
+        .extensions
+        .iter()
+        .map(|config| config.name())
+        .collect();
+    assert_eq!(names, vec!["developer".to_string()]);
     Ok(())
 }
 
@@ -2276,6 +2350,39 @@ fn turn_completion_distinguishes_lease_revocation_from_user_cancellation() {
     assert!(Agent::ensure_turn_not_revoked(&Some(turn.clone()), &None).is_err());
     caller.cancel();
     assert!(Agent::ensure_turn_not_revoked(&Some(turn), &Some(caller)).is_ok());
+}
+
+#[tokio::test]
+async fn only_a_revoked_lease_stops_the_turn_from_inside_the_reply() {
+    let wait = |turn: &CancellationToken, caller: Option<&CancellationToken>| {
+        let turn = Some(turn.clone());
+        let caller = caller.cloned();
+        async move {
+            tokio::time::timeout(
+                std::time::Duration::from_millis(50),
+                Agent::turn_revoked(&turn, &caller),
+            )
+            .await
+            .is_ok()
+        }
+    };
+
+    let caller = CancellationToken::new();
+    let turn = caller.child_token();
+    assert!(!wait(&turn, Some(&caller)).await, "a running turn");
+    caller.cancel();
+    assert!(
+        !wait(&turn, Some(&caller)).await,
+        "a user cancel is left to the caller"
+    );
+
+    let caller = CancellationToken::new();
+    let turn = caller.child_token();
+    turn.cancel();
+    assert!(wait(&turn, Some(&caller)).await, "the lease was revoked");
+    let turn_without_caller = CancellationToken::new();
+    turn_without_caller.cancel();
+    assert!(wait(&turn_without_caller, None).await);
 }
 
 #[tokio::test]

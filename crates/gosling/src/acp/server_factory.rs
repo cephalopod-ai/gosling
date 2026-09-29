@@ -1,4 +1,6 @@
-use crate::acp::server::{AcpProviderFactory, GoslingAcpAgent, GoslingAcpAgentOptions};
+use crate::acp::server::{
+    AcpProviderFactory, GoslingAcpAgent, GoslingAcpAgentOptions, PromptRunShutdown,
+};
 use crate::acp::shell::ShellRuntime;
 use crate::agents::GoslingPlatform;
 use crate::config::paths::{Paths, RuntimePaths};
@@ -21,6 +23,7 @@ pub struct AcpServerFactoryConfig {
 pub struct AcpServer {
     config: AcpServerFactoryConfig,
     session_manager: Arc<crate::session::SessionManager>,
+    prompt_runs: PromptRunShutdown,
 }
 
 impl AcpServer {
@@ -30,7 +33,19 @@ impl AcpServer {
         Self {
             config,
             session_manager,
+            prompt_runs: PromptRunShutdown::new(),
         }
+    }
+
+    /// Stops the prompts running on every connection, and any that arrive
+    /// later: each answers `cancelled` and its turn is closed as interrupted.
+    /// Waits up to `grace` for the answers.
+    pub async fn stop_prompt_runs(&self, grace: std::time::Duration) {
+        self.prompt_runs.stop_all(grace).await
+    }
+
+    pub async fn shutdown(&self) {
+        self.session_manager.shutdown().await
     }
 
     pub async fn create_agent(&self) -> Result<Arc<GoslingAcpAgent>> {
@@ -69,7 +84,8 @@ impl AcpServer {
                 shell_runtime: self.config.shell_runtime.clone(),
                 session_manager: Some(Arc::clone(&self.session_manager)),
             })
-            .await?;
+            .await?
+            .with_prompt_run_shutdown(self.prompt_runs.clone());
             info!("Created new ACP agent");
 
             Ok(Arc::new(agent))

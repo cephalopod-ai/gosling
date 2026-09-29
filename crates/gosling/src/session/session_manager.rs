@@ -16,6 +16,7 @@ mod session_transfer;
 mod skill_admission_storage;
 mod summary_storage;
 mod tool_operations;
+mod turn_closure;
 
 #[cfg(test)]
 use summary_storage::summary_covers_history_before;
@@ -67,7 +68,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 use utoipa::ToSchema;
 
-pub const CURRENT_SCHEMA_VERSION: i32 = 37;
+pub const CURRENT_SCHEMA_VERSION: i32 = 38;
 
 pub use compaction_history_storage::{
     CompactionHistoryError, CompactionHistoryPolicyV1, CompactionRevision, CompactionRevisionDraft,
@@ -97,6 +98,24 @@ pub enum SessionImportOutcome {
     /// messages. A future explicit refresh operation can merge new source
     /// records by their durable IDs.
     SourceChanged(Session),
+}
+
+/// The id names no session: it was never issued, or the session was deleted.
+/// Lets callers tell a stale id apart from a store that could not be read.
+#[derive(Debug, thiserror::Error)]
+#[error("Session not found")]
+pub struct SessionNotFound;
+
+/// Writes keyed by a session id fail on the `sessions(id)` foreign key once
+/// that session is gone (for example removed from another window); report
+/// that as the stale id it is instead of a raw constraint error.
+fn missing_session_as_not_found(error: sqlx::Error) -> anyhow::Error {
+    match &error {
+        sqlx::Error::Database(database) if database.is_foreign_key_violation() => {
+            SessionNotFound.into()
+        }
+        _ => error.into(),
+    }
 }
 
 fn validate_session_name(name: &str) -> Result<()> {
@@ -647,6 +666,11 @@ impl SessionManager {
         Ok(())
     }
 
+    /// Call once before a graceful process exit; see `SessionStorage::shutdown`.
+    pub async fn shutdown(&self) {
+        self.storage.shutdown().await
+    }
+
     pub(crate) async fn acquire_session_turn_lease(
         &self,
         session_id: &str,
@@ -1048,6 +1072,84 @@ impl SessionManager {
         self.storage
             .cancel_undispatched_tool_requests(session_id, cancelled_request_id)
             .await
+    }
+
+    /// Run when a session is reopened (ACP `session/load`, CLI resume): unless
+    /// a live turn still owns the session, closes a trailing turn that stopped
+    /// before finishing and records a stale in-progress ACP run as interrupted.
+    /// Returns whether a closure notice was written.
+    pub async fn close_interrupted_turn(&self, session_id: &str) -> Result<bool> {
+        self.storage
+            .close_unfinished_turn(session_id, turn_closure::TurnClosureTrigger::Reopen)
+            .await
+    }
+
+    /// Closes the previous turn before a new turn adds its prompt. The caller
+    /// holds the session's turn lease.
+    pub(crate) async fn close_unfinished_turn(&self, session_id: &str) -> Result<bool> {
+        self.storage
+            .close_unfinished_turn(session_id, turn_closure::TurnClosureTrigger::NextTurn)
+            .await
+    }
+
+    /// Closes the caller's cancelled turn with the cancellation notice, unless
+    /// a turn in another process has taken the session over since.
+    pub(crate) async fn close_cancelled_turn(&self, session_id: &str) -> Result<bool> {
+        self.storage
+            .close_unfinished_turn(session_id, turn_closure::TurnClosureTrigger::Cancel)
+            .await
+    }
+
+    /// Closes the caller's turn that a shutting down server stopped, as
+    /// interrupted, unless a turn in another process has taken the session
+    /// over since.
+    pub(crate) async fn close_turn_stopped_by_shutdown(&self, session_id: &str) -> Result<bool> {
+        self.storage
+            .close_unfinished_turn(session_id, turn_closure::TurnClosureTrigger::Shutdown)
+            .await
+    }
+
+    /// Of the messages a client was shown during a turn, those that are no
+    /// longer part of the session's history now that the agent replaced its
+    /// working conversation with `replaced`, like a reply attempt that broke
+    /// off and was retried. Some shown messages are stored without being part
+    /// of the working conversation (an elicitation request), so the stored
+    /// history decides.
+    pub async fn retracted_message_ids(
+        &self,
+        session_id: &str,
+        replaced: &Conversation,
+        shown_message_ids: &[String],
+    ) -> Result<Vec<String>> {
+        let kept: HashSet<&str> = replaced
+            .messages()
+            .iter()
+            .filter_map(|message| message.id.as_deref())
+            .collect();
+        let missing: Vec<&String> = shown_message_ids
+            .iter()
+            .filter(|id| !kept.contains(id.as_str()))
+            .collect();
+        if missing.is_empty() {
+            return Ok(Vec::new());
+        }
+        let stored: HashSet<String> = self
+            .get_session(session_id, true)
+            .await?
+            .conversation
+            .map(|history| {
+                history
+                    .messages()
+                    .iter()
+                    .filter_map(|message| message.id.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok(missing
+            .into_iter()
+            .filter(|id| !stored.contains(*id))
+            .cloned()
+            .collect())
     }
 
     pub async fn add_model_switch_record(
@@ -1461,6 +1563,8 @@ pub struct SessionStorage {
     active_tool_operations: std::sync::Mutex<HashSet<String>>,
     plan_updates: tokio::sync::broadcast::Sender<crate::session::plans::PlanUpdate>,
     plan_source_hash_cache: std::sync::Mutex<PlanSourceHashCache>,
+    /// Turn-lease releases still running; a graceful shutdown waits for them.
+    lease_releases_in_flight: tokio::sync::watch::Sender<usize>,
 }
 
 pub(crate) fn role_to_string(role: &Role) -> &'static str {
@@ -1678,7 +1782,7 @@ impl sqlx::FromRow<'_, sqlx::sqlite::SqliteRow> for Session {
                 .try_get::<String, _>("gosling_mode")
                 .ok()
                 .and_then(|s| s.parse().ok())
-                .unwrap_or_default(),
+                .unwrap_or(crate::config::INVALID_GOSLING_MODE_FALLBACK),
             archived_at: row.try_get("archived_at").ok(),
             project_id: row.try_get("project_id").ok().flatten(),
             last_message_snippet: None,
@@ -5114,6 +5218,110 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn session_id_high_water_migrates_from_schema_37() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join(SESSIONS_FOLDER).join(DB_NAME);
+        std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
+        let pool = SqlitePoolOptions::new()
+            .connect_with(
+                SqliteConnectOptions::new()
+                    .filename(&db_path)
+                    .create_if_missing(true)
+                    .foreign_keys(true),
+            )
+            .await
+            .unwrap();
+        SessionStorage::create_schema(&pool).await.unwrap();
+        sqlx::query("DROP TRIGGER sessions_id_high_water_after_insert")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DROP TABLE session_id_high_water")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE schema_version SET version = 37")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        // A v37 store: `_7` was a handoff source and `_9` a subagent parent,
+        // both deleted before the upgrade; only their references survive.
+        let today = Utc::now().format("%Y%m%d").to_string();
+        for (id, extension_data) in [
+            (format!("{today}_1"), "{}".to_string()),
+            (format!("{today}_3"), "{}".to_string()),
+            (
+                format!("{today}_4"),
+                format!(
+                    r#"{{"output_agent.v1":{{"name":"delegate","parentSessionId":"{today}_9"}}}}"#
+                ),
+            ),
+            ("20250101_5".to_string(), "{}".to_string()),
+            ("legacy-workspace".to_string(), "{}".to_string()),
+        ] {
+            sqlx::query(
+                "INSERT INTO sessions (id, name, working_dir, extension_data, gosling_mode) VALUES (?, 'pre-upgrade', '/tmp', ?, 'auto')",
+            )
+            .bind(id)
+            .bind(extension_data)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+        sqlx::query(
+            r#"
+            INSERT INTO session_handoff_snapshots (
+                snapshot_id, session_id, generation, schema_version, trigger, status,
+                to_provider, to_model, source_hash, estimated_tokens, snapshot_json
+            ) VALUES ('snap-1', ?, 1, 1, 'manual', 'active', 'p', 'm', 'h', 0, ?)
+            "#,
+        )
+        .bind(format!("{today}_3"))
+        .bind(format!(r#"{{"sourceSessionId":"{today}_7"}}"#))
+        .execute(&pool)
+        .await
+        .unwrap();
+        pool.close().await;
+
+        let manager = SessionManager::new(temp_dir.path().to_path_buf());
+        let created = manager
+            .create_session(
+                PathBuf::from("/tmp"),
+                "after-upgrade".to_string(),
+                SessionType::User,
+                GoslingMode::Auto,
+            )
+            .await
+            .unwrap();
+        assert_eq!(created.id, format!("{today}_10"));
+        assert_eq!(
+            manager
+                .get_session("legacy-workspace", false)
+                .await
+                .unwrap()
+                .name,
+            "pre-upgrade"
+        );
+
+        let pool = manager.storage().pool().await.unwrap();
+        let high_water: Vec<(String, i64)> =
+            sqlx::query_as("SELECT day, last_seq FROM session_id_high_water ORDER BY day")
+                .fetch_all(pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            high_water,
+            vec![("20250101".to_string(), 5), (today.clone(), 10)]
+        );
+        let schema_version: i32 = sqlx::query_scalar("SELECT MAX(version) FROM schema_version")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        assert_eq!(schema_version, CURRENT_SCHEMA_VERSION);
+    }
+
+    #[tokio::test]
     async fn test_removed_tagteam_schema_is_cleaned_up() {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join(SESSIONS_FOLDER).join(DB_NAME);
@@ -5262,7 +5470,7 @@ mod tests {
                 temp_dir.path().to_path_buf(),
                 "test".into(),
                 SessionType::User,
-                GoslingMode::Approve,
+                GoslingMode::Chat,
             )
             .await
             .unwrap();
@@ -5275,7 +5483,7 @@ mod tests {
             .unwrap();
 
         let reloaded = sm.get_session(&session.id, false).await.unwrap();
-        assert_eq!(reloaded.gosling_mode, GoslingMode::default());
+        assert_eq!(reloaded.gosling_mode, GoslingMode::Approve);
     }
 
     #[tokio::test]
@@ -6031,6 +6239,245 @@ mod tests {
             .release()
             .await
             .unwrap();
+    }
+
+    #[tokio::test]
+    async fn shutdown_waits_for_a_turn_lease_release_still_in_flight() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = SessionManager::new(temp_dir.path().to_path_buf());
+        let session = manager
+            .create_session(
+                temp_dir.path().to_path_buf(),
+                "Released at exit".to_string(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        let lease = manager
+            .acquire_session_turn_lease(&session.id, None)
+            .await
+            .unwrap();
+
+        // Contention stands in for the busy store that made releases lag.
+        let write_gate = manager.storage().acquire_write_guard().await;
+        drop(lease);
+        let shutdown = tokio::spawn({
+            let manager = manager.clone();
+            async move { manager.shutdown().await }
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        assert!(!shutdown.is_finished());
+        drop(write_gate);
+        shutdown.await.unwrap();
+
+        let reopened = SessionManager::new(temp_dir.path().to_path_buf());
+        let leases: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM session_turn_leases")
+            .fetch_one(reopened.storage().pool().await.unwrap())
+            .await
+            .unwrap();
+        assert_eq!(leases, 0);
+    }
+
+    #[tokio::test]
+    async fn shutdown_leaves_a_complete_database_file_without_its_log() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = SessionManager::new(temp_dir.path().to_path_buf());
+        let session = manager
+            .create_session(
+                temp_dir.path().to_path_buf(),
+                "Checkpointed".to_string(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        manager
+            .add_message(&session.id, &Message::user().with_text("persisted"))
+            .await
+            .unwrap();
+
+        manager.shutdown().await;
+
+        let session_dir = temp_dir.path().join(SESSIONS_FOLDER);
+        let log = std::fs::metadata(session_dir.join(format!("{DB_NAME}-wal")));
+        assert!(log.map(|log| log.len() == 0).unwrap_or(true));
+        let copy = temp_dir.path().join("sessions-copy.db");
+        std::fs::copy(session_dir.join(DB_NAME), &copy).unwrap();
+        let copy_pool = SqlitePoolOptions::new()
+            .connect_with(SqliteConnectOptions::new().filename(&copy).read_only(true))
+            .await
+            .unwrap();
+        let counts: (i64, i64) = sqlx::query_as(
+            "SELECT (SELECT COUNT(*) FROM sessions), (SELECT COUNT(*) FROM messages)",
+        )
+        .fetch_one(&copy_pool)
+        .await
+        .unwrap();
+        assert_eq!(counts, (1, 1));
+
+        let never_opened = temp_dir.path().join("never-opened");
+        SessionManager::new(never_opened.clone()).shutdown().await;
+        assert!(!never_opened.exists());
+    }
+
+    #[tokio::test]
+    async fn shutdown_does_not_wait_for_another_process_reading_the_store() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = SessionManager::new(temp_dir.path().to_path_buf());
+        manager
+            .create_session(
+                temp_dir.path().to_path_buf(),
+                "Shared store".to_string(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        let other_process = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(
+                SqliteConnectOptions::new()
+                    .filename(temp_dir.path().join(SESSIONS_FOLDER).join(DB_NAME)),
+            )
+            .await
+            .unwrap();
+        let mut reading = other_process.begin().await.unwrap();
+        let _: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM sessions")
+            .fetch_one(&mut *reading)
+            .await
+            .unwrap();
+
+        let started = std::time::Instant::now();
+        manager.shutdown().await;
+
+        assert!(started.elapsed() < std::time::Duration::from_secs(2));
+        reading.commit().await.unwrap();
+        other_process.close().await;
+    }
+
+    #[tokio::test]
+    async fn rewriting_stored_metadata_unchanged_keeps_updated_at() {
+        let temp_dir = TempDir::new().unwrap();
+        let sm = SessionManager::new(temp_dir.path().to_path_buf());
+        let session = sm
+            .create_session(
+                temp_dir.path().to_path_buf(),
+                "Resumed without a turn".to_string(),
+                SessionType::User,
+                GoslingMode::Auto,
+            )
+            .await
+            .unwrap();
+        let resumed_state = || {
+            sm.update(&session.id)
+                .provider_name("openai")
+                .model_config(ModelConfig::new("test-model"))
+                .gosling_mode(GoslingMode::Auto)
+        };
+        let enabled_key = "enabled_extensions.v0";
+        let enabled = serde_json::json!({"extensions": [], "platform_catalog_revision": 1});
+        resumed_state().apply().await.unwrap();
+        sm.merge_extension_state(&session.id, enabled_key, enabled.clone())
+            .await
+            .unwrap();
+        set_sessions_updated_at(
+            &sm,
+            std::slice::from_ref(&session.id),
+            "2024-01-01T00:00:00Z",
+        )
+        .await;
+        let pinned = sm.get_session(&session.id, false).await.unwrap().updated_at;
+
+        resumed_state().apply().await.unwrap();
+        sm.merge_extension_state(&session.id, enabled_key, enabled)
+            .await
+            .unwrap();
+        assert_eq!(
+            sm.get_session(&session.id, false).await.unwrap().updated_at,
+            pinned
+        );
+
+        sm.update(&session.id)
+            .gosling_mode(GoslingMode::Approve)
+            .apply()
+            .await
+            .unwrap();
+        let changed = sm.get_session(&session.id, false).await.unwrap();
+        assert_eq!(changed.gosling_mode, GoslingMode::Approve);
+        assert!(changed.updated_at > pinned);
+
+        set_sessions_updated_at(
+            &sm,
+            std::slice::from_ref(&session.id),
+            "2024-01-01T00:00:00Z",
+        )
+        .await;
+        sm.merge_extension_state(
+            &session.id,
+            enabled_key,
+            serde_json::json!({"extensions": [], "platform_catalog_revision": 2}),
+        )
+        .await
+        .unwrap();
+        assert!(sm.get_session(&session.id, false).await.unwrap().updated_at > pinned);
+    }
+
+    #[tokio::test]
+    async fn turn_writes_for_a_session_removed_elsewhere_fail_as_not_found() {
+        let temp_dir = TempDir::new().unwrap();
+        let open_window = SessionManager::new(temp_dir.path().to_path_buf());
+        let removed = open_window
+            .create_session(
+                temp_dir.path().join("workspace"),
+                "Removed elsewhere".to_string(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        let kept = open_window
+            .create_session(
+                temp_dir.path().join("workspace"),
+                "Kept".to_string(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        SessionManager::new(temp_dir.path().to_path_buf())
+            .delete_session(&removed.id)
+            .await
+            .unwrap();
+
+        let lease_error = open_window
+            .acquire_session_turn_lease(&removed.id, None)
+            .await
+            .err()
+            .unwrap();
+        assert!(lease_error.downcast_ref::<SessionNotFound>().is_some());
+        let prompt = Message::user().with_text("typed after removal");
+        for write_error in [
+            open_window
+                .add_message(&removed.id, &prompt)
+                .await
+                .unwrap_err(),
+            open_window
+                .upsert_message(&removed.id, &prompt)
+                .await
+                .unwrap_err(),
+        ] {
+            assert!(write_error.downcast_ref::<SessionNotFound>().is_some());
+        }
+
+        open_window
+            .acquire_session_turn_lease(&kept.id, None)
+            .await
+            .unwrap()
+            .release()
+            .await
+            .unwrap();
+        open_window.add_message(&kept.id, &prompt).await.unwrap();
     }
 
     /// REL-GSL-006: a `started` row whose owner process is alive but whose

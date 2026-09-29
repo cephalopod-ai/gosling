@@ -170,6 +170,16 @@ impl GoslingAcpAgent {
                 None,
             )
             .invalid_params_err_ctx("Invalid model config")?;
+        // Re-selecting the model already in use must not replace the provider's
+        // view of the history with a checkpoint (the CLI's /model skips it too).
+        // (GSL-PT-20260927-S07)
+        let configured_effort = self.config()?.get_gosling_thinking_effort();
+        if model_config.model_name == current_model_config.model_name
+            && model_config.thinking_effort().or(configured_effort)
+                == current_model_config.thinking_effort().or(configured_effort)
+        {
+            return Ok(());
+        }
         agent
             .transition_provider(
                 session_id,

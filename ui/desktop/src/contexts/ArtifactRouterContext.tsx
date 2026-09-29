@@ -58,7 +58,7 @@ const i18n = defineMessages({
 interface ArtifactRouterValue {
   saveArtifact(input: RoutedArtifactSaveInput): Promise<RoutedArtifactSaveResult>;
   setVisibleSessionArtifacts(artifacts: SessionArtifactDto[]): void;
-  setVisibleSessionWorkspaceId(workspaceId: string | null | undefined): void;
+  setVisibleSessionWorkspaceId(workspaceId: string | null | undefined, sessionId?: string): void;
 }
 
 const ArtifactRouterContext = createContext<ArtifactRouterValue | null>(null);
@@ -71,13 +71,15 @@ function outputIssue(item: WorkspaceWithValidation, outputId: string) {
 
 function nativeRoutingConfig(
   item: WorkspaceWithValidation | null,
-  artifactFiles: string[]
+  artifactFiles: string[],
+  sessionId: string | undefined
 ): ArtifactRoutingConfig | null {
   const outputs =
     item?.workspace.productOutputFolders.filter((output) => !outputIssue(item, output.id)) ?? [];
   if (outputs.length === 0 && artifactFiles.length === 0) return null;
   return {
     artifactFiles,
+    ...(sessionId ? { sessionId } : {}),
     ...(item ? { workspaceId: item.workspace.id, workspaceName: item.workspace.name } : {}),
     outputs: outputs.map((output) => ({
       id: output.id,
@@ -103,9 +105,17 @@ function isUserFacingSessionDeliverable(artifact: SessionArtifactDto): boolean {
 export function ArtifactRouterProvider({ children }: { children: React.ReactNode }) {
   const intl = useIntl();
   const { activeWorkspaceId, refreshWorkspaces, workspaces } = useWorkspace();
-  const [visibleSessionWorkspaceId, setVisibleSessionWorkspaceId] = useState<
+  const [visibleSessionWorkspaceId, setVisibleSessionWorkspaceIdState] = useState<
     string | null | undefined
   >(undefined);
+  const [visibleSessionId, setVisibleSessionId] = useState<string | undefined>(undefined);
+  const setVisibleSessionWorkspaceId = useCallback(
+    (workspaceId: string | null | undefined, sessionId?: string) => {
+      setVisibleSessionWorkspaceIdState(workspaceId);
+      setVisibleSessionId(sessionId);
+    },
+    []
+  );
   const [visibleSessionArtifacts, setVisibleSessionArtifactsState] = useState<SessionArtifactDto[]>(
     []
   );
@@ -144,7 +154,7 @@ export function ArtifactRouterProvider({ children }: { children: React.ReactNode
 
   useEffect(() => {
     let cancelled = false;
-    const config = nativeRoutingConfig(nativeWorkspace, artifactFiles);
+    const config = nativeRoutingConfig(nativeWorkspace, artifactFiles, visibleSessionId);
     void window.electron
       .setArtifactRoutingConfig(config)
       .then((applied) => {
@@ -158,7 +168,7 @@ export function ArtifactRouterProvider({ children }: { children: React.ReactNode
       cancelled = true;
       void window.electron.setArtifactRoutingConfig(null).catch(() => {});
     };
-  }, [artifactFiles, nativeWorkspace]);
+  }, [artifactFiles, nativeWorkspace, visibleSessionId]);
 
   useEffect(() => {
     const handleUnroutedDownload = (_event: unknown, fileName: string) => {
@@ -234,7 +244,7 @@ export function ArtifactRouterProvider({ children }: { children: React.ReactNode
 
   const value = useMemo<ArtifactRouterValue>(
     () => ({ saveArtifact, setVisibleSessionArtifacts, setVisibleSessionWorkspaceId }),
-    [saveArtifact, setVisibleSessionArtifacts]
+    [saveArtifact, setVisibleSessionArtifacts, setVisibleSessionWorkspaceId]
   );
   return <ArtifactRouterContext.Provider value={value}>{children}</ArtifactRouterContext.Provider>;
 }

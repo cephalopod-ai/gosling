@@ -363,8 +363,10 @@ impl Agent {
                                         crate::tool_inspection::InspectionAction::Deny
                                     )
                             })
-                            .map(|result| format!("Tool denied by policy: {}", result.reason))
-                            .unwrap_or_else(|| "Tool denied by current permissions.".into()),
+                            .map(|result| {
+                                format!("{POLICY_DENIED_RESPONSE_PREFIX}{}", result.reason)
+                            })
+                            .unwrap_or_else(|| PERMISSION_DENIED_RESPONSE.into()),
                     )])),
                     request.metadata.as_ref(),
                 );

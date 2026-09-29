@@ -31,8 +31,12 @@ Auto-compaction is triggered by default when you reach 80% of the token limit in
 Control the auto-compaction behavior with the `GOSLING_AUTO_COMPACT_THRESHOLD` [environment variable](/docs/guides/environment-variables.md#session-management). 
 Disable this feature by setting the value to `0.0`. Values must be finite and less than `1.0`;
 `1.0` is rejected by preference/config saves. Reduction is a proportion of threshold usage,
-not a number of percentage points. Invalid reduction settings stop compaction with an error
-instead of silently selecting full compaction.
+not a number of percentage points, so any reduction from `0.0` up to (but not including) `1.0`
+is valid whatever the threshold. Preference and config saves reject out-of-range values. If an
+environment variable or hand-edited config file holds one anyway, the CLI warns at startup and
+the runtime does not fail: an invalid threshold disables auto-compaction until it is corrected
+(a value that is not a number falls back to the default `0.8`), and an invalid reduction falls
+back to the default `0.15`.
 
 ```
 # Automatically compact sessions when 60% of available tokens are used
@@ -41,7 +45,7 @@ export GOSLING_AUTO_COMPACT_THRESHOLD=0.6
 
 When you reach the auto-compaction threshold:
   1. gosling reports the active-context estimate, threshold, target, and that it is compacting the oldest safe prefix.
-  2. Once complete, you'll see the measured starting estimate, configured raw-context target, and resulting active-context estimate.
+  2. Once complete, you'll see the measured starting estimate, configured raw-context target, and resulting active-context estimate. These estimates include the system prompt and tool definitions that every request carries, and the notice says how many tokens they account for; Context History snapshots count the conversation only.
   3. Continue the session. Your previous conversation remains visible, but only the compacted conversion is included in the active context for gosling.
 
 Auto-compaction targets a level below the threshold rather than fully collapsing the conversation every time — controlled by `GOSLING_AUTO_COMPACT_REDUCTION` (default `0.15`, meaning 15% of threshold usage). With the example above, crossing 60% usage selects the oldest safe prefix whose raw token count is enough to target 51%, leaving the remainder untouched. At the default 80% threshold, a 25% reduction targets 60% (`80% × 75%`). Generated summary and continuation framing also occupy context, so the completion notice reports the resulting estimate rather than claiming it landed exactly on the raw-context target. The budget is computed from the same snapshot that triggered compaction, even if one tool-heavy turn caused usage to jump far past the threshold. Set the reduction to `0.0` to fully collapse the eligible history on every auto-compaction, matching the previous behavior:
@@ -53,7 +57,11 @@ export GOSLING_AUTO_COMPACT_REDUCTION=0.0
 
 A manual `/compact` (below) always fully collapses the conversation regardless of this setting.
 
-Gosling preferentially keeps the most recent turns verbatim — by default the last 10 real turns (a turn starts with a genuine user prompt). This is a best-effort fidelity preference, not permission to ignore the reduction budget: if a short session or one large tool loop contains the required reduction inside that region, gosling advances through complete messages and completed tool request/response pairs until the budget is met. The latest text prompt is restored literally if the cutoff must cross it. Adjust the preferred tail with `GOSLING_COMPACT_PROTECT_LAST_N_TURNS`:
+Gosling preferentially keeps the most recent turns verbatim — by default the last 10 real turns (a turn starts with a genuine user prompt). This is a best-effort fidelity preference, not permission to ignore the reduction budget: if a short session or an earlier large tool loop contains the required reduction inside that region, gosling advances through complete messages and completed tool request/response pairs until the budget is met. The latest text prompt is restored literally if the cutoff must cross it.
+
+The reply that is still in progress is never folded into the summary. When auto-compaction or context-limit recovery runs in the middle of a tool loop, only history before the current request is summarized; the request and the tool calls already completed for it stay verbatim after the summary, so the model does not repeat them. If the current turn alone no longer fits the context window, the run stops with a message instead, and a follow-up message continues from a compacted context.
+
+Adjust the preferred tail with `GOSLING_COMPACT_PROTECT_LAST_N_TURNS`:
 
 ```
 # Keep the last 20 turns verbatim instead of the default 10
@@ -235,6 +243,10 @@ Context maxed out - automatically cleared session.
 ## Maximum Turns
 The `Max Turns` limit is the maximum number of consecutive turns that gosling can take without user input (default: 1000). When the limit is reached, gosling stops and prompts: "I've reached the maximum number of actions I can do without user input. Would you like me to continue?" If the user answers in the affirmative, gosling continues until the limit is reached and then prompts again.
 
+A headless `gosling run` has nobody to answer that question, so it instead ends with a non-zero exit code and a message naming the limit that stopped it. ACP clients (including gosling Desktop) receive the stop reason `max_turn_requests` instead of `end_turn`.
+
+gosling also stops a turn early when the model keeps repeating tool calls it has been refused. Within one turn, a tool call is refused when it repeats, with identical arguments, a call that already failed in that turn, or when the same call is repeated more times in a row than the repetition limit allows (default 3, `--max-tool-repetitions`). After three such refusals the turn stops and is reported the same way as the turn limit. A declined approval does not count as a failure: asking for the same call again asks you again. Your next message starts a new turn, so a call that failed earlier can be run again, for example after you fix what made it fail.
+
 This feature gives you control over agent autonomy and prevents infinite loops and runaway behavior, which could have significant cost consequences or damaging impact in production environments. Use it for:
 
 - Preventing infinite loops and excessive API calls or resource consumption in automated tasks
@@ -388,6 +400,10 @@ gosling resolves context limits with the following precedence (highest to lowest
 3. Model-specific default based on name pattern matching
 4. Global default (128,000 tokens)
 
+A session saves the limit it resolved. When you resume a session from the CLI with
+`GOSLING_CONTEXT_LIMIT` set, that value replaces the saved one; without it, the session keeps the
+limit it was last run with.
+
 Host-enforced planning uses this same active-session limit. The CLI treats
 `GOSLING_PLANNER_CONTEXT_LIMIT` only as a legacy compatibility assertion: if set, it must be at
 least 4,096 and exactly equal the resolved active limit. It does not create a separate planning
@@ -460,7 +476,7 @@ Pricing data is regularly fetched from the OpenRouter API and cached locally. Th
 These costs are estimates only, and not connected to your actual provider bill. The cost shown is an approximation based on token counts and public pricing data.
 </TabItem>
     <TabItem value="cli" label="gosling CLI">
-    Show estimated cost in the gosling CLI by setting the `GOSLING_CLI_SHOW_COST` [environment variable](/docs/guides/environment-variables.md#session-management) or including it in the [configuration file](/docs/guides/config-files.md).
+    Show estimated cost in the gosling CLI by setting the `GOSLING_CLI_SHOW_COST` [environment variable](/docs/guides/environment-variables.md#session-management) or including it in the [configuration file](/docs/guides/config-files.md). Before each prompt the CLI prints the session's accumulated cost (the value session exports report) and, labelled "last request", the cost and tokens of the most recent model request, for example `Cost: $0.2564 USD this session · last request $0.2200 USD (102000 tokens: in 100000 (40000 cache read), out 2000)`.
 
   ```
   # Set environment variable

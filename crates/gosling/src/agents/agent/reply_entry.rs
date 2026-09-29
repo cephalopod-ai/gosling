@@ -8,6 +8,9 @@ use super::*;
 const OVERSIZED_TURN_NOTICE: &str =
     "Run ended before completion: the request did not fit the context window and was not sent.";
 
+const OVERSIZED_MID_TURN_NOTICE: &str =
+    "Run ended before completion: the turn outgrew the context window. The tool calls above already ran.";
+
 impl Agent {
     /// Get a reference count clone to the provider
     pub async fn provider(&self) -> Result<Arc<dyn Provider>, anyhow::Error> {
@@ -247,6 +250,12 @@ impl Agent {
                 );
             }
         }
+        // A previous turn that stopped without closing its history (killed
+        // process, lost client, lost lease) would otherwise have its prompt
+        // merged into this one and re-executed.
+        session_manager
+            .close_unfinished_turn(&session_config.id)
+            .await?;
         let is_first_turn = session.message_count == 0;
         if is_first_turn && !planning_turn {
             self.emit_hook(crate::hooks::HookEvent::SessionStart, &session_config.id)
@@ -454,11 +463,13 @@ impl Agent {
 
             let final_conversation = if let Some(check) = auto_compaction {
                 if let Some(plan) = check.plan {
-                    yield AgentEvent::ContextUsage(check.usage.clone());
+                    let request_overhead = self.request_overhead_tokens(&session, &interaction_policy).await?;
+                    let reported_usage = check.usage.clone().with_request_overhead(request_overhead);
+                    yield AgentEvent::ContextUsage(reported_usage.clone());
                     yield AgentEvent::Message(
                         Message::assistant().with_system_notification(
                             SystemNotificationType::InlineMessage,
-                            auto_compaction_started_message(&check.usage, &plan),
+                            auto_compaction_started_message(&reported_usage, &plan),
                         )
                     );
 
@@ -482,12 +493,13 @@ impl Agent {
                     {
                         Ok(compacted_conversation) => {
                             let after_tokens = crate::context_mgmt::estimate_conversation_tokens(&compacted_conversation).await?;
+                            let reported_after_tokens = after_tokens + request_overhead;
                             yield AgentEvent::HistoryReplaced(compacted_conversation.clone());
-                            yield AgentEvent::ContextUsage(context_usage_after_compaction(&check.usage, after_tokens));
+                            yield AgentEvent::ContextUsage(context_usage_after_compaction(&reported_usage, reported_after_tokens));
                             yield AgentEvent::Message(
                                 Message::assistant().with_system_notification(
                                     SystemNotificationType::InlineMessage,
-                                    auto_compaction_completed_message(&check.usage, after_tokens, &plan),
+                                    auto_compaction_completed_message(&reported_usage, reported_after_tokens, request_overhead, &plan),
                                 )
                             );
                             if let Some(exceeded) = crate::context_mgmt::context_window_exceeded(
@@ -552,11 +564,38 @@ impl Agent {
                     interaction_policy,
                 })
                 .await?;
-            while let Some(event) = reply_stream.next().await {
+            loop {
+                let event = tokio::select! {
+                    biased;
+                    _ = Self::turn_revoked(&cancel_token, &caller_cancel_token) => break,
+                    event = reply_stream.next() => event,
+                };
+                let Some(event) = event else {
+                    break;
+                };
                 yield event?;
             }
+            // A revoked turn stops here, not when the provider or a tool next
+            // returns: whatever they were still doing is abandoned with it.
+            drop(reply_stream);
             Self::ensure_turn_not_revoked(&cancel_token, &caller_cancel_token)?;
         }))
+    }
+
+    /// Resolves once the turn's lease has been revoked (another process took
+    /// the session over): the turn's token is cancelled but the caller's is
+    /// not. A cancel by the caller never resolves it; the caller stops reading.
+    pub(super) async fn turn_revoked(
+        turn_cancel_token: &Option<CancellationToken>,
+        caller_cancel_token: &Option<CancellationToken>,
+    ) {
+        match turn_cancel_token {
+            Some(token) => token.cancelled().await,
+            None => std::future::pending().await,
+        }
+        if is_token_cancelled(caller_cancel_token) {
+            std::future::pending::<()>().await;
+        }
     }
 
     pub(super) fn ensure_turn_not_revoked(
@@ -569,6 +608,28 @@ impl Agent {
             "Session turn lease was lost; this turn stopped before completion. Reload the session before retrying."
         );
         Ok(())
+    }
+
+    /// System prompt and tool definitions the turn's requests will carry,
+    /// which the conversation estimate leaves out.
+    async fn request_overhead_tokens(
+        &self,
+        session: &crate::session::Session,
+        interaction_policy: &crate::session::InteractionPolicy,
+    ) -> Result<usize> {
+        let (tools, _, system_prompt, _) = self
+            .prepare_tools_and_prompt_for_policy(
+                &session.id,
+                &session.working_dir,
+                &session.additional_working_dirs,
+                interaction_policy,
+            )
+            .await?;
+        let system_prompt = match self.load_project_instructions(session).await {
+            Some(addendum) => format!("{system_prompt}\n\n{addendum}"),
+            None => system_prompt,
+        };
+        crate::context_mgmt::request_overhead_tokens(&system_prompt, &tools).await
     }
 
     /// Ends a turn whose request cannot fit the context window before it
@@ -604,7 +665,11 @@ impl Agent {
                     .await?;
             }
         }
-        let reason = exceeded.to_string();
+        let (reason, notice) = if withdraw_newest_prompt {
+            (exceeded.to_string(), OVERSIZED_TURN_NOTICE)
+        } else {
+            (exceeded.mid_turn_message(), OVERSIZED_MID_TURN_NOTICE)
+        };
         let failure_message = Message::assistant()
             .with_text(&reason)
             .with_terminal_error(reason);
@@ -615,7 +680,7 @@ impl Agent {
             .add_message(
                 session_id,
                 &Message::assistant()
-                    .with_text(OVERSIZED_TURN_NOTICE)
+                    .with_text(notice)
                     .with_generated_id()
                     .agent_only(),
             )

@@ -697,7 +697,7 @@ impl ClaudeCodeProvider {
             .arg(&model.model_name);
 
         let gosling_mode = (*self.initial_mode.lock().await)
-            .unwrap_or_else(|| Config::global().get_gosling_mode().unwrap_or_default());
+            .unwrap_or_else(|| Config::global().effective_gosling_mode());
         let control_protocol_enabled = Self::apply_permission_flags(&mut cmd, gosling_mode);
 
         let mut child = cmd.spawn().map_err(|e| {
@@ -1146,7 +1146,7 @@ impl Provider for ClaudeCodeProvider {
             .initial_mode
             .lock()
             .await
-            .unwrap_or_else(|| Config::global().get_gosling_mode().unwrap_or_default());
+            .unwrap_or_else(|| Config::global().effective_gosling_mode());
 
         Ok(Box::pin(try_stream! {
             // Single lock acquisition covers write-to-stdin and read-from-stdout,

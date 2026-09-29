@@ -91,7 +91,7 @@ gosling run -n my-project -t "initial instructions"
 gosling run -n my-project -r
 ```
 
-You can also run commands without creating or storing a session file by using the `--no-session` flag. This is useful for automated scripts, or one-off tasks where you don't need to maintain the conversation history or state. This flag routes the session output to a temporary null path (`/dev/null` on Unix or `NUL` on Windows), and discards it when complete.
+You can also run commands without creating or storing a session file by using the `--no-session` flag. This is useful for automated scripts, or one-off tasks where you don't need to maintain the conversation history or state. This flag routes the session output to a temporary null path (`/dev/null` on Unix or `NUL` on Windows), and discards it when complete. The startup banner says `ephemeral` instead of showing a session ID, because there is nothing to resume.
 
 ```bash
 # Run a command without creating a session file
@@ -172,6 +172,13 @@ The JSON output includes:
 - Session metadata and execution results
 - Tool outputs and any errors
 - Structured data suitable for parsing by scripts and CI/CD pipelines
+
+When a model's reply breaks off mid-stream, gosling discards the partial reply and asks again. In
+`stream-json` output a `{"type": "messages_retracted", "message_ids": [...]}` event then names the
+earlier `message` events to drop. With `-q`, a discarded attempt never reaches stdout, and text output
+marks it `(discarded)`.
+
+With `stream-json`, the last event of a run that started is `complete` when it succeeded and `error` when it failed. Error messages always go to stderr, so stdout stays parseable. A run that cannot start (for example an unknown provider or a session that does not exist) writes nothing to stdout and exits with a non-zero status.
 
 ## Common Use Cases
 

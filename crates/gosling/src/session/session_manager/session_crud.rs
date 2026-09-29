@@ -11,7 +11,7 @@
 
 use super::{
     message_timestamp_to_datetime, normalized_message_timestamp_sql, Session, SessionInsights,
-    SessionStorage, SessionType, SessionUpdateBuilder,
+    SessionNotFound, SessionStorage, SessionType, SessionUpdateBuilder,
 };
 use crate::config::GoslingMode;
 use crate::session::extension_data::ExtensionData;
@@ -56,11 +56,16 @@ impl SessionStorage {
             r#"
                 INSERT INTO sessions (id, name, user_set_name, session_type, working_dir, extension_data, gosling_mode)
                 VALUES (
-                    ? || '_' || CAST(COALESCE((
-                        SELECT MAX(CAST(SUBSTR(id, 10) AS INTEGER))
-                        FROM sessions
-                        WHERE id LIKE ? || '_%'
-                    ), 0) + 1 AS TEXT),
+                    ? || '_' || CAST(MAX(
+                        COALESCE((
+                            SELECT MAX(CAST(SUBSTR(id, 10) AS INTEGER))
+                            FROM sessions
+                            WHERE id LIKE ? || '_%'
+                        ), 0),
+                        COALESCE((
+                            SELECT last_seq FROM session_id_high_water WHERE day = ?
+                        ), 0)
+                    ) + 1 AS TEXT),
                     ?,
                     FALSE,
                     ?,
@@ -71,6 +76,7 @@ impl SessionStorage {
                 RETURNING *
                 "#,
         )
+            .bind(&today)
             .bind(&today)
             .bind(&today)
             .bind(&name)
@@ -147,7 +153,7 @@ impl SessionStorage {
         .bind(id)
         .fetch_optional(pool)
         .await?
-        .ok_or_else(|| anyhow::anyhow!("Session not found"))
+        .ok_or_else(|| SessionNotFound.into())
     }
 
     pub(super) async fn get_session_with_messages_in_tx(
@@ -172,7 +178,7 @@ impl SessionStorage {
         .bind(id)
         .fetch_optional(&mut **tx)
         .await?
-        .ok_or_else(|| anyhow::anyhow!("Session not found"))?;
+        .ok_or(SessionNotFound)?;
         let conversation = Self::get_conversation_in_tx(tx, id).await?;
         session.message_count = conversation.messages().len();
         session.last_message_at = conversation
@@ -298,9 +304,20 @@ impl SessionStorage {
             return Ok(false);
         }
 
+        // `updated_at` says when the session last changed. A write that
+        // stores the values already there (resume re-applies the session's
+        // own provider, model, and mode) must not move it.
+        let stored_values_sql = format!(
+            "SELECT json_array({}) FROM sessions WHERE id = ?",
+            updates.join(", ")
+        );
+        let values_before: Option<String> = sqlx::query_scalar(&stored_values_sql)
+            .bind(&snapshot_session_id)
+            .fetch_optional(&mut **tx)
+            .await?;
+
         let guard_on_user_set_name = builder.only_if_not_user_named;
-        query.push_str(", ");
-        query.push_str("updated_at = datetime('now') WHERE id = ?");
+        query.push_str(" WHERE id = ?");
         if guard_on_user_set_name {
             query.push_str(" AND user_set_name = 0");
         }
@@ -417,6 +434,17 @@ impl SessionStorage {
                 return Err(anyhow::anyhow!("Session not found: {}", builder.session_id));
             }
             return Err(anyhow::anyhow!("Session not found: {}", builder.session_id));
+        }
+
+        let values_after: Option<String> = sqlx::query_scalar(&stored_values_sql)
+            .bind(&snapshot_session_id)
+            .fetch_optional(&mut **tx)
+            .await?;
+        if values_after != values_before {
+            sqlx::query("UPDATE sessions SET updated_at = datetime('now') WHERE id = ?")
+                .bind(&snapshot_session_id)
+                .execute(&mut **tx)
+                .await?;
         }
 
         let plan_staled = if let Some(old_scope_hash) = old_scope_hash {
@@ -564,7 +592,7 @@ impl SessionStorage {
                 .await?;
 
         if !exists {
-            return Err(anyhow::anyhow!("Session not found"));
+            return Err(SessionNotFound.into());
         }
 
         Self::delete_plan_history_in_tx(&mut tx, session_id).await?;
@@ -665,6 +693,10 @@ impl SessionStorage {
 
         let mut extension_data: ExtensionData =
             serde_json::from_str(&extension_data_json).unwrap_or_default();
+        if extension_data.extension_states.get(key) == Some(&value) {
+            tx.commit().await?;
+            return Ok(());
+        }
         extension_data
             .extension_states
             .insert(key.to_string(), value);

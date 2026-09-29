@@ -682,6 +682,16 @@ pub struct InferenceMetadata {
     pub resolved_model: Option<String>,
 }
 
+/// Why a turn stopped before the model finished on its own.
+#[derive(ToSchema, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub enum TurnLimit {
+    /// The turn used its whole action budget (`GOSLING_MAX_TURNS` / `--max-turns`).
+    MaxTurns,
+    /// The model kept repeating tool calls that repetition protection had denied.
+    RepeatedToolDenials,
+}
+
 #[derive(ToSchema, Clone, PartialEq, Serialize, Deserialize, Debug)]
 /// Metadata for message visibility and model inference details
 #[serde(rename_all = "camelCase")]
@@ -704,6 +714,16 @@ pub struct MessageMetadata {
     /// A user-visible failure that must still terminate non-interactive clients.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub terminal_error: Option<String>,
+    /// Set on the message that ends a turn stopped by an action budget or loop
+    /// guard, so clients report that stop distinctly from a finished turn.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn_limit: Option<TurnLimit>,
+    /// Saved while the reply was still streaming. The final save of a reply
+    /// clears it, so a stored message that keeps it was cut off (process
+    /// stopped, client gone, or cancelled) and may be missing its end.
+    /// Surfaced as `_meta.gosling.incomplete`; never sent to providers.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub incomplete: bool,
 }
 
 impl Default for MessageMetadata {
@@ -715,6 +735,8 @@ impl Default for MessageMetadata {
             steer: false,
             imported_untrusted: false,
             terminal_error: None,
+            turn_limit: None,
+            incomplete: false,
         }
     }
 }
@@ -791,6 +813,11 @@ impl MessageMetadata {
 
     pub fn with_imported_untrusted(mut self) -> Self {
         self.imported_untrusted = true;
+        self
+    }
+
+    pub fn with_incomplete(mut self) -> Self {
+        self.incomplete = true;
         self
     }
 }
@@ -1075,6 +1102,11 @@ impl Message {
         self
     }
 
+    pub fn with_turn_limit(mut self, limit: TurnLimit) -> Self {
+        self.metadata.turn_limit = Some(limit);
+        self
+    }
+
     pub fn with_metadata(mut self, metadata: MessageMetadata) -> Self {
         self.metadata = metadata;
         self
@@ -1087,6 +1119,11 @@ impl Message {
 
     pub fn with_steer(mut self) -> Self {
         self.metadata.steer = true;
+        self
+    }
+
+    pub fn with_incomplete(mut self) -> Self {
+        self.metadata.incomplete = true;
         self
     }
 

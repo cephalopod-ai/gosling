@@ -1002,12 +1002,18 @@ fn test_custom_get_extensions() {
             "gosling-acp-test",
         )
         .expect("ACP test config should load");
+        let inline_token_key =
+            gosling::config::extensions::extension_secret_key(config_key, "INLINE_TOKEN");
         let stored_inline_token = config
-            .get_secret::<String>("INLINE_TOKEN")
-            .expect("inline env should be saved as a secret");
+            .get_secret::<String>(&inline_token_key)
+            .expect("inline env should be saved as this extension's secret");
         assert!(
             stored_inline_token == "inline-secret",
             "inline env secret was not saved correctly"
+        );
+        assert!(
+            config.get_secret::<String>("INLINE_TOKEN").is_err(),
+            "inline env must not be stored under the bare variable name"
         );
 
         let list_extension = || async {
@@ -1089,6 +1095,11 @@ fn test_custom_get_extensions() {
         assert!(
             list_extension().await.is_none(),
             "removed extension should not be listed"
+        );
+        config.invalidate_secrets_cache();
+        assert!(
+            config.get_secret::<String>(&inline_token_key).is_err(),
+            "removing the extension deletes its stored secrets"
         );
     });
 }
@@ -1647,10 +1658,21 @@ fn test_custom_preferences_validate_resulting_compaction_pair() {
             openai,
         )
         .await;
+        let read_pair = || async {
+            send_custom(
+                conn.cx(),
+                "_gosling/unstable/preferences/read",
+                serde_json::json!({"keys": ["autoCompactThreshold", "autoCompactReduction"]}),
+            )
+            .await
+            .unwrap()
+            .get("values")
+            .cloned()
+            .unwrap()
+        };
         for (key, value) in [
-            ("GOSLING_AUTO_COMPACT_REDUCTION", serde_json::json!(0.8)),
-            ("GOSLING_AUTO_COMPACT_THRESHOLD", serde_json::json!(0.15)),
             ("GOSLING_AUTO_COMPACT_THRESHOLD", serde_json::json!(1.0)),
+            ("GOSLING_AUTO_COMPACT_REDUCTION", serde_json::json!(1.0)),
             ("GOSLING_AUTO_COMPACT_REDUCTION", serde_json::json!("bad")),
         ] {
             assert!(send_custom(
@@ -1662,56 +1684,11 @@ fn test_custom_preferences_validate_resulting_compaction_pair() {
             .is_err());
         }
         for values in [
-            serde_json::json!([{ "key": "autoCompactReduction", "value": 0.8 }]),
-            serde_json::json!([{ "key": "autoCompactThreshold", "value": 0.15 }]),
-            serde_json::json!([
-                { "key": "autoCompactThreshold", "value": 0.5 },
-                { "key": "autoCompactReduction", "value": 0.6 }
-            ]),
-        ] {
-            assert!(send_custom(
-                conn.cx(),
-                "_gosling/unstable/preferences/save",
-                serde_json::json!({"values": values})
-            )
-            .await
-            .is_err());
-        }
-        let response = send_custom(
-            conn.cx(),
-            "_gosling/unstable/preferences/read",
-            serde_json::json!({"keys": ["autoCompactThreshold", "autoCompactReduction"]}),
-        )
-        .await
-        .unwrap();
-        assert_eq!(
-            response.get("values"),
-            Some(&serde_json::json!([
-                {"key": "autoCompactThreshold", "value": null},
-                {"key": "autoCompactReduction", "value": null}
-            ]))
-        );
-        for values in [
-            serde_json::json!([
-                { "key": "autoCompactThreshold", "value": 0.1 },
-                { "key": "autoCompactReduction", "value": 0.0 }
-            ]),
+            serde_json::json!([{ "key": "autoCompactReduction", "value": -0.1 }]),
             serde_json::json!([
                 { "key": "autoCompactReduction", "value": 0.2 },
-                { "key": "autoCompactThreshold", "value": 0.3 }
+                { "key": "autoCompactThreshold", "value": 1.0 }
             ]),
-        ] {
-            send_custom(
-                conn.cx(),
-                "_gosling/unstable/preferences/save",
-                serde_json::json!({"values": values}),
-            )
-            .await
-            .unwrap();
-        }
-        for values in [
-            serde_json::json!([{ "key": "autoCompactThreshold", "value": 0.2 }]),
-            serde_json::json!([{ "key": "autoCompactReduction", "value": 0.3 }]),
         ] {
             assert!(send_custom(
                 conn.cx(),
@@ -1721,59 +1698,76 @@ fn test_custom_preferences_validate_resulting_compaction_pair() {
             .await
             .is_err());
         }
-        let response = send_custom(
-            conn.cx(),
-            "_gosling/unstable/preferences/read",
-            serde_json::json!({"keys": ["autoCompactThreshold", "autoCompactReduction"]}),
-        )
-        .await
-        .unwrap();
         assert_eq!(
-            response.get("values"),
-            Some(&serde_json::json!([
-                {"key": "autoCompactThreshold", "value": 0.3},
-                {"key": "autoCompactReduction", "value": 0.2}
-            ]))
+            read_pair().await,
+            serde_json::json!([
+                {"key": "autoCompactThreshold", "value": null},
+                {"key": "autoCompactReduction", "value": null}
+            ])
         );
+
+        // GSL-PT-20260927-B19: the reduction is a proportion of threshold usage
+        // (target = threshold * (1 - reduction)), so the runtime accepts a
+        // reduction at or above the threshold and preferences must too.
         send_custom(
             conn.cx(),
             "_gosling/unstable/preferences/save",
-            serde_json::json!({
-                "values": [
-                    {"key": "autoCompactThreshold", "value": 0.1},
-                    {"key": "autoCompactReduction", "value": 0.0}
-                ]
-            }),
+            serde_json::json!({"values": [{ "key": "autoCompactReduction", "value": 0.8 }]}),
         )
         .await
         .unwrap();
-        assert!(send_custom(
+        send_custom(
             conn.cx(),
-            "_gosling/unstable/preferences/remove",
-            serde_json::json!({"keys": ["autoCompactReduction"]})
+            "_gosling/unstable/preferences/save",
+            serde_json::json!({"values": [
+                { "key": "autoCompactThreshold", "value": 0.5 },
+                { "key": "autoCompactReduction", "value": 0.6 }
+            ]}),
         )
         .await
-        .is_err());
-        let response = send_custom(
+        .unwrap();
+        assert_eq!(
+            read_pair().await,
+            serde_json::json!([
+                {"key": "autoCompactThreshold", "value": 0.5},
+                {"key": "autoCompactReduction", "value": 0.6}
+            ])
+        );
+        send_custom(
             conn.cx(),
-            "_gosling/unstable/preferences/read",
+            "_gosling/unstable/config/upsert",
+            serde_json::json!({"key": "GOSLING_AUTO_COMPACT_THRESHOLD", "value": 0.15, "isSecret": false}),
+        )
+        .await
+        .unwrap();
+        send_custom(
+            conn.cx(),
+            "_gosling/unstable/preferences/remove",
             serde_json::json!({"keys": ["autoCompactReduction"]}),
         )
         .await
         .unwrap();
         assert_eq!(
-            response.get("values"),
-            Some(&serde_json::json!([
-                {"key": "autoCompactReduction", "value": 0.0}
-            ]))
+            read_pair().await,
+            serde_json::json!([
+                {"key": "autoCompactThreshold", "value": 0.15},
+                {"key": "autoCompactReduction", "value": null}
+            ])
         );
-        assert!(send_custom(
+        send_custom(
             conn.cx(),
-            "_gosling/unstable/config/remove",
-            serde_json::json!({"key": "GOSLING_AUTO_COMPACT_REDUCTION", "isSecret": false})
+            "_gosling/unstable/preferences/save",
+            serde_json::json!({"values": [{ "key": "autoCompactReduction", "value": 0.0 }]}),
         )
         .await
-        .is_err());
+        .unwrap();
+        send_custom(
+            conn.cx(),
+            "_gosling/unstable/config/remove",
+            serde_json::json!({"key": "GOSLING_AUTO_COMPACT_REDUCTION", "isSecret": false}),
+        )
+        .await
+        .unwrap();
         send_custom(conn.cx(), "_gosling/unstable/config/upsert",
             serde_json::json!({"key": "GOSLING_AUTO_COMPACT_THRESHOLD", "value": 0.0, "isSecret": false})).await.unwrap();
         let disabled = send_custom(

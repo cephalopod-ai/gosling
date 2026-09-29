@@ -151,6 +151,7 @@ mod transport;
 mod website_logins;
 mod workspace_handlers;
 
+pub(crate) use active_runs::PromptRunShutdown;
 #[cfg(test)]
 use active_runs::{register_active_prompt_run, unregister_active_prompt_run};
 use active_runs::{ActivePromptRun, SessionOperationGate};
@@ -170,7 +171,7 @@ use message_projection::{
     build_tool_call_content, extract_tool_call_update_meta, extract_tool_raw_output,
     merge_replay_message_meta, message_update_meta, outcome_to_confirmation,
     prompt_error_from_message, prompt_error_from_message_content, replay_message_meta,
-    send_status_message_update, session_artifact_dto,
+    retracted_messages_update, send_status_message_update, session_artifact_dto,
 };
 use tool_metadata::{
     extend_chain_membership, extract_locations_from_meta, extract_tool_locations, format_tool_name,
@@ -293,6 +294,7 @@ pub struct GoslingAcpAgent {
     runtime_paths: RuntimePaths,
     sessions: Arc<Mutex<HashMap<String, GoslingAcpSession>>>,
     active_prompt_runs: Arc<Mutex<HashMap<String, ActivePromptRun>>>,
+    prompt_run_shutdown: PromptRunShutdown,
     closed_session_ids: Arc<Mutex<HashSet<String>>>,
     agent_manager: Arc<AgentManager>,
     provider_factory: AcpProviderFactory,
@@ -497,7 +499,7 @@ impl GoslingAcpAgent {
             let agent_config = AgentConfig::new(
                 Arc::clone(&session_manager),
                 Arc::clone(&permission_manager),
-                config.get_gosling_mode().unwrap_or_default(),
+                config.effective_gosling_mode(),
                 options.disable_session_naming,
                 options.gosling_platform.clone(),
             )
@@ -509,6 +511,7 @@ impl GoslingAcpAgent {
                 runtime_paths: agent_runtime_paths,
                 sessions: Arc::new(Mutex::new(HashMap::new())),
                 active_prompt_runs: Arc::new(Mutex::new(HashMap::new())),
+                prompt_run_shutdown: PromptRunShutdown::new(),
                 closed_session_ids: Arc::new(Mutex::new(HashSet::new())),
                 agent_manager,
                 provider_factory: options.provider_factory,
@@ -533,6 +536,12 @@ impl GoslingAcpAgent {
             })
         })
         .await
+    }
+
+    /// Puts this connection's prompt runs under a server-wide shutdown.
+    pub(crate) fn with_prompt_run_shutdown(mut self, shutdown: PromptRunShutdown) -> Self {
+        self.prompt_run_shutdown = shutdown;
+        self
     }
 
     fn config(&self) -> Result<&'static Config, agent_client_protocol::Error> {

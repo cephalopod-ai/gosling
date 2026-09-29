@@ -51,6 +51,9 @@ const REFRESH_THRESHOLD_SECS: i64 = 300;
 /// Fallback access-token lifetime when the server omits `expires_in`.
 const DEFAULT_TOKEN_LIFETIME_SECS: i64 = 3600;
 
+const KIMI_CODE_SIGN_IN_REQUIRED: &str =
+    "Kimi Code sign-in required to list its models: run `gosling configure` and select Kimi Code";
+
 /// Marker key written to the user config when OAuth completes successfully.
 /// `check_provider_configured` (server) keys off this when an OAuth-flow
 /// provider has no required secret env var.
@@ -216,18 +219,8 @@ impl KimiCodeProvider {
     async fn ensure_token(&self) -> Result<KimiToken> {
         let mut guard = self.cached_token.lock().await;
 
-        if let Some(token) = guard.clone() {
-            if let Some(usable) = self.use_or_refresh(token).await {
-                *guard = Some(usable.clone());
-                return Ok(usable);
-            }
-        }
-
-        if let Some(token) = self.token_cache.load().await {
-            if let Some(usable) = self.use_or_refresh(token).await {
-                *guard = Some(usable.clone());
-                return Ok(usable);
-            }
+        if let Some(usable) = self.usable_token(&mut guard).await {
+            return Ok(usable);
         }
 
         tracing::info!("kimicode: starting OAuth device-flow login");
@@ -235,6 +228,29 @@ impl KimiCodeProvider {
         self.token_cache.save(&token).await?;
         *guard = Some(token.clone());
         Ok(token)
+    }
+
+    /// The existing sign-in, refreshed when it is about to expire, or `None` when
+    /// the user has to sign in again. Never starts the device flow: model listing
+    /// (which the Desktop runs in the background) must not open a browser; only
+    /// real requests and `configure_oauth` may.
+    async fn signed_in_token(&self) -> Option<KimiToken> {
+        let mut guard = self.cached_token.lock().await;
+        self.usable_token(&mut guard).await
+    }
+
+    async fn usable_token(&self, cached: &mut Option<KimiToken>) -> Option<KimiToken> {
+        if let Some(token) = cached.clone() {
+            if let Some(usable) = self.use_or_refresh(token).await {
+                *cached = Some(usable.clone());
+                return Some(usable);
+            }
+        }
+
+        let token = self.token_cache.load().await?;
+        let usable = self.use_or_refresh(token).await?;
+        *cached = Some(usable.clone());
+        Some(usable)
     }
 
     /// Returns a usable token derived from `token`, or `None` if it is unusable.
@@ -429,9 +445,11 @@ impl Provider for KimiCodeProvider {
             data: Vec<ModelEntry>,
         }
 
-        let access_token = self.get_access_token().await.map_err(|e| {
-            ProviderError::Authentication(format!("Failed to get Kimi access token: {}", e))
-        })?;
+        let access_token = self
+            .signed_in_token()
+            .await
+            .ok_or_else(|| ProviderError::Authentication(KIMI_CODE_SIGN_IN_REQUIRED.to_string()))?
+            .access_token;
 
         let resp = self
             .client
@@ -746,5 +764,80 @@ mod tests {
             "expected ServerError, got {:?}",
             err
         );
+    }
+
+    // The device-authorization endpoint answers 500, so an attempted sign-in fails
+    // before it could open a browser or touch the clipboard.
+    async fn mount_failing_device_authorization(server: &MockServer, expected_calls: u64) {
+        Mock::given(method("POST"))
+            .and(path("/api/oauth/device_authorization"))
+            .respond_with(ResponseTemplate::new(500))
+            .expect(expected_calls)
+            .mount(server)
+            .await;
+    }
+
+    #[tokio::test]
+    async fn listing_models_without_a_sign_in_never_starts_the_device_flow() {
+        let server = MockServer::start().await;
+        mount_failing_device_authorization(&server, 0).await;
+        let provider = test_provider(&server.uri(), "abc");
+
+        let err = provider.fetch_supported_models().await.unwrap_err();
+
+        assert_eq!(
+            err,
+            ProviderError::Authentication(KIMI_CODE_SIGN_IN_REQUIRED.to_string())
+        );
+        server.verify().await;
+    }
+
+    #[tokio::test]
+    async fn listing_models_refreshes_an_expiring_sign_in_without_the_device_flow() {
+        let server = MockServer::start().await;
+        mount_failing_device_authorization(&server, 0).await;
+        Mock::given(method("POST"))
+            .and(path("/api/oauth/token"))
+            .and(body_string_contains("grant_type=refresh_token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "access_token": "refreshed-access",
+                "refresh_token": "refreshed-refresh",
+                "expires_in": 3600,
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .and(wiremock::matchers::header(
+                "authorization",
+                "Bearer refreshed-access",
+            ))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "data": [{"id": "kimi-for-coding"}],
+            })))
+            .mount(&server)
+            .await;
+        let provider = test_provider(&server.uri(), "abc");
+        *provider.cached_token.lock().await = Some(KimiToken {
+            access_token: "expiring-access".to_string(),
+            refresh_token: "expiring-refresh".to_string(),
+            expires_at: Utc::now() - Duration::seconds(1),
+        });
+
+        let models = provider.fetch_supported_models().await.unwrap();
+
+        assert_eq!(models, vec!["kimi-for-coding".to_string()]);
+        server.verify().await;
+    }
+
+    #[tokio::test]
+    async fn a_request_without_a_sign_in_still_starts_the_device_flow() {
+        let server = MockServer::start().await;
+        mount_failing_device_authorization(&server, 1).await;
+        let provider = test_provider(&server.uri(), "abc");
+
+        assert!(provider.ensure_token().await.is_err());
+        server.verify().await;
     }
 }

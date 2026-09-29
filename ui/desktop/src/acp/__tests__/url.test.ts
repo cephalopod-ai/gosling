@@ -111,24 +111,18 @@ describe('HTTP endpoint URLs from ACP HTTP base URLs', () => {
       'https://example.com/gosling/acp'
     );
   });
-
-  it('adds ACP query tokens when provided', () => {
-    expect(acpHttpUrlFromHttpBase('https://example.com/gosling', 'test secret')).toBe(
-      'https://example.com/gosling/acp?token=test+secret'
-    );
-  });
 });
 
+// The secret authenticates through the WebSocket subprotocol; a URL carrying it would be
+// printed in the renderer console on every failed connection.
 describe('acpWebSocketUrlFromHttpBase', () => {
-  it('derives WSS ACP URLs from HTTPS base URLs', () => {
-    expect(acpWebSocketUrlFromHttpBase('https://example.com/gosling', 'secret')).toBe(
-      'wss://example.com/gosling/acp?token=secret'
+  it('derives WSS ACP URLs from HTTPS base URLs without a credential', () => {
+    expect(acpWebSocketUrlFromHttpBase('https://example.com/gosling')).toBe(
+      'wss://example.com/gosling/acp'
     );
   });
 
-  it('derives WS ACP URLs from HTTP base URLs', () => {
-    expect(acpWebSocketUrlFromHttpBase('http://127.0.0.1:1234', 'secret')).toBe(
-      'ws://127.0.0.1:1234/acp?token=secret'
-    );
+  it('derives WS ACP URLs from HTTP base URLs without a credential', () => {
+    expect(acpWebSocketUrlFromHttpBase('http://127.0.0.1:1234')).toBe('ws://127.0.0.1:1234/acp');
   });
 });

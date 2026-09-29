@@ -10,7 +10,7 @@ mod thinking;
 
 use gosling::conversation::Conversation;
 use gosling::session::{
-    InteractionPolicy, NewPlanFeedback, PlanExpectation, PlanSnapshot, PlanStatus,
+    InteractionPolicy, NewPlanFeedback, PlanExpectation, PlanSnapshot, PlanStatus, SessionNotFound,
 };
 use std::env;
 use std::str::FromStr;
@@ -42,7 +42,7 @@ use rmcp::model::{ErrorCode, ErrorData};
 use strum::VariantNames;
 
 use gosling::config::paths::Paths;
-use gosling::conversation::message::{ActionRequiredData, Message, MessageContent};
+use gosling::conversation::message::{ActionRequiredData, Message, MessageContent, TurnLimit};
 use rustyline::EditMode;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -95,6 +95,11 @@ enum StreamEvent {
     },
     Error {
         error: String,
+    },
+    /// Messages emitted earlier that are not part of the history, like a reply
+    /// attempt that broke off and was retried.
+    MessagesRetracted {
+        message_ids: Vec<String>,
     },
     Complete {
         total_tokens: Option<i32>,
@@ -190,6 +195,8 @@ pub struct CliSession {
     edit_mode: Option<EditMode>,
     output_format: String,
     stats: bool,
+    /// Text output carries only the model's reply (`run --quiet`).
+    quiet: bool,
     persist_local_state: bool,
     _ephemeral_state: Option<EphemeralSessionState>,
 }
@@ -254,6 +261,7 @@ impl CliSession {
             edit_mode,
             output_format,
             stats,
+            quiet: false,
             persist_local_state: true,
             _ephemeral_state: None,
         }
@@ -1173,7 +1181,9 @@ impl CliSession {
             .process_agent_response(true, CancellationToken::default())
             .await;
         output::hide_thinking();
-        result?;
+        if let Err(error) = result {
+            return Err(self.explain_turn_failure(error, content).await);
+        }
 
         let elapsed_str = format_elapsed_time(start_time.elapsed());
         println!("{}", console::style(format!("  ⏱ {}", elapsed_str)).dim());
@@ -1190,6 +1200,29 @@ impl CliSession {
             output::render_plan_review_commands();
         }
         Ok(())
+    }
+
+    /// A session removed from another window or process fails the next turn
+    /// on its first write. Say so and repeat what the user typed, which
+    /// would otherwise be lost with the process.
+    async fn explain_turn_failure(&self, error: anyhow::Error, typed: &str) -> anyhow::Error {
+        let session_is_gone = matches!(
+            self.agent
+                .config
+                .session_manager
+                .get_session_without_message_stats(&self.session_id)
+                .await,
+            Err(lookup) if lookup.downcast_ref::<SessionNotFound>().is_some()
+        );
+        if !session_is_gone {
+            return error;
+        }
+        anyhow::anyhow!(
+            "Session {} no longer exists; it was removed from another window or process. \
+             Your message was not saved:\n\n{typed}\n\n\
+             Start a new session with `gosling session` to continue.",
+            self.session_id
+        )
     }
 
     fn render_plan_command_error(&self, error: &anyhow::Error) {
@@ -1383,6 +1416,7 @@ impl CliSession {
     ) -> Result<()> {
         let is_json_mode = self.output_format == "json";
         let is_stream_json_mode = self.output_format == "stream-json";
+        let is_quiet_text_mode = self.quiet && !is_json_mode && !is_stream_json_mode;
 
         let session_config = SessionConfig {
             id: self.session_id.clone(),
@@ -1423,6 +1457,7 @@ impl CliSession {
         let mut progress_bars = output::McpSpinners::new();
         let cancel_token_clone = cancel_token.clone();
         let mut markdown_buffer = streaming_buffer::MarkdownBuffer::new();
+        let mut reply_text = output::TextBlocks::default();
         let mut prompted_credits_urls: HashSet<String> = HashSet::new();
         let mut thinking_header_shown = false;
         let run_started = Instant::now();
@@ -1430,7 +1465,11 @@ impl CliSession {
         let mut last_usage: Option<ProviderUsage> = None;
         let mut terminal_error: Option<String> = None;
         let mut execution_limit_reached = false;
+        let mut turn_limit = None;
         let mut interrupted = false;
+        let mut error_event_emitted = false;
+        let mut shown_message_ids: Vec<String> = Vec::new();
+        let mut held_reply = HeldReply::default();
 
         use futures::StreamExt;
         loop {
@@ -1438,17 +1477,25 @@ impl CliSession {
                 result = stream.next() => {
                     match result {
                         Some(Ok(AgentEvent::Message(message))) => {
+                            if is_quiet_text_mode {
+                                held_reply.release_unless_continued_by(&message, &mut markdown_buffer, &mut reply_text);
+                            }
+                            if let Some(message_id) = &message.id {
+                                if !shown_message_ids.contains(message_id) {
+                                    shown_message_ids.push(message_id.clone());
+                                }
+                            }
                             if !interactive && terminal_error.is_none() {
                                 terminal_error = terminal_error_reason(&message);
                             }
                             execution_limit_reached |= execution_limit_reason(&message);
+                            turn_limit = turn_limit.or(message.metadata.turn_limit);
                             if first_token_at.is_none() && message_has_text(&message) {
                                 first_token_at = Some(Instant::now());
                             }
                             if let Some((id, security_prompt)) = find_tool_confirmation(&message) {
                                 if !interactive {
-                                    let config = Config::global();
-                                    let gosling_mode = config.get_gosling_mode().unwrap_or_default();
+                                    let gosling_mode = self.agent.gosling_mode().await;
                                     self.agent.handle_confirmation(id.clone(), PermissionConfirmation {
                                         principal_type: PrincipalType::Tool,
                                         permission: non_interactive_confirmation_permission(),
@@ -1462,7 +1509,15 @@ impl CliSession {
                                         "Tool approval required in non-interactive mode with GoslingMode::{gosling_mode}; the tool was denied because no operator is available."
                                     ));
                                 }
-                                let permission = prompt_tool_confirmation(&security_prompt)?;
+                                let working_dir = self
+                                    .agent
+                                    .config
+                                    .session_manager
+                                    .get_session(&self.session_id, false)
+                                    .await?
+                                    .working_dir;
+                                let permission =
+                                    prompt_tool_confirmation(&security_prompt, &working_dir)?;
 
                                 if permission == Permission::Cancel {
                                     output::render_text("Tool call cancelled. Returning to chat...", Some(Color::Yellow), true);
@@ -1551,10 +1606,21 @@ impl CliSession {
                                 if interactive { output::hide_thinking() };
                                 let _ = progress_bars.hide();
 
+                                // A turn-limit message asks the user how to continue. A headless
+                                // run has nobody to answer; the execution notice reports the stop.
+                                let unanswerable_limit_prompt =
+                                    !interactive && message.metadata.turn_limit.is_some();
                                 if is_stream_json_mode {
                                     emit_stream_event(&StreamEvent::Message { message: message.clone() });
-                                } else if !is_json_mode {
-                                    output::render_message_streaming(&message, &mut markdown_buffer, &mut thinking_header_shown, self.debug);
+                                } else if is_quiet_text_mode {
+                                    if let Some(error) = &message.metadata.terminal_error {
+                                        let text = message.as_concat_text();
+                                        eprintln!("{}", if text.trim().is_empty() { error } else { &text });
+                                    } else if !unanswerable_limit_prompt {
+                                        held_reply.hold(&message);
+                                    }
+                                } else if !is_json_mode && !unanswerable_limit_prompt {
+                                    output::render_message_streaming(&message, &mut markdown_buffer, &mut thinking_header_shown, &mut reply_text, self.debug);
                                     maybe_open_credits_top_up_url(
                                         &message,
                                         interactive,
@@ -1574,21 +1640,46 @@ impl CliSession {
                                 &mut progress_bars,
                                 is_stream_json_mode,
                                 interactive,
-                                is_json_mode,
+                                is_json_mode || is_quiet_text_mode,
                                 self.debug,
                             );
                         }
                         Some(Ok(AgentEvent::HistoryReplaced(updated_conversation))) => {
+                            let retracted = self
+                                .agent
+                                .config
+                                .session_manager
+                                .retracted_message_ids(&self.session_id, &updated_conversation, &shown_message_ids)
+                                .await?;
                             self.messages = updated_conversation;
+                            if !retracted.is_empty() {
+                                shown_message_ids.retain(|id| !retracted.contains(id));
+                                if is_stream_json_mode {
+                                    emit_stream_event(&StreamEvent::MessagesRetracted { message_ids: retracted });
+                                } else if is_quiet_text_mode {
+                                    held_reply.discard(&retracted);
+                                } else if !is_json_mode {
+                                    // Printed text cannot be taken back; say that it no longer counts.
+                                    output::flush_markdown_buffer_current_theme(&mut markdown_buffer);
+                                    print!("{}", console::style(" (discarded)").dim());
+                                    let _ = std::io::Write::flush(&mut std::io::stdout());
+                                }
+                            }
                         }
                         Some(Err(e)) => {
-                            handle_agent_error(&e, is_json_mode, is_stream_json_mode);
+                            let lease_lost = is_turn_lease_lost(&e);
+                            // A lost lease ends the session, and the error it returns is
+                            // printed on exit; printing it here as well showed it twice.
+                            if !lease_lost || is_stream_json_mode {
+                                handle_agent_error(&e, is_json_mode, is_stream_json_mode);
+                            }
+                            error_event_emitted = is_stream_json_mode;
                             terminal_error = Some(e.to_string());
                             cancel_token_clone.cancel();
                             drop(stream);
                             // Another owner holds the session now: its history is not ours to
                             // truncate, and the error already tells the user to reload.
-                            if is_turn_lease_lost(&e) {
+                            if lease_lost {
                                 break;
                             }
                             if let Err(e) = self
@@ -1625,6 +1716,7 @@ impl CliSession {
                 }
             }
         }
+        held_reply.release(&mut markdown_buffer, &mut reply_text);
 
         if interrupted {
             if let Err(e) = self
@@ -1639,9 +1731,9 @@ impl CliSession {
         }
 
         if terminal_error.is_none() && execution_limit_reached {
-            let notice_text = "Execution stopped before all requested work completed because an action or repetition limit was reached. Some requested operations did not run; do not treat earlier completion claims as authoritative.";
+            let notice_text = execution_limit_notice(turn_limit);
             let notice = Message::assistant()
-                .with_text(notice_text)
+                .with_text(&notice_text)
                 .with_generated_id();
             self.messages.push(notice.clone());
             let _ = self
@@ -1652,11 +1744,23 @@ impl CliSession {
                 .await;
             if is_stream_json_mode {
                 emit_stream_event(&StreamEvent::Message { message: notice });
-                handle_agent_error(&anyhow::anyhow!(notice_text), false, true);
+                handle_agent_error(&anyhow::anyhow!(notice_text.clone()), false, true);
+                error_event_emitted = true;
+            } else if is_quiet_text_mode {
+                // A headless run reports the stop on stderr when it exits.
+                if interactive {
+                    eprintln!("{notice_text}");
+                }
             } else if !is_json_mode {
+                output::flush_markdown_buffer_current_theme(&mut markdown_buffer);
+                println!();
                 output::render_message(&notice, self.debug);
             }
-            terminal_error = Some(notice_text.to_string());
+            // An interactive user reads the notice and answers at the next prompt; only a run
+            // nobody can answer ends here with a failure.
+            if !interactive {
+                terminal_error = Some(notice_text);
+            }
         }
 
         if !is_json_mode && !is_stream_json_mode {
@@ -1722,18 +1826,27 @@ impl CliSession {
                 ),
                 None => (None, None, None),
             };
-            if terminal_error.is_none() {
-                emit_stream_event(&StreamEvent::Complete {
+            match &terminal_error {
+                None => emit_stream_event(&StreamEvent::Complete {
                     total_tokens,
                     input_tokens,
                     output_tokens,
-                });
+                }),
+                // A provider failure or a cancelled run ends with a message, not an error event;
+                // consumers still need a terminal event.
+                Some(error) if !error_event_emitted => emit_stream_event(&StreamEvent::Error {
+                    error: error.clone(),
+                }),
+                Some(_) => {}
             }
+        } else if is_quiet_text_mode {
+            reply_text.end_line();
         } else {
             println!();
-            if self.stats {
-                print_run_stats(run_started, first_token_at, last_usage.as_ref());
-            }
+        }
+        // On stderr, so it never mixes with a reply or JSON on stdout.
+        if self.stats {
+            print_run_stats(run_started, first_token_at, last_usage.as_ref());
         }
 
         match terminal_error {
@@ -1943,18 +2056,19 @@ impl CliSession {
 
     /// Render all past messages from the session history
     pub fn render_message_history(&self) {
-        if self.messages.is_empty() {
+        let visible = user_visible_messages(&self.messages);
+        if visible.is_empty() {
             return;
         }
 
         println!(
             "\n  {} {}",
             console::style("↻").cyan(),
-            console::style(format!("{} messages restored", self.messages.len())).dim()
+            console::style(format!("{} messages restored", visible.len())).dim()
         );
 
         // Render each message
-        for message in self.messages.iter() {
+        for message in visible {
             output::render_message(message, self.debug);
             println!();
         }
@@ -1992,10 +2106,6 @@ impl CliSession {
             .get_param::<bool>("GOSLING_CLI_SHOW_COST")
             .unwrap_or(false);
 
-        let provider_name = config
-            .get_gosling_provider()
-            .unwrap_or_else(|_| "unknown".to_string());
-
         match self.get_session().await {
             Ok(metadata) => {
                 let total_tokens = metadata.usage.total_tokens.unwrap_or(0) as usize;
@@ -2003,10 +2113,16 @@ impl CliSession {
                 output::display_context_usage(total_tokens, context_limit);
 
                 if show_cost {
+                    // Priced like the recorded session cost: by the session's own provider,
+                    // not the configured default.
                     output::display_cost_usage(
-                        &provider_name,
+                        metadata
+                            .provider_name
+                            .as_deref()
+                            .unwrap_or(provider.get_name()),
                         &model_config.model_name,
                         &metadata.usage,
+                        metadata.accumulated_cost,
                     );
                 }
             }
@@ -2125,6 +2241,15 @@ impl CliSession {
     }
 }
 
+/// Messages written for the agent only (turn-closing notices, hints) are not part of what the
+/// user saw in the conversation.
+fn user_visible_messages(conversation: &Conversation) -> Vec<&Message> {
+    conversation
+        .iter()
+        .filter(|message| message.metadata.user_visible)
+        .collect()
+}
+
 fn message_has_text(message: &Message) -> bool {
     message.content.iter().any(
         |content| matches!(content, MessageContent::Text(text) if !text.text.trim().is_empty()),
@@ -2161,10 +2286,26 @@ fn terminal_error_reason(message: &Message) -> Option<String> {
 }
 
 fn execution_limit_reason(message: &Message) -> bool {
-    let text = message.as_concat_text();
-    (message.role == rmcp::model::Role::User && text.contains("has exceeded maximum repetitions"))
-        || (message.role == rmcp::model::Role::Assistant
-            && text.contains("reached the maximum number of actions"))
+    message.metadata.turn_limit.is_some()
+        || (message.role == rmcp::model::Role::User
+            && message
+                .as_concat_text()
+                .contains("has exceeded maximum repetitions"))
+}
+
+fn execution_limit_notice(turn_limit: Option<TurnLimit>) -> String {
+    let cause = match turn_limit {
+        Some(TurnLimit::MaxTurns) => {
+            "the turn used all of its allowed actions (--max-turns / GOSLING_MAX_TURNS)"
+        }
+        Some(TurnLimit::RepeatedToolDenials) => {
+            "the model kept repeating tool calls that were denied as repeats (an identical call that already failed, or more than --max-tool-repetitions identical calls)"
+        }
+        None => "an action or repetition limit was reached",
+    };
+    format!(
+        "Execution stopped before all requested work completed because {cause}. Some requested operations did not run; do not treat earlier completion claims as authoritative."
+    )
 }
 
 fn remove_local_turn(conversation: &mut Conversation, message_id: &str) -> bool {
@@ -2305,31 +2446,80 @@ fn emit_stream_event(event: &StreamEvent) {
     }
 }
 
+/// `run --quiet` prints a reply message once it is complete (the next message
+/// started or the turn ended), so a reply attempt that breaks off and is
+/// retried never reaches stdout.
+#[derive(Default)]
+struct HeldReply {
+    chunks: Vec<Message>,
+}
+
+impl HeldReply {
+    fn hold(&mut self, message: &Message) {
+        self.chunks.push(message.clone());
+    }
+
+    fn release_unless_continued_by(
+        &mut self,
+        message: &Message,
+        buffer: &mut streaming_buffer::MarkdownBuffer,
+        blocks: &mut output::TextBlocks,
+    ) {
+        if self.chunks.last().is_some_and(|held| held.id != message.id) {
+            self.release(buffer, blocks);
+        }
+    }
+
+    fn release(
+        &mut self,
+        buffer: &mut streaming_buffer::MarkdownBuffer,
+        blocks: &mut output::TextBlocks,
+    ) {
+        for chunk in self.chunks.drain(..) {
+            output::render_reply_text_streaming(&chunk, buffer, blocks);
+        }
+    }
+
+    fn discard(&mut self, message_ids: &[String]) {
+        self.chunks
+            .retain(|chunk| !chunk.id.as_ref().is_some_and(|id| message_ids.contains(id)));
+    }
+}
+
 // Enter on an untouched menu, or stray typing meant for the chat prompt, must never approve a
 // tool. Cancel is the last item, so arrow-style keys (h/j/k/l) typed by accident reach Deny
 // before any Allow option.
 const TOOL_CONFIRMATION_DEFAULT: Permission = Permission::Cancel;
 
 /// Prompt user for tool call confirmation, returns the Permission selected
-fn prompt_tool_confirmation(security_prompt: &Option<String>) -> Result<Permission> {
+fn prompt_tool_confirmation(
+    security_prompt: &Option<String>,
+    working_dir: &std::path::Path,
+) -> Result<Permission> {
     output::hide_thinking();
 
     let prompt = if let Some(security_message) = security_prompt {
         println!("\n{}", security_message);
-        "Do you allow this tool call?".to_string()
+        format!(
+            "Do you allow this tool call (working directory {})?",
+            working_dir.display()
+        )
     } else {
-        "Gosling would like to call the above tool, do you allow?".to_string()
+        format!(
+            "Gosling would like to call the above tool in {}, do you allow?",
+            working_dir.display()
+        )
     };
 
     let permission_result = if security_prompt.is_none() {
         cliclack::select(prompt)
-            .item(Permission::AllowOnce, "Allow", "Allow the tool call once")
+            .item(Permission::AllowOnce, "Allow", "Allow this call only")
             .item(
                 Permission::AlwaysAllow,
                 "Always Allow",
-                "Always allow the tool call",
+                "Allow this tool without asking in every session (saved to permission.yaml)",
             )
-            .item(Permission::DenyOnce, "Deny", "Deny the tool call")
+            .item(Permission::DenyOnce, "Deny", "Deny this call only")
             .item(
                 Permission::Cancel,
                 "Cancel",
@@ -2339,8 +2529,8 @@ fn prompt_tool_confirmation(security_prompt: &Option<String>) -> Result<Permissi
             .interact()
     } else {
         cliclack::select(prompt)
-            .item(Permission::AllowOnce, "Allow", "Allow the tool call once")
-            .item(Permission::DenyOnce, "Deny", "Deny the tool call")
+            .item(Permission::AllowOnce, "Allow", "Allow this call only")
+            .item(Permission::DenyOnce, "Deny", "Deny this call only")
             .item(
                 Permission::Cancel,
                 "Cancel",
@@ -3094,7 +3284,14 @@ mod tests {
         assert!(execution_limit_reason(
             &Message::user().with_text("Tool 'shell' has exceeded maximum repetitions")
         ));
-        assert!(execution_limit_reason(&Message::assistant().with_text(
+        for limit in [TurnLimit::MaxTurns, TurnLimit::RepeatedToolDenials] {
+            assert!(execution_limit_reason(
+                &Message::assistant()
+                    .with_text("I stopped.")
+                    .with_turn_limit(limit)
+            ));
+        }
+        assert!(!execution_limit_reason(&Message::assistant().with_text(
             "I've reached the maximum number of actions I can do without user input."
         )));
         assert!(!execution_limit_reason(&Message::assistant().with_text(
@@ -3103,6 +3300,41 @@ mod tests {
         assert!(!execution_limit_reason(
             &Message::assistant().with_text("All requested work completed")
         ));
+    }
+
+    #[test]
+    fn execution_limit_notice_names_the_limit_that_stopped_the_turn() {
+        let max_turns = execution_limit_notice(Some(TurnLimit::MaxTurns));
+        let repeated = execution_limit_notice(Some(TurnLimit::RepeatedToolDenials));
+        let generic = execution_limit_notice(None);
+
+        assert!(max_turns.contains("--max-turns"), "{max_turns}");
+        assert!(repeated.contains("denied as repeats"), "{repeated}");
+        assert_eq!(
+            generic,
+            "Execution stopped before all requested work completed because an action or repetition limit was reached. Some requested operations did not run; do not treat earlier completion claims as authoritative."
+        );
+        for notice in [&max_turns, &repeated, &generic] {
+            assert!(!notice.contains('?'), "{notice}");
+        }
+    }
+
+    #[test]
+    fn restored_history_leaves_out_agent_only_messages() {
+        let conversation = Conversation::new_unvalidated(vec![
+            Message::user().with_text("question"),
+            Message::assistant().with_text("answer"),
+            Message::assistant()
+                .with_text("Run ended by a provider error before completion.")
+                .agent_only(),
+        ]);
+
+        let shown: Vec<String> = user_visible_messages(&conversation)
+            .into_iter()
+            .map(|message| message.as_concat_text())
+            .collect();
+
+        assert_eq!(shown, vec!["question", "answer"]);
     }
 
     #[test]
@@ -3218,6 +3450,40 @@ mod tests {
             .messages()
             .iter()
             .any(|message| message.as_concat_text() == "Conversation cleared"));
+    }
+
+    #[tokio::test]
+    async fn a_turn_on_a_session_removed_elsewhere_reports_it_and_keeps_the_typed_text() {
+        let temp = tempfile::tempdir().unwrap();
+        let (mut cli, manager, session_id) = cli_session_with_messages(&temp, &[]).await;
+        manager.delete_session(&session_id).await.unwrap();
+        let typed = "please keep this long prompt";
+        cli.messages.push(Message::user().with_text(typed));
+
+        let turn_error = cli
+            .process_agent_response(false, CancellationToken::new())
+            .await
+            .expect_err("a removed session cannot take a turn");
+        let reported = cli
+            .explain_turn_failure(turn_error, typed)
+            .await
+            .to_string();
+
+        assert!(!reported.contains("FOREIGN KEY"), "{reported}");
+        assert!(reported.contains(&format!("Session {session_id} no longer exists")));
+        assert!(reported.contains(typed));
+    }
+
+    #[tokio::test]
+    async fn a_turn_failure_on_a_live_session_is_reported_unchanged() {
+        let temp = tempfile::tempdir().unwrap();
+        let (cli, _manager, _session_id) = cli_session_with_messages(&temp, &[]).await;
+
+        let reported = cli
+            .explain_turn_failure(anyhow::anyhow!("Request failed: connection refused"), "hi")
+            .await;
+
+        assert_eq!(reported.to_string(), "Request failed: connection refused");
     }
 
     #[test]
@@ -3387,6 +3653,80 @@ mod tests {
 
         fn executes_tools_outside_gosling(&self) -> bool {
             self.external_tools.load(Ordering::SeqCst)
+        }
+    }
+
+    /// Asks for a tool call on every turn, so any turn budget runs out.
+    struct ToolLoopProvider;
+
+    #[async_trait::async_trait]
+    impl gosling::providers::base::Provider for ToolLoopProvider {
+        fn get_name(&self) -> &str {
+            "tool-loop-test"
+        }
+
+        async fn stream(
+            &self,
+            _model_config: &gosling_providers::model::ModelConfig,
+            _system: &str,
+            _messages: &[Message],
+            _tools: &[rmcp::model::Tool],
+        ) -> Result<gosling_providers::base::MessageStream, gosling_providers::errors::ProviderError>
+        {
+            let message = Message::assistant().with_tool_request(
+                "loop-call",
+                Ok(rmcp::model::CallToolRequestParams::new("missing_tool")),
+            );
+            let usage = gosling_providers::conversation::token_usage::ProviderUsage::new(
+                "tool-loop-test".to_string(),
+                gosling_providers::conversation::token_usage::Usage::default(),
+            );
+            Ok(gosling::providers::base::stream_from_single_message(
+                message, usage,
+            ))
+        }
+    }
+
+    /// A turn that used its whole `--max-turns` budget fails a headless run, but an interactive
+    /// session shows the notice and goes on to the next prompt (it used to exit with status 1).
+    #[tokio::test]
+    async fn a_turn_limit_ends_a_headless_run_but_not_an_interactive_session() {
+        for interactive in [true, false] {
+            let temp = tempfile::tempdir().unwrap();
+            let (mut cli, manager, session_id) = cli_session_with_messages(&temp, &[]).await;
+            cli.agent
+                .update_provider(
+                    Arc::new(ToolLoopProvider),
+                    gosling_providers::model::ModelConfig::new("loop-model"),
+                    &session_id,
+                )
+                .await
+                .unwrap();
+            cli.max_turns = Some(1);
+            cli.messages
+                .push(Message::user().with_text("keep going").with_generated_id());
+
+            let result = cli
+                .process_agent_response(interactive, CancellationToken::new())
+                .await;
+
+            assert_eq!(
+                result.is_ok(),
+                interactive,
+                "interactive = {interactive}: {result:?}"
+            );
+            let stored = manager.get_session(&session_id, true).await.unwrap();
+            assert!(
+                stored
+                    .conversation
+                    .unwrap()
+                    .messages()
+                    .iter()
+                    .any(|message| message
+                        .as_concat_text()
+                        .starts_with("Execution stopped before all requested work completed")),
+                "the stop notice is recorded either way (interactive = {interactive})"
+            );
         }
     }
 

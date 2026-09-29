@@ -440,7 +440,7 @@ impl GoslingAcpAgent {
                 .as_str()
                 .unwrap()
                 .to_string();
-            PermissionOption::new(id.clone(), id, kind)
+            PermissionOption::new(id.clone(), standard_option_name(kind, &id), kind)
         }
         let mut options = Vec::new();
         if !is_security_prompt {
@@ -511,5 +511,50 @@ impl GoslingAcpAgent {
             })?;
 
         Ok(())
+    }
+}
+
+/// Clients match the standard options by id; the name tells a person how long
+/// the choice lasts, since an "always" decision is saved for every session.
+fn standard_option_name(kind: PermissionOptionKind, id: &str) -> String {
+    match kind {
+        PermissionOptionKind::AllowOnce => "Allow once".to_string(),
+        PermissionOptionKind::AllowAlways => {
+            "Always allow this tool (saved for all sessions)".to_string()
+        }
+        PermissionOptionKind::RejectOnce => "Deny once".to_string(),
+        PermissionOptionKind::RejectAlways => {
+            "Always deny this tool (saved for all sessions)".to_string()
+        }
+        _ => id.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod permission_option_tests {
+    use super::*;
+
+    /// GSL-PT-20260927-C23: option names were the raw ids and did not say that
+    /// "always" choices persist across sessions and clients.
+    #[test]
+    fn standard_option_names_state_how_long_the_choice_lasts() {
+        let named = |kind: PermissionOptionKind| {
+            let id = serde_json::to_value(kind)
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .to_string();
+            let name = standard_option_name(kind, &id);
+            assert_ne!(name, id);
+            name
+        };
+        assert_eq!(named(PermissionOptionKind::AllowOnce), "Allow once");
+        assert_eq!(named(PermissionOptionKind::RejectOnce), "Deny once");
+        for kind in [
+            PermissionOptionKind::AllowAlways,
+            PermissionOptionKind::RejectAlways,
+        ] {
+            assert!(named(kind).ends_with("(saved for all sessions)"));
+        }
     }
 }

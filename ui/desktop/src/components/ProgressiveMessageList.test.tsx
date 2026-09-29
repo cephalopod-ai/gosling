@@ -196,6 +196,87 @@ describe('ProgressiveMessageList tool activity', () => {
   });
 });
 
+const NOT_RUN_ERROR =
+  '-32600: Tool execution was cancelled before it started because the prior turn ended. It will not be retried automatically.';
+
+function failedToolResponse(id: string, error: string): MessageContent {
+  return { type: 'toolResponse', id, toolResult: { status: 'error', error } };
+}
+
+describe('ProgressiveMessageList interrupted turns', () => {
+  it('shows the notice closing a stopped turn as a status line, not as a reply', () => {
+    render(
+      <ProgressiveMessageList
+        messages={[
+          message('user', [{ type: 'text', text: 'Long task' }], 'prompt'),
+          message('assistant', [{ type: 'text', text: 'lorem ip' }], 'partial'),
+          message(
+            'assistant',
+            [{ type: 'text', text: 'Run interrupted before completion.' }],
+            'notice'
+          ),
+        ]}
+        chat={{ sessionId: 'session-one' }}
+        isUserMessage={(candidate) => candidate.role === 'user'}
+      />,
+      { wrapper: IntlTestWrapper }
+    );
+
+    expect(screen.getByTestId('turn-closure-notice')).toHaveTextContent(
+      'Run interrupted before completion.'
+    );
+    expect(screen.getByText('lorem ip')).toBeInTheDocument();
+  });
+
+  it('marks grouped tool calls that never ran as not run rather than failed', () => {
+    render(
+      <ProgressiveMessageList
+        messages={[
+          message('assistant', [toolRequest('tool-one')], 'request-one'),
+          message('assistant', [toolRequest('tool-two')], 'request-two'),
+          message(
+            'user',
+            [
+              failedToolResponse('tool-one', NOT_RUN_ERROR),
+              failedToolResponse('tool-two', NOT_RUN_ERROR),
+            ],
+            'responses'
+          ),
+        ]}
+        chat={{ sessionId: 'session-one' }}
+        isUserMessage={(candidate) => candidate.role === 'user'}
+      />,
+      { wrapper: IntlTestWrapper }
+    );
+
+    expect(screen.getByLabelText('Tool status: not run')).toBeInTheDocument();
+  });
+
+  it('still reports a group with a real failure as failed', () => {
+    render(
+      <ProgressiveMessageList
+        messages={[
+          message('assistant', [toolRequest('tool-one')], 'request-one'),
+          message('assistant', [toolRequest('tool-two')], 'request-two'),
+          message(
+            'user',
+            [
+              failedToolResponse('tool-one', NOT_RUN_ERROR),
+              failedToolResponse('tool-two', 'ENOENT: missing file'),
+            ],
+            'responses'
+          ),
+        ]}
+        chat={{ sessionId: 'session-one' }}
+        isUserMessage={(candidate) => candidate.role === 'user'}
+      />,
+      { wrapper: IntlTestWrapper }
+    );
+
+    expect(screen.getByLabelText('Tool status: error')).toBeInTheDocument();
+  });
+});
+
 describe('ProgressiveMessageList retry affordance', () => {
   it('offers retry only on the latest user prompt', () => {
     const { container } = render(

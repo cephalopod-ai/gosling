@@ -11,6 +11,7 @@ pub mod library;
 pub mod nostr_share;
 pub mod output_revisions;
 pub mod plans;
+mod redaction;
 pub mod research;
 pub mod session_manager;
 mod session_naming;
@@ -42,13 +43,17 @@ pub use plans::{
     PlanSnapshot, PlanStatus, PlanUpdate, SessionPlan, SessionPlanEvent, SessionPlanFeedback,
     SessionPlanRevision,
 };
+pub use redaction::{
+    installation_secret_redactor, redact_exported_session_json, redact_session_export,
+};
 pub use session_manager::{
     CompactionHistoryError, CompactionHistoryPolicyV1, CompactionRevision, CompactionRevisionDraft,
     Session, SessionArtifactPage, SessionImportOutcome, SessionInsights, SessionManager,
-    SessionNameUpdate, SessionSummary, SessionSummaryFact, SessionSummaryStatus, SessionType,
-    SessionUpdateBuilder, DEFAULT_SESSION_TAIL_LIMIT, MAX_SESSION_MESSAGE_PAGE_LIMIT,
+    SessionNameUpdate, SessionNotFound, SessionSummary, SessionSummaryFact, SessionSummaryStatus,
+    SessionType, SessionUpdateBuilder, DEFAULT_SESSION_TAIL_LIMIT, MAX_SESSION_MESSAGE_PAGE_LIMIT,
 };
 pub(crate) use session_manager::{SkillScopeGate, ToolOperationStart};
+pub use session_naming::branch_session_name;
 
 #[cfg(test)]
 mod tests {

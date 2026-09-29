@@ -218,12 +218,12 @@ Start or resume interactive chat sessions.
 - **`-n, --name <name>`**: Give the session a name
 - **`--path <path>`**: Legacy parameter for specifying session by file path
 - **`-r, --resume`**: Resume a previous session
-- **`--edit`**: Open the session's conversation in your editor (`$VISUAL` / `$EDITOR` / `vi`) as YAML. Edit, trim, or rewrite messages, then save and close to continue the session with the edited conversation. Must be used with `--resume`. Can be combined with `--fork` to create a new session from the edited result.
-- **`--fork`**: Create a new duplicate session with copied history. Must be used with `--resume` and an interactive terminal. Provide `--name` or `--session-id` to fork a specific session. Otherwise, forks the most recent session. Non-interactive invocation exits before copying the source session.
+- **`--edit`**: Open the session's conversation in your editor (`$VISUAL` / `$EDITOR` / `vi`) as YAML. Edit, trim, or rewrite messages, then save and close to continue the session with the edited conversation. Must be used with `--resume`. Can be combined with `--fork` to create a new session from the edited result; the editor runs first, so if it fails or the YAML is invalid, no fork is created.
+- **`--fork`**: Create a new duplicate session with copied history, named `branch: <original name>` like a Desktop branch. Must be used with `--resume` and an interactive terminal. Provide `--name` or `--session-id` to fork a specific session. Otherwise, forks the most recent session. Non-interactive invocation exits before copying the source session.
 - **`--history`**: Show previous messages when resuming a session
 - **`--container <container_id>`**: Run extensions inside a [Docker container](/docs/tutorials/gosling-in-docker#running-extensions-in-docker-containers).
 - **`--debug`**: Enable debug mode to output complete tool responses, detailed parameter values, and full file paths
-- **`--max-tool-repetitions <NUMBER>`**: Set the maximum number of times the same tool can be called consecutively with identical parameters. Helps prevent infinite loops.
+- **`--max-tool-repetitions <NUMBER>`**: Set the maximum number of times the same tool can be called consecutively with identical parameters within one turn (default: 3). Further repeats are refused, and a turn that keeps repeating refused calls stops after three refusals. Helps prevent infinite loops.
 - **`--max-turns <NUMBER>`**: Set the maximum number of turns allowed without user input (default: 1000)
 
 **Extension Options:**
@@ -348,11 +348,20 @@ Export sessions in different formats for backup, sharing, migration, or document
 - **`--format <format>`**: Output format: `markdown`, `json`, `yaml`. Default is `markdown`
 - **`--nostr`**: Publish the JSON export as an encrypted Nostr event and print a `gosling://` share link
 - **`--relay <url>`**: Nostr relay to publish to; repeat the flag to use several relays
+- **`--no-redact`**: Keep secrets as they are instead of replacing them with `[REDACTED]` (for local backups; not allowed with `--nostr`)
 
 **Export Formats:**
 - **`json`**: Complete session backup preserving all data including conversation history, metadata, and settings
 - **`yaml`**: Complete session backup in YAML format
 - **`markdown`**: Default format that creates a formatted, readable version of the conversation for documentation and sharing
+
+Exports and share links are redacted the same way as [diagnostics reports](#session-diagnostics-options):
+every value in gosling's secret store, provider keys set in the environment, and credential-shaped text
+(API keys, bearer tokens, `password=`-style assignments) are replaced with `[REDACTED]`, and so are the
+values of extension environment variables recorded in the session (for example a token passed with
+`--with-extension "TOKEN=... command"`). Redaction is pattern-based and can miss a secret with no
+recognizable shape, so review an export before sharing it. Use `--no-redact` when you need a faithful
+local backup.
 
 **Usage:**
 ```bash
@@ -387,7 +396,8 @@ Code, Codex, or Pi `.jsonl` transcript, or a `gosling://sessions/nostr` share li
 Import is history transfer, not authority transfer. Imported messages are marked as untrusted
 history, the new session starts in Approve mode with tools restricted to its working directory, and
 provider, model, workspace, credential profile, and folder grants stay at safe new-session defaults
-until you select them locally.
+until you select them locally. Resuming the imported session from another directory does not move its
+working directory; gosling switches to that directory instead.
 
 **Usage:**
 ```bash
@@ -482,7 +492,7 @@ gosling session diagnostics
 ```
 
 :::warning Privacy Notice
-Diagnostics reports contain your session messages and system information. If your session includes sensitive data (API keys, personal information, proprietary code), review the contents before sharing publicly.
+Diagnostics reports contain your session messages and system information. Values in gosling's secret store, provider keys set in the environment, and credential-shaped text are replaced with `[REDACTED]`, but redaction cannot recognize every secret or personal detail. Review the contents before sharing publicly.
 :::
 
 :::tip
@@ -516,10 +526,11 @@ Execute commands from an instruction file or stdin. Check out the [full guide](/
 
 **Control Options:**
 - **`--debug`**: Output complete tool responses, detailed parameter values, and full file paths
-- **`--max-tool-repetitions <NUMBER>`**: Maximum number of times the same tool can be called consecutively with identical parameters. Helps prevent infinite loops
+- **`--max-tool-repetitions <NUMBER>`**: Maximum number of times the same tool can be called consecutively with identical parameters (default: 3). Further repeats are refused; a run that keeps repeating refused calls stops after three refusals and exits non-zero. Helps prevent infinite loops
 - **`--max-turns <NUMBER>`**: Maximum number of turns allowed without user input (default: 1000)
-- **`-q, --quiet`**: Quiet mode. Suppress non-response output, printing only the model response to stdout
-- **`--output-format <FORMAT>`**: Output format (`text`, `json`, or `stream-json`). Default is `text`. Use JSON structured output for automation and scripting: `json` for results after completion, `stream-json` for events as they occur
+- **`--stats`**: After the run, print generation statistics (time to first token, tokens per second, output tokens) to stderr, in every output format
+- **`-q, --quiet`**: Quiet mode. Suppress non-response output, printing only the model response to stdout: the banner, tool calls, tool output and status notices are left out, and the text of a provider failure goes to stderr
+- **`--output-format <FORMAT>`**: Output format (`text`, `json`, or `stream-json`). Default is `text`. Use JSON structured output for automation and scripting: `json` for results after completion, `stream-json` for events as they occur. Error messages are written to stderr in every format; a run that cannot start (for example an unknown provider or a session that does not exist) writes nothing to stdout and exits non-zero
 - **`--provider`**: Specify the provider to use for this session (overrides environment variable)
 - **`--model`**: Specify the model to use for this session (overrides environment variable)
 
@@ -594,6 +605,14 @@ gosling mcp remove my-server
 value and use the repeatable `--secret KEY` option; only the key name is written
 to the extension entry. `--secret KEY=VALUE` is also supported, but can expose
 the value through shell history or process listings.
+
+A `--secret` value is stored for this extension only: installing another
+extension with the same variable name, or naming a provider key such as
+`OPENAI_API_KEY`, never replaces another extension's or the provider's
+credential, and `gosling mcp remove` deletes the values stored for the removed
+extension. Credentials gosling keeps for its own use (provider keys, website-login
+passwords, OAuth tokens) are not passed to an extension that only names them; see
+[Extension Secrets](/docs/guides/config-files#extension-secrets).
 
 `--from-goose` imports extension configuration, but it does not copy values
 from Goose's keyring. If the imported entry references `env_keys` that are not

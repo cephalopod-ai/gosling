@@ -1,7 +1,8 @@
+use crate::commands::configure::unparsable_config_problem;
 use anyhow::{anyhow, Result};
 use console::style;
 use gosling::config::paths::Paths;
-use gosling::config::Config;
+use gosling::config::{ignored_legacy_provider_settings, Config};
 use gosling::conversation::message::Message;
 use gosling::session::session_manager::{DB_NAME, SESSIONS_FOLDER};
 use gosling_providers::errors::ProviderError;
@@ -141,7 +142,7 @@ pub async fn handle_info(verbose: bool, check: bool) -> Result<()> {
 
     if verbose {
         println!("\n{}", style("gosling Configuration:").cyan().bold());
-        let values = config.all_values()?;
+        let values = config.file_values()?;
         if values.is_empty() {
             println!("  No configuration values set");
             println!(
@@ -157,6 +158,23 @@ pub async fn handle_info(verbose: bool, check: bool) -> Result<()> {
                     println!("  {}", line);
                 }
             }
+        }
+
+        println!("\n{}", style("Effective Provider:").cyan().bold());
+        let provider = config.get_gosling_provider().ok();
+        let model = config.get_gosling_model().ok();
+        print_aligned(
+            "Provider:",
+            provider.as_deref().unwrap_or("not configured"),
+            label_padding,
+        );
+        print_aligned(
+            "Model:",
+            model.as_deref().unwrap_or("not configured"),
+            label_padding,
+        );
+        for note in ignored_legacy_provider_settings(config) {
+            print_aligned("Note:", &style(note).yellow().to_string(), label_padding);
         }
     }
 
@@ -185,11 +203,11 @@ pub async fn handle_info(verbose: bool, check: bool) -> Result<()> {
                     &format!("{} {}", style("not configured:").red(), error),
                     label_padding,
                 );
-                print_aligned(
-                    "Hint:",
-                    &format!("Run '{}'", style("gosling configure").cyan()),
-                    label_padding,
-                );
+                let hint = match unparsable_config_problem(config) {
+                    Some(problem) => format!("{problem}, then try again."),
+                    None => format!("Run '{}'", style("gosling configure").cyan()),
+                };
+                print_aligned("Hint:", &hint, label_padding);
             }
             Err(ProviderCheckError::InvalidModel(error)) => {
                 print_aligned(

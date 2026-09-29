@@ -31,6 +31,9 @@ export function applyContentChunk(
   const existing = findMessageForChunk(state, role, messageId, goslingMeta.created);
 
   if (existing) {
+    if (goslingMeta.incomplete) {
+      existing.metadata.incomplete = true;
+    }
     const lastContent = existing.content[existing.content.length - 1];
     if (reconcileLocalSteerTextChunk(state, existing, content, goslingMeta.steer)) {
       return messagesChangeWithLocalSteerConfirmation(state, existing, goslingMeta.steer);
@@ -54,6 +57,7 @@ export function applyContentChunk(
       metadata: {
         ...DEFAULT_VISIBLE_MESSAGE_METADATA,
         ...(goslingMeta.importedUntrusted ? { importedUntrusted: true } : {}),
+        ...(goslingMeta.incomplete ? { incomplete: true } : {}),
         ...(goslingMeta.steer ? { steer: true } : {}),
       },
     });
@@ -75,6 +79,9 @@ export function applyThoughtChunk(
   const existing = findMessageForChunk(state, 'assistant', messageId, goslingMeta.created);
 
   if (existing) {
+    if (goslingMeta.incomplete) {
+      existing.metadata.incomplete = true;
+    }
     const lastContent = existing.content[existing.content.length - 1];
     if (lastContent?.type === 'thinking') {
       lastContent.thinking += update.content.text;
@@ -87,7 +94,10 @@ export function applyThoughtChunk(
       role: 'assistant',
       created: goslingMeta.created ?? Math.floor(Date.now() / 1000),
       content: [{ type: 'thinking', thinking: update.content.text, signature: '' }],
-      metadata: { ...DEFAULT_VISIBLE_MESSAGE_METADATA },
+      metadata: {
+        ...DEFAULT_VISIBLE_MESSAGE_METADATA,
+        ...(goslingMeta.incomplete ? { incomplete: true } : {}),
+      },
     });
   }
 

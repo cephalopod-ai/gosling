@@ -39,8 +39,11 @@ impl Agent {
     /// this same key concurrently from a second `Agent` instance; a
     /// read-then-replace here could silently drop that write, or vice versa.
     pub async fn persist_extension_state(&self, session_id: &str) -> Result<()> {
-        let extensions_state =
-            EnabledExtensionsState::new(self.extension_configs_for_persistence().await);
+        let mut extensions = self.extension_configs_for_persistence().await;
+        // Loaded extensions live in a map, so their order is arbitrary; a
+        // stable order keeps an unchanged set from rewriting the session.
+        extensions.sort_by_key(|config| config.key());
+        let extensions_state = EnabledExtensionsState::new(extensions);
         let value = extensions_state
             .to_value()
             .map_err(|e| anyhow!("Failed to serialize extension state: {}", e))?;
@@ -155,13 +158,7 @@ impl Agent {
         extension: ExtensionConfig,
         session_id: &str,
     ) -> ExtensionResult<()> {
-        if is_internal_planning_extension(&extension) {
-            return Err(crate::agents::extension::ExtensionError::ConfigError(
-                "The planning extension is host policy infrastructure and cannot be configured"
-                    .to_string(),
-            ));
-        }
-        self.add_extension_inner(extension, session_id).await?;
+        self.start_extension(extension, session_id).await?;
 
         // Persist extension state after successful add
         self.persist_extension_state(session_id)
@@ -175,6 +172,23 @@ impl Agent {
             })?;
 
         Ok(())
+    }
+
+    /// Starts an extension without saving the session's extension list, for
+    /// callers that start several one by one and save the list once when
+    /// all are up. Saving after each start writes every partial list.
+    pub async fn start_extension(
+        &self,
+        extension: ExtensionConfig,
+        session_id: &str,
+    ) -> ExtensionResult<()> {
+        if is_internal_planning_extension(&extension) {
+            return Err(crate::agents::extension::ExtensionError::ConfigError(
+                "The planning extension is host policy infrastructure and cannot be configured"
+                    .to_string(),
+            ));
+        }
+        self.add_extension_inner(extension, session_id).await
     }
 
     /// Load multiple extensions in parallel, persisting state once at the end.

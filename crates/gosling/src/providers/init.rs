@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
@@ -176,6 +177,20 @@ pub async fn providers() -> Vec<(ProviderMetadata, ProviderType)> {
         .all_metadata_with_types()
 }
 
+/// Names of every secret config key a registered provider declares.
+pub async fn provider_secret_key_names() -> HashSet<String> {
+    get_registry()
+        .await
+        .read()
+        .unwrap()
+        .entries
+        .values()
+        .flat_map(|entry| entry.metadata().config_keys.iter())
+        .filter(|key| key.secret)
+        .map(|key| key.name.clone())
+        .collect()
+}
+
 pub async fn refresh_custom_providers() -> Result<()> {
     let registry = get_registry().await;
     registry.write().unwrap().remove_custom_providers();
@@ -323,9 +338,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_custom_provider_context_limit_is_applied_from_file() {
-        let _guard = env_lock::lock_env([("GOSLING_PATH_ROOT", None::<&str>)]);
         let temp_dir = tempfile::tempdir().expect("tempdir should be created");
-        std::env::set_var("GOSLING_PATH_ROOT", temp_dir.path());
+        let _guard = env_lock::lock_env([(
+            "GOSLING_PATH_ROOT",
+            Some(temp_dir.path().to_str().expect("tempdir path is UTF-8")),
+        )]);
 
         let custom_dir = Paths::config_dir().join("custom_providers");
         fs::create_dir_all(&custom_dir).expect("custom providers dir should be created");
@@ -385,7 +402,5 @@ mod tests {
             )
             .expect("custom_zero model config should normalize");
         assert_eq!(zero_config.context_limit, None);
-
-        std::env::remove_var("GOSLING_PATH_ROOT");
     }
 }

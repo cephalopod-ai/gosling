@@ -33,6 +33,7 @@ for the relationship to cephalopod-ai/gosling.
 - [polish/documentation-stewardship-report.md](polish/documentation-stewardship-report.md) — latest stewardship gate results and remaining risks
 - [polish/test-ledger.md](polish/test-ledger.md) — current validation commands, results, and evidence limits
 - [logs/](logs/) — retained session evidence and logging conventions
+- [logs/session/2026-09-27-playtest-repair-campaign.md](logs/session/2026-09-27-playtest-repair-campaign.md) — in-progress 127-card playtest (211 findings) and locality-grouped repair campaign; 89 findings fixed so far, every Critical/High fixed except deferred `.goslingignore` enforcement
 - [logs/session/2026-09-20-post-audit-defect-repair.md](logs/session/2026-09-20-post-audit-defect-repair.md) — five-reviewer pass over the post-2026-09-16 commits, `gosling-mcp`, and `ui/text`; ten repairs (quit-time backend sweep, home-containing directory grants, timestamp cache, latest-revision batch cap and isolation, `write_document` hook category, platform-extension keys, two Ink input defects, xlsx column overflow) and the open design-level list
 - [logs/session/2026-09-27-v1.3-documentation-refresh.md](logs/session/2026-09-27-v1.3-documentation-refresh.md) — README, user-manual, release-note, and documentation-index refresh for the v1.3 source and its website-login, folder-approval, and handoff changes
 - [logs/session/2026-09-19-hotpath-perf-fixes.md](logs/session/2026-09-19-hotpath-perf-fixes.md) — conversation-clone, token-accumulator, session-fetch, plan-snapshot, output-revision-batch, mention-popover, and artifact-timestamp-cache fixes, plus the PERF-GSL-003 record reconciliation and CI pnpm-cache re-enablement
@@ -65,6 +66,7 @@ for the relationship to cephalopod-ai/gosling.
 - [build/host-enforced-planning/README.md](build/host-enforced-planning/README.md) — ADR-0020 implementation sequence, release gates, evidence, and resumable status
 - [build/evidence-authority-boundary/README.md](build/evidence-authority-boundary/README.md) — ADR-0023 integration handoff: types, coverage matrix, compatibility, shared `EIA-*` fixtures, and residual risk
 - [cloud/](cloud/) — audit and playtest reports (not cloud-hosting runbooks)
+- [cloud/2026-09-27-live-all-scenarios-playtest.md](cloud/2026-09-27-live-all-scenarios-playtest.md) — 2026-09-27 live 127-card playtest report (211 findings); dispositions updated in place as the paired repair campaign (see logs/session/2026-09-27-playtest-repair-campaign.md) lands
 - [cloud/2026-09-13-consolidated-audit-repair.md](cloud/2026-09-13-consolidated-audit-repair.md) — canonical reconciliation, disposition, repair commits, validation, local install addendum, and remaining decisions for both 2026-09-13 audits
 - [cloud/2026-09-13-live-all-scenarios-playtest.md](cloud/2026-09-13-live-all-scenarios-playtest.md) — historical 2026-09-13 live playtest report, with a disposition addendum linking to the repair campaign
 - [cloud/20260913_Gemini_Audit_Data_gosling.md](cloud/20260913_Gemini_Audit_Data_gosling.md) — historical Gemini architecture/dataflow audit, with corrected severity and disposition addendum

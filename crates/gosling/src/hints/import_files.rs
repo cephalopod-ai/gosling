@@ -3,6 +3,7 @@ use once_cell::sync::Lazy;
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
+    sync::Mutex,
 };
 
 static FILE_REFERENCE_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
@@ -11,6 +12,40 @@ static FILE_REFERENCE_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
 });
 
 const MAX_DEPTH: usize = 3;
+
+static REPORTED_READ_PROBLEMS: Lazy<Mutex<HashSet<String>>> = Lazy::new(Default::default);
+
+/// Context files are re-read whenever the system prompt is rebuilt, so each
+/// problem is shown once per process rather than on every turn. Returns
+/// whether this call reported it.
+fn report_read_problem(message: String) -> bool {
+    let first_report = REPORTED_READ_PROBLEMS
+        .lock()
+        .map(|mut reported| reported.insert(message.clone()))
+        .unwrap_or(true);
+    if first_report {
+        tracing::warn!("{message}");
+        eprintln!("Warning: {message}");
+    }
+    first_report
+}
+
+/// A stray invalid byte should not discard a whole instructions file, so
+/// invalid UTF-8 is replaced with U+FFFD and reported.
+fn read_text_lossy(path: &Path) -> std::io::Result<String> {
+    let bytes = std::fs::read(path)?;
+    Ok(match String::from_utf8(bytes) {
+        Ok(text) => text,
+        Err(error) => {
+            report_read_problem(format!(
+                "{} contains bytes that are not valid UTF-8; they were replaced with U+FFFD \
+                 and the rest of the file was loaded.",
+                path.display()
+            ));
+            String::from_utf8_lossy(error.as_bytes()).into_owned()
+        }
+    })
+}
 
 fn sanitize_reference_path(
     reference: &Path,
@@ -140,10 +175,13 @@ pub fn read_referenced_files(
     depth: usize,
     ignore_patterns: &Gitignore,
 ) -> String {
-    let content = match std::fs::read_to_string(file_path) {
+    let content = match read_text_lossy(file_path) {
         Ok(content) => content,
         Err(e) => {
-            tracing::warn!("Could not read file {:?}: {}", file_path, e);
+            report_read_problem(format!(
+                "Could not read {}: {e}. Its instructions were not loaded.",
+                file_path.display()
+            ));
             return String::new();
         }
     };
@@ -483,6 +521,66 @@ mod tests {
             // The malicious references should still be present (not expanded)
             assert!(expanded.contains("@../etc/passwd"));
             assert!(expanded.contains(absolute_path_file_path.as_str()));
+        }
+
+        fn problem_reported_for(path: &Path) -> bool {
+            REPORTED_READ_PROBLEMS
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|message| message.contains(&path.display().to_string()))
+        }
+
+        #[test]
+        fn invalid_utf8_is_loaded_lossily_and_reported() {
+            let temp_dir = tempfile::tempdir().unwrap();
+            let import_boundary = temp_dir.path();
+            let hints = import_boundary.join("AGENTS.md");
+            std::fs::write(&hints, b"Rule before \xff\xfe rule after\n").unwrap();
+
+            let expanded = read_referenced_files(
+                &hints,
+                import_boundary,
+                &mut HashSet::new(),
+                0,
+                &create_ignore_patterns(import_boundary),
+            );
+
+            assert_eq!(expanded, "Rule before \u{FFFD}\u{FFFD} rule after\n");
+            assert!(problem_reported_for(&hints));
+        }
+
+        #[cfg(unix)]
+        #[test]
+        fn unreadable_file_is_skipped_and_reported() {
+            use std::os::unix::fs::PermissionsExt;
+
+            let temp_dir = tempfile::tempdir().unwrap();
+            let import_boundary = temp_dir.path();
+            let hints = create_file(import_boundary, "AGENTS.md", "secret rules");
+            std::fs::set_permissions(&hints, std::fs::Permissions::from_mode(0o000)).unwrap();
+            if std::fs::read(&hints).is_ok() {
+                return; // running with privileges that ignore file modes
+            }
+
+            let expanded = read_referenced_files(
+                &hints,
+                import_boundary,
+                &mut HashSet::new(),
+                0,
+                &create_ignore_patterns(import_boundary),
+            );
+
+            assert_eq!(expanded, "");
+            assert!(problem_reported_for(&hints));
+        }
+
+        #[test]
+        fn a_read_problem_is_reported_once_per_process() {
+            let message = format!("test problem {}", uuid::Uuid::new_v4());
+
+            assert!(report_read_problem(message.clone()));
+            assert!(!report_read_problem(message));
         }
     }
 }

@@ -2,13 +2,16 @@
 #[path = "acp_common_tests/mod.rs"]
 mod common_tests;
 use agent_client_protocol::schema::v1::{
-    ListSessionsRequest, ListSessionsResponse, NewSessionRequest, SessionConfigKind,
-    SessionConfigOptionCategory, SessionConfigOptionValue, SessionInfo,
-    SetSessionConfigOptionRequest,
+    ContentBlock, ListSessionsRequest, ListSessionsResponse, NewSessionRequest, PromptRequest,
+    SessionConfigKind, SessionConfigOptionCategory, SessionConfigOptionValue, SessionInfo,
+    SessionUpdate, SetSessionConfigOptionRequest, StopReason, TextContent,
 };
 use agent_client_protocol::ErrorCode;
 use common_tests::fixtures::server::AcpServerConnection;
-use common_tests::fixtures::{run_test, Connection, OpenAiFixture, Session, TestConnectionConfig};
+use common_tests::fixtures::{
+    run_test, Connection, OpenAiFixture, PermissionDecision, Session, SessionData,
+    TestConnectionConfig,
+};
 #[cfg(feature = "code-mode")]
 use common_tests::run_prompt_codemode;
 use common_tests::{
@@ -27,6 +30,7 @@ use gosling::config::GoslingMode;
 use gosling::conversation::message::{Message, MessageMetadata};
 use gosling::custom_requests::{GetSessionInfoRequest, GetSessionInfoResponse};
 use gosling::session::{SessionManager, SessionType};
+use gosling_test_support::TEST_MODEL;
 use std::path::Path;
 
 tests_config_option_set_error!(AcpServerConnection);
@@ -151,6 +155,49 @@ fn last_message_snippet(session: &SessionInfo) -> Option<&str> {
 #[test]
 fn test_config_mcp() {
     run_test(async { run_config_mcp::<AcpServerConnection>().await });
+}
+
+#[test]
+fn test_prompt_repeating_a_failing_tool_call_stops_with_max_turn_requests() {
+    run_test(async {
+        let prompt = "Keep calling get_code until it works.";
+        // One tool call that fails (no such tool), then three repetition denials. A fifth
+        // provider request would find no exchange and fail the prompt instead.
+        let exchanges = (0..4)
+            .map(|_| {
+                (
+                    prompt.to_string(),
+                    include_str!("acp_test_data/openai_tool_call.txt"),
+                )
+            })
+            .collect();
+        let openai = OpenAiFixture::new(
+            exchanges,
+            <AcpServerConnection as Connection>::expected_session_id(),
+        )
+        .await;
+        let mut conn = <AcpServerConnection as Connection>::new(
+            TestConnectionConfig {
+                gosling_mode: GoslingMode::Auto,
+                ..Default::default()
+            },
+            openai,
+        )
+        .await;
+        let SessionData { session, .. } = conn.new_session().await.unwrap();
+
+        let response = conn
+            .cx()
+            .send_request(PromptRequest::new(
+                session.session_id().clone(),
+                vec![ContentBlock::Text(TextContent::new(prompt))],
+            ))
+            .block_task()
+            .await
+            .unwrap();
+
+        assert_eq!(response.stop_reason, StopReason::MaxTurnRequests);
+    });
 }
 
 #[test]
@@ -585,6 +632,41 @@ fn test_config_option_model_set() {
 }
 
 #[test]
+fn test_config_option_reselecting_the_current_model_keeps_the_session_as_is() {
+    run_test(async {
+        let data_root = tempfile::tempdir().unwrap();
+        let mut conn = new_connection(data_root.path()).await;
+        let session_manager = SessionManager::new(data_root.path().to_path_buf());
+        let data = conn.new_session().await.unwrap();
+        let session_id = data.session.session_id().0.to_string();
+        let generation = || async {
+            session_manager
+                .latest_handoff_generation(&session_id)
+                .await
+                .unwrap()
+        };
+        let initial = generation().await;
+
+        conn.set_config_option(&session_id, "model", TEST_MODEL)
+            .await
+            .unwrap();
+        let after_reselecting_the_initial_model = generation().await;
+        conn.set_config_option(&session_id, "model", "gpt-4o")
+            .await
+            .unwrap();
+        let after_switch = generation().await;
+        conn.set_config_option(&session_id, "model", "gpt-4o")
+            .await
+            .unwrap();
+        let after_reselect = generation().await;
+
+        assert_eq!(after_reselecting_the_initial_model, initial);
+        assert_eq!(after_switch, initial + 1);
+        assert_eq!(after_reselect, after_switch);
+    });
+}
+
+#[test]
 fn test_config_option_thinking_effort_set() {
     run_test(async {
         let data_root = tempfile::tempdir().unwrap();
@@ -678,6 +760,56 @@ fn test_load_model() {
 #[test]
 fn test_load_session_error_session_not_found() {
     run_test(async { run_load_session_error::<AcpServerConnection>().await });
+}
+
+#[test]
+fn test_load_session_names_a_working_folder_that_was_moved_away() {
+    run_test(async {
+        let data_root = tempfile::tempdir().unwrap();
+        let parent = tempfile::tempdir().unwrap();
+        let working_dir = parent.path().join("playtest-primary");
+        std::fs::create_dir(&working_dir).unwrap();
+        seed_list_sessions(data_root.path(), &working_dir, 1).await;
+        let session_id = SessionManager::new(data_root.path().to_path_buf())
+            .list_all_sessions()
+            .await
+            .unwrap()
+            .remove(0)
+            .id;
+        std::fs::rename(&working_dir, parent.path().join("playtest-primary-moved")).unwrap();
+        let conn = new_connection(data_root.path()).await;
+        let load = |cwd: std::path::PathBuf| {
+            conn.cx()
+                .send_request(agent_client_protocol::schema::v1::LoadSessionRequest::new(
+                    agent_client_protocol::schema::v1::SessionId::new(session_id.clone()),
+                    cwd,
+                ))
+        };
+
+        let error: anyhow::Error = load(working_dir.clone())
+            .block_task()
+            .await
+            .unwrap_err()
+            .into();
+        let error = error.downcast::<agent_client_protocol::Error>().unwrap();
+        assert_eq!(error.code, ErrorCode::InvalidParams);
+        let reason = error.data.as_ref().and_then(|data| data.as_str()).unwrap();
+        assert!(
+            reason.contains(&working_dir.display().to_string()),
+            "{reason}"
+        );
+
+        let error: anyhow::Error = load("relative/folder".into())
+            .block_task()
+            .await
+            .unwrap_err()
+            .into();
+        let error = error.downcast::<agent_client_protocol::Error>().unwrap();
+        assert_eq!(
+            error.data.as_ref().and_then(|data| data.as_str()),
+            Some("cwd must be an absolute path")
+        );
+    });
 }
 
 #[test]
@@ -871,4 +1003,40 @@ fn test_shell_terminal_false() {
 #[test]
 fn test_shell_terminal_true() {
     run_test(async { run_shell_terminal_true::<AcpServerConnection>().await });
+}
+
+// GSL-PT-20260927-B10: the usage update sent when a prompt ended reused the
+// context snapshot taken before the turn's provider call, so the gauge showed
+// a local message estimate instead of the request the provider had just measured.
+#[test]
+fn test_prompt_end_usage_update_reports_the_last_provider_request() {
+    run_test(async {
+        let expected_session_id = AcpServerConnection::expected_session_id();
+        let openai = OpenAiFixture::new(
+            vec![(
+                "what is 1+1".to_string(),
+                include_str!("acp_test_data/openai_basic.txt"),
+            )],
+            expected_session_id.clone(),
+        )
+        .await;
+        let mut conn = AcpServerConnection::new(TestConnectionConfig::default(), openai).await;
+        let SessionData { mut session, .. } = conn.new_session().await.unwrap();
+        expected_session_id.set(&session.session_id().0);
+
+        session
+            .prompt("what is 1+1", PermissionDecision::Cancel)
+            .await
+            .unwrap();
+
+        let last_used = session
+            .session_updates()
+            .into_iter()
+            .filter_map(|update| match update {
+                SessionUpdate::UsageUpdate(usage) => Some(usage.used),
+                _ => None,
+            })
+            .last();
+        assert_eq!(last_used, Some(110));
+    });
 }

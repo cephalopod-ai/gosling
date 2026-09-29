@@ -1,7 +1,7 @@
 use crate::conversation::message::{Message, MessageContent, ProviderMetadata};
 use crate::conversation::token_usage::{ProviderUsage, Usage};
 use crate::errors::ProviderError;
-use crate::http_status::is_context_length_exceeded_message;
+use crate::http_status::{is_context_length_exceeded_message, redact_provider_error_text};
 use crate::images::{convert_image, detect_image_path, load_image_file, ImageFormat};
 use crate::json::{parse_tool_arguments, truncation_error_message};
 use crate::mcp_utils::extract_text_from_resource;
@@ -180,7 +180,9 @@ impl StreamingError {
         let message = self
             .message
             .unwrap_or_else(|| "Unknown server error".to_string());
-        if marks_context_limit || is_context_length_exceeded_message(&message) {
+        let context_limit = marks_context_limit || is_context_length_exceeded_message(&message);
+        let message = redact_provider_error_text(&message);
+        if context_limit {
             ProviderError::ContextLengthExceeded(message)
         } else {
             ProviderError::ServerError(message)
@@ -1216,29 +1218,44 @@ fn strip_data_prefix(line: &str) -> Option<&str> {
         .map(|s| s.trim())
 }
 
+/// A chunk that fails to decode is echoed into the error, which is shown to the
+/// user, persisted in the session and logged. Provider debug payloads can carry
+/// the request's bearer token or other credentials, so the echo gets the same
+/// redaction and bound as HTTP error bodies. (GSL-PT-20260927-B11)
+pub(crate) fn stream_decode_error_with_line(
+    prefix: &str,
+    detail: impl std::fmt::Display,
+    line: &str,
+) -> ProviderError {
+    ProviderError::stream_decode_error(format!(
+        "{prefix}: {}: {:?}",
+        redact_provider_error_text(&detail.to_string()),
+        redact_provider_error_text(line)
+    ))
+}
+
 fn parse_streaming_chunk(line: &str) -> Result<StreamingChunk, ProviderError> {
-    let payload: StreamingPayload = serde_json::from_str(line).map_err(|e| {
-        ProviderError::stream_decode_error(format!(
-            "Failed to parse streaming chunk: {e}: {line:?}"
-        ))
-    })?;
+    let payload: StreamingPayload = serde_json::from_str(line)
+        .map_err(|e| stream_decode_error_with_line("Failed to parse streaming chunk", e, line))?;
 
     if let Some(error) = payload.error {
         return Err(error.into_provider_error());
     }
 
     if payload.object.as_deref() == Some("error") {
-        return Err(ProviderError::ServerError(
-            payload
+        return Err(ProviderError::ServerError(redact_provider_error_text(
+            &payload
                 .message
                 .unwrap_or_else(|| "Unknown server error".to_string()),
-        ));
+        )));
     }
 
     let choices = payload.choices.ok_or_else(|| {
-        ProviderError::stream_decode_error(format!(
-            "Failed to parse streaming chunk: missing field `choices`: {line:?}"
-        ))
+        stream_decode_error_with_line(
+            "Failed to parse streaming chunk",
+            "missing field `choices`",
+            line,
+        )
     })?;
 
     Ok(StreamingChunk {
@@ -1968,6 +1985,34 @@ mod tests {
 
         assert!(matches!(error, ProviderError::NetworkError(_)));
         assert!(error.to_string().contains("missing field `choices`"));
+        assert!(error.to_string().contains(r#"{\"id\":\"malformed\"}"#));
+    }
+
+    /// GSL-PT-20260927-B11: a malformed chunk was echoed verbatim into the
+    /// error, and from there into the session and the log.
+    #[test]
+    fn malformed_stream_chunks_are_redacted_and_bounded_in_errors() {
+        const LEAKS: [&str; 3] = [
+            "sk-proj-LEAKYLEAKYLEAKY0123456789abcdefXYZ",
+            "sk-ant-api03-LEAKLEAKLEAKLEAK0123456789",
+            "opaque-bearer-0123456789abcdef",
+        ];
+        let truncated_json = r#"{"id":"x","debug":{"authorization":"Bearer sk-proj-LEAKYLEAKYLEAKY0123456789abcdefXYZ","api_key":"sk-ant-api03-LEAKLEAKLEAKLEAK0123456789","proxy":{"Authorization":"Bearer opaque-bearer-0123456789abcdef"}},"choices": ["#;
+        let missing_choices = r#"{"id":"x","debug":{"authorization":"Bearer sk-proj-LEAKYLEAKYLEAKY0123456789abcdefXYZ","api_key":"sk-ant-api03-LEAKLEAKLEAKLEAK0123456789","proxy":{"Authorization":"Bearer opaque-bearer-0123456789abcdef"}}}"#;
+        let in_band_error = r#"{"error":{"message":"rejected Authorization: Bearer opaque-bearer-0123456789abcdef and sk-proj-LEAKYLEAKYLEAKY0123456789abcdefXYZ / sk-ant-api03-LEAKLEAKLEAKLEAK0123456789"}}"#;
+
+        for line in [truncated_json, missing_choices, in_band_error] {
+            let message = parse_streaming_chunk(line).unwrap_err().to_string();
+            assert!(message.contains("[REDACTED]"), "{message}");
+            for leak in LEAKS {
+                assert!(!message.contains(leak), "{leak} leaked: {message}");
+            }
+        }
+
+        let huge = format!(r#"{{"id":"{}""#, "x".repeat(20_000));
+        let message = parse_streaming_chunk(&huge).unwrap_err().to_string();
+        assert!(message.contains("Failed to parse streaming chunk"));
+        assert!(message.chars().count() < 2_200, "{} chars", message.len());
     }
 
     // xAI rejects a union root outright:
