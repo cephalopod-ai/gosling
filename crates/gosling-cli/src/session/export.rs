@@ -216,7 +216,11 @@ pub fn tool_request_to_markdown(req: &ToolRequest, export_all_content: bool) -> 
 
 pub fn tool_response_to_markdown(resp: &ToolResponse, export_all_content: bool) -> String {
     let mut md = String::new();
-    md.push_str("#### Tool Response:\n");
+    if matches!(&resp.tool_result, Ok(result) if result.is_error == Some(true)) {
+        md.push_str("#### Tool Response (error):\n");
+    } else {
+        md.push_str("#### Tool Response:\n");
+    }
 
     match &resp.tool_result {
         Ok(result) => {
@@ -586,6 +590,24 @@ mod tests {
         let result = tool_response_to_markdown(&tool_response, true);
         assert!(result.contains("#### Tool Response:"));
         assert!(result.contains("Command executed successfully"));
+    }
+
+    #[test]
+    fn test_tool_response_to_markdown_marks_tool_errors() {
+        let tool_response = ToolResponse {
+            metadata: None,
+            id: "test-id".to_string(),
+            tool_result: Ok(rmcp::model::CallToolResult::error(vec![Content::text(
+                "deliberate tool failure",
+            )])),
+        };
+
+        let result = tool_response_to_markdown(&tool_response, true);
+        assert!(result.starts_with("#### Tool Response (error):\n"));
+        assert!(result.contains("deliberate tool failure"));
+
+        let message = Message::user().with_tool_response("test-id", tool_response.tool_result);
+        assert!(message_to_markdown(&message, false).contains("#### Tool Response (error):"));
     }
 
     #[test]
