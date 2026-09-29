@@ -188,8 +188,8 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Medium | B18 | CLI cost line shows only the last request's cost without saying so; `--stats` silently ignored with json/stream-json | fixed (R8a) |
 | Medium | B21 | Rejected Copilot token refresh surfaces as "failed to get api info after 3 attempts" + "Please retry"; no re-auth request | fixed (R9) |
 | Medium | C01 | ACP client `mcpServers` replace all of gosling's configured extensions | fixed (R10) |
-| Medium | C02 | A hanging MCP extension blocks session start for 300 s with no feedback (run/ACP) | deferred (product decision: startup vs tool-call timeout) (R11) |
-| Medium | C03 | Removed MCP extensions come back when an older session is resumed/loaded | deferred (product decision: record extension origin in session state) (R11) |
+| Medium | C02 | A hanging MCP extension blocks session start for 300 s with no feedback (run/ACP) | open — queued (operator: startup cap + env var) (R11) |
+| Medium | C03 | Removed MCP extensions come back when an older session is resumed/loaded | open — queued (operator: record extension origin) (R11) |
 | Medium | C05 | Skill discovery ignores `GOSLING_PATH_ROOT` and reads/writes HOME-based skill dirs | fixed (R7) |
 | Medium | C06 | `disabledPlugins` does not disable an installed plugin's skills | fixed (R11) |
 | Medium | C08 | ACP: parallel subagents' tool activity is attributed to the first delegate call | fixed (R11) |
@@ -204,7 +204,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Medium | E06 | `GOSLING_PATH_ROOT` does not isolate skills/agents; operator's personal skill catalog is sent to the disposable root's provider (suspicion) | fixed (R7) |
 | Medium | E07 | Nested (subdirectory) context files are injected as a plain `user` message without the "untrusted project hints" framing | fixed (R7) |
 | Medium | F01 | `--max-tool-repetitions` denies the repeated call but lets the turn loop to the 1000-turn default | fixed (R3) |
-| Medium | F14 | Interrupted turns stay `in_progress` forever (EOF, disconnect, SIGTERM, SIGKILL); nothing reconciles them | fixed (R1a) |
+| Medium | F14 | Interrupted turns stay `in_progress` forever (EOF, disconnect, SIGTERM, SIGKILL); nothing reconciles them | fixed (R10) |
 | Medium | F15 | SIGTERM "graceful" shutdown keeps running turns alive for 5 s, then drops every client without a terminal event | fixed (R1b) |
 | Medium | G102 | Credential picker/profile manager marks 14 alias profiles "configured", including providers the app reports as unconfigured | fixed (R13a) |
 | Medium | G104 | Workspace save/duplicate errors show only "Invalid params" (reason dropped) and the editor error renders out of view | fixed (R13a) |
