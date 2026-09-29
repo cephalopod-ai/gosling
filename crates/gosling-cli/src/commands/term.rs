@@ -147,17 +147,17 @@ $env.config.hooks.command_not_found = {|command_name|
 
 static POWERSHELL_CONFIG: ShellConfig = ShellConfig {
     script_template: r#"$env:AGENT_SESSION_ID = "{session_id}"
-function @gosling {{ & {gosling_bin} term run @args }}
-function @g {{ & {gosling_bin} term run @args }}
+function @gosling { & {gosling_bin} term run @args }
+function @g { & {gosling_bin} term run @args }
 
-Set-PSReadLineKeyHandler -Chord Enter -ScriptBlock {{
+Set-PSReadLineKeyHandler -Chord Enter -ScriptBlock {
     $line = $null
     [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$line, [ref]$null)
-    if ($line -notmatch '^gosling term' -and $line -notmatch '^(@gosling|@g)($|\s)') {{
-        Start-Job -ScriptBlock {{ & {gosling_bin} term log $using:line }} | Out-Null
-    }}
+    if ($line -notmatch '^gosling term' -and $line -notmatch '^(@gosling|@g)($|\s)') {
+        Start-Job -ScriptBlock { & {gosling_bin} term log $using:line } | Out-Null
+    }
     [Microsoft.PowerShell.PSConsoleReadLine]::AcceptLine()
-}}"#,
+}"#,
     command_not_found: None,
 };
 
@@ -513,5 +513,36 @@ mod tests {
 
         let powershell = render_term_init_script(Shell::Powershell, "s", bin, false);
         assert!(powershell.contains("& '/opt/my tools/it''s/gosling' term run @args"));
+    }
+
+    // PowerShell treats `{ ... }` as a scriptblock literal, so a body written as
+    // `{{ & gosling ... }}` makes the function return an inner scriptblock instead of running
+    // gosling, and the Enter key handler would never call AcceptLine.
+    #[test]
+    fn powershell_script_uses_single_braces_for_blocks() {
+        let script = render_term_init_script(Shell::Powershell, "s-1", "/opt/gosling", false);
+
+        assert!(!script.contains("{{") && !script.contains("}}"), "{script}");
+        assert_eq!(
+            script.matches('{').count(),
+            script.matches('}').count(),
+            "{script}"
+        );
+        for line in [
+            "$env:AGENT_SESSION_ID = \"s-1\"",
+            "function @gosling { & '/opt/gosling' term run @args }",
+            "function @g { & '/opt/gosling' term run @args }",
+            "Set-PSReadLineKeyHandler -Chord Enter -ScriptBlock {",
+            "    if ($line -notmatch '^gosling term' -and $line -notmatch '^(@gosling|@g)($|\\s)') {",
+            "        Start-Job -ScriptBlock { & '/opt/gosling' term log $using:line } | Out-Null",
+            "    }",
+            "    [Microsoft.PowerShell.PSConsoleReadLine]::AcceptLine()",
+            "}",
+        ] {
+            assert!(
+                script.lines().any(|l| l == line),
+                "missing line {line:?} in:\n{script}"
+            );
+        }
     }
 }

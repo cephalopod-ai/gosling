@@ -1393,7 +1393,7 @@ enum TermCommand {
         #[arg(
             long = "default",
             help = "Make gosling the default handler for unknown commands",
-            long_help = "When enabled, anything you type that isn't a valid command will be sent to gosling. Supported for zsh, bash, and nu."
+            long_help = "When enabled, anything you type that isn't a valid command will be sent to gosling. Supported for zsh, bash 4.0 or newer (not the bash 3.2 that ships as macOS /bin/bash), and nu."
         )]
         default: bool,
     },
