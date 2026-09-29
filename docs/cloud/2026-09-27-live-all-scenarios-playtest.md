@@ -223,7 +223,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Medium | H01 | Repeated identical failing tool calls are denied but the turn never ends before 1000 turns | fixed (R3) |
 | Medium | H02 | Delegate launch failures are not remembered: alternate `source` retries all execute and the next valid shape launches | deferred (product decision) (R3) |
 | Medium | H03 | CLI shows nothing for failed (`isError`) tool results; failures look like successes | fixed (R8a) |
-| Medium | H04 | External-tool ACP delegate in Chat mode: a self-executed tool is reported as "Tool call was denied." and the agent's answer is dropped | open — queued R11 |
+| Medium | H04 | External-tool ACP delegate in Chat mode: a self-executed tool is reported as "Tool call was denied." and the agent's answer is dropped | fixed (true reason reported; answer still withheld by design) (R11) |
 | Medium | H05 | ACP cancel is not honoured while the prompt waits on storage; latency equals the remaining lock hold | fixed (R1b) |
 | Medium | S03 | `--max-tool-repetitions` denies repeats but never ends the turn (1000 provider calls) | fixed (R3) |
 | Medium | S04 | A one-off `GOSLING_CONTEXT_LIMIT` is frozen into a resumed session forever | fixed (R2) |
