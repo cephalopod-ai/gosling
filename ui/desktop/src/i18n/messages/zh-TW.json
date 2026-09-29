@@ -4258,5 +4258,11 @@
   },
   "keyboardShortcuts.enableShortcutFor": {
     "defaultMessage": "Enable {label} shortcut"
+  },
+  "keyboardShortcuts.resetShortcutFor": {
+    "defaultMessage": "Reset {label} shortcut to default"
+  },
+  "keyboardShortcuts.resetToDefault": {
+    "defaultMessage": "Reset"
   }
 }

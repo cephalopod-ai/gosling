@@ -1817,6 +1817,9 @@
   "keyboardShortcuts.resetAllShortcuts": {
     "defaultMessage": "Reset All Shortcuts"
   },
+  "keyboardShortcuts.resetShortcutFor": {
+    "defaultMessage": "Reset {label} shortcut to default"
+  },
   "keyboardShortcuts.resetShortcutsDetail": {
     "defaultMessage": "This will restore all shortcuts to their original configuration."
   },
@@ -1825,6 +1828,9 @@
   },
   "keyboardShortcuts.resetShortcutsTitle": {
     "defaultMessage": "Reset Keyboard Shortcuts"
+  },
+  "keyboardShortcuts.resetToDefault": {
+    "defaultMessage": "Reset"
   },
   "keyboardShortcuts.resetToDefaultsDescription": {
     "defaultMessage": "Restore all keyboard shortcuts to their original configuration"

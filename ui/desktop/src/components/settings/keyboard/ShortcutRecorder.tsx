@@ -72,6 +72,13 @@ export function ShortcutRecorder({
   }, [recording]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      onCancel();
+      return;
+    }
+
     if (!recording) return;
 
     e.preventDefault();

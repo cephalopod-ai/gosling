@@ -39,6 +39,7 @@ describe('KeyboardShortcutsSection', () => {
       key === 'keyboardShortcuts' ? { ...defaultKeyboardShortcuts } : undefined
     );
     vi.mocked(window.electron.setSetting).mockClear();
+    vi.mocked(window.electron.showMessageBox).mockClear();
   });
 
   it('refuses reserved and modifier-less shortcuts', async () => {
@@ -86,5 +87,55 @@ describe('KeyboardShortcutsSection', () => {
       expect(within(row).getByRole('switch', { name: `Enable ${label} shortcut` })).toBeChecked();
     }
     expect(screen.getAllByRole('switch')).toHaveLength(shortcutLabels.length);
+  });
+
+  it('cancels recording on Escape instead of recording Esc', async () => {
+    render(<KeyboardShortcutsSection />, { wrapper: IntlTestWrapper });
+    await screen.findByRole('heading', { name: 'New Chat' });
+
+    const recorder = await startRecording('New Chat');
+    fireEvent.keyDown(recorder, { key: 'Escape', code: 'Escape' });
+
+    expect(screen.queryByText('Press shortcut...')).not.toBeInTheDocument();
+    expect(screen.queryByText('Esc')).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(
+      within(rowFor('New Chat')).getByRole('button', { name: 'Change New Chat shortcut' })
+    ).toBeVisible();
+    expect(within(rowFor('New Chat')).getByText('⌘+T')).toBeVisible();
+    expect(window.electron.setSetting).not.toHaveBeenCalled();
+  });
+
+  it('resets a single changed binding to its default', async () => {
+    vi.mocked(window.electron.getSetting).mockImplementation(async (key: string) =>
+      key === 'keyboardShortcuts'
+        ? { ...defaultKeyboardShortcuts, newChat: 'CommandOrControl+Shift+J' }
+        : undefined
+    );
+    render(<KeyboardShortcutsSection />, { wrapper: IntlTestWrapper });
+    await screen.findByRole('heading', { name: 'New Chat' });
+
+    expect(
+      within(rowFor('Find')).queryByRole('button', { name: 'Reset Find shortcut to default' })
+    ).not.toBeInTheDocument();
+
+    await userEvent
+      .setup()
+      .click(
+        within(rowFor('New Chat')).getByRole('button', {
+          name: 'Reset New Chat shortcut to default',
+        })
+      );
+
+    expect(window.electron.showMessageBox).not.toHaveBeenCalled();
+    expect(window.electron.setSetting).toHaveBeenCalledWith('keyboardShortcuts', {
+      ...defaultKeyboardShortcuts,
+    });
+    expect(await within(rowFor('New Chat')).findByText('⌘+T')).toBeVisible();
+    expect(
+      within(rowFor('New Chat')).queryByRole('button', {
+        name: 'Reset New Chat shortcut to default',
+      })
+    ).not.toBeInTheDocument();
   });
 });
