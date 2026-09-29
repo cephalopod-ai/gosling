@@ -430,10 +430,7 @@ export function AppInner() {
         }
       }
     };
-    window.electron.on('open-shared-session', handleOpenSessionShare);
-    return () => {
-      window.electron.off('open-shared-session', handleOpenSessionShare);
-    };
+    return window.electron.on('open-shared-session', handleOpenSessionShare);
   }, [navigate]);
 
   useEffect(() => {
@@ -505,10 +502,7 @@ export function AppInner() {
       console.error('Encountered a fatal error:', errorMessage);
       setFatalError(errorMessage);
     };
-    window.electron.on('fatal-error', handleFatalError);
-    return () => {
-      window.electron.off('fatal-error', handleFatalError);
-    };
+    return window.electron.on('fatal-error', handleFatalError);
   }, []);
 
   useEffect(() => {
@@ -530,10 +524,7 @@ export function AppInner() {
         )
       );
     };
-    window.electron.on('create-chat-window-refused', handleChatWindowRefused);
-    return () => {
-      window.electron.off('create-chat-window-refused', handleChatWindowRefused);
-    };
+    return window.electron.on('create-chat-window-refused', handleChatWindowRefused);
   }, [intl]);
 
   useEffect(() => {
@@ -548,8 +539,7 @@ export function AppInner() {
       }
     };
 
-    window.electron.on('set-view', handleSetView);
-    return () => window.electron.off('set-view', handleSetView);
+    return window.electron.on('set-view', handleSetView);
   }, [navigate]);
 
   useEffect(() => {
@@ -557,8 +547,7 @@ export function AppInner() {
       navigate('/');
     };
 
-    window.electron.on('new-chat', handleNewChat);
-    return () => window.electron.off('new-chat', handleNewChat);
+    return window.electron.on('new-chat', handleNewChat);
   }, [navigate]);
 
   useEffect(() => {
@@ -568,10 +557,7 @@ export function AppInner() {
         inputField.focus();
       }
     };
-    window.electron.on('focus-input', handleFocusInput);
-    return () => {
-      window.electron.off('focus-input', handleFocusInput);
-    };
+    return window.electron.on('focus-input', handleFocusInput);
   }, []);
 
   // Handle initial message from launcher
@@ -592,10 +578,7 @@ export function AppInner() {
         }, 1000);
       }
     };
-    window.electron.on('set-initial-message', handleSetInitialMessage);
-    return () => {
-      window.electron.off('set-initial-message', handleSetInitialMessage);
-    };
+    return window.electron.on('set-initial-message', handleSetInitialMessage);
   }, [navigate]);
 
   if (fatalError) {

@@ -73,10 +73,7 @@ export const NavigationProvider: React.FC<NavigationProviderProps> = ({ children
     const handleToggleNavigation = () => {
       setIsNavExpanded(!isNavExpandedRef.current);
     };
-    window.electron.on('toggle-navigation', handleToggleNavigation);
-    return () => {
-      window.electron.off('toggle-navigation', handleToggleNavigation);
-    };
+    return window.electron.on('toggle-navigation', handleToggleNavigation);
   }, [setIsNavExpanded]);
 
   // Auto-collapse the sidebar when the window becomes narrow. Track the

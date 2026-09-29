@@ -179,8 +179,11 @@ type ElectronAPI = {
   getIsFullScreen: () => Promise<boolean>;
   onMouseBackButtonClicked: (callback: () => void) => void;
   offMouseBackButtonClicked: (callback: () => void) => void;
-  on: <T extends RendererEventChannel>(channel: T, callback: RendererEventCallback<T>) => void;
-  off: <T extends RendererEventChannel>(channel: T, callback: RendererEventCallback<T>) => void;
+  /** Returns the only way to remove the listener; see the implementation. */
+  on: <T extends RendererEventChannel>(
+    channel: T,
+    callback: RendererEventCallback<T>
+  ) => () => void;
   broadcastThemeChange: (themeData: ThemeChangePayload) => void;
   broadcastWorkspaceChange: () => void;
   openExternal: (url: string) => Promise<void>;
@@ -366,11 +369,15 @@ const electronAPI: ElectronAPI = {
       mouseBackButtonListeners.delete(callback);
     }
   },
+  // contextBridge hands this world a new proxy of the renderer's function on every call, so an
+  // `off(channel, callback)` never matched the listener `on` added and each effect re-run leaked
+  // one (MaxListenersExceededWarning after a few chats). The returned function removes the exact
+  // proxy that was registered.
   on: <T extends RendererEventChannel>(channel: T, callback: RendererEventCallback<T>) => {
     ipcRenderer.on(channel, callback);
-  },
-  off: <T extends RendererEventChannel>(channel: T, callback: RendererEventCallback<T>) => {
-    ipcRenderer.off(channel, callback);
+    return () => {
+      ipcRenderer.removeListener(channel, callback);
+    };
   },
   broadcastThemeChange: (themeData: ThemeChangePayload) => {
     sendToMain(desktopCommandChannels.broadcastThemeChange, themeData);

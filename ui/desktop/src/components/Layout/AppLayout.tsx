@@ -57,8 +57,7 @@ const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions }) =
     const handler = (_event: IpcRendererEvent, ...args: unknown[]) => {
       setIsFullScreen(Boolean(args[0]));
     };
-    window.electron.on('fullscreen-change', handler);
-    return () => window.electron.off('fullscreen-change', handler);
+    return window.electron.on('fullscreen-change', handler);
   }, [safeIsMacOS]);
 
   const [windowWidth, setWindowWidth] = useState(() => window.innerWidth);

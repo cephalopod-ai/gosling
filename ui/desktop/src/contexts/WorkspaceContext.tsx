@@ -106,8 +106,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const handleWorkspaceChanged = () => void refreshWorkspaces();
-    window.electron.on('workspaces-changed', handleWorkspaceChanged);
-    return () => window.electron.off('workspaces-changed', handleWorkspaceChanged);
+    return window.electron.on('workspaces-changed', handleWorkspaceChanged);
   }, [refreshWorkspaces]);
 
   const notifyChanged = useCallback(async () => {

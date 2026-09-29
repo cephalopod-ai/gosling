@@ -38,7 +38,6 @@ describe('NavigationProvider narrow-window collapse', () => {
     window.electron = {
       ...window.electron,
       on: vi.fn(),
-      off: vi.fn(),
     } as unknown as typeof window.electron;
   });
 

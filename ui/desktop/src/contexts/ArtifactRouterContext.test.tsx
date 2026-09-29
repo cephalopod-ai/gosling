@@ -103,7 +103,6 @@ describe('ArtifactRouterProvider', () => {
       on: vi.fn((channel: string, callback: typeof unroutedHandler) => {
         if (channel === 'artifact-download-unrouted') unroutedHandler = callback;
       }),
-      off: vi.fn(),
     });
     setWorkspaceContext([
       { workspace: active, validation: { validForSession: true, issues: [] } },

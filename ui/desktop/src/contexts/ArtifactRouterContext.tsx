@@ -174,8 +174,7 @@ export function ArtifactRouterProvider({ children }: { children: React.ReactNode
     const handleUnroutedDownload = (_event: unknown, fileName: string) => {
       toast.warning(intl.formatMessage(i18n.unroutedDownload, { fileName }));
     };
-    window.electron.on('artifact-download-unrouted', handleUnroutedDownload);
-    return () => window.electron.off('artifact-download-unrouted', handleUnroutedDownload);
+    return window.electron.on('artifact-download-unrouted', handleUnroutedDownload);
   }, [intl]);
 
   const ensureOutputAvailable = useCallback(
