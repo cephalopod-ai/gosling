@@ -12,6 +12,17 @@ fn format_date(date: DateTime<chrono::Utc>) -> String {
     date.format("%Y-%m-%d %H:%M:%S").to_string()
 }
 
+// The session child has already reported its own error, so the parent only passes its exit
+// status on.
+fn run_session(command: &mut std::process::Command) -> Result<()> {
+    let status = command.status()?;
+    if !status.success() {
+        eprintln!("Failed to run gosling. Exit code: {:?}", status.code());
+        std::process::exit(status.code().unwrap_or(1));
+    }
+    Ok(())
+}
+
 /// Handle the default project command
 ///
 /// Offers options to resume the most recently accessed project
@@ -27,11 +38,7 @@ pub fn handle_project_default() -> Result<()> {
         println!("No previous projects found. Starting a new session in the current directory.");
         let mut command = std::process::Command::new(&gosling_bin);
         command.arg("session");
-        let status = command.status()?;
-
-        if !status.success() {
-            println!("Failed to run gosling. Exit code: {:?}", status.code());
-        }
+        run_session(&mut command)?;
         return Ok(());
     }
 
@@ -44,11 +51,10 @@ pub fn handle_project_default() -> Result<()> {
 
     // Check if the directory exists
     if !Path::new(project_dir).exists() {
-        println!(
-            "Most recent project directory '{}' no longer exists.",
+        anyhow::bail!(
+            "Most recent project directory '{}' no longer exists. Run 'gosling projects' to pick another project.",
             project_dir
         );
-        return Ok(());
     }
 
     // Format the path for display
@@ -116,12 +122,7 @@ pub fn handle_project_default() -> Result<()> {
                 println!("Resuming session: {}", id);
             }
 
-            // Execute the command
-            let status = command.status()?;
-
-            if !status.success() {
-                println!("Failed to run gosling. Exit code: {:?}", status.code());
-            }
+            run_session(&mut command)?;
         }
         "fresh" => {
             let _ = outro(format!(
@@ -136,12 +137,7 @@ pub fn handle_project_default() -> Result<()> {
             let mut command = std::process::Command::new(&gosling_bin);
             command.arg("session");
 
-            // Execute the command
-            let status = command.status()?;
-
-            if !status.success() {
-                println!("Failed to run gosling. Exit code: {:?}", status.code());
-            }
+            run_session(&mut command)?;
         }
         "new" => {
             let _ = outro("Starting a new session in the current directory");
@@ -150,12 +146,7 @@ pub fn handle_project_default() -> Result<()> {
             let mut command = std::process::Command::new(&gosling_bin);
             command.arg("session");
 
-            // Execute the command
-            let status = command.status()?;
-
-            if !status.success() {
-                println!("Failed to run gosling. Exit code: {:?}", status.code());
-            }
+            run_session(&mut command)?;
         }
         _ => {
             let _ = outro("Operation canceled");
@@ -331,12 +322,7 @@ pub fn handle_projects_interactive() -> Result<()> {
         println!("Starting new session");
     }
 
-    // Execute the command
-    let status = command.status()?;
-
-    if !status.success() {
-        println!("Failed to run gosling. Exit code: {:?}", status.code());
-    }
+    run_session(&mut command)?;
 
     Ok(())
 }
