@@ -23,6 +23,13 @@ impl HandleDispatchFrom<Client> for GoslingAcpHandler {
             // connection; the result is ignored on later requests.
             let _ = agent.client_cx.set(cx.clone());
 
+            if let Dispatch::Request(request, _) = &message {
+                if let Err(error) = agent.ensure_initialized_for(&request.method) {
+                    message.respond_with_error(error, cx)?;
+                    return Ok(Handled::Yes);
+                }
+            }
+
             // InitializeRequest runs inline: it sets connection-scoped state
             // (client fs/terminal capabilities) that later handlers read with
             // defaults, so a pipelined NewSessionRequest must not race ahead of it.

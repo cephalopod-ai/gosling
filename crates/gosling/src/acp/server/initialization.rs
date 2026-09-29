@@ -4,6 +4,7 @@
 //! Clients: initialization preserves capability, metadata, and notification negotiation.
 
 use super::*;
+use agent_client_protocol::schema::v1::AGENT_METHOD_NAMES;
 
 #[derive(Debug, Default, Deserialize)]
 pub(super) struct ClientCapabilitiesMeta {
@@ -99,6 +100,26 @@ fn shell_capabilities_meta(shell_runtime: &ShellRuntime) -> Meta {
 }
 
 impl GoslingAcpAgent {
+    /// Every request except `initialize` needs a successfully negotiated protocol version on this
+    /// connection, mirroring the Streamable-HTTP transport, which never issues a connection id
+    /// after a failed `initialize`.
+    pub(super) fn ensure_initialized_for(
+        &self,
+        method: &str,
+    ) -> Result<(), agent_client_protocol::Error> {
+        if method == AGENT_METHOD_NAMES.initialize
+            || self
+                .client_initialized
+                .load(std::sync::atomic::Ordering::Acquire)
+        {
+            return Ok(());
+        }
+        Err(agent_client_protocol::Error::invalid_request().data(format!(
+            "Connection is not initialized; {method} requires a successful initialize with protocolVersion {} first",
+            ProtocolVersion::LATEST
+        )))
+    }
+
     fn spawn_domain_adapter_status_notifier(&self) {
         if !self.supports_gosling_custom_notifications() {
             return;
@@ -201,6 +222,8 @@ impl GoslingAcpAgent {
             .meta(Some(shell_capabilities_meta(&self.shell_runtime)));
         self.spawn_domain_adapter_status_notifier();
         self.spawn_plan_update_notifier();
+        self.client_initialized
+            .store(true, std::sync::atomic::Ordering::Release);
         Ok(InitializeResponse::new(protocol_version)
             .agent_info(Implementation::new("gosling", env!("CARGO_PKG_VERSION")))
             .agent_capabilities(capabilities)
