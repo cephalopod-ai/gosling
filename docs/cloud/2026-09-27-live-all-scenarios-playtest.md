@@ -252,7 +252,7 @@ replays per finding. Findings marked "open — queued" were not yet repaired.
 | Low | B14 | CLI output hygiene (cosmetic) | fixed (typed-input echo deferred: needs design) (R8a) |
 | Low | B15 | stream-json on provider failure has no terminal `error`/`complete` event | fixed (R8a) |
 | Low | B19 | Reduction validation differs between CLI and ACP; out-of-range CLI warning does not state the fallback | fixed (R2) |
-| Low | C04 | Hidden host-policy `planning` extension is offered in `configure`/`mcp list`; enabling it warns on every session | open — queued R11 |
+| Low | C04 | Hidden host-policy `planning` extension is offered in `configure`/`mcp list`; enabling it warns on every session | fixed (R11) |
 | Low | C07 | Duplicate plugin skill names are silently shadowed; precedence set by directory order | open — queued R11 |
 | Low | C09 | Subagent docs say delegates inherit parent extensions; code defaults ad-hoc delegates to none | fixed (docs) (R11) |
 | Low | C11 | Imported sessions silently run in `approve` mode; CLI denial names the wrong mode | fixed (R6) |
