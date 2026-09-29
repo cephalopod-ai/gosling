@@ -36,6 +36,7 @@ use gosling::agents::Container;
 use gosling::conversation::Conversation;
 use gosling::session::session_manager::SessionType;
 use gosling::session::SessionManager;
+use std::collections::HashSet;
 use std::io::{IsTerminal, Read};
 use std::path::PathBuf;
 use strum::VariantNames;
@@ -1449,6 +1450,106 @@ impl CompletionShell {
     }
 }
 
+// clap_complete lists hidden subcommands like visible ones, so completions are generated from
+// a copy of the command tree that leaves them out.
+fn without_hidden_subcommands(cmd: clap::Command) -> clap::Command {
+    let cmd = cmd.mut_subcommands(without_hidden_subcommands);
+    if cmd.get_subcommands().any(clap::Command::is_hide_set) {
+        rebuild_with_subcommands(&cmd, |sub| !sub.is_hide_set())
+    } else {
+        cmd
+    }
+}
+
+// clap has no way to remove a subcommand, so the parent is rebuilt from the settings that the
+// derived commands use.
+fn rebuild_with_subcommands(
+    cmd: &clap::Command,
+    keep: impl Fn(&clap::Command) -> bool,
+) -> clap::Command {
+    let visible_aliases: Vec<String> = cmd.get_visible_aliases().map(str::to_owned).collect();
+    let hidden_aliases: Vec<String> = cmd
+        .get_all_aliases()
+        .filter(|alias| !visible_aliases.iter().any(|visible| visible == alias))
+        .map(str::to_owned)
+        .collect();
+    let mut rebuilt = clap::Command::new(cmd.get_name().to_owned())
+        .visible_aliases(visible_aliases)
+        .aliases(hidden_aliases)
+        .hide(cmd.is_hide_set())
+        .subcommand_required(cmd.is_subcommand_required_set())
+        .arg_required_else_help(cmd.is_arg_required_else_help_set())
+        .args(cmd.get_arguments().cloned())
+        .groups(cmd.get_groups().cloned())
+        .subcommands(cmd.get_subcommands().filter(|sub| keep(sub)).cloned());
+    if let Some(about) = cmd.get_about() {
+        rebuilt = rebuilt.about(about.clone());
+    }
+    if let Some(long_about) = cmd.get_long_about() {
+        rebuilt = rebuilt.long_about(long_about.clone());
+    }
+    if let Some(version) = cmd.get_version() {
+        rebuilt = rebuilt.version(version.to_owned());
+    }
+    if let Some(long_version) = cmd.get_long_version() {
+        rebuilt = rebuilt.long_version(long_version.to_owned());
+    }
+    if let Some(author) = cmd.get_author() {
+        rebuilt = rebuilt.author(author.to_owned());
+    }
+    rebuilt
+}
+
+fn hidden_subcommand_names(cmd: &clap::Command, names: &mut HashSet<String>) {
+    for sub in cmd.get_subcommands() {
+        if sub.is_hide_set() {
+            names.insert(sub.get_name().to_owned());
+            names.extend(sub.get_all_aliases().map(str::to_owned));
+        }
+        hidden_subcommand_names(sub, names);
+    }
+}
+
+fn visible_subcommand_names(cmd: &clap::Command, names: &mut HashSet<String>) {
+    for sub in cmd.get_subcommands().filter(|sub| !sub.is_hide_set()) {
+        names.insert(sub.get_name().to_owned());
+        names.extend(sub.get_all_aliases().map(str::to_owned));
+        visible_subcommand_names(sub, names);
+    }
+}
+
+// clap's "similar subcommands" tip draws on hidden subcommands too.
+fn drop_hidden_subcommand_suggestions(mut error: clap::Error) -> clap::Error {
+    use clap::error::{ContextKind, ContextValue};
+
+    if error.kind() != clap::error::ErrorKind::InvalidSubcommand {
+        return error;
+    }
+    let Some(ContextValue::Strings(suggestions)) = error.get(ContextKind::SuggestedSubcommand)
+    else {
+        return error;
+    };
+    let cmd = Cli::command();
+    let mut hidden = HashSet::new();
+    hidden_subcommand_names(&cmd, &mut hidden);
+    let mut visible = HashSet::new();
+    visible_subcommand_names(&cmd, &mut visible);
+    let remaining: Vec<String> = suggestions
+        .iter()
+        .filter(|name| !hidden.contains(*name) || visible.contains(*name))
+        .cloned()
+        .collect();
+    if remaining.is_empty() {
+        error.remove(ContextKind::SuggestedSubcommand);
+    } else {
+        error.insert(
+            ContextKind::SuggestedSubcommand,
+            ContextValue::Strings(remaining),
+        );
+    }
+    error
+}
+
 #[derive(Debug)]
 pub struct InputConfig {
     pub contents: Option<String>,
@@ -2651,9 +2752,10 @@ async fn handle_default_session() -> Result<()> {
 pub async fn cli() -> anyhow::Result<()> {
     register_builtin_extensions(gosling_mcp::BUILTIN_EXTENSIONS.clone());
 
-    // Parse first: `--help`, `--version` and usage errors exit inside
-    // `Cli::parse()`, so they never create a log file in the state directory.
-    let cli = Cli::parse();
+    // Parse first: `--help`, `--version` and usage errors exit here, so they
+    // never create a log file in the state directory.
+    let cli =
+        Cli::try_parse().unwrap_or_else(|error| drop_hidden_subcommand_suggestions(error).exit());
     if let Err(e) = crate::logging::setup_logging(None) {
         eprintln!("Warning: Failed to initialize logging: {}", e);
     }
@@ -2680,7 +2782,7 @@ pub async fn cli() -> anyhow::Result<()> {
             // Generate into a buffer first: clap_complete panics if the writer
             // fails, which turns `gosling completion bash | head` (early-closed
             // pipe) into a panic instead of a silent broken-pipe exit.
-            let mut cmd = Cli::command();
+            let mut cmd = without_hidden_subcommands(Cli::command());
             let mut buffer = Vec::new();
             shell.generate(&mut cmd, &bin_name, &mut buffer);
             use std::io::Write;
@@ -3162,6 +3264,42 @@ mod tests {
         assert!(script.contains("module completions"));
         assert!(script.contains("export extern gosling"));
         assert!(script.contains("export use completions *"));
+    }
+
+    fn rebuild_all_keeping_subcommands(cmd: clap::Command) -> clap::Command {
+        let cmd = cmd.mut_subcommands(rebuild_all_keeping_subcommands);
+        rebuild_with_subcommands(&cmd, |_| true)
+    }
+
+    // GSL-PT-20260927-A19: the rebuild that drops hidden subcommands must not change anything
+    // else a completion script is generated from.
+    #[test]
+    fn rebuilt_command_tree_generates_identical_completions() {
+        for shell in [
+            CompletionShell::Bash,
+            CompletionShell::Elvish,
+            CompletionShell::Fish,
+            CompletionShell::Powershell,
+            CompletionShell::Nu,
+            CompletionShell::Zsh,
+        ] {
+            let mut original = Cli::command();
+            let mut rebuilt = rebuild_all_keeping_subcommands(Cli::command());
+            let mut expected = Vec::new();
+            let mut actual = Vec::new();
+            shell.generate(&mut original, "gosling", &mut expected);
+            shell.generate(&mut rebuilt, "gosling", &mut actual);
+            let expected = String::from_utf8(expected).expect("utf8");
+            let actual = String::from_utf8(actual).expect("utf8");
+            let first_difference = expected
+                .lines()
+                .zip(actual.lines())
+                .find(|(before, after)| before != after);
+            assert!(
+                expected == actual,
+                "{shell:?} completion changed: {first_difference:?}"
+            );
+        }
     }
 
     // GSL-PT-20260927-A11: the shared session selector told `session export`
