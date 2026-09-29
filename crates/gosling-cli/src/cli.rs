@@ -1745,6 +1745,12 @@ async fn handle_serve_command(args: ServeCommandArgs) -> Result<()> {
             if origin.is_empty() || origin == "*" {
                 anyhow::bail!("--allowed-origin must be a non-wildcard Origin value");
             }
+            if !is_exact_origin(origin) {
+                anyhow::bail!(
+                    "--allowed-origin `{origin}` is not an Origin a browser would send; use \
+                     scheme://host[:port] with no path, e.g. http://localhost:5173"
+                );
+            }
             HeaderValue::from_str(origin).map_err(|error| {
                 anyhow::anyhow!("invalid --allowed-origin value `{origin}`: {error}")
             })
@@ -1845,6 +1851,26 @@ async fn handle_serve_command(args: ServeCommandArgs) -> Result<()> {
 
     server.shutdown().await;
     Ok(())
+}
+
+/// An Origin header is exactly `scheme://host[:port]`, or `null`/`file://`
+/// for opaque and file pages (packaged Desktop sends those). A value with a
+/// path, query, credentials, or trailing slash can never match one, and
+/// replacing the loopback defaults with it would lock out every real client.
+fn is_exact_origin(origin: &str) -> bool {
+    if matches!(origin, "null" | "file://") {
+        return true;
+    }
+    let Ok(url) = url::Url::parse(origin) else {
+        return false;
+    };
+    url.host_str().is_some_and(|host| !host.is_empty())
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.query().is_none()
+        && url.fragment().is_none()
+        && matches!(url.path(), "" | "/")
+        && !origin.ends_with('/')
 }
 
 /// `gosling serve` logs only to its log file, so a failed start must name the
@@ -3013,6 +3039,31 @@ mod tests {
         let help = String::from_utf8(buffer).expect("utf8");
         assert!(!help.contains("Requires --resume"), "{help}");
         assert!(help.contains("Select a session by ID"), "{help}");
+    }
+
+    // GSL-PT-20260927-F05: `--allowed-origin localhost:5173` was accepted,
+    // replaced the loopback defaults, and could never match a real Origin.
+    #[test]
+    fn allowed_origin_must_be_an_exact_origin() {
+        for origin in [
+            "http://localhost:5173",
+            "https://app.example",
+            "app://localhost",
+            "null",
+            "file://",
+        ] {
+            assert!(is_exact_origin(origin), "{origin}");
+        }
+        for origin in [
+            "localhost:5173",
+            "http://a b",
+            "http://localhost:5173/path",
+            "http://localhost:5173/",
+            "http://user@localhost:5173",
+            "http://localhost:5173?x=1",
+        ] {
+            assert!(!is_exact_origin(origin), "{origin}");
+        }
     }
 
     // GSL-PT-20260927-F03: a serve start on a taken port printed only

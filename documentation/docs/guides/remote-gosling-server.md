@@ -34,7 +34,7 @@ The supported command and security controls are:
 | `--tls` | Serves ACP over TLS. Without certificate paths, gosling creates or reuses a local self-signed certificate. |
 | `--tls-cert-path` and `--tls-key-path` | Use a specific PEM certificate and private key. Both are required together. |
 | `GOSLING_SERVER__SECRET_KEY` | Requires the matching token on status and ACP connections. |
-| `--allowed-origin` | Replaces the default loopback CORS origins with one or more exact origins. Wildcards are rejected. |
+| `--allowed-origin` | Replaces the default loopback CORS origins with one or more exact origins (`scheme://host[:port]`, or `null`/`file://`). Wildcards and values with a path, query or trailing slash are rejected at startup. Refused origins are logged as warnings. |
 
 `gosling serve` refuses to start without `GOSLING_SERVER__SECRET_KEY` unless
 `--dangerously-unauthenticated` is present. The unauthenticated mode is for deliberate loopback
