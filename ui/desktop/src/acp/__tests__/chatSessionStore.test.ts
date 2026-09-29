@@ -12,6 +12,8 @@ import type {
 import type { Message } from '../../types/message';
 import { ChatState } from '../../types/chatState';
 import type { Session } from '../../types/session';
+import { DEFAULT_CHAT_TITLE } from '../../contexts/ChatContext';
+import { getSessionDisplayName } from '../../sessions';
 import {
   acpElicitationUserInputRequestId,
   acpChatSessionActions,
@@ -187,6 +189,24 @@ describe('acpChatSessionStore', () => {
       acpChatSessionActions.deleteSnapshot(id);
     }
     sessionIds.clear();
+  });
+
+  it('shows the generated title for a session that was opened as a new chat', () => {
+    const id = sessionId('titled-session');
+    acpChatSessionActions.setSessionMetadata(id, session(id));
+    acpChatSessionActions.setMessages(id, [message('user-1', 'hello')]);
+    expect(getSessionDisplayName(acpChatSessionStore.getSnapshot(id)!.session!)).toBe(
+      DEFAULT_CHAT_TITLE
+    );
+
+    acpChatSessionActions.applyAcpSessionNotification({
+      sessionId: id,
+      update: { sessionUpdate: 'session_info_update', title: 'Fixture title a99bd4' },
+    });
+
+    const titled = acpChatSessionStore.getSnapshot(id)!.session!;
+    expect(titled.name).toBe('Fixture title a99bd4');
+    expect(getSessionDisplayName(titled)).toBe('Fixture title a99bd4');
   });
 
   it('records real stream activity while excluding local steers, empty chunks, and metadata', () => {
