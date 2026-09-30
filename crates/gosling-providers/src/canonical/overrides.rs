@@ -91,37 +91,70 @@ const ANTHROPIC_CONTRACTS: &[AnthropicContract] = &[
 ];
 
 fn pending_openai_models() -> Vec<(&'static str, CanonicalModel)> {
-    vec![(
-        "gpt-6-astra",
-        CanonicalModel {
-            id: "openai/gpt-6-astra".to_string(),
-            name: "GPT-6 Astra".to_string(),
-            family: Some("gpt".to_string()),
-            attachment: Some(true),
-            reasoning: Some(true),
-            thinking_mode: None,
-            tool_call: true,
-            temperature: Some(false),
-            knowledge: Some("2026-04-30".to_string()),
-            release_date: Some("2026-09-04".to_string()),
-            last_updated: Some("2026-09-04".to_string()),
-            modalities: Modalities {
-                input: vec![Modality::Text, Modality::Image],
-                output: vec![Modality::Text],
+    vec![
+        (
+            "gpt-6-astra",
+            CanonicalModel {
+                id: "openai/gpt-6-astra".to_string(),
+                name: "GPT-6 Astra".to_string(),
+                family: Some("gpt".to_string()),
+                attachment: Some(true),
+                reasoning: Some(true),
+                thinking_mode: None,
+                tool_call: true,
+                temperature: Some(false),
+                knowledge: Some("2026-04-30".to_string()),
+                release_date: Some("2026-09-04".to_string()),
+                last_updated: Some("2026-09-04".to_string()),
+                modalities: Modalities {
+                    input: vec![Modality::Text, Modality::Image],
+                    output: vec![Modality::Text],
+                },
+                open_weights: Some(false),
+                cost: Pricing {
+                    input: Some(10.0),
+                    output: Some(50.0),
+                    cache_read: Some(1.0),
+                    cache_write: Some(12.5),
+                },
+                limit: Limit {
+                    context: 1_050_000,
+                    output: Some(128_000),
+                },
             },
-            open_weights: Some(false),
-            cost: Pricing {
-                input: Some(10.0),
-                output: Some(50.0),
-                cache_read: Some(1.0),
-                cache_write: Some(12.5),
+        ),
+        (
+            "gpt-6.1-sol",
+            CanonicalModel {
+                id: "openai/gpt-6.1-sol".to_string(),
+                name: "GPT-6.1 Sol".to_string(),
+                family: Some("gpt".to_string()),
+                attachment: Some(true),
+                reasoning: Some(true),
+                thinking_mode: None,
+                tool_call: true,
+                temperature: Some(false),
+                knowledge: Some("2026-04-30".to_string()),
+                release_date: Some("2026-09-29".to_string()),
+                last_updated: Some("2026-09-29".to_string()),
+                modalities: Modalities {
+                    input: vec![Modality::Text, Modality::Image],
+                    output: vec![Modality::Text],
+                },
+                open_weights: Some(false),
+                cost: Pricing {
+                    input: Some(2.0),
+                    output: Some(10.0),
+                    cache_read: Some(0.1),
+                    cache_write: Some(2.5),
+                },
+                limit: Limit {
+                    context: 1_050_000,
+                    output: Some(128_000),
+                },
             },
-            limit: Limit {
-                context: 1_050_000,
-                output: Some(128_000),
-            },
-        },
-    )]
+        ),
+    ]
 }
 
 /// Models Anthropic ships that the upstream catalog snapshot may not carry yet.
@@ -336,6 +369,13 @@ mod tests {
         assert_eq!(astra.cost.input, Some(10.0));
         assert_eq!(astra.cost.output, Some(50.0));
         assert_eq!(astra.reasoning, Some(true));
+
+        let sol = registry.get_active("openai", "gpt-6.1-sol").unwrap();
+        assert_eq!(sol.limit.context, 1_050_000);
+        assert_eq!(sol.limit.output, Some(128_000));
+        assert_eq!(sol.cost.input, Some(2.0));
+        assert_eq!(sol.cost.output, Some(10.0));
+        assert_eq!(sol.reasoning, Some(true));
 
         let opus_5 = registry.get_active("anthropic", "claude-opus-5").unwrap();
         assert_eq!(opus_5.limit.context, 1_000_000);

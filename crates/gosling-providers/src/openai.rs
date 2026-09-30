@@ -69,6 +69,7 @@ pub const OPEN_AI_KNOWN_MODELS: &[(&str, usize)] = &[
     ("gpt-5.6-terra", 1_050_000),
     ("gpt-5.6-luna", 1_050_000),
     ("gpt-6-astra", 1_050_000),
+    ("gpt-6.1-sol", 1_050_000),
     ("gpt-6-sol", 1_050_000),
     ("gpt-6-luna", 1_050_000),
 ];
@@ -1586,5 +1587,6 @@ mod tests {
         assert_eq!(limits.get("gpt-5.5"), Some(&1_050_000));
         assert_eq!(limits.get("gpt-5.5-pro"), Some(&1_050_000));
         assert_eq!(limits.get("gpt-6-astra"), Some(&1_050_000));
+        assert_eq!(limits.get("gpt-6.1-sol"), Some(&1_050_000));
     }
 }

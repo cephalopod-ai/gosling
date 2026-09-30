@@ -3266,7 +3266,9 @@ mod tests {
     #[test_case("gpt-5.6-sol", ThinkingEffort::Ultra, Some("ultra"); "sol supports ultra")]
     #[test_case("gpt-5.6-luna", ThinkingEffort::Ultra, Some("max"); "luna falls back to max")]
     #[test_case("gpt-6-astra", ThinkingEffort::Off, Some("low"); "astra raises off to its minimum")]
+    #[test_case("gpt-6.1-sol", ThinkingEffort::Off, Some("low"); "gpt 6.1 sol raises off to its minimum")]
     #[test_case("gpt-6-astra", ThinkingEffort::Ultra, Some("max"); "astra lowers ultra to its maximum")]
+    #[test_case("gpt-6.1-sol", ThinkingEffort::Ultra, Some("max"); "gpt 6.1 sol lowers ultra to its maximum")]
     fn test_reasoning_effort_uses_supported_level(
         model: &str,
         effort: ThinkingEffort,
@@ -4887,6 +4889,7 @@ data: [DONE]"#;
             "gpt-5-4",
             "gpt-5-2-pro",
             "gpt-6-astra",
+            "gpt-6.1-sol",
             "openai/gpt-6-astra",
             "databricks-gpt-6-astra-high",
             "databricks-gpt-5.4",
@@ -4919,6 +4922,7 @@ data: [DONE]"#;
             ("o3-xhigh", "o3", Some("xhigh")),
             ("gpt-5.6-sol-ultra", "gpt-5.6-sol", Some("ultra")),
             ("gpt-6-astra-max", "gpt-6-astra", Some("max")),
+            ("gpt-6.1-sol-max", "gpt-6.1-sol", Some("max")),
             ("gpt-5-low", "gpt-5", Some("low")),
             ("gpt-5.4", "gpt-5.4", None),
             (

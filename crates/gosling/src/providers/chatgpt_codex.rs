@@ -70,6 +70,10 @@ pub const CHATGPT_CODEX_KNOWN_MODELS: &[ChatGptCodexModelAttrs] = &[
         reasoning_levels: &["low", "medium", "high", "xhigh", "max"],
     },
     ChatGptCodexModelAttrs {
+        name: "gpt-6.1-sol",
+        reasoning_levels: &["low", "medium", "high", "xhigh", "max"],
+    },
+    ChatGptCodexModelAttrs {
         name: "gpt-6-sol",
         reasoning_levels: &["low", "medium", "high", "xhigh", "max"],
     },
@@ -139,7 +143,7 @@ fn resolved_route_context_limit(model: &ChatGptCodexRouteModel) -> Option<usize>
 
 pub(crate) fn context_limit_for_model(model_name: &str) -> Option<usize> {
     match model_name {
-        "gpt-6-astra" | "gpt-6-sol" | "gpt-6-luna" => Some(997_500),
+        "gpt-6-astra" | "gpt-6.1-sol" | "gpt-6-sol" | "gpt-6-luna" => Some(997_500),
         "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna" | "gpt-5.5" | "gpt-5.4"
         | "gpt-5.4-mini" => Some(258_400),
         "gpt-5.3-codex-spark" => Some(121_600),
@@ -1829,6 +1833,11 @@ mod tests {
         "gpt-6-astra keeps max as its ceiling"
     )]
     #[test_case(
+        "gpt-6.1-sol",
+        &["low", "medium", "high", "xhigh", "max"];
+        "gpt-6.1-sol keeps max as its ceiling"
+    )]
+    #[test_case(
         "gpt-5.6-sol",
         &["low", "medium", "high", "xhigh", "max"];
         "gpt-5.6-sol keeps max as its ceiling (backend rejects ultra over HTTP)"
@@ -1849,6 +1858,7 @@ mod tests {
     }
 
     #[test_case("gpt-6-astra", false, Some(997_500); "gpt 6 astra")]
+    #[test_case("gpt-6.1-sol", false, Some(997_500); "gpt 6.1 sol")]
     #[test_case("gpt-5.6-luna", true, Some(258_400); "gpt 5.6 luna")]
     #[test_case("gpt-5.4-mini", false, Some(258_400); "gpt 5.4 mini")]
     #[test_case("gpt-5.3-codex-spark", false, Some(121_600); "gpt 5.3 codex spark")]
@@ -1957,6 +1967,7 @@ mod tests {
     }
 
     #[test_case("gpt-6-astra", ThinkingEffort::Ultra, Some("max"); "astra falls back to max")]
+    #[test_case("gpt-6.1-sol", ThinkingEffort::Ultra, Some("max"); "gpt 6.1 sol falls back to max")]
     #[test_case("gpt-5.6-sol", ThinkingEffort::Ultra, Some("max"); "sol falls back to max (backend rejects ultra over HTTP)")]
     #[test_case("gpt-5.6-luna", ThinkingEffort::Ultra, Some("xhigh"); "luna falls back to xhigh")]
     #[test_case("gpt-5.5", ThinkingEffort::Ultra, Some("xhigh"); "older models fall back to xhigh")]

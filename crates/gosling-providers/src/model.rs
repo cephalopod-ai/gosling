@@ -727,16 +727,18 @@ mod tests {
         }
 
         #[test]
-        fn gpt_6_astra_uses_current_openai_limits() {
+        fn gpt_6_models_use_current_openai_limits() {
             let _guard = env_lock::lock_env([
                 ("GOSLING_MAX_TOKENS", None::<&str>),
                 ("GOSLING_CONTEXT_LIMIT", None::<&str>),
             ]);
 
-            let config = ModelConfig::new("gpt-6-astra").with_canonical_limits("openai");
-            assert_eq!(config.context_limit, Some(1_050_000));
-            assert_eq!(config.max_tokens, Some(128_000));
-            assert_eq!(config.reasoning, Some(true));
+            for model in ["gpt-6-astra", "gpt-6.1-sol"] {
+                let config = ModelConfig::new(model).with_canonical_limits("openai");
+                assert_eq!(config.context_limit, Some(1_050_000));
+                assert_eq!(config.max_tokens, Some(128_000));
+                assert_eq!(config.reasoning, Some(true));
+            }
         }
 
         #[test]
@@ -796,6 +798,7 @@ mod tests {
             assert!(ModelConfig::new("gpt-5").is_openai_reasoning_model());
             assert!(ModelConfig::new("gpt-5-3-codex").is_openai_reasoning_model());
             assert!(ModelConfig::new("gpt-6-astra").is_openai_reasoning_model());
+            assert!(ModelConfig::new("gpt-6.1-sol").is_openai_reasoning_model());
         }
 
         #[test]
