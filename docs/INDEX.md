@@ -33,6 +33,7 @@ for the relationship to cephalopod-ai/gosling.
 - [polish/documentation-stewardship-report.md](polish/documentation-stewardship-report.md) — latest stewardship gate results and remaining risks
 - [polish/test-ledger.md](polish/test-ledger.md) — current validation commands, results, and evidence limits
 - [logs/](logs/) — retained session evidence and logging conventions
+- [logs/session/2026-09-29-gui-install-documentation.md](logs/session/2026-09-29-gui-install-documentation.md) — 1.4.0 macOS arm64 rebuild/reinstall, verified normal GUI/backend launch, artifact hashes, and focused README/manual refresh
 - [logs/session/2026-09-29-remaining-playtest-repairs.md](logs/session/2026-09-29-remaining-playtest-repairs.md) — playtest continuation: isolated Research Library, permission triggers and the eight remaining Desktop findings; source/regression repairs, browser replays and remaining native verification
 - [logs/session/2026-09-27-playtest-repair-campaign.md](logs/session/2026-09-27-playtest-repair-campaign.md) — historical 127-card playtest (211 findings) and repair checkpoint; 89 findings fixed at that checkpoint, every Critical/High fixed except deferred `.goslingignore` enforcement
 - [logs/session/2026-09-20-post-audit-defect-repair.md](logs/session/2026-09-20-post-audit-defect-repair.md) — five-reviewer pass over the post-2026-09-16 commits, `gosling-mcp`, and `ui/text`; ten repairs (quit-time backend sweep, home-containing directory grants, timestamp cache, latest-revision batch cap and isolation, `write_document` hook category, platform-extension keys, two Ink input defects, xlsx column overflow) and the open design-level list
@@ -83,6 +84,8 @@ for the relationship to cephalopod-ai/gosling.
 ## Repo entry points
 
 - [../README.md](../README.md) — project overview
+- [../documentation/docs/release-notes/v1.4.0.md](../documentation/docs/release-notes/v1.4.0.md) — current source and local build notes
+- [../ui/desktop/README.md](../ui/desktop/README.md) — Desktop development, packaging, and installed-bundle checks
 - [../AGENTS.md](../AGENTS.md) — canonical agent operating contract
 - [../BUILDING_LINUX.md](../BUILDING_LINUX.md) — Linux build instructions
 - [../BUILDING_DOCKER.md](../BUILDING_DOCKER.md) — Docker build instructions

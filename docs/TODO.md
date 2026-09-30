@@ -1,5 +1,17 @@
 # TODO
 
+## 2026-09-29 local GUI reinstall
+
+- [x] Rebuild and install the 1.4.0 macOS arm64 Desktop bundle from `b69804da5`, retain a rollback
+      copy, and verify signatures, backend/resource hashes, and normal GUI/backend launch.
+- [~] **PKG-GSL-002** — The September 13 Keychain startup blocker did not recur in the September 29
+      installed-app launch. Navigation, conversation, composer, and Outputs rendered. Clean shutdown
+      and a fresh-profile launch were not checked, so the install gate remains partially verified.
+
+See the [install and documentation record](logs/session/2026-09-29-gui-install-documentation.md).
+The G210/G213/G215/G216 native scenario exits below remain open; a normal launch does not exercise
+their permission, fault, recovery, or notification assertions.
+
 ## 2026-09-29 Desktop playtest repairs
 
 - [~] **GSL-PT-20260927-G213** — Repaired startup fault diagnostics and idle disconnect/reconnect
@@ -951,20 +963,22 @@ end to end, unless the operator explicitly accepts a narrower development-only e
 - [~] This candidate was superseded without publication. Its remaining release gates carry forward
       to the current source candidate rather than authorizing a historical tag.
 
-## v1.2.5 release readiness — 2026-09-13
+## v1.2.5 release readiness — historical, gates carried forward
 
 - [x] Align workspace, lockfile, Desktop package, README, release notes, and installation guidance
       to the v1.2.5 source candidate.
 - [x] **PKG-GSL-001** — rebuild the local arm64 release CLI and Desktop package, verify matching
       hashes/version metadata and the local ad-hoc signature, retain rollback copies, and install
       both artifacts.
-- [ ] **PKG-GSL-002** — resolve or safely bypass the operator-environment macOS Keychain startup
-      wait, then prove the installed app creates a renderer/backend window and quits cleanly. Both
-      normal and fresh-profile launches blocked in `SecItemCopyMatching` on 2026-09-13.
+- [~] **PKG-GSL-002** — both normal and fresh-profile launches blocked in `SecItemCopyMatching`
+      on 2026-09-13. Normal 1.4.0 launch passed on September 29; clean shutdown and fresh-profile
+      verification remain open. See the current install entry above.
 - [ ] Complete every remaining source, documentation, distributable signing/notarization,
       checksum, scenario, updater, clean-install, and GitHub-readiness gate in
       `RELEASE_CHECKLIST.md`.
-- [ ] Tag, publish, verify, and announce `v1.2.5` only after every release gate is complete.
+- [ ] The release owner must select, tag, publish, verify, and announce the current candidate only
+      after every release gate is complete. Source is now 1.4.0; this historical entry does not
+      authorize publishing the superseded 1.2.5 candidate.
 
 ## Documentation and CI repair follow-up — 2026-08-27
 

@@ -1,5 +1,26 @@
 # Documentation stewardship report
 
+## Focused refresh — 2026-09-29
+
+The current 1.4.0 source and verified local macOS arm64 build are reflected in the root/Desktop
+READMEs, installation/update manuals, affected Desktop guides, release notes, and navigation.
+The [session record](../logs/session/2026-09-29-gui-install-documentation.md) owns the file inventory,
+source evidence, validation results, and scoped gate dispositions for this refresh.
+
+Normal installed GUI/backend launch passed. PKG-GSL-002 now needs verification of clean shutdown
+and fresh-profile startup rather than repeating the old Keychain blocker as a current observation.
+Native fault/recovery/picker/notification scenarios and release publication gates remain open.
+The focused active mirror retains 21 rows; no full backlog re-audit, log move, architecture change,
+or Giles compliance promotion occurred. The earlier full stewardship report follows unchanged.
+
+Validation passed: the full documentation build exported 174 pages, all 16 documentation tests
+and typecheck passed, local links/anchors and seven rendered pages passed, and formatting,
+whitespace, and unchanged governance markers were checked. Runtime/native verification gaps
+remain separate from this completed documentation refresh. Changes are commit-ready; no commit,
+push, or deployment was requested or performed.
+
+## Historical full pass — 2026-08-27
+
 Date: 2026-08-27
 
 ## Gate results

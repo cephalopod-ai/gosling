@@ -601,6 +601,14 @@ When set, gosling creates `config/`, `data/`, and `state/` subdirectories under 
 
 Useful for isolating test environments, running multiple configurations, or CI/CD pipelines.
 
+In Desktop, `GOSLING_PATH_ROOT` also places the default Research Library at
+`<root>/Gosling Research Library`. An explicitly selected Research Library remains authoritative;
+check that setting before testing with disposable files. This does not isolate Electron's own
+settings, browser storage, or process registry. The repository's `just run-ui-playwright` recipe
+pairs the backend root with `GOSLING_PLAYWRIGHT_USER_DATA_DIR` under `ENABLE_PLAYWRIGHT=true` to
+isolate those Desktop files as well. Use an absolute root to avoid ambiguous recovery when a
+session's working directory differs from the backend's launch directory.
+
 Some things stay shared with the rest of your machine:
 - **System keyring.** Secrets in the OS keyring use the service name `gosling` for every root, so roots with the keyring enabled read and write the same keychain items. Set `GOSLING_DISABLE_KEYRING` (or `GOSLING_DISABLE_KEYRING: true` in the root's `config/config.yaml`) to keep that root's secrets in `<root>/config/secrets.yaml` instead.
 - **Your project.** Project files such as `AGENTS.md`, `.goslinghints`, `.agents/skills/`, `.agents/agents/`, and `.agents/checks/` come from the working directory.

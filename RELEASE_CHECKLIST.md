@@ -1,13 +1,17 @@
 # gosling Release Checklist
 
 This is a maintainer-owned publish gate. Documentation preparation does not check
-any item automatically. The current candidate is `v1.2.5`; preserve published
+any item automatically. The current source baseline is `v1.4.0`; preserve published
 historical tags rather than rewriting them.
+
+The [September 29 local install](docs/logs/session/2026-09-29-gui-install-documentation.md#gui-build-and-install-evidence)
+passed arm64 packaging, ad-hoc signature/hash checks, and normal GUI/backend launch. It does not
+complete the signed-release, clean-account, shutdown, recovery, or updater gates below.
 
 ## Version and source identity
 
 - [ ] The release commit is reviewed, immutable for the tag, and based on the intended `main` revision.
-- [ ] `Cargo.toml`, workspace entries in `Cargo.lock`, `ui/desktop/package.json`, packaged app metadata, About, and `gosling --version` all report `1.2.5`.
+- [ ] `Cargo.toml`, workspace entries in `Cargo.lock`, `ui/desktop/package.json`, packaged app metadata, About, and `gosling --version` all report `1.4.0`.
 - [ ] The ACP schema and generated TypeScript SDK match the release source. They do not carry the app version; the deleted Desktop OpenAPI schema is not recreated or staged.
 - [ ] `README.md`, `RELEASE.md`, and the candidate release notes match the final release scope.
 - [ ] Contributor and goose upstream attribution remain intact.
@@ -15,11 +19,11 @@ historical tags rather than rewriting them.
 
 ## Source validation
 
-- [ ] `cargo fmt --all -- --check` passes on the final `v1.2.5` tree.
-- [ ] `cargo clippy --all-targets -- -D warnings` passes on the final `v1.2.5` tree.
-- [ ] The complete Rust workspace test suite passes on the final `v1.2.5` tree.
-- [ ] `cd ui/desktop && pnpm run typecheck` passes on the final `v1.2.5` tree.
-- [ ] `cd ui/desktop && pnpm test` passes on the final `v1.2.5` tree.
+- [ ] `cargo fmt --all -- --check` passes on the final `v1.4.0` tree.
+- [ ] `cargo clippy --all-targets -- -D warnings` passes on the final `v1.4.0` tree.
+- [ ] The complete Rust workspace test suite passes on the final `v1.4.0` tree.
+- [ ] `cd ui/desktop && pnpm run typecheck` passes on the final `v1.4.0` tree.
+- [ ] `cd ui/desktop && pnpm test` passes on the final `v1.4.0` tree.
 - [ ] The documentation build, test, and typecheck commands pass from `documentation/` on the final candidate.
 - [ ] Provider-managed sessions do not receive a gosling-owned compaction countdown; the known per-turn context-injection regression is repaired or explicitly blocks publication.
 - [ ] Release workflow integrity, lockfile integrity, and archive/checksum verification pass.

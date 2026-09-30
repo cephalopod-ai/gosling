@@ -52,14 +52,39 @@ This error occurs when the input provided to gosling exceeds the maximum token l
 
 ### Misleading Compaction Countdown with Provider-Managed Sessions
 
-The v1.2.5 source candidate can inject a `~…k tokens remaining` line into a session whose connected
-CLI or provider owns context compaction. The value uses last-request token usage, including cache
-reads, so it can turn negative or move up and down. It is not a reliable remaining-context budget
-and does not mean that the session must be abandoned.
+Older builds could inject a `~…k tokens remaining` line even when a connected CLI or provider owned
+context compaction. The source repair recorded September 15 suppresses that line for
+provider-managed contexts and is included in the 1.4.0 local build. If you see it on an older
+installation, [update gosling](/docs/guides/updating-gosling) and verify both the GUI and its backend.
+Let the connected provider manage compaction; a low or negative historical countdown is not a
+reason by itself to abandon a session.
 
-Let the connected provider perform its normal compaction. Do not start a new session solely because
-this countdown is low or negative. Suppressing the gosling-owned countdown when context ownership
-belongs to the provider remains an open v1.2.5 release blocker.
+---
+
+### Desktop Backend Connection
+
+The Desktop startup dialog distinguishes these backend failures:
+
+| Message category | Check |
+|---|---|
+| Authentication rejected | The backend secret and access rules; this is separate from your model provider's API key. |
+| TLS negotiation failed | The HTTPS URL, server certificate, and configured certificate fingerprint. |
+| Unexpected HTTP response | The backend base URL, server health, and ACP server version. |
+| Backend did not respond | Whether the server is running and reachable at the configured URL and port. |
+
+If an established connection closes, **Connection interrupted** appears even while no prompt is
+running. Choose **Reconnect** after restoring the server. The control stays visible and disabled
+while the attempt runs; reconnecting does not itself send a new prompt. Detection of a silent
+connection stall without a socket-close event is not established by the current replay evidence.
+
+Use **Settings → App → External Backend (ACP)** for a separately managed backend. Enter its base
+URL before `/acp`; changes apply to new windows, and a restart updates existing windows. See
+[Running a Separate Local gosling Server](/docs/guides/remote-gosling-server).
+
+Preview tabs, workspace filters, and composer history are separated by backend. Switching servers
+can therefore show different UI state even when both servers have the same session ID. Unknown
+legacy state is not automatically assigned to the new backend. This is not a deletion of the
+server's saved sessions.
 
 ---
 
@@ -158,7 +183,11 @@ See [Keychain/Keyring Errors](#keychainkeyring-errors) for more details on keyri
 
 ### Uninstall gosling or Remove Cached Data
 
-You may need to uninstall gosling or clear existing data before re-installing. gosling stores data in different locations depending on your operating system. Secrets, such as API keys, are stored in the system keychain/keyring by default (or in `secrets.yaml` when file-based secret storage is in use).
+An ordinary reinstall replaces the app without clearing user data; follow
+[Updating gosling](/docs/guides/updating-gosling). The removal steps below are a deliberate data
+reset, not a prerequisite for reinstalling. Back up anything you want to keep before removing
+configuration, conversations, or credentials. Secrets use the system keychain/keyring by default,
+or plaintext `secrets.yaml` when file-based storage is in use.
 
 #### macOS
 

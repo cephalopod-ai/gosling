@@ -14,14 +14,18 @@ import LinuxDesktopInstallButtons from '@site/src/components/LinuxDesktopInstall
 The gosling CLI and desktop apps are under active and continuous development. To get the newest features and fixes, you should periodically update your gosling client using the following instructions.
 
 :::info Check the version you receive
-The current source/local-build version is `v1.2.2` as of 2026-09-08; see the
-[build notes](../release-notes/v1.2.2.md). Published channels may carry an earlier
+The current source/local-build version is `v1.4.0` as of 2026-09-29; see the
+[build notes](../release-notes/v1.4.0.md). Published channels may carry an earlier
 version until their release artifacts are uploaded. Read the notes for the
 [published release](https://github.com/cephalopod-ai/gosling/releases/latest), then
 run `gosling --version` for the CLI and check **Help > About** in Desktop after updating.
 :::
 
 gosling uses its own config, data, session database, keyring service, deep-link scheme, and app identity. Updating gosling must not overwrite or migrate an installed goose application implicitly.
+
+Desktop includes its own backend binary. Replacing the GUI does not update the standalone CLI on
+your `PATH`, and updating that CLI does not replace the backend inside the GUI. Verify each one
+separately. An ordinary update does not require deleting sessions, configuration, or credentials.
 
 <Tabs>
   <TabItem value="mac" label="macOS" default>
@@ -33,9 +37,10 @@ gosling uses its own config, data, session database, keyring service, deep-link 
         
         **To manually download and install updates:**
         1. <MacDesktopInstallButtons/>
-        2. Unzip the downloaded zip file
-        3. Drag the extracted `Gosling.app` file to the `Applications` folder to overwrite your current version
-        4. Launch gosling Desktop
+        2. Finish or cancel active work, then quit gosling Desktop completely
+        3. Unzip the download and retain a copy of the previous app for rollback
+        4. Drag the extracted `Gosling.app` file to the `Applications` folder to replace the app bundle
+        5. Launch gosling Desktop and verify **Help > About** and that the chat interface loads
 
       </TabItem>
       <TabItem value="cli" label="gosling CLI">
@@ -172,6 +177,24 @@ gosling uses its own config, data, session database, keyring service, deep-link 
     </Tabs>
   </TabItem>
 </Tabs>
+
+## Reinstalling a local macOS build
+
+Build from the repository root with the [Desktop build guide](https://github.com/cephalopod-ai/gosling/blob/main/ui/desktop/README.md#local-macos-arm64-package).
+The `just package-ui` recipe rebuilds both the Rust backend and GUI and produces
+`ui/desktop/out/Gosling-darwin-arm64/Gosling.app`. It does not install that bundle automatically.
+
+1. Verify the packaged bundle and embedded backend using the checks in the build guide.
+2. Finish or cancel active work and quit every gosling window before replacing the installed app.
+3. Move the old `/Applications/Gosling.app` to a backup location, then copy the new app into
+   `/Applications`. Preserve your existing configuration, credentials, sessions, and Research Library.
+4. Open the installed app. Check the version and confirm the navigation, chat composer, and Outputs
+   pane render. A successful version command alone does not establish that the GUI started.
+
+If replacement fails before launch, restore the saved app bundle. An app-bundle backup does not
+back up or roll back user data; keep a separate data backup before an upgrade that changes storage.
+The September 29 reinstall verified normal launch on macOS arm64, with the prior app retained.
+Clean shutdown, recovery scenarios, notarization, and updater behavior were separate, unrun checks.
 
 :::info Updating in CI/CD
 If you're running gosling in CI or other non-interactive environments, pin a specific version with `GOSLING_VERSION` for reproducible installs. See [CI/CD Environments](/docs/tutorials/cicd) for a complete example and usage details.

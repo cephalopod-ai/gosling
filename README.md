@@ -66,12 +66,17 @@ gosling also provides Desktop workspace credential profiles and a session **Outp
 inventory. In `v1.2.2`, **Hide repository files** hides files within confirmed repository directories. See [Workspaces and Outputs](documentation/docs/guides/workspaces.md#product-outputs-and-exports)
 for extension settings, previews, and filter behavior.
 
-The repository now declares version `1.3.0`. The current source adds **Website Logins** under
+Version `1.3.0` introduced **Website Logins** under
 **Settings → Credentials**: the agent receives a named placeholder instead of the password, while
 gosling checks the destination origin, substitutes the secret only for the approved tool call, and
 redacts it from returned tool content. Folder-specific permission prompts can also grant access for
 the current session or add a durable trusted folder. See the [v1.3.0 source notes](documentation/docs/release-notes/v1.3.0.md)
 and [Website logins manual](documentation/docs/guides/website-logins.md).
+
+The current source and verified local macOS arm64 build are `1.4.0`. The latest Desktop repairs
+add clearer backend failures and reconnect guidance, keep UI state with its backend, correct image
+preview switching and composer focus, tighten startup folder grants, and clarify credential storage
+and completion notices. See the [v1.4.0 source and build notes](documentation/docs/release-notes/v1.4.0.md).
 
 `v1.2.3` adds file timestamps, workspace unread-chat indicators, output contributor/revision history,
 and a separate **Copy contents** action for complete text documents. It also fixes modal layering
@@ -171,26 +176,21 @@ The Rust core owns agent execution, provider contracts, permissions, session per
 
 ## Release validation status
 
-The current validation reference is the
-[2026-09-13 live playtest](docs/cloud/2026-09-13-live-all-scenarios-playtest.md): 55 pass, 31
-partial, 7 fail, 12 blocked, and 22 not executed across all 127 scenario cards. The later
-[consolidated audit repair](docs/cloud/2026-09-13-consolidated-audit-repair.md) reconciled that run
-with an independent dataflow audit: 13 findings were repaired, four remain explicit design or
-evidence decisions, and one was rejected under ADR-0018. Focused live replays and broad source
-regressions passed. A local arm64 Desktop package was rebuilt, ad-hoc signed, hash-verified, and
-installed on 2026-09-13, but its UI launch remained blocked in a macOS Keychain lookup before a
-renderer or backend appeared. The complete 127-card suite and distributable signed/notarized,
-updater, and clean-machine matrix were not rerun. Host-enforced planning, Context History, and the
-Recall Brief action landed after that playtest, so they carry their own focused automated evidence
-rather than live 127-card coverage.
+The latest full campaign is the [2026-09-27 playtest](docs/cloud/2026-09-27-live-all-scenarios-playtest.md):
+65 pass, 8 partial, 47 fail, 3 blocked, and 4 pending across 127 cards before the subsequent repairs.
+Those historical card outcomes have not been replaced by a new full replay. The
+[September 29 Desktop continuation](docs/logs/session/2026-09-29-remaining-playtest-repairs.md#resumed-desktop-backend-repairs)
+repaired the eight remaining actionable Desktop findings and passed **211 test files / 1,628 tests**,
+typecheck, ESLint, i18n checks, and focused reconnect, backend-isolation, and image/SVG browser replays.
 
-Current source version: `1.3.0`. See the
-[v1.3.0 source notes](documentation/docs/release-notes/v1.3.0.md) for website logins,
-folder-scoped approvals, provider metadata updates, and handoff reliability improvements. The
-version declared in source does not by itself prove that signed artifacts or a GitHub release were
-published. Confirm artifact availability on the release page; local packaging and installation do
-not complete the maintainer-owned signing, clean-machine, or publication gates in the
-[release checklist](RELEASE_CHECKLIST.md).
+A local **1.4.0 macOS arm64** package was rebuilt, ad-hoc signed, hash-verified, installed, and
+successfully launched on September 29. The installed backend and chat interface were observed;
+the September 13 Keychain startup wait did not recur in this launch. See the
+[install record](docs/logs/session/2026-09-29-gui-install-documentation.md#gui-build-and-install-evidence).
+Native fault dialogs, crash/recovery, folder-picker handoff, notification delivery, clean shutdown,
+and the distributable signing/notarization, updater, and clean-machine matrix still need their
+separate checks. Source and local-install evidence do not establish publication; confirm download
+availability separately and follow the [release checklist](RELEASE_CHECKLIST.md).
 
 ## Known limits
 
@@ -201,7 +201,7 @@ not complete the maintainer-owned signing, clean-machine, or publication gates i
 
 ## Get started
 
-Install a published build from the [latest GitHub release](https://github.com/cephalopod-ai/gosling/releases/latest), or follow the [installation manual](documentation/docs/getting-started/installation.md). After installation, confirm the artifact you received:
+Install a published build from the [latest GitHub release](https://github.com/cephalopod-ai/gosling/releases/latest), or follow the [installation manual](documentation/docs/getting-started/installation.md). Confirm Desktop in **Help > About**. Check a separately installed CLI with:
 
 ```bash
 gosling --version
@@ -214,6 +214,11 @@ source bin/activate-hermit
 cargo build --release          # CLI
 just run-ui                    # desktop app
 ```
+
+Run these from the repository root. `just run-ui` rebuilds the embedded backend and opens the
+development GUI. For a local installable macOS bundle, use the
+[Desktop packaging guide](ui/desktop/README.md#local-macos-arm64-package); updating the GUI does
+not replace a separately installed CLI.
 
 See [BUILDING_LINUX.md](BUILDING_LINUX.md), [BUILDING_DOCKER.md](BUILDING_DOCKER.md), and [ui/desktop/README.md](ui/desktop/README.md) for platform-specific instructions.
 
@@ -234,7 +239,7 @@ for configuration, trust, and removal guidance.
 ## Quick links
 
 - [Documentation index](documentation/INDEX.md) - user manuals, architecture, publishing, and stewardship
-- [v1.3.0 source notes](documentation/docs/release-notes/v1.3.0.md), [v1.2.5 source-candidate notes](documentation/docs/release-notes/v1.2.5.md), and [release-note archive](documentation/docs/release-notes/)
+- [v1.4.0 source and build notes](documentation/docs/release-notes/v1.4.0.md), [v1.3.0 source notes](documentation/docs/release-notes/v1.3.0.md), and [release-note archive](documentation/docs/release-notes/)
 - [Website logins](documentation/docs/guides/website-logins.md)
 - [Release process](RELEASE.md) and [release checklist](RELEASE_CHECKLIST.md)
 - [Context History and compaction](documentation/docs/guides/sessions/smart-context-management.md#context-history) and [CLI commands](documentation/docs/guides/gosling-cli-commands.md)

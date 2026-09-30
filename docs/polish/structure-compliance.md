@@ -2,6 +2,12 @@
 
 Date: 2026-08-27
 
+Focused 2026-09-29 addendum: the README/manual/install refresh preserves the existing documentation
+trees and flat session-log convention. The new dated log is indexed and explicitly re-admitted by
+`.gitignore`; the 1.4.0 note uses the existing release-notes directory. No Tier B/C changes or
+historical log moves were made. The earlier Giles advisory conflict remains unresolved. See the
+[refresh record](../logs/session/2026-09-29-gui-install-documentation.md).
+
 Governing authority is the repository-declared layout in `AGENTS.md` and
 `docs/INDEX.md`. Giles is present but explicitly advisory until a fresh scan or
 promotion, so its alternative monthly-bucket layout was not imposed.

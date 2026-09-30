@@ -4,19 +4,21 @@ gosling releases are built and published by GitHub Actions from version tags. Pr
 
 ## Current release target
 
-The current source candidate is **v1.2.5**; see the
-[candidate notes](documentation/docs/release-notes/v1.2.5.md). It includes the
-2026-09-13 [consolidated audit repairs](docs/cloud/2026-09-13-consolidated-audit-repair.md) and has
-not been tagged or published. A local package or installation is validation evidence only; it is
-not a published release artifact.
+The current source baseline is **v1.4.0**; see the
+[source and build notes](documentation/docs/release-notes/v1.4.0.md). The September 29 Desktop
+repairs and local macOS arm64 rebuild, reinstall, and normal launch have recorded evidence.
+Publication status was not checked during that local task. A local package or installation is
+validation evidence only; it is not a published release artifact. The release owner must confirm
+the target and final source before tagging.
 Release versions increment the single-digit
 patch component and carry at 9: `v1.2.1` through `v1.2.9`, then `v1.3.0`, and
 `v1.9.9` carries to `v2.0.0`.
 
-The latest GitHub release is named `v1.2.4` but is attached to
-`release_v1.2.4`. A separate annotated `v1.2.4` tag identifies the same source
-commit and has no release object. Preserve both tags. The `v1.2.5` release path
-should use the canonical `v1.2.5` tag expected by `release.yml`.
+The September 9 release readback recorded a GitHub release named `v1.2.4` attached to
+`release_v1.2.4`, with a separate annotated `v1.2.4` tag identifying the same source commit.
+Preserve both historical tags; this dated observation is not a current release listing. A 1.4.0
+release should use the canonical `v1.4.0` tag expected by `release.yml`, after checking that it is
+available and every release gate has passed.
 
 Two candidate versions, `1.1.0` and `1.2.0`, were prepared in the source
 manifests but never tagged or published. `v1.2.1` supersedes both. The
@@ -64,8 +66,8 @@ Use the exact reviewed release commit. Replace `<release-commit>` only after the
 checklist is complete:
 
 ```bash
-git tag -a v1.2.5 <release-commit> -m "gosling v1.2.5"
-git push origin v1.2.5
+git tag -a v1.4.0 <release-commit> -m "gosling v1.4.0"
+git push origin v1.4.0
 ```
 
 Do not move or recreate a published tag to repair an artifact. Fix forward with a new patch version.

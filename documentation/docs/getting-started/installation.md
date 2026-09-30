@@ -14,8 +14,8 @@ import { PanelLeft } from 'lucide-react';
 # Install gosling
 
 :::info Source and download versions
-As of 2026-09-13, the current source candidate is `v1.2.5`; see the
-[candidate notes](../release-notes/v1.2.5.md). A local build or installation does not publish
+As of 2026-09-29, the current source and verified local macOS arm64 build are `v1.4.0`; see the
+[source and build notes](../release-notes/v1.4.0.md). A local build or installation does not publish
 download assets. Check the [published release](https://github.com/cephalopod-ai/gosling/releases/latest),
 the downloaded artifact, and the installed version before assuming a feature is available.
 :::
@@ -28,20 +28,27 @@ gosling --version
 
 For Desktop, verify **Help > About** and the downloaded artifact's operating-system and architecture label. On Apple Silicon, use the arm64 macOS artifact and complete the signed/notarized Gatekeeper check before treating the installation as release-valid.
 
+The September 29 local build passed packaging, ad-hoc signature checks, installation, and normal
+GUI/backend launch. Windows, Linux, Intel macOS, clean-account installs, and published downloads
+were not exercised in that run. For contributor builds and local macOS packaging, use the
+[Desktop build guide](https://github.com/cephalopod-ai/gosling/blob/main/ui/desktop/README.md).
+For replacement of an existing app without clearing its data, see
+[Updating gosling](/docs/guides/updating-gosling#reinstalling-a-local-macos-build).
+
 <Tabs>
   <TabItem value="mac" label="macOS" default>
     Choose to install the Desktop and/or CLI version of gosling:
 
     <Tabs groupId="interface">
       <TabItem value="ui" label="gosling Desktop" default>
-        Install gosling Desktop directly from the browser or with [Homebrew](https://brew.sh/).
+        Install gosling Desktop from a published download.
 
         <h3 style={{ marginTop: '1rem' }}>Option 1: Install via Download</h3>
         <MacDesktopInstallButtons/>
 
         <div style={{ marginTop: '1rem' }}>
           1. Unzip the downloaded zip file.
-          2. Run the executable file to launch the gosling Desktop application.
+          2. Move `Gosling.app` to the `Applications` folder, then open it.
 
           :::tip Updating gosling
           It's best to periodically [update gosling](/docs/guides/updating-gosling).
@@ -62,7 +69,7 @@ For Desktop, verify **Help > About** and the downloaded artifact's operating-sys
         </div>
       </TabItem>
       <TabItem value="cli" label="gosling CLI">
-        Install gosling directly from the browser or with [Homebrew](https://brew.sh/).
+        Install the CLI with the download script below.
 
         <h3 style={{ marginTop: '1rem' }}>Option 1: Install via Download script</h3>
         Run the following command to install the latest version of gosling on macOS:

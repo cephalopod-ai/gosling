@@ -2,7 +2,7 @@
 title: Workspaces
 sidebar_position: 31
 sidebar_label: Workspaces
-description: Create repeatable folders, output destinations, and secure provider profiles for gosling Desktop sessions
+description: Create repeatable folders, output destinations, and provider credential profiles for gosling Desktop sessions
 ---
 
 # Workspaces
@@ -18,7 +18,7 @@ A workspace is a repeatable environment for new chats. It can define:
 - additional source or reference folders with read-only or read/write guidance;
 - named product output folders for documents, spreadsheets, presentations, images, video, code,
   data, exports, or other deliverables;
-- a secure credential-profile binding;
+- a credential-profile binding;
 - optional default provider and model identifiers.
 
 gosling creates a usable `Default` workspace automatically. Existing sessions remain valid and do
@@ -113,9 +113,12 @@ After save, gosling displays only metadata and status. It never sends the stored
 Desktop renderer. Editing a profile shows `Configured — enter a replacement` instead of the old
 value. Canceling, succeeding, or failing clears secret form values.
 
-Credential values use gosling's existing OS keyring by default. If the keyring is unavailable,
-gosling uses its existing owner-protected `secrets.yaml` fallback. Workspace metadata stores only a
-profile UUID and configured-field metadata, using internal secure identifiers shaped like
+Credential values use the backend's configured storage: the OS keyring by default, or an
+owner-protected plaintext `secrets.yaml` when keyring storage is disabled or unavailable. File
+permissions restrict access to that fallback; they do not encrypt it. With an external backend,
+storage belongs to that backend rather than the Desktop machine. See
+[Configuration Files](/docs/guides/config-files) for locations and configuration. Workspace metadata
+stores only a profile UUID and configured-field metadata, using internal identifiers shaped like
 `workspace-credential::<profile UUID>::<field>`.
 
 Each provider you have set up on the Providers screen also appears as a read-only
@@ -182,7 +185,9 @@ and `.rtf` — open in the system viewer when selected, from the Outputs and Lib
 links, and tool results alike. gosling reports a file it cannot hand to any application rather
 than failing silently. Switching chats immediately switches the list. Missing
 files that match the display filters remain named after restart or resume so they cannot be confused
-with another file that shares a basename.
+with another file that shares a basename. When switching preview tabs, the pane waits for the
+selected file's content rather than displaying an image from the previously selected tab. PNG and
+SVG previews, including SVG text outside ASCII, follow the same selection boundary.
 
 Inventory and preview are intentionally separate. Discovering an output does not open the pane, read
 the file, create an output directory, or grant access. Selecting an item opens a session-scoped preview
@@ -196,13 +201,17 @@ really resolves to: a symbolic link inside the workspace whose target lies outsi
 roots and outputs is listed but not granted, so its preview and **Copy contents** report it as
 outside the approved roots.
 
-The session's own working directories — the primary folder and any additional folder, including
-one chosen from the recent list rather than the picker — are readable in the pane without a
-separate approval. Folders you approve through a picker stay approved for later windows and later
-launches. A grant covering the home directory or a filesystem root is never retained, and one
-recorded by an earlier version is dropped the next time gosling starts, since it would subsume
-every other approval. Approvals granted for a session's folders are not written to disk; they are
-re-established when the session loads.
+The session's specific working directories — the primary folder and additional folders, including
+one chosen from the recent list — are readable in the pane without a separate approval. Ordinary
+startup does not grant access to your entire home folder, a parent containing it, or a filesystem
+root. To open a file outside the approved scope, select it through the native picker.
+
+Specific folders you approve through a picker stay approved for later windows and launches. An
+explicit native selection of home, its parent, or a filesystem root grants access only to the
+selecting window; it is never retained. Broad grants recorded by earlier versions are removed on
+startup. Session-folder grants are re-established when the session loads rather than written to
+the durable picker-grant list. An optional Git branch probe outside the approved scope leaves the
+branch unavailable without changing access or interrupting the chat.
 
 ### Filter repository files
 
@@ -312,8 +321,13 @@ If the current store is malformed, gosling preserves it as an owner-only
 `workspaces.corrupt-<id>.json` recovery file and creates a usable `Default` workspace. It never reads
 or modifies an upstream Goose workspace, config directory, or keyring namespace.
 
-Only harmless UI preferences—the section's collapsed state and chat filter—use browser local
-storage. Workspace definitions and credentials do not.
+Workspace definitions and credentials do not live in browser local storage. Desktop does save UI
+state there, including the workspace chat filter, preview tabs, and composer history. Backend-owned
+state is separated by the local store or external backend URL, so matching session IDs on different
+backends do not share it. Changing external-backend settings applies to new windows; restart to
+update existing windows. Old state whose backend ownership is unknown is preserved without being
+automatically restored into the new backend. Crash recovery also checks backend ownership before
+resuming a session.
 
 ## Troubleshooting
 
@@ -329,10 +343,10 @@ storage. Workspace definitions and credentials do not.
 ## Current limits
 
 - Workspace definitions are local only; cloud/team synchronization is not included.
-- Extension defaults are not stored per workspace because current extension configuration is not
-  cleanly session-scoped.
+- Workspace extension defaults seed new chats; they do not change already-running sessions or
+  override a globally disabled extension.
 - An independent third-party tool that writes directly to an explicit absolute path does not pass
-  through the Desktop save/download router; Gosling-owned export, Outputs, and download surfaces do.
+  through the Desktop save/download router; gosling-owned export, Outputs, and download surfaces do.
 - Credential network testing is reported as unsupported unless a provider exposes a safe validation
   hook; configured status currently proves required secure values are present, not that a remote
   provider accepted them.

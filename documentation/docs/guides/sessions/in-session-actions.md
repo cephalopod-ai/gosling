@@ -15,6 +15,17 @@ In gosling Desktop, `Enter` inserts a new line in the prompt. Send the prompt wi
 
 While gosling is responding, the keyboard shortcut follows the [message queue](#queue-messages) behavior below. Clicking `Send` instead immediately [interrupts the current task](#interrupt-task).
 
+Switching chats keeps each chat's draft and queue. Only the visible composer takes automatic focus;
+an inactive chat does not take focus when its draft changes.
+
+## Background Response Notifications
+
+Enable **Task completion notifications** under **Settings → App** and allow notifications in your
+operating system to receive a notice when a response finishes while no gosling window is focused.
+The notice means the response ended normally, not that every requested task succeeded; read the
+response and check its outputs. Failed, cancelled, refused, and limit-stopped turns do not generate
+this completion notice. Active planning and plans awaiting review use their separate review flow.
+
 ## Edit Message
 
 Edit your previously sent messages to refine conversations, correct course, or try different approaches.

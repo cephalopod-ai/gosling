@@ -16,6 +16,7 @@ This file is the durable map for the repository's documentation surface.
 
 - [quickstart](./docs/quickstart.md)
 - [getting started](./docs/getting-started/)
+- [installation](./docs/getting-started/installation.md) and [updating/reinstalling](./docs/guides/updating-gosling.md)
 - [guides](./docs/guides/)
 - [creating plans](./docs/guides/context-engineering/creating-plans.md)
 - [session handoff](./docs/guides/sessions/session-handoff.md)
@@ -34,6 +35,7 @@ This file is the durable map for the repository's documentation surface.
 - [v1.2.4 release notes](./docs/release-notes/v1.2.4.md)
 - [v1.2.5 source-candidate notes](./docs/release-notes/v1.2.5.md)
 - [v1.3.0 source notes](./docs/release-notes/v1.3.0.md)
+- [v1.4.0 source and local build notes](./docs/release-notes/v1.4.0.md)
 - [release-note archive](./docs/release-notes/)
 - [tutorials](./docs/tutorials/)
 - [experimental](./docs/experimental/)
@@ -54,6 +56,9 @@ This file is the durable map for the repository's documentation surface.
 - [current engineering TODO](../docs/TODO.md)
 - [documentation TODO](./TODO.md)
 - [test ledger](../docs/polish/test-ledger.md)
+- [2026-09-29 GUI reinstall and documentation refresh](../docs/logs/session/2026-09-29-gui-install-documentation.md)
+- [2026-09-29 Desktop repair continuation](../docs/logs/session/2026-09-29-remaining-playtest-repairs.md)
+- [2026-09-27 live 127-card playtest](../docs/cloud/2026-09-27-live-all-scenarios-playtest.md)
 - [2026-09-13 live 127-card playtest](../docs/cloud/2026-09-13-live-all-scenarios-playtest.md)
 - [2026-09-13 consolidated audit repair](../docs/cloud/2026-09-13-consolidated-audit-repair.md)
 - [110-card live playtest and repair closure](../docs/cloud/2026-07-20-live-all-scenarios-playtest.md)
@@ -67,7 +72,7 @@ This file is the durable map for the repository's documentation surface.
 - Root `README.md` is the product entry point; `documentation/README.md` is the docs-site build and publishing guide.
 - Session-share deep links are documented with the `gosling://` scheme only. Legacy `goose://` share-link compatibility is not part of the current docs contract.
 - Durable documentation governance artifacts currently live in this directory as point-in-time records rather than a full log/archive program.
-- The repository currently declares version `1.3.0`; see the [v1.3.0 source notes](./docs/release-notes/v1.3.0.md). Source-version changes and local packaging do not establish publication or signed-artifact availability; verify those separately through the release page and [release process](../RELEASE.md).
+- The repository and verified September 29 local macOS arm64 build report `1.4.0`; see the [source and build notes](./docs/release-notes/v1.4.0.md). Normal installed GUI/backend launch passed. Source-version changes and local ad-hoc packaging do not establish publication, notarization, or updater readiness; verify those separately through the release page and [release process](../RELEASE.md).
 
 ## follow-up disposition
 
