@@ -4,6 +4,7 @@
 //! in-process uniffi bindings, keeping a single source of truth for Gosling's
 //! custom `_gosling/*` JSON-RPC methods.
 
+pub mod authentication;
 pub mod custom_notifications;
 pub mod custom_requests;
 pub mod recall_brief;

@@ -47,3 +47,29 @@ explicit follow-up adapter and a guard test.
 
 No new dependency; Tokio task-local support and existing Config storage are reused.
 
+## 2026-10-02 amendment: explicit authentication bindings
+
+The operator authorized provider and MCP authentication controls for an existing chat and for
+workspace defaults. Workspace edits affect new chats only. A chat can explicitly disconnect its
+provider without adopting global credentials; `authentication.v1` records that policy in host-owned
+session extension data. A compatible replacement provider is constructed before one atomic SQL
+update changes its profile reference and authentication policy, then the live provider is swapped.
+ACP mutations reserve the session operation gate and reject an active run.
+
+MCP bindings hold an opaque account UUID, destination fingerprint, declared secret-field names,
+and disconnection state. Values remain in Config secure storage under
+`scoped-authentication::<account UUID>::<field>`. OAuth uses an account-and-URI-derived store
+through initialization, browser sign-in, refresh, and clearing failed tokens. The caller's selected
+store is retained throughout the flow. Editing credentials allocates a fresh account reference so
+a workspace or sibling chat's existing account is not overwritten. Disconnect retains credentials,
+stops the selected client, and blocks restoration; a failed replacement also stops the old client.
+Changed extension destinations and missing scoped secrets fail closed. Unconfigured legacy
+bindings continue to use their existing app defaults.
+
+Scoped MCP sign-ins require gosling-managed tools. Active session MCP mutations are rejected for
+providers that manage connections outside gosling; those providers can inherit workspace
+disconnection defaults when a new chat starts. A shell's provisioning remains authoritative.
+Import strips host authentication references, and workspace exports omit scoped account references.
+Retained, unreferenced account secrets are not automatically garbage-collected. These source changes
+have focused Desktop and typecheck coverage; live OAuth/native-provider replay remains a separate
+validation step.

@@ -24,6 +24,14 @@ vi.mock('./WorkspaceEditorDialog', () => ({
     open ? <div role="dialog">Workspace editor</div> : null,
 }));
 
+vi.mock('./AuthenticationDialog', () => ({
+  AuthenticationDialog: ({ target }: { target: { id: string; type: string } }) => (
+    <div role="dialog">
+      Authentication for {target.type} {target.id}
+    </div>
+  ),
+}));
+
 const workspace = {
   id: 'workspace-1',
   schemaVersion: 1,
@@ -110,6 +118,19 @@ describe('WorkspaceSidebarSection', () => {
     expect(
       screen.getByLabelText('Workspace needs attention: Relink the primary folder')
     ).toBeInTheDocument();
+  });
+
+  it('opens authentication controls for the selected workspace', async () => {
+    const user = userEvent.setup();
+    render(<WorkspaceSidebarSection onNewChat={startNewChat} unreadWorkspaceIds={new Set()} />, {
+      wrapper: IntlTestWrapper,
+    });
+    await user.click(screen.getByRole('button', { name: 'Actions for Annual Meeting' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Authentication' }));
+    expect(screen.getByRole('dialog')).toHaveTextContent(
+      'Authentication for workspace workspace-1'
+    );
+    expect(startNewChat).not.toHaveBeenCalled();
   });
 
   it('shows the unread chat icon on the matching workspace even when another workspace is selected', () => {

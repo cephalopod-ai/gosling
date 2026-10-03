@@ -53,7 +53,7 @@ use crate::builtin_extension::get_builtin_extension;
 use crate::config::extensions::name_to_key;
 use crate::config::search_path::SearchPaths;
 use crate::config::{get_all_extensions, AdapterRegistration, CodeExecutionRuntime, Config};
-use crate::oauth::{oauth_flow, GoslingCredentialStore, StaticOAuthClientConfig};
+use crate::oauth::{GoslingCredentialStore, StaticOAuthClientConfig};
 use crate::prompt_template;
 use crate::subprocess::{configure_shell_owned_subprocess, configure_subprocess};
 use rmcp::model::{
@@ -74,7 +74,9 @@ mod environment;
 mod lifecycle;
 
 pub use environment::extension_secret_available;
+pub(crate) use environment::merge_authenticated_environments;
 use environment::resolve_static_oauth_client;
+pub(crate) use environment::resolve_static_oauth_client as authentication_static_client;
 pub(crate) use environment::{merge_environments, substitute_env_vars};
 
 use child_process::{
@@ -405,19 +407,70 @@ impl ExtensionManager {
             .await
             .map_err(|error| ExtensionError::ConfigError(error.to_string()))?;
         let sanitized_name = config.key();
+        let effective_working_dir = working_dir
+            .clone()
+            .or_else(|| std::env::var("GOSLING_WORKING_DIR").ok().map(PathBuf::from))
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+        let authentication = match session_id {
+            Some(id) => {
+                let session = self
+                    .context
+                    .session_manager
+                    .get_session(id, false)
+                    .await
+                    .map_err(|error| ExtensionError::ConfigError(error.to_string()))?;
+                crate::authentication::session_authentication(&session.extension_data)
+                    .map_err(|error| ExtensionError::ConfigError(error.to_string()))?
+            }
+            None => crate::authentication::AuthenticationSettings::default(),
+        };
+        let auth_binding = authentication
+            .extensions
+            .get(&sanitized_name)
+            .cloned()
+            .unwrap_or_default();
+        if auth_binding.disconnected {
+            self.runtime_blocked_extensions
+                .lock()
+                .await
+                .insert(sanitized_name.clone(), config.clone());
+            return Err(ExtensionError::ConfigError(format!(
+                "Authentication is disconnected for extension '{}' in this chat",
+                config.name()
+            )));
+        }
+        if auth_binding.credential_namespace.is_some()
+            && auth_binding.destination.as_deref()
+                != Some(
+                    crate::authentication::extension_destination(&config, &effective_working_dir)
+                        .map_err(|error| ExtensionError::ConfigError(error.to_string()))?
+                        .as_str(),
+                )
+        {
+            return Err(ExtensionError::ConfigError(
+                "The extension destination changed. Reconnect authentication for this chat.".into(),
+            ));
+        }
 
         // Compare both the unresolved config (to detect structural changes like
         // migrating from plaintext envs to env_keys) and the resolved config (to
         // detect secret rotation where only keyring values changed). Only skip
         // restart if both match.
-        let resolved_config = config.clone().resolve(Config::global()).await?;
+        let resolved_config = if auth_binding.credential_namespace.is_some() {
+            config.clone()
+        } else {
+            config.clone().resolve(Config::global()).await?
+        };
 
         let _lifecycle_guard = self.lifecycle_lock.lock().await;
 
         let stopped_docker_extension = {
             let mut extensions = self.extensions.lock().await;
             if let Some(existing) = extensions.get(&sanitized_name) {
-                if existing.config == config && existing.resolved_config == resolved_config {
+                if auth_binding.credential_namespace.is_none()
+                    && existing.config == config
+                    && existing.resolved_config == resolved_config
+                {
                     return Ok(());
                 }
                 tracing::debug!(
@@ -446,11 +499,6 @@ impl ExtensionManager {
         let mut temp_dir = None;
         let mut docker_process = None;
 
-        let effective_working_dir = working_dir
-            .clone()
-            .or_else(|| std::env::var("GOSLING_WORKING_DIR").ok().map(PathBuf::from))
-            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
-
         let client: Box<dyn McpClientTrait> = match &config {
             ExtensionConfig::Sse { .. } => {
                 return Err(ExtensionError::ConfigError(
@@ -471,7 +519,14 @@ impl ExtensionManager {
                 ..
             } => {
                 let config = Config::global();
-                let all_envs = merge_environments(envs, env_keys, &sanitized_name, config).await?;
+                let all_envs = environment::merge_authenticated_environments(
+                    envs,
+                    env_keys,
+                    &sanitized_name,
+                    config,
+                    &auth_binding,
+                )
+                .await?;
                 let resolved_uri = substitute_env_vars(uri, &all_envs);
                 let resolved_headers = headers
                     .iter()
@@ -494,7 +549,10 @@ impl ExtensionManager {
                     name,
                     resolved_socket.as_deref(),
                     static_oauth_client,
-                    Box::new(GoslingCredentialStore::new(name.to_string())),
+                    Box::new(match &auth_binding.credential_namespace {
+                        Some(namespace) => GoslingCredentialStore::scoped(namespace, &resolved_uri),
+                        None => GoslingCredentialStore::new(name.to_string()),
+                    }),
                     self.provider.clone(),
                     self.client_name.clone(),
                     self.mcp_client_capabilities(),
@@ -614,8 +672,14 @@ impl ExtensionManager {
                 ..
             } => {
                 let config = Config::global();
-                let mut all_envs =
-                    merge_environments(envs, env_keys, &sanitized_name, config).await?;
+                let mut all_envs = environment::merge_authenticated_environments(
+                    envs,
+                    env_keys,
+                    &sanitized_name,
+                    config,
+                    &auth_binding,
+                )
+                .await?;
                 let process_working_dir = cwd
                     .as_deref()
                     .map(|raw| {

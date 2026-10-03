@@ -2408,3 +2408,46 @@ fn initialize_errors_without_a_transport_cause_keep_their_message() {
         "failed to initialize MCP client: connection closed: initialize response"
     );
 }
+
+#[tokio::test]
+async fn scoped_extension_secrets_override_globals_and_missing_values_fail_closed() {
+    let directory = tempdir().unwrap();
+    let config = Config::new_with_file_secrets(
+        directory.path().join("config.yaml"),
+        directory.path().join("secrets.yaml"),
+    )
+    .unwrap();
+    config.set_secret("TOKEN", &"global-fixture").unwrap();
+    let namespace = uuid::Uuid::now_v7().to_string();
+    let binding = crate::authentication::ExtensionAuthentication {
+        credential_namespace: Some(namespace.clone()),
+        secret_fields: vec!["TOKEN".into()],
+        destination: Some("a".repeat(64)),
+        ..Default::default()
+    };
+    let fields = vec!["TOKEN".into()];
+    assert!(merge_authenticated_environments(
+        &Envs::default(),
+        &fields,
+        "example",
+        &config,
+        &binding
+    )
+    .await
+    .is_err());
+    config
+        .set_secret(
+            &crate::authentication::secret_key(&namespace, "TOKEN"),
+            &"scoped-fixture",
+        )
+        .unwrap();
+    let merged =
+        merge_authenticated_environments(&Envs::default(), &fields, "example", &config, &binding)
+            .await
+            .unwrap();
+    assert_eq!(merged["TOKEN"], "scoped-fixture");
+    assert_eq!(
+        config.get_secret::<String>("TOKEN").unwrap(),
+        "global-fixture"
+    );
+}

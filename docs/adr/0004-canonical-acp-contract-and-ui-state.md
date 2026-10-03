@@ -38,3 +38,9 @@ the backend.
 
 No new dependency; existing ACP macros, schema generator, React context, and typed IPC are reused.
 
+The 2026-10-02 authentication amendment adds canonical DTOs in
+`gosling-sdk-types::authentication` and typed read/provider-set/extension-set ACP requests.
+Desktop uses the generated SDK through a thin authentication adapter. Workspace mutations
+refresh `WorkspaceContext` and broadcast invalidation; chat mutations update the selected chat's
+profile/disconnection display without replacing conversation state. Ordinary workspace edits
+preserve saved authentication metadata. Secret values are write-only request fields.

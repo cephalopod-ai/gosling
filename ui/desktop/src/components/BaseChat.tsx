@@ -900,6 +900,8 @@ export default function BaseChat({
                     compact
                   />
                   <CredentialProfileSelector
+                    session={session}
+                    onSessionChange={updateSession}
                     credentialProfileId={session?.credential_profile_id}
                     credentialProfileName={session?.credential_profile_name}
                     surface="header"

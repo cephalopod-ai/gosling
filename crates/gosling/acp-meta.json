@@ -686,6 +686,21 @@
       "responseType": "CredentialProfileListResponse_unstable"
     },
     {
+      "method": "_gosling/unstable/authentication/read",
+      "requestType": "AuthenticationReadRequest_unstable",
+      "responseType": "AuthenticationResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/authentication/provider/set",
+      "requestType": "AuthenticationProviderSetRequest_unstable",
+      "responseType": "AuthenticationResponse_unstable"
+    },
+    {
+      "method": "_gosling/unstable/authentication/extension/set",
+      "requestType": "AuthenticationExtensionSetRequest_unstable",
+      "responseType": "AuthenticationResponse_unstable"
+    },
+    {
       "method": "_gosling/unstable/credential-profiles/create",
       "requestType": "CredentialProfileCreateRequest_unstable",
       "responseType": "CredentialProfileResponse_unstable"

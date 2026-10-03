@@ -131,6 +131,8 @@ export default function SessionInfoSummary({
         <div className="flex items-center justify-between gap-3">
           <span className="text-xs text-text-secondary">Credential</span>
           <CredentialProfileSelector
+            session={session}
+            onSessionChange={onSessionChange}
             credentialProfileId={session.credential_profile_id}
             credentialProfileName={session.credential_profile_name}
             surface="header"

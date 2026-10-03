@@ -9316,6 +9316,13 @@
             "null"
           ]
         },
+        "authentication": {
+          "$ref": "#/$defs/AuthenticationSettings",
+          "default": {
+            "providerDisconnected": false,
+            "extensions": {}
+          }
+        },
         "defaultProvider": {
           "type": [
             "string",
@@ -9498,6 +9505,51 @@
         "service"
       ]
     },
+    "AuthenticationSettings": {
+      "type": "object",
+      "properties": {
+        "providerDisconnected": {
+          "type": "boolean",
+          "default": false
+        },
+        "extensions": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/ExtensionAuthentication"
+          },
+          "default": {}
+        }
+      },
+      "description": "Saved references and disconnection policy; never contains credential values."
+    },
+    "ExtensionAuthentication": {
+      "type": "object",
+      "properties": {
+        "disconnected": {
+          "type": "boolean",
+          "default": false
+        },
+        "credentialNamespace": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "destination": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "secretFields": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
+      }
+    },
     "WorkspaceValidationReport": {
       "type": "object",
       "properties": {
@@ -9640,6 +9692,13 @@
             "string",
             "null"
           ]
+        },
+        "authentication": {
+          "$ref": "#/$defs/AuthenticationSettings",
+          "default": {
+            "providerDisconnected": false,
+            "extensions": {}
+          }
         },
         "defaultProvider": {
           "type": [
@@ -9956,6 +10015,186 @@
         "distribution_template"
       ]
     },
+    "AuthenticationReadRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "$ref": "#/$defs/AuthenticationTarget"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/authentication/read"
+    },
+    "AuthenticationTarget": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "session"
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "workspace"
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ]
+        }
+      ]
+    },
+    "AuthenticationResponse_unstable": {
+      "type": "object",
+      "properties": {
+        "settings": {
+          "$ref": "#/$defs/AuthenticationSettings"
+        },
+        "providerId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "credentialProfileId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "credentialProfileName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "extensions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AuthenticationExtensionSummary"
+          }
+        }
+      },
+      "required": [
+        "settings",
+        "extensions"
+      ],
+      "x-side": "agent"
+    },
+    "AuthenticationExtensionSummary": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "supportsOauth": {
+          "type": "boolean"
+        },
+        "secretFields": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "key",
+        "name",
+        "supportsOauth",
+        "secretFields"
+      ]
+    },
+    "AuthenticationProviderSetRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "$ref": "#/$defs/AuthenticationTarget"
+        },
+        "profileId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "description": "A null profile disconnects the target; it does not select global credentials.",
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/authentication/provider/set"
+    },
+    "AuthenticationExtensionSetRequest_unstable": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "$ref": "#/$defs/AuthenticationTarget"
+        },
+        "name": {
+          "type": "string"
+        },
+        "connected": {
+          "type": "boolean"
+        },
+        "signIn": {
+          "type": "boolean",
+          "default": false
+        },
+        "secretFields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CredentialFieldUpdate"
+          },
+          "default": []
+        }
+      },
+      "required": [
+        "target",
+        "name",
+        "connected"
+      ],
+      "description": "Secret fields are stored securely under a fresh scoped account reference.\nDisconnecting retains the reference and its credentials for reconnection.",
+      "x-side": "agent",
+      "x-method": "_gosling/unstable/authentication/extension/set"
+    },
+    "CredentialFieldUpdate": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "value"
+      ]
+    },
     "CredentialProfileCreateRequest_unstable": {
       "type": "object",
       "properties": {
@@ -9990,21 +10229,6 @@
       ],
       "x-side": "agent",
       "x-method": "_gosling/unstable/credential-profiles/create"
-    },
-    "CredentialFieldUpdate": {
-      "type": "object",
-      "properties": {
-        "key": {
-          "type": "string"
-        },
-        "value": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "key",
-        "value"
-      ]
     },
     "CredentialProfileResponse_unstable": {
       "type": "object",
@@ -11680,6 +11904,33 @@
                 {
                   "allOf": [
                     {
+                      "$ref": "#/$defs/AuthenticationReadRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/authentication/read",
+                  "title": "AuthenticationReadRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/AuthenticationProviderSetRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/authentication/provider/set",
+                  "title": "AuthenticationProviderSetRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/AuthenticationExtensionSetRequest_unstable"
+                    }
+                  ],
+                  "description": "Params for _gosling/unstable/authentication/extension/set",
+                  "title": "AuthenticationExtensionSetRequest_unstable"
+                },
+                {
+                  "allOf": [
+                    {
                       "$ref": "#/$defs/CredentialProfileCreateRequest_unstable"
                     }
                   ],
@@ -12511,6 +12762,14 @@
                         }
                       ],
                       "title": "CredentialProfileListResponse_unstable"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/AuthenticationResponse_unstable"
+                        }
+                      ],
+                      "title": "AuthenticationResponse_unstable"
                     },
                     {
                       "allOf": [

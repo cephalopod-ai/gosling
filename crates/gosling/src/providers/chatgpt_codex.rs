@@ -335,6 +335,9 @@ fn create_codex_request(
                 "name": tool.name,
                 "description": tool.description,
                 "parameters": tool.input_schema,
+                // Responses can otherwise normalize optional MCP fields into
+                // required ones, forcing invented cursors and scope selectors.
+                "strict": false,
             })
         })
         .collect();
@@ -1994,6 +1997,33 @@ mod tests {
         assert_eq!(payload["input"][1]["type"], "message");
         assert_eq!(payload["input"][1]["role"], "developer");
         assert_eq!(payload["input"][1]["content"][0]["text"], "system prompt");
+    }
+
+    #[test_case("gpt-6.1-sol"; "responses")]
+    #[test_case("gpt-5.6-sol"; "responses lite")]
+    fn test_codex_tools_preserve_optional_mcp_arguments(model_name: &str) {
+        let model = ModelConfig::new(model_name);
+        let schema = object!({
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "cursor": {"type": "string", "minLength": 1},
+                "store_id": {"type": "string", "minLength": 1}
+            },
+            "required": ["query"],
+            "additionalProperties": false
+        });
+        let tool = Tool::new("muninn__muninn_recall", "Recall chat ideas", schema.clone());
+        let payload = create_codex_request(&model, "system prompt", &[], &[tool]).unwrap();
+        let tools = if uses_responses_lite(model_name) {
+            &payload["input"][0]["tools"]
+        } else {
+            &payload["tools"]
+        };
+
+        assert_eq!(tools[0]["strict"], json!(false));
+        assert_eq!(tools[0]["parameters"], json!(schema));
+        assert_eq!(tools[0]["parameters"]["required"], json!(["query"]));
     }
 
     #[test]

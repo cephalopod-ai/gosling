@@ -76,6 +76,35 @@ const activeWorkspace = {
 };
 
 describe('WorkspaceEditorDialog', () => {
+  it('preserves scoped authentication while editing unrelated workspace settings', async () => {
+    const user = userEvent.setup();
+    updateWorkspace.mockResolvedValue(activeWorkspace);
+    const authentication = {
+      providerDisconnected: true,
+      extensions: {
+        example: {
+          disconnected: true,
+          credentialNamespace: 'fixture-account-reference',
+          destination: 'a'.repeat(64),
+          secretFields: ['TOKEN'],
+        },
+      },
+    };
+    render(
+      <WorkspaceEditorDialog
+        open
+        workspace={{ ...activeWorkspace, authentication }}
+        onOpenChange={vi.fn()}
+      />,
+      { wrapper: TestWrapper }
+    );
+    await screen.findByRole('option', { name: 'ChatGPT Codex' });
+    await user.click(screen.getByRole('button', { name: 'Save workspace' }));
+    expect(updateWorkspace).toHaveBeenCalledWith(
+      activeWorkspace.id,
+      expect.objectContaining({ authentication })
+    );
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     validateWorkspace.mockResolvedValue({ validForSession: true, issues: [] });

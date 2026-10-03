@@ -4270,5 +4270,14 @@
   },
   "workingDirectoriesMenu.workspaceRememberedHint": {
     "defaultMessage": "Directories added here are saved for this chat and future chats in this workspace. Existing chats keep their pinned folders."
+  },
+  "credentialProfileSelector.changeAuthentication": {
+    "defaultMessage": "Manage chat authentication"
+  },
+  "credentialProfileSelector.disconnected": {
+    "defaultMessage": "Disconnected"
+  },
+  "credentialProfileSelector.sessionExplanation": {
+    "defaultMessage": "Change provider and MCP authentication for this chat. Other chats keep their accounts."
   }
 }

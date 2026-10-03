@@ -5,6 +5,7 @@ pub mod acp;
 pub use gosling_sdk_types::{custom_notifications, custom_requests, session_handoff};
 pub mod action_required_manager;
 pub mod agents;
+pub mod authentication;
 pub mod builtin_extension;
 pub mod checks;
 pub mod config;

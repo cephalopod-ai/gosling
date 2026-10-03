@@ -33,6 +33,8 @@ for the relationship to cephalopod-ai/gosling.
 - [polish/documentation-stewardship-report.md](polish/documentation-stewardship-report.md) — latest stewardship gate results and remaining risks
 - [polish/test-ledger.md](polish/test-ledger.md) — current validation commands, results, and evidence limits
 - [logs/](logs/) — retained session evidence and logging conventions
+- [logs/session/2026-10-02-scoped-authentication.md](logs/session/2026-10-02-scoped-authentication.md) — session/workspace auth controls, future-chat defaults, scoped MCP stores, and validation limits
+- [logs/session/2026-10-02-muninn-recall-tool-schema.md](logs/session/2026-10-02-muninn-recall-tool-schema.md) — ChatGPT tool-schema repair for repeated invented Muninn cursors and scope selectors; source-only validation limits
 - [logs/session/2026-09-29-gui-install-documentation.md](logs/session/2026-09-29-gui-install-documentation.md) — 1.4.0 macOS arm64 rebuild/reinstall, verified normal GUI/backend launch, artifact hashes, and focused README/manual refresh
 - [logs/session/2026-09-29-remaining-playtest-repairs.md](logs/session/2026-09-29-remaining-playtest-repairs.md) — playtest continuation: isolated Research Library, permission triggers and the eight remaining Desktop findings; source/regression repairs, browser replays and remaining native verification
 - [logs/session/2026-09-27-playtest-repair-campaign.md](logs/session/2026-09-27-playtest-repair-campaign.md) — historical 127-card playtest (211 findings) and repair checkpoint; 89 findings fixed at that checkpoint, every Critical/High fixed except deferred `.goslingignore` enforcement

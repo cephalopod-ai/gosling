@@ -142,6 +142,7 @@ pub(super) use prompt_execution::{build_usage_updates_with_limit, resolve_active
 use session_configuration::{
     resolve_default_provider_model_config, resolve_provider_default_model_config,
 };
+mod authentication;
 mod sources;
 mod tool_events;
 mod tool_metadata;

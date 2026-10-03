@@ -18,6 +18,10 @@ import type {
   ApplyCompactionHistoryPolicyResponse_unstable,
   ApproveSessionPlanRequest_unstable,
   ArchiveSessionRequest_unstable,
+  AuthenticationExtensionSetRequest_unstable,
+  AuthenticationProviderSetRequest_unstable,
+  AuthenticationReadRequest_unstable,
+  AuthenticationResponse_unstable,
   CanonicalModelInfoRequest_unstable,
   CanonicalModelInfoResponse_unstable,
   ConfigReadAllRequest_unstable,
@@ -254,6 +258,7 @@ import type {
 } from './types.gen.js';
 import {
   zApplyCompactionHistoryPolicyResponse_unstable,
+  zAuthenticationResponse_unstable,
   zCanonicalModelInfoResponse_unstable,
   zConfigReadAllResponse_unstable,
   zConfigReadResponse_unstable,
@@ -1882,6 +1887,42 @@ export class GoslingExtClient {
     return zCredentialProfileListResponse_unstable.parse(
       raw,
     ) as CredentialProfileListResponse_unstable;
+  }
+
+  async authenticationRead_unstable(
+    params: AuthenticationReadRequest_unstable,
+  ): Promise<AuthenticationResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/authentication/read",
+      params,
+    );
+    return zAuthenticationResponse_unstable.parse(
+      raw,
+    ) as AuthenticationResponse_unstable;
+  }
+
+  async authenticationProviderSet_unstable(
+    params: AuthenticationProviderSetRequest_unstable,
+  ): Promise<AuthenticationResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/authentication/provider/set",
+      params,
+    );
+    return zAuthenticationResponse_unstable.parse(
+      raw,
+    ) as AuthenticationResponse_unstable;
+  }
+
+  async authenticationExtensionSet_unstable(
+    params: AuthenticationExtensionSetRequest_unstable,
+  ): Promise<AuthenticationResponse_unstable> {
+    const raw = await this.conn.extMethod(
+      "_gosling/unstable/authentication/extension/set",
+      params,
+    );
+    return zAuthenticationResponse_unstable.parse(
+      raw,
+    ) as AuthenticationResponse_unstable;
   }
 
   async credentialProfilesCreate_unstable(

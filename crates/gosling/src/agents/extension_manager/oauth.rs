@@ -181,6 +181,7 @@ pub(super) async fn create_streamable_http_client(
         ));
     }
 
+    let credential_store = crate::oauth::SharedCredentialStore::new(credential_store);
     let mut default_headers = HeaderMap::new();
 
     default_headers.insert(reqwest::header::USER_AGENT, GOSLING_USER_AGENT);
@@ -206,10 +207,11 @@ pub(super) async fn create_streamable_http_client(
     // If we have stored OAuth credentials, try refreshing and connecting directly.
     // This avoids the unnecessary 401 → browser re-auth cycle on every new session.
     if credential_store.load().await.is_ok_and(|c| c.is_some()) {
-        match oauth_flow(
+        match crate::oauth::oauth_flow_with_store(
             &uri.to_string(),
             &name.to_string(),
             static_oauth_client.as_ref(),
+            credential_store.clone(),
         )
         .await
         {
@@ -228,7 +230,7 @@ pub(super) async fn create_streamable_http_client(
 
                 if let Err(error) = &auth_result {
                     if clear_credentials_on_post_refresh_auth_failure(
-                        credential_store.as_ref(),
+                        &credential_store,
                         name,
                         error,
                     )
@@ -272,10 +274,11 @@ pub(super) async fn create_streamable_http_client(
         if has_static_authorization_header(headers) {
             return Err(static_credential_rejected(name));
         }
-        match oauth_flow(
+        match crate::oauth::oauth_flow_with_store(
             &uri.to_string(),
             &name.to_string(),
             static_oauth_client.as_ref(),
+            credential_store,
         )
         .await
         {

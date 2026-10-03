@@ -127,6 +127,7 @@ export function workspaceToMutation(workspace: Workspace): WorkspaceMutation {
     defaultModel: workspace.defaultModel,
     defaultThinkingEffort: workspace.defaultThinkingEffort,
     defaultExtensions: workspace.defaultExtensions,
+    authentication: workspace.authentication,
   };
 }
 

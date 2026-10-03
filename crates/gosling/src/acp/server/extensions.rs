@@ -9,6 +9,9 @@ impl GoslingAcpAgent {
         req: AddSessionExtensionRequest,
     ) -> Result<EmptyResponse, agent_client_protocol::Error> {
         let session_id = &req.session_id;
+        let _guard = self
+            .queue_provider_transition(session_id, None, true)
+            .await?;
         let config = gosling_extension_to_config_without_secrets(req.extension)?;
         let agent = self.get_session_agent(&req.session_id).await?;
         agent
@@ -23,6 +26,9 @@ impl GoslingAcpAgent {
         req: RemoveSessionExtensionRequest,
     ) -> Result<EmptyResponse, agent_client_protocol::Error> {
         let session_id = &req.session_id;
+        let _guard = self
+            .queue_provider_transition(session_id, None, true)
+            .await?;
         let agent = self.get_session_agent(&req.session_id).await?;
         agent
             .remove_extension(&req.name, session_id)

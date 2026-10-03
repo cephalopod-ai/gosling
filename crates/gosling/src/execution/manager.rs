@@ -235,7 +235,11 @@ impl AgentManager {
                     session_id, session.provider_name
                 );
                 if let Err(e) = agent.restore_provider_from_session(&session).await {
-                    if session.credential_profile_id.is_some() {
+                    if session.credential_profile_id.is_some()
+                        || !crate::authentication::session_authentication(&session.extension_data)?
+                            .extensions
+                            .is_empty()
+                    {
                         return Err(e);
                     }
                     tracing::warn!(
@@ -248,7 +252,14 @@ impl AgentManager {
             extension_results = agent.load_extensions_from_session(&session).await;
         }
 
-        if agent.provider().await.is_err() {
+        let session = self
+            .agent_config
+            .session_manager
+            .get_session(session_id, false)
+            .await?;
+        let authentication =
+            crate::authentication::session_authentication(&session.extension_data)?;
+        if agent.provider().await.is_err() && !authentication.provider_disconnected {
             if let Some(provider) = &*self.default_provider.read().await {
                 let config = crate::config::Config::global();
                 let model_config = config

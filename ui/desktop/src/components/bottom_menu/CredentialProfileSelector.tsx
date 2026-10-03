@@ -1,5 +1,7 @@
 import { Check, KeyRound, Settings2, TriangleAlert } from 'lucide-react';
 import { useState } from 'react';
+import type { Session } from '../../types/session';
+import { AuthenticationDialog } from '../workspaces/AuthenticationDialog';
 import { useWorkspace } from '../../contexts/WorkspaceContext';
 import { defineMessages, useIntl } from '../../i18n';
 import { CredentialProfileManagerDialog } from '../workspaces/CredentialProfileManagerDialog';
@@ -52,6 +54,19 @@ const i18n = defineMessages({
     defaultMessage:
       'Credentials are pinned when a chat starts. Start a new chat to use another profile.',
   },
+  changeAuthentication: {
+    id: 'credentialProfileSelector.changeAuthentication',
+    defaultMessage: 'Manage chat authentication',
+  },
+  sessionExplanation: {
+    id: 'credentialProfileSelector.sessionExplanation',
+    defaultMessage:
+      'Change provider and MCP authentication for this chat. Other chats keep their accounts.',
+  },
+  disconnected: {
+    id: 'credentialProfileSelector.disconnected',
+    defaultMessage: 'Disconnected',
+  },
   tooltip: {
     id: 'credentialProfileSelector.tooltip',
     defaultMessage: 'Credential for this chat: {profile}',
@@ -59,6 +74,8 @@ const i18n = defineMessages({
 });
 
 interface CredentialProfileSelectorProps {
+  session?: Session;
+  onSessionChange?: (updater: (session: Session) => Session) => void;
   credentialProfileId?: string | null;
   credentialProfileName?: string | null;
   compact?: boolean;
@@ -66,6 +83,8 @@ interface CredentialProfileSelectorProps {
 }
 
 export function CredentialProfileSelector({
+  session,
+  onSessionChange,
   credentialProfileId,
   credentialProfileName,
   compact = false,
@@ -74,10 +93,12 @@ export function CredentialProfileSelector({
   const intl = useIntl();
   const { credentialProfiles } = useWorkspace();
   const [managerOpen, setManagerOpen] = useState(false);
+  const [authenticationOpen, setAuthenticationOpen] = useState(false);
   const currentProfile = credentialProfiles.find((profile) => profile.id === credentialProfileId);
   const savedProfileName = credentialProfileName?.trim() || null;
-  const displayName =
-    currentProfile?.name ?? savedProfileName ?? intl.formatMessage(i18n.appDefault);
+  const displayName = session?.provider_auth_disconnected
+    ? intl.formatMessage(i18n.disconnected)
+    : (currentProfile?.name ?? savedProfileName ?? intl.formatMessage(i18n.appDefault));
   const missingProfile = Boolean(credentialProfileId && !currentProfile);
   const tooltip = intl.formatMessage(i18n.tooltip, { profile: displayName });
 
@@ -121,11 +142,13 @@ export function CredentialProfileSelector({
                 <div className="min-w-0 flex-1">
                   <div className="truncate font-medium">{displayName}</div>
                   <div className="truncate text-xs text-text-secondary">
-                    {currentProfile
-                      ? `${currentProfile.providerOrServiceId} · ${currentProfile.status.replace(/_/g, ' ')}`
-                      : missingProfile
-                        ? intl.formatMessage(i18n.missingProfile)
-                        : intl.formatMessage(i18n.appDefaultDetail)}
+                    {session?.provider_auth_disconnected
+                      ? intl.formatMessage(i18n.disconnected)
+                      : currentProfile
+                        ? `${currentProfile.providerOrServiceId} · ${currentProfile.status.replace(/_/g, ' ')}`
+                        : missingProfile
+                          ? intl.formatMessage(i18n.missingProfile)
+                          : intl.formatMessage(i18n.appDefaultDetail)}
                   </div>
                 </div>
                 {!missingProfile && credentialProfileId && (
@@ -136,10 +159,10 @@ export function CredentialProfileSelector({
                 )}
               </div>
               <p className="px-2 pb-1 text-xs text-text-secondary">
-                {intl.formatMessage(i18n.pinnedExplanation)}
+                {intl.formatMessage(session ? i18n.sessionExplanation : i18n.pinnedExplanation)}
               </p>
 
-              {credentialProfiles.length > 0 && (
+              {!session && credentialProfiles.length > 0 && (
                 <>
                   <DropdownMenuSeparator />
                   <DropdownMenuLabel>
@@ -176,6 +199,12 @@ export function CredentialProfileSelector({
               )}
 
               <DropdownMenuSeparator />
+              {session && (
+                <DropdownMenuItem onSelect={() => setAuthenticationOpen(true)}>
+                  <KeyRound className="size-4" />
+                  {intl.formatMessage(i18n.changeAuthentication)}
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem onSelect={() => setManagerOpen(true)}>
                 <Settings2 className="size-4" />
                 {intl.formatMessage(i18n.manageProfiles)}
@@ -186,6 +215,26 @@ export function CredentialProfileSelector({
         </Tooltip>
       </TooltipProvider>
       <CredentialProfileManagerDialog open={managerOpen} onOpenChange={setManagerOpen} />
+      {session && (
+        <AuthenticationDialog
+          open={authenticationOpen}
+          onOpenChange={setAuthenticationOpen}
+          target={{ type: 'session', id: session.id }}
+          onChanged={(authentication) =>
+            onSessionChange?.((current) =>
+              current.id !== session.id
+                ? current
+                : {
+                    ...current,
+                    credential_profile_id: authentication.credentialProfileId,
+                    credential_profile_name: authentication.credentialProfileName,
+                    provider_auth_disconnected:
+                      authentication.settings.providerDisconnected ?? false,
+                  }
+            )
+          }
+        />
+      )}
     </>
   );
 }

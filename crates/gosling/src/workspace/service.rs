@@ -39,6 +39,7 @@ pub struct PreparedWorkspaceSession {
     pub credential_profile_name: Option<String>,
     pub credential_binding_id: Option<String>,
     pub default_extensions: Option<Vec<String>>,
+    pub authentication: crate::authentication::AuthenticationSettings,
     pub context: WorkspaceSessionContext,
 }
 
@@ -305,6 +306,94 @@ impl WorkspaceService {
         })
     }
 
+    pub async fn set_authentication_provider(
+        &self,
+        workspace_id: &str,
+        profile: Option<&super::CredentialProfile>,
+    ) -> Result<()> {
+        let _guard = self.operation_lock.lock().await;
+        let _transaction = self.store.lock_credential_transaction()?;
+        self.store.mutate(|document| {
+            let workspace = document
+                .workspaces
+                .iter_mut()
+                .find(|item| item.id == workspace_id)
+                .ok_or_else(|| anyhow!("workspace not found"))?;
+            workspace.authentication.provider_disconnected = profile.is_none();
+            for binding in &mut workspace.credential_bindings {
+                binding.is_default = false;
+            }
+            workspace.default_credential_binding_id = None;
+            if let Some(profile) = profile {
+                if workspace
+                    .default_provider
+                    .as_deref()
+                    .is_some_and(|provider| provider != profile.provider_or_service_id)
+                {
+                    bail!("credential profile does not match the workspace provider");
+                }
+                let id = if let Some(binding) =
+                    workspace.credential_bindings.iter_mut().find(|binding| {
+                        binding.target_kind == super::CredentialTargetKind::Provider
+                            && binding.credential_profile_id == profile.id
+                    }) {
+                    binding.is_default = true;
+                    binding.id.clone()
+                } else {
+                    let id = Uuid::now_v7().to_string();
+                    workspace
+                        .credential_bindings
+                        .push(super::CredentialBinding {
+                            id: id.clone(),
+                            label: profile.name.clone(),
+                            credential_profile_id: profile.id.clone(),
+                            target_kind: super::CredentialTargetKind::Provider,
+                            target_id: profile.provider_or_service_id.clone(),
+                            is_default: true,
+                        });
+                    id
+                };
+                workspace.default_credential_binding_id = Some(id);
+                if workspace.default_provider.is_none() {
+                    workspace.default_provider = Some(profile.provider_or_service_id.clone());
+                }
+            }
+            workspace.updated_at = Utc::now().to_rfc3339();
+            Ok(())
+        })
+    }
+
+    pub async fn set_extension_authentication(
+        &self,
+        workspace_id: &str,
+        name: String,
+        binding: crate::authentication::ExtensionAuthentication,
+    ) -> Result<()> {
+        let key = crate::config::extensions::name_to_key(&name);
+        let _guard = self.operation_lock.lock().await;
+        let _transaction = self.store.lock_credential_transaction()?;
+        self.store.mutate(|document| {
+            let workspace = document
+                .workspaces
+                .iter_mut()
+                .find(|item| item.id == workspace_id)
+                .ok_or_else(|| anyhow!("workspace not found"))?;
+            if !binding.disconnected {
+                if let Some(extensions) = &mut workspace.default_extensions {
+                    if !extensions
+                        .iter()
+                        .any(|entry| crate::config::extensions::name_to_key(entry) == key)
+                    {
+                        extensions.push(name.clone());
+                    }
+                }
+            }
+            workspace.authentication.extensions.insert(key, binding);
+            workspace.updated_at = Utc::now().to_rfc3339();
+            Ok(())
+        })
+    }
+
     pub async fn delete(&self, workspace_id: &str) -> Result<(String, String)> {
         let _guard = self.operation_lock.lock().await;
         let _credential_transaction = self.store.lock_credential_transaction()?;
@@ -349,7 +438,14 @@ impl WorkspaceService {
     }
 
     pub fn export(&self, workspace_id: &str) -> Result<String> {
-        let workspace = self.get(workspace_id)?;
+        let mut workspace = self.get(workspace_id)?;
+        for binding in workspace.authentication.extensions.values_mut() {
+            if binding.credential_namespace.take().is_some() {
+                binding.disconnected = true;
+                binding.destination = None;
+                binding.secret_fields.clear();
+            }
+        }
         reject_secret_shaped_value(&serde_json::to_value(&workspace)?)?;
         let mut document = serde_json::to_string_pretty(&workspace)?;
         document.push('\n');
@@ -365,7 +461,14 @@ impl WorkspaceService {
         if imported.schema_version > WORKSPACE_SCHEMA_VERSION {
             bail!("workspace schema is newer than this version of Gosling");
         }
-        let mutation = WorkspaceMutation::from(&imported);
+        let mut mutation = WorkspaceMutation::from(&imported);
+        for binding in mutation.authentication.extensions.values_mut() {
+            if binding.credential_namespace.take().is_some() {
+                binding.disconnected = true;
+                binding.destination = None;
+                binding.secret_fields.clear();
+            }
+        }
         self.create(mutation).await
     }
 
@@ -504,6 +607,11 @@ impl WorkspaceService {
             credential_profile_name: profile.map(|profile| profile.name.clone()),
             credential_binding_id: binding.map(|binding| binding.id.clone()),
             default_extensions: workspace.default_extensions.clone(),
+            authentication: crate::authentication::AuthenticationSettings {
+                provider_disconnected: workspace.authentication.provider_disconnected
+                    && overrides.credential_profile_id.is_none(),
+                extensions: workspace.authentication.extensions.clone(),
+            },
             context: WorkspaceSessionContext {
                 workspace_id: workspace.id.clone(),
                 workspace_name: workspace.name.clone(),
@@ -662,6 +770,7 @@ pub(super) fn workspace_from_mutation(
         product_output_folders: mutation.product_output_folders,
         credential_bindings: mutation.credential_bindings,
         default_credential_binding_id: mutation.default_credential_binding_id,
+        authentication: mutation.authentication,
         default_provider: mutation.default_provider,
         default_model: mutation.default_model,
         default_thinking_effort: mutation.default_thinking_effort,
@@ -684,6 +793,7 @@ fn normalized_extension_names(names: Vec<String>) -> Vec<String> {
 }
 
 pub(super) fn validate_workspace_boundary(mutation: &WorkspaceMutation) -> Result<()> {
+    crate::authentication::validate_settings(&mutation.authentication)?;
     normalized_name(&mutation.name)?;
     if let Some(instructions) = &mutation.instructions {
         if instructions.split_whitespace().count() > MAX_INSTRUCTIONS_WORDS {
@@ -1611,5 +1721,49 @@ mod tests {
             })
             .collect();
         assert!(validate_workspace_boundary(&oversized).is_err());
+    }
+
+    #[tokio::test]
+    async fn auth_changes_persist_for_future_chats_without_mutating_existing_snapshots() {
+        let data = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let store = WorkspaceStore::new(data.path());
+        store.load_or_initialize(root.path()).unwrap();
+        let service = WorkspaceService {
+            store,
+            operation_lock: Mutex::new(()),
+        };
+        let workspace = service.create(mutation(root.path())).await.unwrap();
+        let existing = service.prepare_session(&workspace.id).unwrap();
+        service
+            .set_authentication_provider(&workspace.id, None)
+            .await
+            .unwrap();
+        let binding = crate::authentication::ExtensionAuthentication {
+            disconnected: true,
+            credential_namespace: Some(Uuid::now_v7().to_string()),
+            destination: Some("a".repeat(64)),
+            secret_fields: vec!["TOKEN".into()],
+        };
+        service
+            .set_extension_authentication(&workspace.id, "Example MCP".into(), binding.clone())
+            .await
+            .unwrap();
+        let reopened = WorkspaceService {
+            store: WorkspaceStore::new(data.path()),
+            operation_lock: Mutex::new(()),
+        };
+        let future = reopened.prepare_session(&workspace.id).unwrap();
+        assert!(!existing.authentication.provider_disconnected);
+        assert!(existing.authentication.extensions.is_empty());
+        assert!(future.authentication.provider_disconnected);
+        assert_eq!(future.authentication.extensions["examplemcp"], binding);
+        let export = reopened.export(&workspace.id).unwrap();
+        assert!(!export.contains(binding.credential_namespace.as_ref().unwrap()));
+        let imported = reopened.import(&export).await.unwrap();
+        let imported_binding = &imported.authentication.extensions["examplemcp"];
+        assert!(imported_binding.disconnected);
+        assert!(imported_binding.credential_namespace.is_none());
+        assert!(imported_binding.secret_fields.is_empty());
     }
 }

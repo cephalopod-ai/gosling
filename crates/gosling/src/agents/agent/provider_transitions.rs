@@ -406,6 +406,16 @@ impl Agent {
     ) -> Result<()> {
         let _transition = self.state_transition.lock().await;
         let mode = self.gosling_mode().await;
+        let session = self
+            .config
+            .session_manager
+            .get_session(session_id, false)
+            .await?;
+        if crate::authentication::session_authentication(&session.extension_data)?
+            .provider_disconnected
+        {
+            bail!("Provider authentication is disconnected for this chat. Connect a credential profile to continue.");
+        }
         self.apply_provider_transition(provider, model_config, session_id, mode)
             .await
     }
@@ -562,6 +572,12 @@ impl Agent {
         };
 
         let _transition = self.state_transition.lock().await;
+        let authentication =
+            crate::authentication::session_authentication(&session.extension_data)?;
+        if authentication.provider_disconnected {
+            *self.provider.lock().await = None;
+            return Ok(false);
+        }
         let config = Config::global();
 
         let provider_name = session
@@ -610,14 +626,19 @@ impl Agent {
         let (provider, active_provider_name, active_model_config, provider_changed) =
             match primary_result {
                 Some(Ok(p)) => (p, provider_name.clone(), model_config, false),
-                Some(Err(error)) if session.credential_profile_id.is_some() => {
+                Some(Err(error))
+                    if session.credential_profile_id.is_some()
+                        || !authentication.extensions.is_empty() =>
+                {
                     return Err(anyhow!(
                         "Pinned credential profile is unavailable for provider '{}': {}",
                         provider_name,
                         error
                     ));
                 }
-                None if session.credential_profile_id.is_some() => {
+                None if session.credential_profile_id.is_some()
+                    || !authentication.extensions.is_empty() =>
+                {
                     return Err(anyhow!(
                         "Pinned provider '{}' is no longer available",
                         provider_name
@@ -902,10 +923,26 @@ impl Agent {
         &self,
         session: &Session,
         provider_name: &str,
-        extensions: Vec<ExtensionConfig>,
+        mut extensions: Vec<ExtensionConfig>,
     ) -> Result<Arc<dyn Provider>> {
         self.validate_session_provider_scope(session, provider_name)?;
         let entry = crate::providers::get_from_registry(provider_name).await?;
+        let authentication =
+            crate::authentication::session_authentication(&session.extension_data)?;
+        extensions.retain(|extension| {
+            !authentication
+                .extensions
+                .get(&extension.key())
+                .is_some_and(|binding| binding.disconnected)
+        });
+        if entry.executes_tools_outside_gosling()
+            && authentication
+                .extensions
+                .values()
+                .any(|binding| !binding.disconnected && binding.credential_namespace.is_some())
+        {
+            bail!("Scoped MCP sign-ins require a provider whose tools run through gosling. Disconnect the scoped extension or choose a gosling-managed provider.");
+        }
         let extensions = if entry.executes_tools_outside_gosling() {
             let executable = std::env::current_exe()
                 .context("Could not locate Gosling for the session history bridge")?;
@@ -949,6 +986,11 @@ impl Agent {
         session: &Session,
         provider_name: &str,
     ) -> Result<()> {
+        if crate::authentication::session_authentication(&session.extension_data)?
+            .provider_disconnected
+        {
+            bail!("Provider authentication is disconnected for this chat. Connect a credential profile to continue.");
+        }
         let Some(profile_id) = session.credential_profile_id.as_deref() else {
             return Ok(());
         };
@@ -967,6 +1009,59 @@ impl Agent {
                 resolution.provider
             );
         }
+        Ok(())
+    }
+
+    /// Rebinds the current provider account without changing the model or workspace.
+    /// A failed provider setup leaves both the saved selection and live account intact.
+    pub async fn set_session_credential_profile(
+        &self,
+        session_id: &str,
+        profile: Option<crate::workspace::CredentialProfile>,
+    ) -> Result<()> {
+        let _transition = self.state_transition.lock().await;
+        let mut session = self
+            .config
+            .session_manager
+            .get_session(session_id, false)
+            .await?;
+        let mut settings = crate::authentication::session_authentication(&session.extension_data)?;
+        settings.provider_disconnected = profile.is_none();
+        session.credential_profile_id = profile.as_ref().map(|profile| profile.id.clone());
+        session.credential_profile_name = profile.as_ref().map(|profile| profile.name.clone());
+        session.extension_data.extension_states.insert(
+            crate::authentication::SESSION_AUTHENTICATION_KEY.into(),
+            serde_json::to_value(&settings)?,
+        );
+        let candidate = if profile.is_some() {
+            let provider_name = session
+                .provider_name
+                .as_deref()
+                .ok_or_else(|| anyhow!("Session provider is missing"))?;
+            let extensions = EnabledExtensionsState::extensions_or_default(
+                Some(&session.extension_data),
+                Config::global(),
+            );
+            let candidate = self
+                .create_provider_with_session_scope(&session, provider_name, extensions)
+                .await?;
+            candidate
+                .update_mode(session_id, session.gosling_mode)
+                .await?;
+            Some(candidate)
+        } else {
+            None
+        };
+        self.config
+            .session_manager
+            .set_authentication_profile(
+                session_id,
+                session.credential_profile_id.as_deref(),
+                session.credential_profile_name.as_deref(),
+                &settings,
+            )
+            .await?;
+        *self.provider.lock().await = candidate;
         Ok(())
     }
 }

@@ -1,6 +1,30 @@
 use rmcp::transport::auth::{AuthError, CredentialStore, StoredCredentials};
 
 use crate::config::Config;
+use std::sync::Arc;
+
+/// Keeps refresh and browser authorization on the same caller-selected store.
+#[derive(Clone)]
+pub struct SharedCredentialStore(Arc<dyn CredentialStore>);
+
+impl SharedCredentialStore {
+    pub fn new(store: Box<dyn CredentialStore>) -> Self {
+        Self(Arc::from(store))
+    }
+}
+
+#[async_trait::async_trait]
+impl CredentialStore for SharedCredentialStore {
+    async fn load(&self) -> Result<Option<StoredCredentials>, AuthError> {
+        self.0.load().await
+    }
+    async fn save(&self, credentials: StoredCredentials) -> Result<(), AuthError> {
+        self.0.save(credentials).await
+    }
+    async fn clear(&self) -> Result<(), AuthError> {
+        self.0.clear().await
+    }
+}
 
 const SECRET_KEY_PREFIX: &str = "oauth_creds_";
 
@@ -17,6 +41,13 @@ pub struct GoslingCredentialStore {
 impl GoslingCredentialStore {
     pub fn new(name: String) -> Self {
         Self { name }
+    }
+
+    pub fn scoped(namespace: &str, uri: &str) -> Self {
+        Self::new(format!(
+            "scoped_{namespace}_{}",
+            blake3::hash(uri.as_bytes()).to_hex()
+        ))
     }
 
     pub(crate) fn is_secret_key(key: &str) -> bool {
@@ -56,5 +87,50 @@ impl CredentialStore for GoslingCredentialStore {
         config
             .delete_secret(&key)
             .map_err(|e| AuthError::InternalError(format!("Failed to clear credentials: {}", e)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scoped_oauth_keys_isolate_accounts_and_destinations_from_legacy_keys() {
+        let first =
+            GoslingCredentialStore::scoped("account-a", "https://example.test/mcp").secret_key();
+        assert_ne!(
+            first,
+            GoslingCredentialStore::scoped("account-b", "https://example.test/mcp").secret_key()
+        );
+        assert_ne!(
+            first,
+            GoslingCredentialStore::scoped("account-a", "https://other.test/mcp").secret_key()
+        );
+        assert_ne!(
+            first,
+            GoslingCredentialStore::new("example".into()).secret_key()
+        );
+        assert!(GoslingCredentialStore::is_secret_key(&first));
+        assert!(!first.contains("https://"));
+    }
+
+    #[tokio::test]
+    async fn shared_store_clones_use_the_same_selected_account() {
+        let store = SharedCredentialStore::new(Box::new(
+            rmcp::transport::auth::InMemoryCredentialStore::new(),
+        ));
+        let copy = store.clone();
+        store
+            .save(StoredCredentials::new(
+                "fixture-client".into(),
+                None,
+                vec![],
+                None,
+            ))
+            .await
+            .unwrap();
+        assert!(copy.load().await.unwrap().is_some());
+        copy.clear().await.unwrap();
+        assert!(store.load().await.unwrap().is_none());
     }
 }

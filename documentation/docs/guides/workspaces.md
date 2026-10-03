@@ -52,6 +52,24 @@ available profiles or open **Manage credential profiles**. In an existing chat, 
 pinned profile and keeps a deleted or unavailable profile visible as a relink problem; it does not
 silently switch the session to another account.
 
+Choose **Manage chat authentication** from that control to connect a compatible provider profile,
+disconnect the provider, or manage MCP credentials for that chat. To set defaults for future chats,
+choose **Authentication** from a workspace's actions menu. Workspace changes leave existing chats
+with their saved authentication. Wait for an active run to finish before changing chat auth.
+
+**Disconnect provider** pauses provider access for the selected target. It keeps the saved profile
+available and does not fall back to app credentials. Choose a profile and **Connect profile** to
+restore access. MCP entries offer password fields for declared credentials, **Sign in** when OAuth
+is available, and **Reconnect**/**Disconnect**. Disconnect stops that target's extension and retains
+its account for reconnection. Replacing credentials creates a separate saved account reference,
+so other chats keep their account. Imported workspace metadata requires reconnecting scoped MCP
+accounts locally.
+
+Providers that manage their own MCP connections outside gosling cannot change MCP authentication
+in an active chat through these controls. Use a provider with gosling-managed tools for scoped MCP
+sign-ins; workspace disconnection defaults still apply when starting a new chat with an external
+tool provider. Authentication in provisioned shells continues to follow the shell's policy.
+
 ## Create a workspace
 
 1. Select **Add workspace** next to the Workspaces heading.
@@ -313,6 +331,7 @@ Open the actions menu next to a workspace to:
 
 - open/switch or filter its chats;
 - edit or duplicate it;
+- set provider and MCP authentication for future chats;
 - reveal its primary folder;
 - export non-secret metadata;
 - delete it.
@@ -354,7 +373,8 @@ resuming a session.
 
 - Workspace definitions are local only; cloud/team synchronization is not included.
 - Workspace extension defaults seed new chats; they do not change already-running sessions or
-  override a globally disabled extension.
+  override a globally disabled extension. Explicitly reconnecting an extension through workspace
+  authentication selects it for future chats, including an installed extension disabled globally.
 - An independent third-party tool that writes directly to an explicit absolute path does not pass
   through the Desktop save/download router; gosling-owned export, Outputs, and download surfaces do.
 - Credential network testing is reported as unsupported unless a provider exposes a safe validation

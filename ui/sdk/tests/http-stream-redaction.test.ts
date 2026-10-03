@@ -39,3 +39,19 @@ test("ACP debug output never logs the original credential value", () => {
   assert.equal(calls.length, 1);
   assert.equal(JSON.stringify(calls).includes(sentinel), false);
 });
+
+test("scoped MCP credential mutations redact secrets and preserve their target", () => {
+  const request = {
+    method: "_gosling/unstable/authentication/extension/set",
+    params: {
+      target: { type: "workspace", id: "workspace-fixture" },
+      name: "example",
+      connected: true,
+      secretFields: [{ key: "TOKEN", value: sentinel }],
+    },
+  };
+  const encoded = JSON.stringify(redactAcpDebugPayload(request));
+  assert.equal(encoded.includes(sentinel), false);
+  assert.equal(encoded.includes("workspace-fixture"), true);
+  assert.equal(request.params.secretFields[0].value, sentinel);
+});

@@ -14,6 +14,21 @@ vi.mock('../workspaces/CredentialProfileManagerDialog', () => ({
     open ? <div role="dialog">Credential profile manager</div> : null,
 }));
 
+vi.mock('../workspaces/AuthenticationDialog', () => ({
+  AuthenticationDialog: ({
+    open,
+    target,
+  }: {
+    open: boolean;
+    target: { id: string; type: string };
+  }) =>
+    open ? (
+      <div role="dialog">
+        Authentication for {target.type} {target.id}
+      </div>
+    ) : null,
+}));
+
 const profiles = [
   {
     id: 'profile-1',
@@ -150,5 +165,49 @@ describe('CredentialProfileSelector', () => {
 
     expect(screen.getAllByText('Retired OpenAI')).toHaveLength(2);
     expect(screen.getByText('Profile unavailable')).toBeInTheDocument();
+  });
+
+  it('opens authentication controls for the active chat', async () => {
+    const user = userEvent.setup();
+    render(
+      <CredentialProfileSelector
+        session={{
+          id: 'chat-current',
+          name: 'Chat',
+          created_at: '',
+          updated_at: '',
+          message_count: 0,
+          extension_data: {},
+          working_dir: '/tmp',
+        }}
+        credentialProfileId="profile-1"
+      />,
+      { wrapper: IntlTestWrapper }
+    );
+    await user.click(screen.getByRole('button', { name: 'Credential for this chat: Team OpenAI' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Manage chat authentication' }));
+    expect(screen.getByRole('dialog')).toHaveTextContent('Authentication for session chat-current');
+  });
+
+  it('labels a disconnected chat without falling back to the app default label', () => {
+    render(
+      <CredentialProfileSelector
+        session={{
+          id: 'disconnected',
+          name: 'Chat',
+          created_at: '',
+          updated_at: '',
+          message_count: 0,
+          extension_data: {},
+          working_dir: '/tmp',
+          provider_auth_disconnected: true,
+        }}
+      />,
+      { wrapper: IntlTestWrapper }
+    );
+    expect(
+      screen.getByRole('button', { name: 'Credential for this chat: Disconnected' })
+    ).toBeInTheDocument();
+    expect(screen.queryByText('App default')).not.toBeInTheDocument();
   });
 });

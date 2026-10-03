@@ -1,6 +1,6 @@
 mod persist;
 
-pub use persist::GoslingCredentialStore;
+pub use persist::{GoslingCredentialStore, SharedCredentialStore};
 
 use axum::extract::{Query, State};
 use axum::response::Html;
@@ -106,11 +106,31 @@ pub async fn oauth_flow(
     name: &String,
     static_client: Option<&StaticOAuthClientConfig>,
 ) -> Result<AuthorizationManager, anyhow::Error> {
+    oauth_flow_with_store(
+        mcp_server_url,
+        name,
+        static_client,
+        SharedCredentialStore::new(Box::new(GoslingCredentialStore::new(name.clone()))),
+    )
+    .await
+}
+
+pub async fn oauth_flow_with_store(
+    mcp_server_url: &String,
+    name: &String,
+    static_client: Option<&StaticOAuthClientConfig>,
+    credential_store: SharedCredentialStore,
+) -> Result<AuthorizationManager, anyhow::Error> {
     if let Some(static_client) = static_client {
-        return oauth_flow_with_static_client(mcp_server_url, name, static_client).await;
+        return oauth_flow_with_static_client(
+            mcp_server_url,
+            name,
+            static_client,
+            credential_store,
+        )
+        .await;
     }
 
-    let credential_store = GoslingCredentialStore::new(name.clone());
     let mut auth_manager = AuthorizationManager::new(mcp_server_url).await?;
     auth_manager.set_credential_store(credential_store.clone());
 
@@ -236,8 +256,8 @@ async fn oauth_flow_with_static_client(
     mcp_server_url: &str,
     name: &str,
     static_client: &StaticOAuthClientConfig,
+    credential_store: SharedCredentialStore,
 ) -> Result<AuthorizationManager, anyhow::Error> {
-    let credential_store = GoslingCredentialStore::new(name.to_string());
     let mut auth_manager = AuthorizationManager::new(mcp_server_url).await?;
     auth_manager.set_credential_store(credential_store.clone());
 

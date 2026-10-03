@@ -116,6 +116,9 @@ impl SessionStorage {
         let original_working_dir = (!import.working_dir.as_os_str().is_empty())
             .then(|| import.working_dir.to_string_lossy().to_string());
         let mut extension_data = import.extension_data.clone();
+        extension_data
+            .extension_states
+            .remove(crate::authentication::SESSION_AUTHENTICATION_KEY);
         extension_data.remove_extension_state(
             EnabledExtensionsState::EXTENSION_NAME,
             EnabledExtensionsState::VERSION,

@@ -452,6 +452,10 @@ export function WorkspaceEditorDialog({
   const updateBinding = useCallback((id: string, patch: Partial<CredentialBinding>) => {
     setDraft((current) => ({
       ...current,
+      authentication:
+        patch.credentialProfileId && current.defaultCredentialBindingId === id
+          ? { ...current.authentication, providerDisconnected: false }
+          : current.authentication,
       credentialBindings: (current.credentialBindings ?? []).map((binding) =>
         binding.id === id ? { ...binding, ...patch } : binding
       ),
@@ -483,6 +487,7 @@ export function WorkspaceEditorDialog({
     setDraft((current) => ({
       ...current,
       defaultCredentialBindingId: id,
+      authentication: { ...current.authentication, providerDisconnected: false },
       credentialBindings: (current.credentialBindings ?? []).map((binding) => ({
         ...binding,
         isDefault: binding.id === id,
@@ -744,6 +749,22 @@ export function WorkspaceEditorDialog({
             </Section>
 
             <Section title="Credentials">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={draft.authentication?.providerDisconnected ?? false}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      authentication: {
+                        ...current.authentication,
+                        providerDisconnected: event.target.checked,
+                      },
+                    }))
+                  }
+                />
+                Disconnect provider authentication for new chats
+              </label>
               <div className="flex justify-between gap-3">
                 <p className="text-sm text-text-secondary">
                   Bind secure profiles by reference. Secret values are never stored in this

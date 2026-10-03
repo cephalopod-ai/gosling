@@ -1594,6 +1594,18 @@ impl SessionManager {
             .merge_extension_state(session_id, key, value)
             .await
     }
+
+    pub async fn set_authentication_profile(
+        &self,
+        session_id: &str,
+        profile_id: Option<&str>,
+        profile_name: Option<&str>,
+        settings: &crate::authentication::AuthenticationSettings,
+    ) -> Result<()> {
+        self.storage
+            .set_authentication_profile(session_id, profile_id, profile_name, settings)
+            .await
+    }
 }
 
 pub struct SessionStorage {

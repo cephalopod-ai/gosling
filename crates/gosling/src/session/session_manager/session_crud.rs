@@ -664,6 +664,35 @@ impl SessionStorage {
         })
     }
 
+    /// Account selection and explicit disconnection commit together, preserving other host state.
+    pub(super) async fn set_authentication_profile(
+        &self,
+        session_id: &str,
+        profile_id: Option<&str>,
+        profile_name: Option<&str>,
+        settings: &crate::authentication::AuthenticationSettings,
+    ) -> Result<()> {
+        crate::authentication::validate_settings(settings)?;
+        let _write_guard = self.acquire_write_guard().await;
+        let pool = self.pool().await?;
+        let result = sqlx::query(
+            r#"UPDATE sessions SET
+            credential_profile_id = ?, credential_profile_name = ?, credential_binding_id = NULL,
+            extension_data = json_set(extension_data, '$."authentication.v1"', json(?)),
+            updated_at = datetime('now') WHERE id = ?"#,
+        )
+        .bind(profile_id)
+        .bind(profile_name)
+        .bind(serde_json::to_string(settings)?)
+        .bind(session_id)
+        .execute(pool)
+        .await?;
+        if result.rows_affected() == 0 {
+            return Err(super::SessionNotFound.into());
+        }
+        Ok(())
+    }
+
     /// Read-modify-write `extension_data` for one key inside a single
     /// `BEGIN IMMEDIATE` transaction. `BEGIN IMMEDIATE` takes SQLite's write
     /// lock before the read, so a second concurrent caller of this method

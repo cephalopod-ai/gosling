@@ -189,6 +189,7 @@ impl GoslingOwnedSecrets {
             || crate::workspace::is_profile_secret_key(key)
             || crate::providers::githubcopilot::is_token_secret_key(key)
             || crate::config::extensions::is_extension_secret_key(key)
+            || crate::authentication::is_secret_key(key)
     }
 }
 
@@ -313,6 +314,34 @@ pub(crate) async fn merge_environments(
     Ok(Envs::new(all_envs).get_env())
 }
 
+pub(crate) async fn merge_authenticated_environments(
+    envs: &Envs,
+    env_keys: &[String],
+    ext_name: &str,
+    config: &Config,
+    binding: &crate::authentication::ExtensionAuthentication,
+) -> Result<HashMap<String, String>, ExtensionError> {
+    let inherited_keys = env_keys
+        .iter()
+        .filter(|key| !binding.secret_fields.contains(key))
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut merged = merge_environments(envs, &inherited_keys, ext_name, config).await?;
+    if let Some(namespace) = &binding.credential_namespace {
+        for field in &binding.secret_fields {
+            let value = config
+                .get_secret::<String>(&crate::authentication::secret_key(namespace, field))
+                .map_err(|_| {
+                    ExtensionError::ConfigError(format!(
+                        "Scoped credential '{field}' is unavailable for extension '{ext_name}'"
+                    ))
+                })?;
+            merged.insert(field.clone(), value);
+        }
+    }
+    Ok(merged)
+}
+
 /// Whether `key` would resolve for the extension right now, under the same
 /// rules `merge_environments` applies when it starts.
 pub async fn extension_secret_available(config: &Config, ext_name: &str, key: &str) -> bool {
@@ -336,7 +365,7 @@ pub(crate) fn substitute_env_vars(value: &str, env_map: &HashMap<String, String>
         .into_owned()
 }
 
-pub(super) async fn resolve_static_oauth_client(
+pub(crate) async fn resolve_static_oauth_client(
     client_id: Option<&str>,
     client_secret_key: Option<&str>,
     scopes: &[String],

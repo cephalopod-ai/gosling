@@ -1151,6 +1151,30 @@ impl GoslingAcpAgent {
         self.on_credential_profile_list(req).await
     }
 
+    #[custom_method(AuthenticationReadRequest)]
+    async fn dispatch_authentication_read(
+        &self,
+        req: AuthenticationReadRequest,
+    ) -> Result<AuthenticationResponse, agent_client_protocol::Error> {
+        self.on_authentication_read(req.target).await
+    }
+
+    #[custom_method(AuthenticationProviderSetRequest)]
+    async fn dispatch_authentication_provider_set(
+        &self,
+        req: AuthenticationProviderSetRequest,
+    ) -> Result<AuthenticationResponse, agent_client_protocol::Error> {
+        self.on_authentication_provider_set(req).await
+    }
+
+    #[custom_method(AuthenticationExtensionSetRequest)]
+    async fn dispatch_authentication_extension_set(
+        &self,
+        req: AuthenticationExtensionSetRequest,
+    ) -> Result<AuthenticationResponse, agent_client_protocol::Error> {
+        self.on_authentication_extension_set(req).await
+    }
+
     #[custom_method(CredentialProfileCreateRequest)]
     async fn dispatch_credential_profile_create(
         &self,

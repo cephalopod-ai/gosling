@@ -992,6 +992,71 @@ async fn update_provider_propagates_active_mode() -> Result<()> {
     Ok(())
 }
 
+#[tokio::test]
+async fn authentication_disconnect_blocks_provider_restoration_and_direct_updates() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let sessions = Arc::new(SessionManager::new(directory.path().to_path_buf()));
+    let permissions = Arc::new(PermissionManager::new(directory.path().to_path_buf()));
+    let agent = Agent::with_config(AgentConfig::new(
+        sessions.clone(),
+        permissions,
+        GoslingMode::Auto,
+        true,
+        GoslingPlatform::GoslingCli,
+    ));
+    let session = sessions
+        .create_session(
+            directory.path().into(),
+            "Auth isolation".into(),
+            SessionType::Hidden,
+            GoslingMode::Auto,
+        )
+        .await?;
+    let provider = Arc::new(ModeRecordingProvider::default());
+    let model = ModelConfig::new("mock-model");
+    agent
+        .update_provider(provider.clone(), model.clone(), &session.id)
+        .await?;
+
+    let replacement = crate::workspace::CredentialProfile {
+        id: "missing-profile".into(),
+        name: "Missing".into(),
+        provider_or_service_id: "mode-recording".into(),
+        ..Default::default()
+    };
+    assert!(agent
+        .set_session_credential_profile(&session.id, Some(replacement))
+        .await
+        .is_err());
+    assert_eq!(agent.provider().await?.get_name(), "mode-recording");
+    assert!(sessions
+        .get_session(&session.id, false)
+        .await?
+        .credential_profile_id
+        .is_none());
+
+    agent
+        .set_session_credential_profile(&session.id, None)
+        .await?;
+    let disconnected = sessions.get_session(&session.id, false).await?;
+    assert!(
+        crate::authentication::session_authentication(&disconnected.extension_data)?
+            .provider_disconnected
+    );
+    assert!(agent.provider().await.is_err());
+    assert!(!agent.restore_provider_from_session(&disconnected).await?);
+    assert!(agent
+        .update_provider(provider, model, &session.id)
+        .await
+        .is_err());
+    assert_eq!(
+        disconnected.provider_name.as_deref(),
+        Some("mode-recording")
+    );
+    assert_eq!(disconnected.model_config.unwrap().model_name, "mock-model");
+    Ok(())
+}
+
 fn frontend_extension(name: &str) -> ExtensionConfig {
     ExtensionConfig::Frontend {
         name: name.to_string(),

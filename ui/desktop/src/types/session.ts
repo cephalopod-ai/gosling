@@ -54,6 +54,7 @@ export type Session = {
   workspace_folder_roots?: Pick<WorkspaceFolder, 'path' | 'access'>[];
   credential_profile_id?: string | null;
   credential_profile_name?: string | null;
+  provider_auth_disconnected?: boolean;
   imported_untrusted?: boolean;
   import_source?: string;
   import_original_working_dir?: string;

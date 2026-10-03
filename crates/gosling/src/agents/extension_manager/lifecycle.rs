@@ -91,6 +91,18 @@ impl ExtensionManager {
         self.invalidate_tools_cache_and_bump_version().await;
     }
 
+    pub(crate) async fn suspend_authenticated_extension(
+        &self,
+        config: ExtensionConfig,
+    ) -> ExtensionResult<()> {
+        self.remove_extension(&config.key()).await?;
+        self.runtime_blocked_extensions
+            .lock()
+            .await
+            .insert(config.key(), config);
+        Ok(())
+    }
+
     pub async fn update_working_dirs(
         &self,
         primary: &std::path::Path,

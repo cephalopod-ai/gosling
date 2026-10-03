@@ -1,10 +1,13 @@
 use crate::acp::custom_requests::{GoslingExtension, ShellCredentialPolicy};
 use crate::acp::server::{
-    meta_string, resolve_active_context_limit, validate_absolute_cwd, ResultExt,
+    meta_string, push_or_replace_extension, resolve_active_context_limit, validate_absolute_cwd,
+    ResultExt,
 };
 use crate::agents::ExtensionLoadResult;
 use crate::config::{Config, GoslingMode};
-use crate::session::{DeepResearchState, ExtensionData, ExtensionState, Session, SessionType};
+use crate::session::{
+    DeepResearchState, EnabledExtensionsState, ExtensionData, ExtensionState, Session, SessionType,
+};
 use crate::workspace::{PreparedWorkspaceSession, WorkspaceSessionLaunchOverrides};
 
 use super::GoslingAcpAgent;
@@ -308,6 +311,30 @@ impl GoslingAcpAgent {
                 .as_ref()
                 .and_then(|workspace| workspace.default_extensions.as_deref()),
         )?;
+        if let Some(workspace) = &workspace {
+            let config_keys = EnabledExtensionsState::from_extension_data(&extension_data)
+                .map(|state| state.config_keys)
+                .unwrap_or_default();
+            let mut extensions =
+                EnabledExtensionsState::extensions_or_default(Some(&extension_data), config);
+            let configured = crate::config::extensions::get_all_extensions();
+            for (name, binding) in &workspace.authentication.extensions {
+                if !binding.disconnected {
+                    if let Some(entry) = configured.iter().find(|entry| entry.config.key() == *name)
+                    {
+                        push_or_replace_extension(&mut extensions, entry.config.clone());
+                    }
+                }
+            }
+            EnabledExtensionsState::new(extensions)
+                .with_config_keys(config_keys)
+                .to_extension_data(&mut extension_data)
+                .internal_err()?;
+            extension_data.extension_states.insert(
+                crate::authentication::SESSION_AUTHENTICATION_KEY.into(),
+                serde_json::to_value(&workspace.authentication).internal_err()?,
+            );
+        }
         if let Some(state) = deep_research_state {
             state
                 .to_extension_data(&mut extension_data)

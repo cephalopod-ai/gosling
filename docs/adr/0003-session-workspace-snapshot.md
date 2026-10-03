@@ -40,6 +40,14 @@ under this ADR's existing copy semantics. ADR-0017's 2026-10-02 amendment additi
 explicit ACP directory additions in the workspace record for future chats; existing snapshots
 remain pinned.
 
+The 2026-10-02 authentication amendment to ADR-0002 snapshots the workspace's authentication
+policy into `authentication.v1` before new-session activation. Later workspace account changes
+leave existing chats untouched. Explicit chat authentication controls update only that chat's
+binding; copy/fork retains its resulting snapshot. Imported transcripts do not transfer local
+account references or disconnection authority. Workspace metadata adds an optional authentication
+object within schema v1; older readers cannot enforce this new policy, so a downgrade requires
+rechecking authentication before resuming chats.
+
 ## Dependency record
 
 No new dependency; existing SQLite/sqlx and JSON facilities are reused.

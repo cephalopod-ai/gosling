@@ -3044,6 +3044,21 @@ export const zCredentialBinding = z.object({
     isDefault: z.boolean()
 });
 
+export const zExtensionAuthentication = z.object({
+    disconnected: z.boolean().optional().default(false),
+    credentialNamespace: z.string().nullish(),
+    destination: z.string().nullish(),
+    secretFields: z.array(z.string()).optional().default([])
+});
+
+/**
+ * Saved references and disconnection policy; never contains credential values.
+ */
+export const zAuthenticationSettings = z.object({
+    providerDisconnected: z.boolean().optional().default(false),
+    extensions: z.record(zExtensionAuthentication).optional().default({})
+});
+
 export const zWorkspace = z.object({
     id: z.string(),
     schemaVersion: z.number().int().gte(0),
@@ -3055,6 +3070,7 @@ export const zWorkspace = z.object({
     productOutputFolders: z.array(zProductOutputFolder),
     credentialBindings: z.array(zCredentialBinding).optional().default([]),
     defaultCredentialBindingId: z.string().nullish(),
+    authentication: zAuthenticationSettings.optional().default({ providerDisconnected: false, extensions: {} }),
     defaultProvider: z.string().nullish(),
     defaultModel: z.string().nullish(),
     defaultThinkingEffort: zWorkspaceThinkingEffort.nullish(),
@@ -3119,6 +3135,7 @@ export const zWorkspaceMutation = z.object({
     productOutputFolders: z.array(zProductOutputFolder),
     credentialBindings: z.array(zCredentialBinding).optional().default([]),
     defaultCredentialBindingId: z.string().nullish(),
+    authentication: zAuthenticationSettings.optional().default({ providerDisconnected: false, extensions: {} }),
     defaultProvider: z.string().nullish(),
     defaultModel: z.string().nullish(),
     defaultThinkingEffort: zWorkspaceThinkingEffort.nullish(),
@@ -3222,9 +3239,59 @@ export const zCredentialProfileListResponse_unstable = z.object({
     profiles: z.array(zCredentialProfile)
 });
 
+export const zAuthenticationTarget = z.union([
+    z.object({
+        id: z.string(),
+        type: z.literal('session')
+    }),
+    z.object({
+        id: z.string(),
+        type: z.literal('workspace')
+    })
+]);
+
+export const zAuthenticationReadRequest_unstable = z.object({
+    target: zAuthenticationTarget
+});
+
+export const zAuthenticationExtensionSummary = z.object({
+    key: z.string(),
+    name: z.string(),
+    supportsOauth: z.boolean(),
+    secretFields: z.array(z.string())
+});
+
+export const zAuthenticationResponse_unstable = z.object({
+    settings: zAuthenticationSettings,
+    providerId: z.string().nullish(),
+    credentialProfileId: z.string().nullish(),
+    credentialProfileName: z.string().nullish(),
+    extensions: z.array(zAuthenticationExtensionSummary)
+});
+
+/**
+ * A null profile disconnects the target; it does not select global credentials.
+ */
+export const zAuthenticationProviderSetRequest_unstable = z.object({
+    target: zAuthenticationTarget,
+    profileId: z.string().nullish()
+});
+
 export const zCredentialFieldUpdate = z.object({
     key: z.string(),
     value: z.string()
+});
+
+/**
+ * Secret fields are stored securely under a fresh scoped account reference.
+ * Disconnecting retains the reference and its credentials for reconnection.
+ */
+export const zAuthenticationExtensionSetRequest_unstable = z.object({
+    target: zAuthenticationTarget,
+    name: z.string(),
+    connected: z.boolean(),
+    signIn: z.boolean().optional().default(false),
+    secretFields: z.array(zCredentialFieldUpdate).optional().default([])
 });
 
 export const zCredentialProfileCreateRequest_unstable = z.object({
@@ -3516,6 +3583,9 @@ export const zExtRequest = z.object({
             zWorkspaceImportRequest_unstable,
             zWorkspaceCreateOutputFolderRequest_unstable,
             zCredentialProfileListRequest_unstable,
+            zAuthenticationReadRequest_unstable,
+            zAuthenticationProviderSetRequest_unstable,
+            zAuthenticationExtensionSetRequest_unstable,
             zCredentialProfileCreateRequest_unstable,
             zCredentialProfileUpdateRequest_unstable,
             zCredentialProfileDeleteRequest_unstable,
@@ -3626,6 +3696,7 @@ export const zExtResponse = z.union([
                 zWorkspaceValidationResponse_unstable,
                 zWorkspaceExportResponse_unstable,
                 zCredentialProfileListResponse_unstable,
+                zAuthenticationResponse_unstable,
                 zCredentialProfileResponse_unstable,
                 zCredentialProfileDeleteResponse_unstable,
                 zCredentialProfileUsageResponse_unstable,

@@ -23,6 +23,7 @@ import {
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
 import { WorkspaceEditorDialog } from './WorkspaceEditorDialog';
+import { AuthenticationDialog } from './AuthenticationDialog';
 
 const COLLAPSED_KEY = 'workspaces_sidebar_collapsed';
 
@@ -60,6 +61,7 @@ export function WorkspaceSidebarSection({
     open: false,
   });
   const [warningsExpanded, setWarningsExpanded] = useState(false);
+  const [authenticationWorkspace, setAuthenticationWorkspace] = useState<Workspace | null>(null);
   const workspaceWarnings = useMemo(
     () =>
       workspaces.flatMap((item) =>
@@ -187,6 +189,7 @@ export function WorkspaceSidebarSection({
                   onFilter={() => setSessionWorkspaceFilterId(item.workspace.id)}
                   onNewChat={() => onNewChat(item.workspace.id)}
                   onEdit={() => setEditor({ open: true, workspace: item.workspace })}
+                  onAuthentication={() => setAuthenticationWorkspace(item.workspace)}
                   onDuplicate={() => {
                     void duplicateWorkspace(item.workspace.id)
                       .then((duplicate) => toast.success(`Created “${duplicate.name}”.`))
@@ -253,6 +256,15 @@ export function WorkspaceSidebarSection({
         workspace={editor.workspace}
         onOpenChange={(open) => setEditor((current) => ({ ...current, open }))}
       />
+      {authenticationWorkspace && (
+        <AuthenticationDialog
+          open
+          target={{ type: 'workspace', id: authenticationWorkspace.id }}
+          onOpenChange={(open) => {
+            if (!open) setAuthenticationWorkspace(null);
+          }}
+        />
+      )}
     </section>
   );
 }
@@ -265,6 +277,7 @@ function WorkspaceRow({
   onFilter,
   onNewChat,
   onEdit,
+  onAuthentication,
   onDuplicate,
   onReveal,
   onExport,
@@ -277,6 +290,7 @@ function WorkspaceRow({
   onFilter(): void;
   onNewChat(): void;
   onEdit(): void;
+  onAuthentication(): void;
   onDuplicate(): void;
   onReveal(): void;
   onExport(): void;
@@ -344,6 +358,7 @@ function WorkspaceRow({
             <DropdownMenuItem onSelect={onNewChat}>New chat in this workspace</DropdownMenuItem>
             <DropdownMenuItem onSelect={onFilter}>Show its chats</DropdownMenuItem>
             <DropdownMenuItem onSelect={onEdit}>Edit</DropdownMenuItem>
+            <DropdownMenuItem onSelect={onAuthentication}>Authentication</DropdownMenuItem>
             <DropdownMenuItem onSelect={onDuplicate}>Duplicate</DropdownMenuItem>
             <DropdownMenuItem onSelect={onReveal}>
               <FolderOpen className="size-4" /> Reveal primary folder

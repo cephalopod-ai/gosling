@@ -911,8 +911,14 @@
   "credentialProfileSelector.availableProfiles": {
     "defaultMessage": "Available credential profiles"
   },
+  "credentialProfileSelector.changeAuthentication": {
+    "defaultMessage": "Manage chat authentication"
+  },
   "credentialProfileSelector.credentialForChat": {
     "defaultMessage": "Credential for this chat"
+  },
+  "credentialProfileSelector.disconnected": {
+    "defaultMessage": "Disconnected"
   },
   "credentialProfileSelector.manageProfiles": {
     "defaultMessage": "Manage credential profiles"
@@ -928,6 +934,9 @@
   },
   "credentialProfileSelector.pinnedExplanation": {
     "defaultMessage": "Credentials are pinned when a chat starts. Start a new chat to use another profile."
+  },
+  "credentialProfileSelector.sessionExplanation": {
+    "defaultMessage": "Change provider and MCP authentication for this chat. Other chats keep their accounts."
   },
   "credentialProfileSelector.tooltip": {
     "defaultMessage": "Credential for this chat: {profile}"

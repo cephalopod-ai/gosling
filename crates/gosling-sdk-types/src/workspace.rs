@@ -184,6 +184,8 @@ pub struct Workspace {
     pub credential_bindings: Vec<CredentialBinding>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_credential_binding_id: Option<String>,
+    #[serde(default)]
+    pub authentication: crate::authentication::AuthenticationSettings,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_provider: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -220,6 +222,8 @@ pub struct WorkspaceMutation {
     pub credential_bindings: Vec<CredentialBinding>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_credential_binding_id: Option<String>,
+    #[serde(default)]
+    pub authentication: crate::authentication::AuthenticationSettings,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_provider: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -241,6 +245,7 @@ impl From<&Workspace> for WorkspaceMutation {
             product_output_folders: workspace.product_output_folders.clone(),
             credential_bindings: workspace.credential_bindings.clone(),
             default_credential_binding_id: workspace.default_credential_binding_id.clone(),
+            authentication: workspace.authentication.clone(),
             default_provider: workspace.default_provider.clone(),
             default_model: workspace.default_model.clone(),
             default_thinking_effort: workspace.default_thinking_effort,
