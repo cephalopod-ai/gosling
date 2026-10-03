@@ -8,6 +8,7 @@ import {
   acpSetWorkingDirRestriction,
 } from '../acp/sessions';
 import type { Session } from '../types/session';
+import { useOptionalWorkspace } from '../contexts/WorkspaceContext';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -92,10 +93,10 @@ const i18n = defineMessages({
     defaultMessage:
       'This session’s folders are pinned by its workspace. Edit the workspace and start a new session to change them.',
   },
-  workspaceSessionOnlyHint: {
-    id: 'workingDirectoriesMenu.workspaceSessionOnlyHint',
+  workspaceRememberedHint: {
+    id: 'workingDirectoriesMenu.workspaceRememberedHint',
     defaultMessage:
-      'Workspace folders remain pinned. Directories added here belong only to this session; other sessions and the workspace do not receive access.',
+      'Directories added here are saved for this chat and future chats in this workspace. Existing chats keep their pinned folders.',
   },
 });
 
@@ -123,6 +124,7 @@ export default function WorkingDirectoriesMenu({
   showCount = true,
 }: WorkingDirectoriesMenuProps) {
   const intl = useIntl();
+  const refreshWorkspaces = useOptionalWorkspace()?.refreshWorkspaces;
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
   const [recentDirs, setRecentDirs] = useState<string[]>([]);
@@ -180,6 +182,10 @@ export default function WorkingDirectoriesMenu({
           additional_working_dirs: result.additionalWorkingDirs,
           workspace_folder_roots: result.workspaceFolderRoots ?? current.workspace_folder_roots,
         }));
+        if (session.workspace_id) {
+          void refreshWorkspaces?.();
+          window.electron.broadcastWorkspaceChange();
+        }
       } catch (error) {
         console.error('[WorkingDirectoriesMenu] Failed to add working directory:', error);
         toast.error(intl.formatMessage(i18n.failedToAdd));
@@ -187,7 +193,7 @@ export default function WorkingDirectoriesMenu({
         setIsAdding(false);
       }
     },
-    [session, additionalWorkingDirs, sessionDirPaths, onSessionChange, intl]
+    [session, additionalWorkingDirs, sessionDirPaths, onSessionChange, intl, refreshWorkspaces]
   );
 
   const removeDirectory = useCallback(
@@ -336,7 +342,7 @@ export default function WorkingDirectoriesMenu({
               <div className="px-2 py-1.5 flex items-start gap-2">
                 <ShieldAlert className="h-3.5 w-3.5 shrink-0 mt-0.5 text-text-secondary" />
                 <p className="text-[11px] leading-snug text-text-secondary">
-                  {intl.formatMessage(i18n.workspaceSessionOnlyHint)}
+                  {intl.formatMessage(i18n.workspaceRememberedHint)}
                 </p>
               </div>
             )}

@@ -35,8 +35,10 @@ remain backward compatible; unknown future JSON fields are ignored by readers, w
 stored session snapshot serializer emits the current canonical subset.
 
 ADR-0017 later permits an operator to add a directory to one active session's pinned snapshot. The
-workspace record and sibling snapshots remain unchanged, and explicit session copies retain the
-resulting snapshot under this ADR's existing copy semantics.
+sibling snapshots remain unchanged, and explicit session copies retain the resulting snapshot
+under this ADR's existing copy semantics. ADR-0017's 2026-10-02 amendment additionally remembers
+explicit ACP directory additions in the workspace record for future chats; existing snapshots
+remain pinned.
 
 ## Dependency record
 

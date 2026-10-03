@@ -118,6 +118,113 @@ async fn get_session_info_request(
         .map_err(Into::into)
 }
 
+#[test]
+fn test_added_working_directory_is_saved_for_reopen_and_future_workspace_chats() {
+    run_test(async {
+        use gosling::custom_requests::AddSessionWorkingDirRequest;
+        use gosling::workspace::WorkspaceService;
+
+        let data_root = tempfile::tempdir().unwrap();
+        let work_dir = tempfile::tempdir().unwrap();
+        let added_dir = tempfile::tempdir().unwrap();
+        let conn = new_connection(data_root.path()).await;
+        let service = WorkspaceService::initialize(data_root.path(), work_dir.path())
+            .await
+            .unwrap();
+        let (_, workspace_id, _) = service.list().unwrap();
+        let mut workspace =
+            gosling::workspace::WorkspaceMutation::from(&service.get(&workspace_id).unwrap());
+        workspace.working_folder = work_dir.path().to_string_lossy().to_string();
+        for output in &mut workspace.product_output_folders {
+            output.path = work_dir
+                .path()
+                .join("Outputs")
+                .to_string_lossy()
+                .to_string();
+        }
+        service.update(&workspace_id, workspace).await.unwrap();
+        let request = || {
+            NewSessionRequest::new(work_dir.path()).meta(serde_json::Map::from_iter([(
+                "workspaceId".into(),
+                serde_json::json!(workspace_id),
+            )]))
+        };
+        let original = conn
+            .cx()
+            .send_request(request())
+            .block_task()
+            .await
+            .unwrap();
+        let sibling = conn
+            .cx()
+            .send_request(request())
+            .block_task()
+            .await
+            .unwrap();
+        let addition = conn
+            .cx()
+            .send_request(AddSessionWorkingDirRequest {
+                session_id: original.session_id.0.to_string(),
+                working_dir: added_dir.path().to_string_lossy().to_string(),
+            })
+            .block_task()
+            .await
+            .unwrap();
+        let canonical = std::fs::canonicalize(added_dir.path()).unwrap();
+        assert!(addition
+            .additional_working_dirs
+            .contains(&canonical.to_string_lossy().to_string()));
+
+        let manager = SessionManager::new(data_root.path().to_path_buf());
+        let original_snapshot = manager
+            .get_session(&original.session_id.0, false)
+            .await
+            .unwrap();
+        assert!(original_snapshot
+            .additional_working_dirs
+            .contains(&canonical));
+        let sibling_snapshot = manager
+            .get_session(&sibling.session_id.0, false)
+            .await
+            .unwrap();
+        assert!(!sibling_snapshot
+            .additional_working_dirs
+            .contains(&canonical));
+
+        let future = conn
+            .cx()
+            .send_request(request())
+            .block_task()
+            .await
+            .unwrap();
+        let future_snapshot = manager
+            .get_session(&future.session_id.0, false)
+            .await
+            .unwrap();
+        assert!(future_snapshot.additional_working_dirs.contains(&canonical));
+
+        let reopened = new_connection(data_root.path()).await;
+        reopened
+            .cx()
+            .send_request(agent_client_protocol::schema::v1::LoadSessionRequest::new(
+                original.session_id,
+                work_dir.path(),
+            ))
+            .block_task()
+            .await
+            .unwrap();
+        let reloaded = manager
+            .get_session(&original_snapshot.id, false)
+            .await
+            .unwrap();
+        assert!(reloaded.additional_working_dirs.contains(&canonical));
+        assert_eq!(
+            reloaded.workspace_context,
+            original_snapshot.workspace_context
+        );
+    });
+}
+
 fn assert_invalid_params(error: anyhow::Error) {
     let acp_error = error.downcast::<agent_client_protocol::Error>().unwrap();
     assert_eq!(acp_error.code, ErrorCode::InvalidParams);

@@ -1,8 +1,9 @@
 use super::store::{WorkspaceStore, WorkspaceStoreDocument};
 use super::{
-    validate_workspace_mutation, Workspace, WorkspaceFolderAccess, WorkspaceFolderPolicy,
-    WorkspaceFolderPolicyRoot, WorkspaceMutation, WorkspaceSessionContext,
-    WorkspaceValidationReport, WorkspaceWithValidation, WORKSPACE_SCHEMA_VERSION,
+    validate_workspace_mutation, Workspace, WorkspaceFolder, WorkspaceFolderAccess,
+    WorkspaceFolderKind, WorkspaceFolderPolicy, WorkspaceFolderPolicyRoot, WorkspaceMutation,
+    WorkspaceSessionContext, WorkspaceValidationReport, WorkspaceWithValidation,
+    WORKSPACE_SCHEMA_VERSION,
 };
 use anyhow::{anyhow, bail, Context, Result};
 use chrono::Utc;
@@ -245,6 +246,62 @@ impl WorkspaceService {
             document.workspaces.push(copy.clone());
             document.workspaces.sort_by(workspace_order);
             Ok(copy)
+        })
+    }
+
+    /// Remembers an explicitly added chat folder for future workspace sessions.
+    /// Deleted workspaces leave the historical chat's addition session-scoped.
+    pub async fn remember_working_folder(&self, workspace_id: &str, folder: &Path) -> Result<()> {
+        let _guard = self.operation_lock.lock().await;
+        let _credential_transaction = self.store.lock_credential_transaction()?;
+        if !folder.is_absolute() {
+            bail!("workspace folders must be absolute paths");
+        }
+        let folder = std::fs::canonicalize(folder)?;
+        if !folder.is_dir() {
+            bail!("workspace folder is not a directory");
+        }
+
+        self.store.mutate(|document| {
+            let Some(workspace) = document
+                .workspaces
+                .iter_mut()
+                .find(|workspace| workspace.id == workspace_id)
+            else {
+                return Ok(());
+            };
+            let already_present = std::iter::once(workspace.working_folder.as_str())
+                .chain(workspace.folders.iter().map(|entry| entry.path.as_str()))
+                .chain(
+                    workspace
+                        .product_output_folders
+                        .iter()
+                        .map(|entry| entry.path.as_str()),
+                )
+                .any(|path| std::fs::canonicalize(path).is_ok_and(|path| path == folder));
+            if already_present {
+                return Ok(());
+            }
+
+            let label = folder
+                .file_name()
+                .map(|name| {
+                    name.to_string_lossy()
+                        .chars()
+                        .take(MAX_LABEL_CHARS)
+                        .collect()
+                })
+                .unwrap_or_else(|| "Working folder".to_string());
+            workspace.folders.push(WorkspaceFolder {
+                id: Uuid::now_v7().to_string(),
+                label,
+                path: folder.to_string_lossy().to_string(),
+                kind: WorkspaceFolderKind::Working,
+                access: WorkspaceFolderAccess::ReadWrite,
+                description: None,
+            });
+            workspace.updated_at = Utc::now().to_rfc3339();
+            Ok(())
         })
     }
 
@@ -1085,6 +1142,121 @@ mod tests {
             root.path == std::fs::canonicalize(&output).unwrap().to_string_lossy()
                 && root.access == WorkspaceFolderAccess::ReadWrite
         }));
+    }
+
+    #[tokio::test]
+    async fn remembered_folders_survive_restart_and_apply_only_to_future_sessions() {
+        let data = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let added = tempfile::tempdir().unwrap();
+        let service = WorkspaceService::initialize(data.path(), root.path())
+            .await
+            .unwrap();
+        let workspace = service.create(mutation(root.path())).await.unwrap();
+        let existing = service.prepare_session(&workspace.id).unwrap();
+        service
+            .remember_working_folder(&workspace.id, added.path())
+            .await
+            .unwrap();
+        drop(service);
+
+        let reopened = WorkspaceService::initialize(data.path(), root.path())
+            .await
+            .unwrap();
+        let future = reopened.prepare_session(&workspace.id).unwrap();
+        let path = std::fs::canonicalize(added.path()).unwrap();
+        assert!(future.context.folder_policy.roots.iter().any(|root| {
+            Path::new(&root.path) == path && root.access == WorkspaceFolderAccess::ReadWrite
+        }));
+        assert!(!existing
+            .context
+            .folder_policy
+            .roots
+            .iter()
+            .any(|root| Path::new(&root.path) == path));
+        let stored = reopened.get(&workspace.id).unwrap();
+        assert_eq!(stored.default_provider, workspace.default_provider);
+        assert_eq!(
+            stored.product_output_folders,
+            workspace.product_output_folders
+        );
+        assert_eq!(
+            stored.folders.last().unwrap().kind,
+            WorkspaceFolderKind::Working
+        );
+    }
+
+    #[tokio::test]
+    async fn remembering_existing_folders_preserves_read_only_access_and_deduplicates_aliases() {
+        let data = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let reference = root.path().join("reference");
+        let output = root.path().join("outputs");
+        std::fs::create_dir_all(&reference).unwrap();
+        std::fs::create_dir_all(&output).unwrap();
+        let service = WorkspaceService::initialize(data.path(), root.path())
+            .await
+            .unwrap();
+        let mut workspace = mutation(root.path());
+        workspace.folders[0].path = reference.to_string_lossy().to_string();
+        let workspace = service.create(workspace).await.unwrap();
+        for path in [root.path().to_path_buf(), reference.join("."), output] {
+            service
+                .remember_working_folder(&workspace.id, &path)
+                .await
+                .unwrap();
+        }
+        assert_eq!(service.get(&workspace.id).unwrap(), workspace);
+        let prepared = service.prepare_session(&workspace.id).unwrap();
+        let reference = std::fs::canonicalize(reference).unwrap();
+        assert!(prepared.context.folder_policy.roots.iter().any(|root| {
+            Path::new(&root.path) == reference && root.access == WorkspaceFolderAccess::Read
+        }));
+    }
+
+    #[tokio::test]
+    async fn remembering_a_folder_at_the_workspace_limit_keeps_the_saved_document() {
+        let data = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let added = tempfile::tempdir().unwrap();
+        let service = WorkspaceService::initialize(data.path(), root.path())
+            .await
+            .unwrap();
+        let mut workspace = mutation(root.path());
+        workspace.folders = (0..MAX_ADDITIONAL_FOLDERS)
+            .map(|index| WorkspaceFolder {
+                id: format!("folder-{index}"),
+                label: format!("Folder {index}"),
+                path: root
+                    .path()
+                    .join(format!("folder-{index}"))
+                    .to_string_lossy()
+                    .to_string(),
+                ..WorkspaceFolder::default()
+            })
+            .collect();
+        let workspace = service.create(workspace).await.unwrap();
+        assert!(service
+            .remember_working_folder(&workspace.id, added.path())
+            .await
+            .is_err());
+        assert_eq!(service.get(&workspace.id).unwrap(), workspace);
+    }
+
+    #[tokio::test]
+    async fn remembering_a_folder_does_not_recreate_a_deleted_workspace() {
+        let data = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let service = WorkspaceService::initialize(data.path(), root.path())
+            .await
+            .unwrap();
+        let workspace = service.create(mutation(root.path())).await.unwrap();
+        service.delete(&workspace.id).await.unwrap();
+        service
+            .remember_working_folder(&workspace.id, root.path())
+            .await
+            .unwrap();
+        assert!(service.get(&workspace.id).is_err());
     }
 
     #[tokio::test]

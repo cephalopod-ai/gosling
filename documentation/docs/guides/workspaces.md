@@ -152,6 +152,16 @@ another account.
 Legacy sessions without a workspace ID remain resumable and appear with the default/unassigned
 session behavior. Session search still works across workspaces when **All workspaces** is selected.
 
+In an active chat, open **Working Directories** and choose **Add directory…** to add a folder.
+The folder is saved with that chat and remembered as a working folder for future chats in the same
+workspace. It survives reopening the chat or restarting the app, and the agent receives the saved
+folder list even when a folder has no instruction files. Existing read-only folders keep their
+access level; existing chats keep their own saved folder lists. To remove a remembered folder from
+future chats, edit the workspace. The physical folder is not deleted.
+
+Folders added through a tool-approval prompt or as a New Chat override remain specific to that chat.
+A chat without a workspace, or whose workspace was deleted, also keeps additions in that chat only.
+
 A workspace that pins extensions seeds the new chat with exactly those MCP servers and plugins;
 built-in tools are unaffected. A workspace that pins none inherits the globally enabled set.
 

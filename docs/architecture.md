@@ -68,10 +68,11 @@ sequenceDiagram
     API-->>UI: Session metadata with pinned workspace
 ```
 
-An active workspace session may add an existing directory to its own pinned snapshot. That additive
-grant updates only the selected session row and its loaded extension clients; it does not mutate the
-workspace or sibling sessions. Primary-folder replacement, removal of pinned workspace roots, and
-live refresh from later workspace edits remain prohibited. See ADR-0017.
+An active workspace session may add an existing directory to its own pinned snapshot. An explicit
+ACP Add directory action also remembers the folder as a working folder for future chats in that
+workspace. Existing chats keep their saved snapshots, and tool-approval grants and launcher overrides
+remain session-only. Primary-folder replacement, removal of pinned workspace roots, and live refresh
+from later workspace edits remain prohibited. See ADR-0017 and its 2026-10-02 amendment.
 
 ## Module contracts
 

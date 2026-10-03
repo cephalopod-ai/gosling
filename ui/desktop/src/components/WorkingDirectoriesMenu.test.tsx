@@ -6,6 +6,11 @@ import type { Session } from '../types/session';
 import WorkingDirectoriesMenu from './WorkingDirectoriesMenu';
 
 const addSessionWorkingDir = vi.fn();
+const refreshWorkspaces = vi.fn();
+
+vi.mock('../contexts/WorkspaceContext', () => ({
+  useOptionalWorkspace: () => ({ refreshWorkspaces }),
+}));
 
 vi.mock('../acp/sessions', () => ({
   acpAddSessionWorkingDir: (...args: unknown[]) => addSessionWorkingDir(...args),
@@ -39,6 +44,7 @@ describe('WorkingDirectoriesMenu workspace session grants', () => {
       }
     );
     addSessionWorkingDir.mockReset();
+    refreshWorkspaces.mockReset();
     addSessionWorkingDir.mockResolvedValue({
       workingDir: '/workspace/project',
       additionalWorkingDirs: ['/private/workshop'],
@@ -46,6 +52,7 @@ describe('WorkingDirectoriesMenu workspace session grants', () => {
     Object.assign(window.electron, {
       listRecentDirs: vi.fn().mockResolvedValue([]),
       addRecentDir: vi.fn(),
+      broadcastWorkspaceChange: vi.fn(),
       sessionDirectoryChooser: vi.fn().mockResolvedValue({
         canceled: false,
         filePaths: ['/private/workshop'],
@@ -53,7 +60,7 @@ describe('WorkingDirectoriesMenu workspace session grants', () => {
     });
   });
 
-  it('adds a directory to the selected workspace session only', async () => {
+  it('adds a directory and refreshes remembered workspace folders', async () => {
     const user = userEvent.setup();
     const onSessionChange = vi.fn();
     render(
@@ -63,7 +70,7 @@ describe('WorkingDirectoriesMenu workspace session grants', () => {
 
     await user.click(screen.getByRole('button', { name: /Add Dir/ }));
     expect(
-      await screen.findByText(/Directories added here belong only to this session/)
+      await screen.findByText(/Directories added here are saved for this chat and future chats/)
     ).toBeInTheDocument();
     await user.click(screen.getByText('Add directory…'));
 
@@ -77,6 +84,8 @@ describe('WorkingDirectoriesMenu workspace session grants', () => {
       workspace_folder_roots: [{ path: '/reference', access: 'read' as const }],
     };
     expect(update(current).workspace_folder_roots).toEqual(current.workspace_folder_roots);
+    expect(window.electron.broadcastWorkspaceChange).toHaveBeenCalledOnce();
+    expect(refreshWorkspaces).toHaveBeenCalledOnce();
   });
 
   it('hides recent entries that are already working directories, whatever their spelling', async () => {
@@ -104,6 +113,22 @@ describe('WorkingDirectoriesMenu workspace session grants', () => {
     // The session's own directories are not offered as something to add.
     expect(screen.queryByText('/workspace/project/')).not.toBeInTheDocument();
     expect(screen.queryAllByText('/private/workshop')).toHaveLength(1); // the pinned row only
+  });
+
+  it('keeps a standalone chat addition scoped to the chat', async () => {
+    const user = userEvent.setup();
+    render(
+      <WorkingDirectoriesMenu
+        session={{ ...workspaceSession, workspace_id: undefined }}
+        onSessionChange={vi.fn()}
+      />,
+      { wrapper: IntlTestWrapper }
+    );
+    await user.click(screen.getByRole('button', { name: /Add Dir/ }));
+    await user.click(await screen.findByText('Add directory…'));
+    await waitFor(() => expect(addSessionWorkingDir).toHaveBeenCalled());
+    expect(window.electron.broadcastWorkspaceChange).not.toHaveBeenCalled();
+    expect(refreshWorkspaces).not.toHaveBeenCalled();
   });
 
   it('says so when the backend accepts the add but nothing changed', async () => {

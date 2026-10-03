@@ -173,6 +173,31 @@ impl GoslingAcpAgent {
                 .await);
         }
 
+        if let Some(workspace_id) = &session.workspace_id {
+            if let Err(error) = self
+                .workspace_service
+                .remember_working_folder(workspace_id, &path)
+                .await
+            {
+                return Err(self
+                    .rollback_working_dir_transition(
+                        &agent,
+                        &session,
+                        format!("failed to remember workspace working directory: {error}"),
+                    )
+                    .await);
+            }
+        }
+
+        if let Some(context) = &workspace_context {
+            agent
+                .extend_system_prompt(
+                    "workspace".to_string(),
+                    WorkspaceService::render_session_context(context),
+                )
+                .await;
+        }
+
         Ok(session_working_dirs_response(
             &session.working_dir,
             &additional_working_dirs,

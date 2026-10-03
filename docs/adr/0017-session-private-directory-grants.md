@@ -18,6 +18,10 @@ folder chosen only to extend one agent session.
 
 ## Decision
 
+The original session-only decision below is amended for explicit ACP directory additions by the
+2026-10-02 decision at the end of this record. Tool-approval grants and launcher overrides retain
+their session-only behavior.
+
 An active workspace session may add an existing absolute directory to its own pinned folder policy.
 The server canonicalizes the path, records it as read/write in only that session's
 `workspace_context_json`, updates the same row's `additional_working_dirs_json`, and refreshes only
@@ -83,3 +87,30 @@ workspace folder policy.
 Implemented in `e79427faf` (persistence and breadth pruning) and `88470e9c0` (session directory
 grants). Session evidence is retained locally under `docs/logs/session/`, which `.gitignore`
 excludes from the repository.
+
+## Amendment: remembered workspace folders (2026-10-02)
+
+The operator explicitly requested that folders added from an active chat automatically carry into
+future chats in the same workspace. The ACP Add working directory operation used by Desktop now
+updates the current session as before, then appends the canonical folder to the latest workspace
+document under the existing store locks. It is saved as a read/write working folder. An existing
+primary, additional, or output root is not duplicated or reclassified; read-only roots stay read-only.
+
+This changes the original decision's prohibition on mutating the workspace for this explicit action.
+The session's primary folder remains pinned. Other existing chats retain their saved snapshots;
+new chats inherit the amended workspace. Tool-approval grants and launcher-specific overrides do not
+modify workspace defaults. If the workspace was deleted, its historical chat can still add a
+session-only folder without recreating the workspace.
+
+Extension refresh precedes workspace persistence. An extension or workspace save failure triggers
+rollback of the session fields and extension state through the existing transition handler.
+SQLite and the workspace JSON file are separate stores: this is not a cross-store transaction.
+Interruption between the writes can leave an unacknowledged session-only grant; a file-sync failure
+after the workspace file's atomic rename can leave that folder in workspace defaults despite the
+reported save error. Retry is additive and canonical-path idempotent. The operation does not restore
+an old workspace document over intervening edits.
+
+The saved primary and additional paths are supplied to the model independently of hint files and
+optional per-turn context. Paths are escaped data and do not themselves grant permission or bypass
+the host's folder policy. Desktop refreshes workspace state locally and across other windows after
+a successful addition. Source and validation evidence: `docs/logs/session/2026-10-02-working-folder-memory.md`.

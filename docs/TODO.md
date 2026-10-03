@@ -1,5 +1,17 @@
 # TODO
 
+## 2026-10-02 working-folder memory
+
+- [~] **WS-FOLDER-001** — Added folders now reach the model without hint files, refresh the live
+      workspace prompt, and are remembered for future chats in the same workspace. Existing
+      chats retain their pinned snapshots. Focused Desktop tests (63), typecheck, lint, locale
+      checks, Rust formatting, and Rust/test typechecking passed. Rust runtime regressions and
+      installed-app add/reopen/new-chat replay remain unexecuted; no app rebuild or install was
+      requested. Existing session-only additions are not backfilled into workspace defaults.
+
+See [the implementation and validation record](logs/session/2026-10-02-working-folder-memory.md)
+and [the explicit contract amendment](adr/0017-session-private-directory-grants.md#amendment-remembered-workspace-folders-2026-10-02).
+
 ## 2026-09-29 local GUI reinstall
 
 - [x] Rebuild and install the 1.4.0 macOS arm64 Desktop bundle from `b69804da5`, retain a rollback

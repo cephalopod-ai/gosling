@@ -3272,9 +3272,6 @@
   "workingDirectoriesMenu.sessionAddedFullAccessHint": {
     "defaultMessage": "Directories you add receive full read/write/run access in this session. Existing workspace folder permissions stay pinned."
   },
-  "workingDirectoriesMenu.workspaceSessionOnlyHint": {
-    "defaultMessage": "Workspace folders remain pinned. Directories added here belong only to this session; other sessions and the workspace do not receive access."
-  },
   "settingsView.tabExtensions": {
     "defaultMessage": "Extensions"
   },
@@ -4270,5 +4267,8 @@
   },
   "secureStorageNotice.configuredStorage": {
     "defaultMessage": "Keys use the backend’s configured credential storage. When keyring is disabled, secrets are stored in a plaintext file."
+  },
+  "workingDirectoriesMenu.workspaceRememberedHint": {
+    "defaultMessage": "Directories added here are saved for this chat and future chats in this workspace. Existing chats keep their pinned folders."
   }
 }

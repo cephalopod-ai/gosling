@@ -759,8 +759,9 @@ export type UpdateWorkingDirRequest_unstable = {
 };
 
 /**
- * Add an extra working directory to a session. The agent gets the same full
- * tool access to it as the primary working directory.
+ * Add an extra working directory to a session and remember it for future chats
+ * in its workspace, when that workspace still exists. Existing root access and
+ * other sessions' pinned folders are preserved.
  */
 export type AddSessionWorkingDirRequest_unstable = {
     sessionId: string;

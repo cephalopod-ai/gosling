@@ -2077,7 +2077,7 @@
         "sessionId",
         "workingDir"
       ],
-      "description": "Add an extra working directory to a session. The agent gets the same full\ntool access to it as the primary working directory.",
+      "description": "Add an extra working directory to a session and remember it for future chats\nin its workspace, when that workspace still exists. Existing root access and\nother sessions' pinned folders are preserved.",
       "x-side": "agent",
       "x-method": "_gosling/unstable/session/working-dirs/add"
     },
