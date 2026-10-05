@@ -10,6 +10,7 @@ import { useChatContext } from '../../contexts/ChatContext';
 import { NavigationProvider, useNavigationContext } from './NavigationContext';
 import { Navigation } from './NavigationPanel';
 import { NAV_DIMENSIONS, Z_INDEX } from './constants';
+import { ResizeHandle } from './ResizeHandle';
 import { resolveArtifactPaneLayout } from './artifactPaneLayout';
 import { cn } from '../../utils';
 import type { ActiveSessionView } from '../../types/sessionExperience';
@@ -69,10 +70,20 @@ const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions }) =
   }, []);
 
   const { isNavExpanded, setIsNavExpanded } = useNavigationContext();
+  const [preferredNavWidth, setPreferredNavWidth] = useState(() => {
+    const stored = Number(localStorage.getItem('navigation_width'));
+    return Number.isFinite(stored) && stored >= 200 ? stored : NAV_DIMENSIONS.NAV_WIDTH;
+  });
+  const maxNavWidth = Math.max(200, Math.min(480, windowWidth - 400));
+  const navWidth = Math.min(preferredNavWidth, maxNavWidth);
+  const resizeNavigation = (width: number) => {
+    setPreferredNavWidth(width);
+    localStorage.setItem('navigation_width', String(width));
+  };
   const artifactWorkbench = useArtifactWorkbench();
   const paneLayout = resolveArtifactPaneLayout(
     windowWidth,
-    isNavExpanded ? NAV_DIMENSIONS.NAV_WIDTH : 0,
+    isNavExpanded ? navWidth : 0,
     artifactWorkbench.width
   );
   const isPaneOverlay = paneLayout.mode === 'overlay';
@@ -132,14 +143,25 @@ const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions }) =
         <motion.div
           key="nav"
           initial={false}
-          animate={{ width: isNavExpanded ? NAV_DIMENSIONS.NAV_WIDTH : 0 }}
-          transition={{ type: 'spring', stiffness: 400, damping: 40 }}
+          animate={{ width: isNavExpanded ? navWidth : 0 }}
+          transition={{ duration: 0 }}
           style={{ height: '100%' }}
           className="relative flex-shrink-0 overflow-hidden h-full p-2"
         >
           <div className="w-full h-full overflow-hidden rounded-xl border border-border-primary">
             <Navigation />
           </div>
+          {isNavExpanded && (
+            <ResizeHandle
+              label="Resize navigation panel"
+              orientation="vertical"
+              value={navWidth}
+              min={200}
+              max={maxNavWidth}
+              onChange={resizeNavigation}
+              className="absolute inset-y-0 right-0 z-10 w-2 cursor-col-resize hover:bg-border-primary focus-visible:bg-border-primary"
+            />
+          )}
         </motion.div>
 
         {/* Main content — no border / no card; just flows on the canvas. */}
@@ -158,7 +180,7 @@ const AppLayoutContent: React.FC<AppLayoutContentProps> = ({ activeSessions }) =
         <motion.div
           initial={false}
           animate={{ width: artifactWorkbench.isOpen ? paneLayout.width : 0 }}
-          transition={{ type: 'spring', stiffness: 400, damping: 40 }}
+          transition={{ duration: 0 }}
           style={{ zIndex: Z_INDEX.HEADER }}
           data-testid="artifact-pane-frame"
           data-pane-mode={paneLayout.mode}

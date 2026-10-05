@@ -37,6 +37,16 @@ vi.mock('../../acp/chatSessionController', () => ({
 }));
 
 describe('ArtifactPane', () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        disconnect() {}
+      }
+    );
+  });
+
   const saveArtifact = vi.fn();
   const readArtifactFile = vi.fn();
   const readArtifactTitles = vi.fn();
@@ -210,6 +220,29 @@ describe('ArtifactPane', () => {
       setVisibleSessionArtifacts: vi.fn(),
       setVisibleSessionWorkspaceId: vi.fn(),
     });
+  });
+
+  it('resizes the inventory vertically and restores its saved height', () => {
+    const tree = (
+      <IntlTestWrapper>
+        <ArtifactWorkbenchProvider>
+          <Harness />
+        </ArtifactWorkbenchProvider>
+      </IntlTestWrapper>
+    );
+    const { unmount } = render(tree);
+    const divider = screen.getByRole('separator', { name: 'Resize outputs inventory' });
+    fireEvent.pointerDown(divider, { button: 0, pointerId: 1, clientY: 240 });
+    fireEvent.pointerMove(window, { pointerId: 1, clientY: 300 });
+    fireEvent.pointerUp(window, { pointerId: 1 });
+    expect(divider).toHaveAttribute('aria-valuenow', '300');
+    expect(localStorage.getItem('artifact_inventory_height')).toBe('300');
+    unmount();
+    render(tree);
+    expect(screen.getByRole('separator', { name: 'Resize outputs inventory' })).toHaveAttribute(
+      'aria-valuenow',
+      '300'
+    );
   });
 
   it('copies file contents separately from its path even when the preview is truncated', async () => {
