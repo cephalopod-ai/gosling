@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { toastService } from '../../../toasts';
-import { addSessionExtension } from '../../../acp/session-extensions';
+import { addSessionExtension, removeSessionExtension } from '../../../acp/session-extensions';
 import { getExtensionLoadFailures } from '../../../utils/extensionLoadFailures';
 import type { ExtensionConfig } from '../../../types/extensions';
-import { addToAgent } from './agent-api';
+import { addToAgent, removeFromAgent } from './agent-api';
 
 vi.mock('../../../toasts', () => ({
   toastService: {
@@ -62,5 +62,45 @@ describe('addToAgent', () => {
     vi.mocked(addSessionExtension).mockResolvedValueOnce(undefined);
     await addToAgent(broken, 'session-g133-retry', false);
     expect(getExtensionLoadFailures('session-g133-retry').size).toBe(0);
+  });
+});
+
+describe('removeFromAgent', () => {
+  beforeEach(() => {
+    vi.mocked(removeSessionExtension).mockReset();
+    vi.mocked(toastService.success).mockClear();
+    vi.mocked(toastService.error).mockClear();
+  });
+
+  it('waits for confirmed removal before showing success', async () => {
+    let finishRemoval!: () => void;
+    vi.mocked(removeSessionExtension).mockReturnValue(
+      new Promise<void>((resolve) => {
+        finishRemoval = resolve;
+      })
+    );
+    const removal = removeFromAgent('Supabase', 'restoring-chat', true);
+    expect(toastService.success).not.toHaveBeenCalled();
+    expect(removeSessionExtension).toHaveBeenCalledWith('restoring-chat', 'Supabase');
+    finishRemoval();
+    await removal;
+    expect(toastService.success).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Supabase' })
+    );
+  });
+
+  it('shows busy-chat guidance and never reports removal success on refusal', async () => {
+    const cause =
+      'This chat is busy. Wait for the current operation to finish or stop its response before changing extensions.';
+    vi.mocked(removeSessionExtension).mockRejectedValue({
+      code: -32602,
+      message: 'Invalid params',
+      data: cause,
+    });
+    await expect(removeFromAgent('Supabase', 'busy-chat', true)).rejects.toBeDefined();
+    expect(toastService.error).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Supabase', msg: cause, traceback: cause })
+    );
+    expect(toastService.success).not.toHaveBeenCalled();
   });
 });

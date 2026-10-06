@@ -602,9 +602,9 @@ enum SessionCommand {
         #[arg(
             long = "format",
             value_name = "FORMAT",
-            help = "Output format (markdown, json, yaml)",
+            help = "Output format (markdown, json, yaml, json-pages; json-pages requires --output directory)",
             default_value = "markdown",
-            value_parser = clap::builder::PossibleValuesParser::new(["markdown", "json", "yaml"])
+            value_parser = clap::builder::PossibleValuesParser::new(["markdown", "json", "yaml", "json-pages"])
         )]
         format: String,
 

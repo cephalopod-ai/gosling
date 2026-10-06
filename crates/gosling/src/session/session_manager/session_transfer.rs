@@ -68,6 +68,12 @@ impl SessionStorage {
     }
 
     pub(super) async fn export_session(&self, id: &str) -> Result<String> {
+        let exported = self.export_session_snapshot(id).await?;
+        crate::session::import_formats::ensure_import_payload_size(&exported)?;
+        Ok(exported)
+    }
+
+    pub(super) async fn export_session_snapshot(&self, id: &str) -> Result<String> {
         // Read-only: a consistent snapshot only needs a deferred transaction,
         // not the process-wide write guard or a write-reserving BEGIN
         // IMMEDIATE. Exporting a large session must not block every other
@@ -88,7 +94,6 @@ impl SessionStorage {
                 );
         }
         let exported = serde_json::to_string_pretty(&value)?;
-        crate::session::import_formats::ensure_import_payload_size(&exported)?;
         tx.commit().await?;
         Ok(exported)
     }

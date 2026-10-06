@@ -1318,6 +1318,412 @@ fn test_custom_session_extensions_add_list_remove() {
 
 #[test]
 #[serial]
+fn test_remove_extension_while_saved_session_is_restoring() {
+    use axum::response::IntoResponse;
+    use gosling::agents::extension::Envs;
+    use gosling::config::{ExtensionConfig, GoslingMode};
+    use gosling::session::{EnabledExtensionsState, ExtensionState, SessionType};
+    use tokio::sync::Notify;
+
+    let _guard = env_lock::lock_env([("OPENAI_API_KEY", Some("test-key"))]);
+    write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
+    run_test(async move {
+        let started = Arc::new(Notify::new());
+        let release = Arc::new(Notify::new());
+        let app = axum::Router::new().route(
+            "/mcp",
+            axum::routing::post({
+                let started = started.clone();
+                let release = release.clone();
+                move |axum::Json(request): axum::Json<serde_json::Value>| {
+                    let started = started.clone();
+                    let release = release.clone();
+                    async move {
+                        if request["method"] == "notifications/initialized" {
+                            return axum::http::StatusCode::ACCEPTED.into_response();
+                        }
+                        let result = if request["method"] == "initialize" {
+                            started.notify_one();
+                            release.notified().await;
+                            serde_json::json!({
+                                "protocolVersion": "2025-03-26",
+                                "capabilities": { "tools": {} },
+                                "serverInfo": { "name": "delayed-extension", "version": "1" }
+                            })
+                        } else {
+                            serde_json::json!({ "tools": [{
+                                "name": "late-tool", "description": "Fixture tool",
+                                "inputSchema": { "type": "object" }
+                            }] })
+                        };
+                        axum::Json(serde_json::json!({
+                            "jsonrpc": "2.0", "id": request["id"], "result": result,
+                        }))
+                        .into_response()
+                    }
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let uri = format!("http://{}/mcp", listener.local_addr().unwrap());
+        let http_server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+        let root = tempfile::tempdir().unwrap();
+        let manager = Arc::new(SessionManager::new(root.path().to_path_buf()));
+        let saved = manager
+            .create_session(
+                root.path().to_path_buf(),
+                "saved chat".into(),
+                SessionType::User,
+                GoslingMode::Auto,
+            )
+            .await
+            .unwrap();
+        let mut data = saved.extension_data.clone();
+        data.extension_states
+            .insert("retained.v1".into(), serde_json::json!({ "value": 42 }));
+        let delayed_extension = |name: &str| ExtensionConfig::StreamableHttp {
+            name: name.into(),
+            description: String::new(),
+            uri: uri.clone(),
+            envs: Envs::default(),
+            env_keys: Vec::new(),
+            headers: Default::default(),
+            timeout: Some(300),
+            socket: None,
+            client_id: None,
+            client_secret_key: None,
+            scopes: Vec::new(),
+            bundled: None,
+            available_tools: Vec::new(),
+        };
+        EnabledExtensionsState::new(vec![
+            delayed_extension("Supabase"),
+            delayed_extension("other-login"),
+            ExtensionConfig::Platform {
+                name: "summarize".into(),
+                description: String::new(),
+                display_name: None,
+                bundled: None,
+                available_tools: Vec::new(),
+            },
+        ])
+        .to_extension_data(&mut data)
+        .unwrap();
+        manager
+            .update(&saved.id)
+            .extension_data(data)
+            .apply()
+            .await
+            .unwrap();
+        let openai = OpenAiFixture::new(vec![], Arc::new(IgnoreSessionId)).await;
+        let conn = AcpServerConnection::new(
+            TestConnectionConfig {
+                data_root: root.path().to_path_buf(),
+                session_manager: Some(manager.clone()),
+                ..Default::default()
+            },
+            openai,
+        )
+        .await;
+        let cx = conn.cx().clone();
+        let id = saved.id.clone();
+        let cwd = saved.working_dir.clone();
+        let load = tokio::spawn(async move {
+            cx.send_request(agent_client_protocol::schema::v1::LoadSessionRequest::new(
+                agent_client_protocol::schema::v1::SessionId::new(id),
+                cwd,
+            ))
+            .block_task()
+            .await
+        });
+        tokio::time::timeout(Duration::from_secs(5), started.notified())
+            .await
+            .expect("restoration must reach the delayed extension");
+        tokio::time::timeout(
+            Duration::from_secs(2),
+            send_custom(
+                conn.cx(),
+                "_gosling/unstable/session/extensions/remove",
+                serde_json::json!({ "sessionId": saved.id, "name": "SUPABASE" }),
+            ),
+        )
+        .await
+        .expect("removal must not wait for startup")
+        .expect("saved chat must remain removable");
+        let partial = manager.get_session(&saved.id, false).await.unwrap();
+        let partial_state =
+            EnabledExtensionsState::from_extension_data(&partial.extension_data).unwrap();
+        assert_eq!(
+            partial_state
+                .extensions
+                .iter()
+                .map(ExtensionConfig::key)
+                .collect::<Vec<_>>(),
+            vec!["other-login", "summarize"]
+        );
+        tokio::time::timeout(Duration::from_secs(5), started.notified())
+            .await
+            .expect("unrelated startup must remain pending");
+        tokio::time::timeout(
+            Duration::from_secs(2),
+            send_custom(
+                conn.cx(),
+                "_gosling/unstable/session/extensions/remove",
+                serde_json::json!({ "sessionId": saved.id, "name": "other-login" }),
+            ),
+        )
+        .await
+        .expect("removal must not wait for unrelated startup")
+        .unwrap();
+        release.notify_waiters();
+        tokio::time::timeout(Duration::from_secs(5), load)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+
+        let current = manager.get_session(&saved.id, false).await.unwrap();
+        let state = EnabledExtensionsState::from_extension_data(&current.extension_data).unwrap();
+        assert_eq!(
+            state
+                .extensions
+                .iter()
+                .map(ExtensionConfig::key)
+                .collect::<Vec<_>>(),
+            vec!["summarize"]
+        );
+        assert_eq!(
+            current.extension_data.extension_states["retained.v1"],
+            serde_json::json!({ "value": 42 })
+        );
+        let tools = send_custom(
+            conn.cx(),
+            "_gosling/unstable/tools/list",
+            serde_json::json!({ "sessionId": saved.id }),
+        )
+        .await
+        .unwrap();
+        assert!(!tools.to_string().to_lowercase().contains("supabase"));
+        conn.cx()
+            .send_request(agent_client_protocol::schema::v1::LoadSessionRequest::new(
+                agent_client_protocol::schema::v1::SessionId::new(saved.id.clone()),
+                saved.working_dir,
+            ))
+            .block_task()
+            .await
+            .unwrap();
+        let reloaded = manager.get_session(&saved.id, false).await.unwrap();
+        assert!(
+            !EnabledExtensionsState::from_extension_data(&reloaded.extension_data)
+                .unwrap()
+                .extensions
+                .iter()
+                .any(|extension| extension.key() == "supabase")
+        );
+        http_server.abort();
+    });
+}
+
+#[test]
+#[serial]
+fn test_remove_extension_from_saved_session_without_loading_it() {
+    use gosling::config::{ExtensionConfig, GoslingMode};
+    use gosling::session::{EnabledExtensionsState, ExtensionState, SessionType};
+
+    write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
+    run_test(async move {
+        let root = tempfile::tempdir().unwrap();
+        let manager = Arc::new(SessionManager::new(root.path().to_path_buf()));
+        let saved = manager
+            .create_session(
+                root.path().to_path_buf(),
+                "saved chat".into(),
+                SessionType::User,
+                GoslingMode::Auto,
+            )
+            .await
+            .unwrap();
+        let mut data = saved.extension_data.clone();
+        EnabledExtensionsState::new(vec![ExtensionConfig::Platform {
+            name: "summarize".into(),
+            description: String::new(),
+            display_name: None,
+            bundled: None,
+            available_tools: Vec::new(),
+        }])
+        .to_extension_data(&mut data)
+        .unwrap();
+        manager
+            .update(&saved.id)
+            .extension_data(data)
+            .apply()
+            .await
+            .unwrap();
+        let openai = OpenAiFixture::new(vec![], Arc::new(IgnoreSessionId)).await;
+        let conn = AcpServerConnection::new(
+            TestConnectionConfig {
+                data_root: root.path().to_path_buf(),
+                session_manager: Some(manager.clone()),
+                ..Default::default()
+            },
+            openai,
+        )
+        .await;
+        send_custom(
+            conn.cx(),
+            "_gosling/unstable/session/extensions/remove",
+            serde_json::json!({ "sessionId": saved.id, "name": "summarize" }),
+        )
+        .await
+        .unwrap();
+        let current = manager.get_session(&saved.id, false).await.unwrap();
+        assert!(
+            EnabledExtensionsState::from_extension_data(&current.extension_data)
+                .unwrap()
+                .extensions
+                .is_empty()
+        );
+        let missing = send_custom(
+            conn.cx(),
+            "_gosling/unstable/session/extensions/remove",
+            serde_json::json!({ "sessionId": "absent-chat", "name": "summarize" }),
+        )
+        .await
+        .unwrap_err();
+        assert!(format!("{missing:?}").contains("Session not found: absent-chat"));
+        let planning = send_custom(
+            conn.cx(),
+            "_gosling/unstable/session/extensions/remove",
+            serde_json::json!({ "sessionId": saved.id, "name": "planning" }),
+        )
+        .await
+        .unwrap_err();
+        assert!(format!("{planning:?}").contains("cannot be disabled"));
+    });
+}
+
+#[test]
+#[serial]
+fn test_extension_changes_preserve_the_active_turn_fence() {
+    struct PendingProvider(Arc<tokio::sync::Notify>);
+
+    #[async_trait::async_trait]
+    impl Provider for PendingProvider {
+        fn get_name(&self) -> &str {
+            "openai"
+        }
+
+        async fn stream(
+            &self,
+            _model_config: &ModelConfig,
+            _system: &str,
+            _messages: &[gosling::conversation::message::Message],
+            _tools: &[rmcp::model::Tool],
+        ) -> Result<MessageStream, ProviderError> {
+            self.0.notify_one();
+            std::future::pending().await
+        }
+
+        async fn fetch_supported_models(&self) -> Result<Vec<String>, ProviderError> {
+            Ok(vec!["gpt-4o".into()])
+        }
+    }
+
+    write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
+    run_test(async move {
+        let started = Arc::new(tokio::sync::Notify::new());
+        let provider = Arc::new(PendingProvider(started.clone()));
+        let provider_factory: AcpProviderFactory = Arc::new(move |_, _, _| {
+            let provider = provider.clone();
+            Box::pin(async move { Ok(provider as Arc<dyn Provider>) })
+        });
+        let openai = OpenAiFixture::new(vec![], Arc::new(IgnoreSessionId)).await;
+        let mut conn = AcpServerConnection::new(
+            TestConnectionConfig {
+                provider_factory: Some(provider_factory),
+                current_model: "gpt-4o".into(),
+                ..Default::default()
+            },
+            openai,
+        )
+        .await;
+        let SessionData { session, .. } = conn.new_session().await.unwrap();
+        let id = session.session_id().clone();
+        let extension = serde_json::json!({
+            "type": "platform", "name": "summarize", "description": "Summarize files",
+            "displayName": "Summarize", "bundled": true,
+        });
+        send_custom(
+            conn.cx(),
+            "_gosling/unstable/session/extensions/add",
+            serde_json::json!({ "sessionId": id, "extension": extension }),
+        )
+        .await
+        .unwrap();
+        let cx = conn.cx().clone();
+        let prompt_id = id.clone();
+        let prompt = tokio::spawn(async move {
+            cx.send_request(PromptRequest::new(
+                prompt_id,
+                vec![ContentBlock::Text(TextContent::new("wait"))],
+            ))
+            .block_task()
+            .await
+        });
+        tokio::time::timeout(Duration::from_secs(5), started.notified())
+            .await
+            .unwrap();
+        for (method, body) in [
+            (
+                "_gosling/unstable/session/extensions/remove",
+                serde_json::json!({ "sessionId": id, "name": "summarize" }),
+            ),
+            (
+                "_gosling/unstable/session/extensions/add",
+                serde_json::json!({ "sessionId": id, "extension": extension }),
+            ),
+        ] {
+            let error = send_custom(conn.cx(), method, body).await.unwrap_err();
+            let message = format!("{error:?}");
+            assert!(message.contains("This chat is busy"));
+            assert!(!message.contains("provider switch"));
+        }
+        let listed = send_custom(
+            conn.cx(),
+            "_gosling/unstable/session/extensions/list",
+            serde_json::json!({ "sessionId": id }),
+        )
+        .await
+        .unwrap();
+        assert!(listed["extensions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|extension| extension["name"] == "summarize"));
+        conn.cx()
+            .send_notification(agent_client_protocol::schema::v1::CancelNotification::new(
+                id.clone(),
+            ))
+            .unwrap();
+        let response = tokio::time::timeout(Duration::from_secs(5), prompt)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert_eq!(response.stop_reason, StopReason::Cancelled);
+        send_custom(
+            conn.cx(),
+            "_gosling/unstable/session/extensions/remove",
+            serde_json::json!({ "sessionId": id, "name": "summarize" }),
+        )
+        .await
+        .unwrap();
+    });
+}
+
+#[test]
+#[serial]
 fn test_custom_get_available_extensions() {
     write_acp_global_config(DEFAULT_ACP_TEST_CONFIG);
     run_test(async move {

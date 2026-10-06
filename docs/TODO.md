@@ -1,5 +1,17 @@
 # TODO
 
+## 2026-10-06 extension removal during restoration
+
+- [~] **SUP-DISABLE-001** — Saved-chat removal now persists the disabled extension, cancels
+      its initializer and OAuth callback listener, and fences late startup completion. Other
+      saved extensions and host metadata remain intact. Rust regression targets compile;
+      stalled-startup/callback runtime and installed Desktop replay remain pending.
+- [~] **SUP-DISABLE-002** — Extension changes retain active-turn fencing and return busy-chat
+      guidance. Desktop refusal/success regression tests pass; the Rust active/idle regression
+      is compiled but not executed.
+
+See [the repair and verification record](logs/session/2026-10-06-supabase-disable-during-restore.md).
+
 ## 2026-10-02 working-folder memory
 
 - [~] **WS-FOLDER-001** — Added folders now reach the model without hint files, refresh the live

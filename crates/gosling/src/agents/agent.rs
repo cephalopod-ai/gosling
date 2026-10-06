@@ -103,6 +103,7 @@ const STREAM_CHECKPOINT_INTERVAL: Duration = Duration::from_millis(250);
 const MAX_MID_STREAM_RETRIES: usize = 3;
 
 mod extensions;
+use extensions::ExtensionLoadControl;
 mod frontend_extensions;
 mod hooks;
 mod prompt_apis;
@@ -437,6 +438,7 @@ pub struct Agent {
     /// Keys of the loaded extensions that came from the user's config; saved
     /// with the session so a resume can tell them from session-scoped ones.
     pub(super) config_extension_keys: Mutex<HashSet<String>>,
+    extension_load_controls: Mutex<HashMap<String, ExtensionLoadControl>>,
     pub(super) frontend_tools: Mutex<HashMap<String, FrontendTool>>,
     pub(super) frontend_instructions: Mutex<Option<String>>,
     pub(super) prompt_manager: Mutex<PromptManager>,
@@ -651,6 +653,7 @@ impl Agent {
             )),
             frontend_extensions: Mutex::new(HashMap::new()),
             config_extension_keys: Mutex::new(HashSet::new()),
+            extension_load_controls: Mutex::new(HashMap::new()),
             frontend_tools: Mutex::new(HashMap::new()),
             frontend_instructions: Mutex::new(None),
             prompt_manager: Mutex::new(PromptManager::new()),

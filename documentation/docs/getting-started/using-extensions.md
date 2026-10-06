@@ -380,6 +380,11 @@ Changes made during a session preserve your current conversation without startin
   1. Click the <Puzzle className="inline" size={16} /> button at the bottom of the app.
   2. Use the toggle switch next to an extension to enable or disable it.
 
+  If the chat is responding, wait for it to finish or stop the response before changing
+  extensions. You can disable an extension while a saved chat is still loading or
+  waiting for that extension's browser sign-in. This cancels its pending startup and
+  preserves the disabled choice when the chat is reopened.
+
   </TabItem>
 
   <TabItem value="cli" label="gosling CLI">

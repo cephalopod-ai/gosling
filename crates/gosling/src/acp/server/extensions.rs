@@ -3,15 +3,37 @@ use crate::agents::extension::Envs;
 use crate::config::extensions::ExtensionEntry;
 use agent_client_protocol::schema::v1::{HttpHeader, McpServer, McpServerHttp, McpServerStdio};
 
+const EXTENSION_BUSY_MESSAGE: &str = "This chat is busy. Wait for the current operation to finish or stop its response before changing extensions.";
+
+fn extension_transition_error(error: agent_client_protocol::Error) -> agent_client_protocol::Error {
+    // Extension changes have no provider-switch checkpoint to review.
+    if error
+        .data
+        .as_ref()
+        .is_some_and(|data| data.get("actualActiveRunId").is_some())
+    {
+        agent_client_protocol::Error::invalid_params().data(EXTENSION_BUSY_MESSAGE)
+    } else {
+        error
+    }
+}
+
 impl GoslingAcpAgent {
     pub(super) async fn on_add_session_extension(
         &self,
         req: AddSessionExtensionRequest,
     ) -> Result<EmptyResponse, agent_client_protocol::Error> {
         let session_id = &req.session_id;
+        let _turn_claim = self
+            .session_manager
+            .claim_local_turn(session_id)
+            .ok_or_else(|| {
+                agent_client_protocol::Error::invalid_params().data(EXTENSION_BUSY_MESSAGE)
+            })?;
         let _guard = self
             .queue_provider_transition(session_id, None, true)
-            .await?;
+            .await
+            .map_err(extension_transition_error)?;
         let config = gosling_extension_to_config_without_secrets(req.extension)?;
         let agent = self.get_session_agent(&req.session_id).await?;
         agent
@@ -26,14 +48,61 @@ impl GoslingAcpAgent {
         req: RemoveSessionExtensionRequest,
     ) -> Result<EmptyResponse, agent_client_protocol::Error> {
         let session_id = &req.session_id;
-        let _guard = self
-            .queue_provider_transition(session_id, None, true)
-            .await?;
-        let agent = self.get_session_agent(&req.session_id).await?;
-        agent
-            .remove_extension(&req.name, session_id)
+        if self.closed_session_ids.lock().await.contains(session_id) {
+            return Err(
+                agent_client_protocol::Error::resource_not_found(Some(session_id.clone()))
+                    .data(format!("Session not found: {session_id}")),
+            );
+        }
+        let _turn_claim = self
+            .session_manager
+            .claim_local_turn(session_id)
+            .ok_or_else(|| {
+                agent_client_protocol::Error::invalid_params().data(EXTENSION_BUSY_MESSAGE)
+            })?;
+        let agent = self
+            .sessions
+            .lock()
             .await
-            .internal_err()?;
+            .get(session_id)
+            .map(|session| session.agent.clone());
+        if let Some(agent) = agent {
+            let _guard = self
+                .queue_provider_transition(session_id, None, true)
+                .await
+                .map_err(extension_transition_error)?;
+            agent
+                .remove_extension(&req.name, session_id)
+                .await
+                .internal_err()?;
+        } else {
+            // Persist first, then find an initializer. If creation starts after
+            // this lookup, it reads the already-updated saved configuration.
+            self.session_manager
+                .remove_saved_extension(session_id, &req.name)
+                .await
+                .map_err(|error| {
+                    if error
+                        .downcast_ref::<crate::session::SessionNotFound>()
+                        .is_some()
+                    {
+                        agent_client_protocol::Error::resource_not_found(Some(session_id.clone()))
+                            .data(format!("Session not found: {session_id}"))
+                    } else {
+                        agent_client_protocol::Error::internal_error().data(error.to_string())
+                    }
+                })?;
+            if let Some(agent) = self
+                .agent_manager
+                .get_agent_if_loaded_or_initializing(session_id)
+                .await
+            {
+                agent
+                    .cancel_extension_load(&req.name)
+                    .await
+                    .internal_err()?;
+            }
+        }
         Ok(EmptyResponse {})
     }
 
@@ -414,6 +483,21 @@ mod tests {
     use agent_client_protocol::schema::v1::{McpServer, McpServerSse};
     use std::collections::HashMap;
 
+    #[tokio::test]
+    async fn extension_fence_uses_busy_guidance_without_weakening_the_gate() {
+        let gate = Arc::new(super::super::active_runs::SessionOperationGate::default());
+        let _prompt = gate.begin_prompt("running-turn").await.unwrap();
+        let refusal = gate
+            .queue_provider_transition(None, true)
+            .err()
+            .expect("an active prompt must remain fenced");
+        let error = extension_transition_error(refusal);
+        assert_eq!(
+            error.data,
+            Some(serde_json::Value::String(EXTENSION_BUSY_MESSAGE.into()))
+        );
+        assert_eq!(gate.active_run_id().as_deref(), Some("running-turn"));
+    }
     #[test]
     fn builtin_config_converts_to_gosling_builtin_extension() {
         let config = ExtensionConfig::Builtin {

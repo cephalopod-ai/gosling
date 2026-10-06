@@ -22,6 +22,14 @@ const CLIENT_METADATA_URL: &str = "https://gosling-docs.ai/oauth/client-metadata
 const DEFAULT_OAUTH_CALLBACK_TIMEOUT_SECS: u64 = 300;
 const OAUTH_CALLBACK_TIMEOUT_ENV: &str = "GOSLING_OAUTH_CALLBACK_TIMEOUT_SECONDS";
 
+struct OAuthCallbackServer(tokio::task::JoinHandle<()>);
+
+impl Drop for OAuthCallbackServer {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StaticOAuthClientConfig {
     pub client_id: String,
@@ -179,12 +187,13 @@ pub async fn oauth_flow_with_store(
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
     let used_addr = listener.local_addr()?;
-    let server_handle = tokio::spawn(async move {
+    // Cancelling extension startup must also release its callback listener.
+    let server_handle = OAuthCallbackServer(tokio::spawn(async move {
         let result = axum::serve(listener, app).await;
         if let Err(e) = result {
             eprintln!("Callback server error: {}", e);
         }
-    });
+    }));
 
     let mut oauth_state = OAuthState::new(mcp_server_url, None).await?;
 
@@ -214,7 +223,7 @@ pub async fn oauth_flow_with_store(
         authorization_url.as_str(),
     )
     .await;
-    server_handle.abort();
+    drop(server_handle);
     let CallbackParams {
         code: auth_code,
         state: csrf_token,
@@ -315,11 +324,11 @@ async fn oauth_flow_with_static_client(
         .unwrap_or(0);
     let listener = tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], port))).await?;
     let used_addr = listener.local_addr()?;
-    let server_handle = tokio::spawn(async move {
+    let server_handle = OAuthCallbackServer(tokio::spawn(async move {
         if let Err(error) = axum::serve(listener, app).await {
             eprintln!("Callback server error: {}", error);
         }
-    });
+    }));
 
     let metadata = auth_manager.discover_metadata().await?;
     auth_manager.set_metadata(metadata);
@@ -353,7 +362,7 @@ async fn oauth_flow_with_static_client(
         &authorization_url,
     )
     .await;
-    server_handle.abort();
+    drop(server_handle);
     let CallbackParams {
         code: auth_code,
         state: csrf_token,
@@ -367,6 +376,28 @@ async fn oauth_flow_with_static_client(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn cancelled_oauth_releases_its_callback_listener() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = OAuthCallbackServer(tokio::spawn(async move {
+            axum::serve(listener, Router::new()).await.unwrap();
+        }));
+        assert!(tokio::net::TcpListener::bind(address).await.is_err());
+        drop(server);
+        let rebound = tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                if let Ok(listener) = tokio::net::TcpListener::bind(address).await {
+                    return listener;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("cancelled OAuth must release its loopback listener");
+        drop(rebound);
+    }
 
     #[test]
     fn oauth_callback_escapes_extension_name() {

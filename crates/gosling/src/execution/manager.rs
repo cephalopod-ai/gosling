@@ -7,7 +7,7 @@ use anyhow::Result;
 use lru::LruCache;
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use tokio::sync::{mpsc, Mutex, OnceCell, RwLock};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info};
@@ -43,7 +43,22 @@ pub struct AgentManager {
     /// `Arc<Mutex<()>>` stays alive as long as any caller still holds it,
     /// even after the HashMap entry is removed.
     creation_locks: Arc<Mutex<HashMap<String, Arc<Mutex<()>>>>>,
+    initializing_agents: Arc<std::sync::Mutex<HashMap<String, Weak<Agent>>>>,
     shutting_down: Arc<RwLock<bool>>,
+}
+
+struct InitializingAgentGuard {
+    agents: Arc<std::sync::Mutex<HashMap<String, Weak<Agent>>>>,
+    session_id: String,
+}
+
+impl Drop for InitializingAgentGuard {
+    fn drop(&mut self) {
+        self.agents
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(&self.session_id);
+    }
 }
 
 impl AgentManager {
@@ -57,6 +72,7 @@ impl AgentManager {
             default_provider: Arc::new(RwLock::new(None)),
             cancel_tokens: Arc::new(RwLock::new(HashMap::new())),
             creation_locks: Arc::new(Mutex::new(HashMap::new())),
+            initializing_agents: Arc::new(std::sync::Mutex::new(HashMap::new())),
             shutting_down: Arc::new(RwLock::new(false)),
         };
 
@@ -118,6 +134,24 @@ impl AgentManager {
             .get_or_create_agent_with_runtime_context(session_id, RuntimeContext::default())
             .await?
             .agent)
+    }
+
+    /// Finds an agent without waiting for its provider or MCP authentication.
+    pub(crate) async fn get_agent_if_loaded_or_initializing(
+        &self,
+        session_id: &str,
+    ) -> Option<Arc<Agent>> {
+        let initializing = self
+            .initializing_agents
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(session_id)
+            .and_then(Weak::upgrade);
+        if initializing.is_some() {
+            return initializing;
+        }
+        // Creation publishes to the cache before removing its initializing entry.
+        self.sessions.read().await.peek(session_id).cloned()
     }
 
     pub async fn get_or_create_agent_with_runtime_context(
@@ -221,6 +255,14 @@ impl AgentManager {
         config.use_login_shell_path = runtime_context.use_login_shell_path;
         config.session_name_update_tx = runtime_context.session_name_update_tx;
         let agent = Arc::new(Agent::with_config(config));
+        self.initializing_agents
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(session_id.to_string(), Arc::downgrade(&agent));
+        let _initializing = InitializingAgentGuard {
+            agents: Arc::clone(&self.initializing_agents),
+            session_id: session_id.to_string(),
+        };
         let mut extension_results = Vec::new();
 
         if let Ok(session) = self

@@ -14,7 +14,7 @@ use super::{
     SessionNotFound, SessionStorage, SessionType, SessionUpdateBuilder,
 };
 use crate::config::GoslingMode;
-use crate::session::extension_data::ExtensionData;
+use crate::session::extension_data::{EnabledExtensionsState, ExtensionData, ExtensionState};
 use anyhow::Result;
 use gosling_providers::conversation::token_usage::Usage;
 use sqlx::Sqlite;
@@ -690,6 +690,56 @@ impl SessionStorage {
         if result.rows_affected() == 0 {
             return Err(super::SessionNotFound.into());
         }
+        Ok(())
+    }
+
+    /// Removal during restoration must preserve extensions that have not loaded yet.
+    pub(super) async fn remove_saved_extension(&self, session_id: &str, name: &str) -> Result<()> {
+        let extension_key = crate::config::extensions::name_to_key(name);
+        anyhow::ensure!(
+            extension_key != crate::agents::interaction_policy::PLANNING_EXTENSION_NAME,
+            "The planning extension is host policy infrastructure and cannot be disabled"
+        );
+        let _write_guard = self.acquire_write_guard().await;
+        let pool = self.pool().await?;
+        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+        let row: Option<(String,)> =
+            sqlx::query_as("SELECT extension_data FROM sessions WHERE id = ?")
+                .bind(session_id)
+                .fetch_optional(&mut *tx)
+                .await?;
+        let (extension_data_json,) = row.ok_or(SessionNotFound)?;
+        let mut extension_data: ExtensionData = serde_json::from_str(&extension_data_json)?;
+        let state_key = format!(
+            "{}.{}",
+            EnabledExtensionsState::EXTENSION_NAME,
+            EnabledExtensionsState::VERSION
+        );
+        let mut state = match extension_data.extension_states.get(&state_key) {
+            Some(value) => serde_json::from_value::<EnabledExtensionsState>(value.clone())?,
+            None => {
+                let resumed = EnabledExtensionsState::resume(None, crate::config::Config::global());
+                EnabledExtensionsState::new(resumed.extensions)
+                    .with_config_keys(resumed.config_keys)
+            }
+        };
+        let configured = crate::config::extensions::get_enabled_extensions_with_config(
+            crate::config::Config::global(),
+        );
+        state = state.upgrade_platform_catalog(&configured).0;
+        state
+            .extensions
+            .retain(|extension| extension.key() != extension_key);
+        state.config_keys.retain(|key| key != &extension_key);
+        state.to_extension_data(&mut extension_data)?;
+        sqlx::query(
+            "UPDATE sessions SET extension_data = ?, updated_at = datetime('now') WHERE id = ?",
+        )
+        .bind(serde_json::to_string(&extension_data)?)
+        .bind(session_id)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
         Ok(())
     }
 

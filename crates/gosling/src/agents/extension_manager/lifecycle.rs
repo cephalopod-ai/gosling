@@ -55,8 +55,20 @@ impl ExtensionManager {
             .collect()
     }
 
-    /// Get aggregated usage statistics
     pub async fn remove_extension(&self, name: &str) -> ExtensionResult<()> {
+        if name_to_key(name) == crate::agents::interaction_policy::PLANNING_EXTENSION_NAME {
+            return Err(ExtensionError::ConfigError(
+                "The planning extension is host policy infrastructure and cannot be disabled"
+                    .to_string(),
+            ));
+        }
+        let _lifecycle_guard = self.lifecycle_lock.lock().await;
+        self.remove_restoring_extension(name).await
+    }
+
+    /// The caller has cancelled and fenced this extension's initializer. Other
+    /// initializers may still hold the lifecycle lock while waiting for login.
+    pub(crate) async fn remove_restoring_extension(&self, name: &str) -> ExtensionResult<()> {
         let sanitized_name = name_to_key(name);
         if sanitized_name == crate::agents::interaction_policy::PLANNING_EXTENSION_NAME {
             return Err(ExtensionError::ConfigError(
@@ -64,7 +76,6 @@ impl ExtensionManager {
                     .to_string(),
             ));
         }
-        let _lifecycle_guard = self.lifecycle_lock.lock().await;
         let removed = self.extensions.lock().await.remove(&sanitized_name);
         if let Some(removed) = removed {
             removed.shutdown().await;

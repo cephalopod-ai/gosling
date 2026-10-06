@@ -306,6 +306,33 @@ pub async fn handle_session_export(
     redact: bool,
 ) -> Result<()> {
     let session_manager = SessionManager::instance();
+    if format == "json-pages" {
+        if nostr || !relays.is_empty() {
+            anyhow::bail!("Paged acquisition export does not support Nostr sharing");
+        }
+        let directory =
+            output_path.ok_or_else(|| anyhow::anyhow!("json-pages requires --output directory"))?;
+        let snapshot = session_manager
+            .export_session_snapshot_for_bundle(&session_id)
+            .await?;
+        let snapshot = if redact {
+            let redactor = installation_secret_redactor().await;
+            serde_json::to_string_pretty(&redact_session_export(
+                serde_json::from_str(&snapshot)?,
+                &redactor,
+            ))?
+        } else {
+            snapshot
+        };
+        let bundle = gosling::session::export_bundle::write_bundle(
+            &directory,
+            &session_id,
+            &snapshot,
+            redact,
+        )?;
+        println!("{}", serde_json::to_string(&bundle)?);
+        return Ok(());
+    }
     let session = match session_manager.get_session(&session_id, true).await {
         Ok(session) => session,
         Err(e) => {

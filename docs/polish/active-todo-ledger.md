@@ -1,6 +1,6 @@
 # Active TODO ledger
 
-Date: 2026-09-29 (focused Desktop repair/install update; older evidence dates retained)
+Date: 2026-10-06 (focused extension removal update; older evidence dates retained)
 
 [`docs/TODO.md`](../TODO.md) is the canonical backlog. This mirror contains
 only items that are still active, partial, blocked, or externally gated.
@@ -8,6 +8,8 @@ Completed work remains in the canonical backlog and session logs.
 
 | ID | Status | Priority | Area | Source | Opened | Last evidence | Exit criteria |
 |---|---|---|---|---|---|---|---|
+| SUP-DISABLE-001 | needs-verification | P1 | Extension restoration | `docs/TODO.md` | 2026-10-06 | 2026-10-06 | Execute compiled stalled-startup and OAuth callback cancellation regressions; rebuild and replay disabling Supabase while saved-chat login is pending in Desktop. |
+| SUP-DISABLE-002 | needs-verification | P3 | Extension busy feedback | `docs/TODO.md` | 2026-10-06 | 2026-10-06 | Execute the compiled active/idle extension-change regression; Desktop success/refusal presentation checks passed. |
 | GSL-PT-20260927-G213 | needs-verification | P3 | Desktop backend diagnostics | `docs/TODO.md` | 2026-09-27 | 2026-09-29 | Replay native startup authentication, TLS and reachability dialogs; source and browser disconnect/reconnect checks passed. |
 | GSL-PT-20260927-G215 | needs-verification | P3 | Desktop backend state | `docs/TODO.md` | 2026-09-27 | 2026-09-29 | Replay native crash/relaunch and external-backend-disable fallback; source and same-ID browser isolation checks passed. |
 | GSL-PT-20260927-G210 | needs-verification | P3 | Desktop startup grants | `docs/TODO.md` | 2026-09-27 | 2026-09-29 | Replay installed Desktop default startup and native home-folder selection into a new window; grant and handoff regressions passed. |

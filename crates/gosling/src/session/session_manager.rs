@@ -1343,6 +1343,14 @@ impl SessionManager {
         self.storage.export_session(id).await
     }
 
+    /// Complete native snapshot for the bounded acquisition bundle lane.
+    /// Ordinary import/export retains its separate 16 MiB round-trip contract.
+    pub async fn export_session_snapshot_for_bundle(&self, id: &str) -> Result<String> {
+        let snapshot = self.storage.export_session_snapshot(id).await?;
+        crate::session::export_bundle::ensure_snapshot_bound(&snapshot)?;
+        Ok(snapshot)
+    }
+
     pub async fn import_session(
         &self,
         json: &str,
@@ -1593,6 +1601,10 @@ impl SessionManager {
         self.storage
             .merge_extension_state(session_id, key, value)
             .await
+    }
+
+    pub(crate) async fn remove_saved_extension(&self, session_id: &str, name: &str) -> Result<()> {
+        self.storage.remove_saved_extension(session_id, name).await
     }
 
     pub async fn set_authentication_profile(

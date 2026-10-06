@@ -5,6 +5,12 @@
 
 use super::*;
 
+#[derive(Clone, Default)]
+pub(super) struct ExtensionLoadControl {
+    cancel: CancellationToken,
+    gate: Arc<Mutex<()>>,
+}
+
 fn is_internal_planning_extension(config: &ExtensionConfig) -> bool {
     config.key() == crate::agents::interaction_policy::PLANNING_EXTENSION_NAME
 }
@@ -132,6 +138,18 @@ impl Agent {
 
                 async move {
                     let name = config_clone.name().to_string();
+                    let load_control = agent_ref
+                        .extension_load_controls
+                        .lock()
+                        .await
+                        .entry(config_clone.key())
+                        .or_default()
+                        .clone();
+                    let _load_guard = load_control.gate.lock().await;
+
+                    if load_control.cancel.is_cancelled() {
+                        return None;
+                    }
 
                     if agent_ref
                         .extension_manager
@@ -139,17 +157,30 @@ impl Agent {
                         .await
                     {
                         tracing::debug!("Extension {} already loaded, skipping", name);
-                        return ExtensionLoadResult {
+                        return Some(ExtensionLoadResult {
                             name,
                             success: true,
                             error: None,
-                        };
+                        });
                     }
 
-                    match agent_ref
-                        .add_extension_inner(config_clone, &session_id_clone)
-                        .await
-                    {
+                    let result = tokio::select! {
+                        biased;
+                        _ = load_control.cancel.cancelled() => return None,
+                        result = agent_ref.add_extension_inner(config_clone, &session_id_clone) => result,
+                    };
+                    if load_control.cancel.is_cancelled() {
+                        if let Err(error) = agent_ref.extension_manager.remove_restoring_extension(&name).await {
+                            return Some(ExtensionLoadResult {
+                                name,
+                                success: false,
+                                error: Some(error.to_string()),
+                            });
+                        }
+                        agent_ref.remove_frontend_extension(&name).await;
+                        return None;
+                    }
+                    Some(match result {
                         Ok(_) => ExtensionLoadResult {
                             name,
                             success: true,
@@ -164,12 +195,16 @@ impl Agent {
                                 error: Some(error_msg),
                             }
                         }
-                    }
+                    })
                 }
             })
             .collect::<Vec<_>>();
 
-        let mut results = futures::future::join_all(extension_futures).await;
+        let mut results = futures::future::join_all(extension_futures)
+            .await
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
         if let Some(planning_result) = planning_result {
             results.insert(0, planning_result);
         }
@@ -225,6 +260,10 @@ impl Agent {
                     .to_string(),
             ));
         }
+        self.extension_load_controls
+            .lock()
+            .await
+            .remove(&extension.key());
         self.add_extension_inner(extension, session_id).await
     }
 
@@ -382,12 +421,45 @@ impl Agent {
         Ok(prefixed_tools)
     }
 
-    pub async fn remove_extension(&self, name: &str, session_id: &str) -> Result<()> {
+    async fn cancel_extension_startup(
+        &self,
+        name: &str,
+    ) -> Result<tokio::sync::OwnedMutexGuard<()>> {
         if name_to_key(name) == crate::agents::interaction_policy::PLANNING_EXTENSION_NAME {
             anyhow::bail!(
                 "The planning extension is host policy infrastructure and cannot be disabled"
             );
         }
+        let control = self
+            .extension_load_controls
+            .lock()
+            .await
+            .entry(name_to_key(name))
+            .or_default()
+            .clone();
+        control.cancel.cancel();
+        // Wait only for this initializer to stop, rather than for unrelated
+        // extensions holding the shared lifecycle lock during browser login.
+        Ok(control.gate.lock_owned().await)
+    }
+
+    /// Cancels restoration without persisting an incomplete runtime tool inventory.
+    pub(crate) async fn cancel_extension_load(&self, name: &str) -> Result<()> {
+        let _load_guard = self.cancel_extension_startup(name).await?;
+        self.extension_manager
+            .remove_restoring_extension(name)
+            .await?;
+        self.remove_frontend_extension(name).await;
+        self.config_extension_keys
+            .lock()
+            .await
+            .remove(&name_to_key(name));
+
+        Ok(())
+    }
+
+    pub async fn remove_extension(&self, name: &str, session_id: &str) -> Result<()> {
+        let _load_guard = self.cancel_extension_startup(name).await?;
         self.extension_manager.remove_extension(name).await?;
         self.remove_frontend_extension(name).await;
         self.config_extension_keys
