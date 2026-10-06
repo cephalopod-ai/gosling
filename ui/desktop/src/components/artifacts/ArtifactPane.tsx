@@ -22,6 +22,7 @@ import { defineMessages, useIntl } from '../../i18n';
 import { useArtifactWorkbench } from '../../contexts/ArtifactWorkbenchContext';
 import { cn } from '../../utils';
 import MarkdownContent from '../MarkdownContent';
+import { ResizeHandle } from '../Layout/ResizeHandle';
 import { Button } from '../ui/button';
 import { Switch } from '../ui/switch';
 import { ARTIFACT_REPOSITORY_BATCH_LIMIT } from '../../utils/artifactRepository';
@@ -531,6 +532,28 @@ export function ArtifactPane() {
     visibleSessionId,
     width,
   } = useArtifactWorkbench();
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [inventoryHeight, setInventoryHeight] = useState(() => {
+    const stored = Number(localStorage.getItem('artifact_inventory_height'));
+    return Number.isFinite(stored) && stored >= 80 ? stored : 240;
+  });
+  const [panelHeight, setPanelHeight] = useState(window.innerHeight);
+  const [panelWidth, setPanelWidth] = useState(width);
+  useEffect(() => {
+    if (!panelRef.current) return;
+    const observer = new ResizeObserver(([entry]) => {
+      setPanelHeight(entry.contentRect.height);
+      setPanelWidth(entry.contentRect.width);
+    });
+    observer.observe(panelRef.current);
+    return () => observer.disconnect();
+  }, []);
+  const maxInventoryHeight = Math.max(80, panelHeight - 220);
+  const visibleInventoryHeight = Math.min(inventoryHeight, maxInventoryHeight);
+  const resizeInventory = (height: number) => {
+    setInventoryHeight(height);
+    localStorage.setItem('artifact_inventory_height', String(height));
+  };
   const [inventoryTab, setInventoryTab] = useState<InventoryTab>('outputs');
   const [inputs, setInputs] = useState<ShellLibraryItemSummary[]>([]);
   const [inputsLoading, setInputsLoading] = useState(false);
@@ -892,20 +915,6 @@ export function ArtifactPane() {
     if (tab === 'library') void refreshResearchLibrary();
   };
 
-  const resizeFrom = (event: React.PointerEvent) => {
-    event.preventDefault();
-    const startX = event.clientX;
-    const startWidth = width;
-    const move = (moveEvent: globalThis.PointerEvent) =>
-      setWidth(startWidth + startX - moveEvent.clientX);
-    const stop = () => {
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', stop);
-    };
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', stop);
-  };
-
   const filePath = activeTab?.source.type === 'file' ? activeTab.source.path : null;
   const previewTitle = useMemo(() => {
     if (!activeTab) return null;
@@ -1003,10 +1012,19 @@ export function ArtifactPane() {
   };
 
   return (
-    <div className="relative flex h-full flex-col overflow-hidden rounded-xl border border-border-primary bg-background-primary">
-      <div
-        className="absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize"
-        onPointerDown={resizeFrom}
+    <div
+      ref={panelRef}
+      className="relative flex h-full flex-col overflow-hidden rounded-xl border border-border-primary bg-background-primary"
+    >
+      <ResizeHandle
+        label="Resize outputs panel"
+        orientation="vertical"
+        value={panelWidth}
+        min={Math.min(320, panelWidth)}
+        max={Math.min(720, window.innerWidth)}
+        reverse
+        onChange={setWidth}
+        className="absolute inset-y-0 left-0 z-10 w-2 cursor-col-resize hover:bg-border-primary focus-visible:bg-border-primary"
       />
       <div className="no-drag flex h-11 shrink-0 items-center gap-1 border-b border-border-primary px-2">
         <div className="flex h-full items-end gap-1" role="tablist" aria-label="Session inventory">
@@ -1251,112 +1269,126 @@ export function ArtifactPane() {
         </div>
       ) : (
         <>
-          <div className="shrink-0 border-b border-border-primary px-3 py-2 text-xs">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <label className="flex cursor-pointer items-center gap-2">
-                <Switch
-                  variant="mono"
-                  checked={hideRepositoryFiles}
-                  onCheckedChange={setHideRepositoryFiles}
-                  aria-label={intl.formatMessage(i18n.hideRepositoryFiles)}
-                />
-                {intl.formatMessage(i18n.hideRepositoryFiles)}
-              </label>
-              {hideRepositoryFiles && (
-                <span className="text-text-secondary" role="status">
-                  {intl.formatMessage(i18n.repositoryFilesHidden, {
-                    count: extensionMatchedArtifacts.length - displayedArtifacts.length,
-                  })}
-                </span>
-              )}
-            </div>
-            {hideRepositoryFiles && !currentClassification && (
-              <p className="mt-2 text-text-secondary" role="status">
-                {intl.formatMessage(i18n.checkingRepositories)}
-              </p>
-            )}
-            {hideRepositoryFiles && currentClassification?.unavailable && (
-              <p className="mt-2 text-text-secondary" role="status">
-                {intl.formatMessage(i18n.repositoryCheckUnavailable)}
-              </p>
-            )}
-            {hideRepositoryFiles &&
-              extensionMatchedArtifacts.length > 0 &&
-              displayedArtifacts.length === 0 && (
-                <p className="mt-2 text-text-secondary">
-                  {intl.formatMessage(i18n.repositoryFilterEmpty)}
+          <div
+            className="flex min-h-0 shrink-0 flex-col overflow-y-auto"
+            style={{ height: visibleInventoryHeight }}
+          >
+            <div className="shrink-0 border-b border-border-primary px-3 py-2 text-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label className="flex cursor-pointer items-center gap-2">
+                  <Switch
+                    variant="mono"
+                    checked={hideRepositoryFiles}
+                    onCheckedChange={setHideRepositoryFiles}
+                    aria-label={intl.formatMessage(i18n.hideRepositoryFiles)}
+                  />
+                  {intl.formatMessage(i18n.hideRepositoryFiles)}
+                </label>
+                {hideRepositoryFiles && (
+                  <span className="text-text-secondary" role="status">
+                    {intl.formatMessage(i18n.repositoryFilesHidden, {
+                      count: extensionMatchedArtifacts.length - displayedArtifacts.length,
+                    })}
+                  </span>
+                )}
+              </div>
+              {hideRepositoryFiles && !currentClassification && (
+                <p className="mt-2 text-text-secondary" role="status">
+                  {intl.formatMessage(i18n.checkingRepositories)}
                 </p>
               )}
-          </div>
-          {visibleSessionId && trashedArtifacts.length > 0 && (
-            <details className="max-h-52 shrink-0 overflow-y-auto border-b border-border-primary p-3">
-              <summary className="cursor-pointer text-xs">
-                Saved history for removed outputs ({trashedArtifacts.length})
-              </summary>
-              <p className="py-2 text-xs text-text-secondary">
-                Saved revisions remain after Trash or chat deletion. Export them here; restore the
-                file from Trash before using Restore revision.
-              </p>
-              {trashedArtifacts.map((artifact) => (
-                <div key={artifact.resolvedPath}>
-                  <p className="break-all text-xs">{artifact.displayPath}</p>
-                  <OutputHistory sessionId={visibleSessionId} path={artifact.resolvedPath} />
-                </div>
-              ))}
-            </details>
-          )}
-          {artifacts.length > extensionMatchedArtifacts.length && (
-            <p role="status" className="px-3 py-2 text-xs text-text-secondary">
-              {artifacts.length - extensionMatchedArtifacts.length} outputs hidden by file
-              extensions. Change Outputs file extensions in Settings.
-            </p>
-          )}
-          {displayedArtifacts.length > 0 && (
-            <div className="max-h-52 shrink-0 overflow-y-auto border-b border-border-primary py-1">
-              <ArtifactFileList
-                key={`outputs:${visibleSessionId}:${hideRepositoryFiles}`}
-                outputSessionId={visibleSessionId ?? undefined}
-                onRestored={() => setPreviewRevision((revision) => revision + 1)}
-                label={intl.formatMessage(i18n.outputs)}
-                items={displayedArtifacts.map((artifact) => {
-                  const status = artifactStatus(artifact.displayPath);
-                  const documentTitle = documentTitles[artifact.resolvedPath];
-                  const fileName = artifactTitleFromPath(artifact.displayPath);
-                  const directory = artifactDirectoryFromPath(artifact.displayPath);
-                  // Rows end-truncate, so the file name leads and the directory comes last.
-                  const detail = [
-                    documentTitle ? fileName : null,
-                    artifact.relation,
-                    documentTitle ? null : artifact.provenance.replace(/_/g, ' '),
-                    directory || null,
-                  ]
-                    .filter(Boolean)
-                    .join(' · ');
-                  return {
-                    path: artifact.resolvedPath,
-                    timestampRevision: artifact.lastSeenAt,
-                    name: documentTitle || fileName,
-                    detail,
-                    active:
-                      activeTab?.source.type === 'file' &&
-                      (activeTab.source.path === artifact.resolvedPath ||
-                        (activeTab.source.path === artifact.displayPath &&
-                          activeTab.source.baseDirectory === artifact.baseWorkingDir)),
-                    status: status?.text,
-                    blocked: status?.blocked ?? false,
-                  };
-                })}
-                onOpen={(path) => {
-                  const artifact = displayedArtifacts.find((item) => item.resolvedPath === path);
-                  if (artifact) openArtifact(artifact);
-                }}
-                onDeleted={(paths) => {
-                  forgetTrashedFiles(paths);
-                  void refreshResearchLibrary(true);
-                }}
-              />
+              {hideRepositoryFiles && currentClassification?.unavailable && (
+                <p className="mt-2 text-text-secondary" role="status">
+                  {intl.formatMessage(i18n.repositoryCheckUnavailable)}
+                </p>
+              )}
+              {hideRepositoryFiles &&
+                extensionMatchedArtifacts.length > 0 &&
+                displayedArtifacts.length === 0 && (
+                  <p className="mt-2 text-text-secondary">
+                    {intl.formatMessage(i18n.repositoryFilterEmpty)}
+                  </p>
+                )}
             </div>
-          )}
+            {visibleSessionId && trashedArtifacts.length > 0 && (
+              <details className="max-h-52 shrink-0 overflow-y-auto border-b border-border-primary p-3">
+                <summary className="cursor-pointer text-xs">
+                  Saved history for removed outputs ({trashedArtifacts.length})
+                </summary>
+                <p className="py-2 text-xs text-text-secondary">
+                  Saved revisions remain after Trash or chat deletion. Export them here; restore the
+                  file from Trash before using Restore revision.
+                </p>
+                {trashedArtifacts.map((artifact) => (
+                  <div key={artifact.resolvedPath}>
+                    <p className="break-all text-xs">{artifact.displayPath}</p>
+                    <OutputHistory sessionId={visibleSessionId} path={artifact.resolvedPath} />
+                  </div>
+                ))}
+              </details>
+            )}
+            {artifacts.length > extensionMatchedArtifacts.length && (
+              <p role="status" className="px-3 py-2 text-xs text-text-secondary">
+                {artifacts.length - extensionMatchedArtifacts.length} outputs hidden by file
+                extensions. Change Outputs file extensions in Settings.
+              </p>
+            )}
+            {displayedArtifacts.length > 0 && (
+              <div className="min-h-0 flex-1 overflow-y-auto border-b border-border-primary py-1">
+                <ArtifactFileList
+                  key={`outputs:${visibleSessionId}:${hideRepositoryFiles}`}
+                  outputSessionId={visibleSessionId ?? undefined}
+                  onRestored={() => setPreviewRevision((revision) => revision + 1)}
+                  label={intl.formatMessage(i18n.outputs)}
+                  items={displayedArtifacts.map((artifact) => {
+                    const status = artifactStatus(artifact.displayPath);
+                    const documentTitle = documentTitles[artifact.resolvedPath];
+                    const fileName = artifactTitleFromPath(artifact.displayPath);
+                    const directory = artifactDirectoryFromPath(artifact.displayPath);
+                    // Rows end-truncate, so the file name leads and the directory comes last.
+                    const detail = [
+                      documentTitle ? fileName : null,
+                      artifact.relation,
+                      documentTitle ? null : artifact.provenance.replace(/_/g, ' '),
+                      directory || null,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ');
+                    return {
+                      path: artifact.resolvedPath,
+                      timestampRevision: artifact.lastSeenAt,
+                      name: documentTitle || fileName,
+                      detail,
+                      active:
+                        activeTab?.source.type === 'file' &&
+                        (activeTab.source.path === artifact.resolvedPath ||
+                          (activeTab.source.path === artifact.displayPath &&
+                            activeTab.source.baseDirectory === artifact.baseWorkingDir)),
+                      status: status?.text,
+                      blocked: status?.blocked ?? false,
+                    };
+                  })}
+                  onOpen={(path) => {
+                    const artifact = displayedArtifacts.find((item) => item.resolvedPath === path);
+                    if (artifact) openArtifact(artifact);
+                  }}
+                  onDeleted={(paths) => {
+                    forgetTrashedFiles(paths);
+                    void refreshResearchLibrary(true);
+                  }}
+                />
+              </div>
+            )}
+          </div>
+          <ResizeHandle
+            label="Resize outputs inventory"
+            orientation="horizontal"
+            value={visibleInventoryHeight}
+            min={80}
+            max={maxInventoryHeight}
+            onChange={resizeInventory}
+            className="h-2 shrink-0 cursor-row-resize border-y border-border-primary hover:bg-border-primary focus-visible:bg-border-primary"
+          />
 
           {tabs.length > 0 && (
             <div className="flex shrink-0 overflow-x-auto border-b border-border-primary">

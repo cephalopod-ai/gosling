@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { IntlTestWrapper } from '../../i18n/test-utils';
 import { AppLayout } from './AppLayout';
@@ -38,6 +38,18 @@ describe('AppLayout outputs pane', () => {
       getIsFullScreen: vi.fn().mockResolvedValue(false),
       on: vi.fn(),
     } as unknown as typeof window.electron;
+  });
+
+  it('persists navigation resizing and uses its width when docking outputs', () => {
+    setWindowWidth(1140);
+    renderLayout();
+    expect(screen.getByTestId('artifact-pane-frame')).toHaveAttribute('data-pane-mode', 'docked');
+    const divider = screen.getByRole('separator', { name: 'Resize navigation panel' });
+    fireEvent.pointerDown(divider, { button: 0, pointerId: 1, clientX: 240 });
+    fireEvent.pointerMove(window, { pointerId: 1, clientX: 480 });
+    fireEvent.pointerUp(window, { pointerId: 1 });
+    expect(localStorage.getItem('navigation_width')).toBe('480');
+    expect(screen.getByTestId('artifact-pane-frame')).toHaveAttribute('data-pane-mode', 'overlay');
   });
 
   it('overlays the pane instead of crushing the hub at the default 940px window', () => {
