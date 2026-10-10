@@ -898,6 +898,51 @@ impl crate::providers::base::Provider for ChunkedTextProvider {
     }
 }
 
+/// Takes steers mid-stream the way the Claude Code CLI does: its reply waits
+/// until a message is delivered, then answers it under a new message id.
+#[derive(Default)]
+struct MidTurnProvider {
+    calls: AtomicUsize,
+    delivered: Arc<tokio::sync::Mutex<Vec<String>>>,
+    arrived: Arc<tokio::sync::Notify>,
+}
+
+#[async_trait::async_trait]
+impl crate::providers::base::Provider for MidTurnProvider {
+    async fn stream(
+        &self,
+        _model_config: &gosling_providers::model::ModelConfig,
+        _system_prompt: &str,
+        _messages: &[Message],
+        _tools: &[Tool],
+    ) -> Result<MessageStream, ProviderError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        let delivered = Arc::clone(&self.delivered);
+        let arrived = Arc::clone(&self.arrived);
+        Ok(Box::pin(async_stream::stream! {
+            yield Ok((Some(Message::assistant().with_id("before").with_text("Working.")), None));
+            arrived.notified().await;
+            let answer = format!("You asked: {}", delivered.lock().await.join(" "));
+            let usage = ProviderUsage::new("mock-model".to_string(), Usage::default());
+            yield Ok((Some(Message::assistant().with_id("after").with_text(answer)), Some(usage)));
+        }))
+    }
+
+    fn get_name(&self) -> &str {
+        "mid-turn"
+    }
+
+    fn accepts_mid_turn_messages(&self) -> bool {
+        true
+    }
+
+    async fn deliver_mid_turn_message(&self, message: &Message) -> bool {
+        self.delivered.lock().await.push(message.as_concat_text());
+        self.arrived.notify_one();
+        true
+    }
+}
+
 struct RefusingProvider {
     call_count: AtomicUsize,
 }
@@ -2418,6 +2463,80 @@ async fn discard_pending_steers_clears_queued_messages() {
             "discarding must drop steers orphaned by a cancelled run so they cannot leak into a later prompt"
         );
     assert!(agent.drain_pending_steers(session_id).await.is_empty());
+}
+
+#[tokio::test]
+async fn steer_reaches_a_provider_stream_that_takes_input_mid_turn() -> Result<()> {
+    let temp_dir = tempfile::tempdir()?;
+    let provider = Arc::new(MidTurnProvider::default());
+    let (agent, session_id) = create_test_agent(
+        temp_dir.path().join("data"),
+        crate::hooks::HookManager::from_plugins_for_test(vec![]),
+        provider.clone(),
+    )
+    .await?;
+    let session_config = SessionConfig {
+        id: session_id.clone(),
+        max_turns: Some(10),
+        compacted_context: false,
+        tail_limit: None,
+    };
+
+    let reply = agent
+        .reply(
+            Message::user().with_text("start the job"),
+            session_config,
+            None,
+        )
+        .await?;
+    tokio::pin!(reply);
+    let mut shown = Vec::new();
+    while let Some(event) = reply.next().await {
+        let AgentEvent::Message(message) = event? else {
+            continue;
+        };
+        let text = message.as_concat_text();
+        if text.is_empty() {
+            continue;
+        }
+        if text == "Working." {
+            agent
+                .steer(&session_id, Message::user().with_text("status?"))
+                .await;
+        }
+        shown.push((message.role.clone(), text));
+    }
+
+    let user = rmcp::model::Role::User;
+    let assistant = rmcp::model::Role::Assistant;
+    let expected = vec![
+        (assistant.clone(), "Working.".to_string()),
+        (user.clone(), "status?".to_string()),
+        (assistant.clone(), "You asked: status?".to_string()),
+    ];
+    assert_eq!(shown, expected);
+    assert_eq!(
+        provider.calls.load(Ordering::SeqCst),
+        1,
+        "a steer the stream already answered must not cost another request"
+    );
+    assert!(!agent.has_pending_steers(&session_id).await);
+
+    let stored: Vec<_> = agent
+        .config
+        .session_manager
+        .get_session(&session_id, true)
+        .await?
+        .conversation
+        .unwrap()
+        .messages()
+        .iter()
+        .map(|message| (message.role.clone(), message.as_concat_text()))
+        .collect();
+    let mut expected_stored = vec![(user, "start the job".to_string())];
+    expected_stored.extend(expected);
+    assert_eq!(stored, expected_stored);
+    Ok(())
 }
 
 #[test]

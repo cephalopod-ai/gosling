@@ -280,6 +280,7 @@ provider for the complete plan lifecycle. See
 | `GOSLING_PROVIDER` | Set to `claude-code` to use this provider | None |
 | `GOSLING_MODEL` | Model to use. gosling offers the models the installed `claude` CLI advertises: `claude-opus-5`, `claude-sonnet-5`, `claude-fable-5-1` or `claude-fable-5` (whichever your CLI serves), and `claude-haiku-4-5` | `default` |
 | `CLAUDE_CODE_COMMAND` | Path to the Claude CLI command | `claude` |
+| `CLAUDE_CODE_BACKGROUND_TASKS` | Set to `true` to let the CLI run background tasks (Bash `run_in_background`, Monitor, background agents); the turns they start are read by the running or next stream | `false` |
 
 **Known Models:**
 

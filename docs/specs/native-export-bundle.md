@@ -1,6 +1,7 @@
 # Native session acquisition bundle
 
-Status: implementation pending validation, 2026-10-06. This is a bounded
+Status: scoped CLI validation and local installation complete, 2026-10-08;
+see [rollout evidence](../logs/session/2026-10-08-muninn-exporter-rollout.md). This is a bounded
 acquisition lane for Muninn and other explicit local exporters. Ordinary
 native JSON import/export retains its 16 MiB round-trip limit.
 
@@ -24,9 +25,17 @@ Rerunning at the same directory verifies already written files and resumes
 missing parts without overwriting any existing bytes. A changed snapshot,
 corrupt file, symlink or unrelated file requires a fresh output directory.
 Files use owner-only permissions and durable no-clobber atomic publication.
+Interrupted atomic writes live only in the protocol-owned `.staging/`
+directory, so an orphan does not prevent resuming final parts. Existing
+completion and staging paths are checked before any new write, including
+dangling manifest links. Consumers must count retained staging bytes in
+their acquisition quota.
 Importers must validate every part and the full digest before publishing any
 memory; plans remain historical evidence and do not transfer approval authority.
 
 Validation command: `cargo test -p gosling --test session_export_bundle` plus
 existing native transfer/plan-history tests, CLI parsing, fmt and clippy.
-Rust build/test execution awaits explicit operator authorization under AGENTS.md.
+Operator authorization was supplied October8. Focused tests, fmt, Clippy and
+release CLI build pass; the standalone installed exporter captures the previously
+blocked3158-message revision through34verified fragments. This does not qualify
+Desktop packaging or the full provider/UI/repository suite.

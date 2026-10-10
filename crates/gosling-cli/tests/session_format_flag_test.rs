@@ -38,7 +38,7 @@ fn unknown_format_values_are_rejected() {
     );
     assert_usage_error(
         &["session", "export", "--session-id", "x", "--format", "xml"],
-        "[possible values: markdown, json, yaml]",
+        "[possible values: markdown, json, yaml, json-pages]",
     );
     assert_usage_error(
         &[
@@ -91,4 +91,46 @@ fn accepted_session_list_formats_still_work() {
     let default = gosling(&root, &["session", "list"]);
     assert!(default.status.success());
     assert_eq!(text.stdout, default.stdout);
+}
+
+#[test]
+fn paged_export_requires_an_output_directory() {
+    let root = TempDir::new().unwrap();
+    let output = gosling(
+        &root,
+        &[
+            "session",
+            "export",
+            "--session-id",
+            "missing",
+            "--format",
+            "json-pages",
+        ],
+    );
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("json-pages requires --output directory")
+    );
+    assert!(output.stdout.is_empty());
+}
+
+#[test]
+fn paged_export_refuses_nostr_sharing() {
+    let root = TempDir::new().unwrap();
+    let output = gosling(
+        &root,
+        &[
+            "session",
+            "export",
+            "--session-id",
+            "missing",
+            "--format",
+            "json-pages",
+            "--nostr",
+        ],
+    );
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr)
+        .contains("Paged acquisition export does not support Nostr sharing"));
+    assert!(output.stdout.is_empty());
 }

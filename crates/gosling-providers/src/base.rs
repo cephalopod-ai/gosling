@@ -832,6 +832,19 @@ pub trait Provider: Send + Sync {
         false
     }
 
+    /// Whether [`Self::deliver_mid_turn_message`] can hand a message to a
+    /// stream that is still running.
+    fn accepts_mid_turn_messages(&self) -> bool {
+        false
+    }
+
+    /// Hands a message the user sent mid-turn to the running stream, which
+    /// answers it before finishing. Returns false when no stream can take it,
+    /// so the caller sends it as the next request's input instead.
+    async fn deliver_mid_turn_message(&self, _message: &Message) -> bool {
+        false
+    }
+
     /// Configure OAuth authentication for this provider
     ///
     /// This method is called when a provider has configuration keys marked with oauth_flow = true.

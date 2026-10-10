@@ -108,6 +108,46 @@ impl Agent {
             .entry(session_id.to_string())
             .or_default()
             .push_back(message);
+        self.steer_arrived.notify_one();
+    }
+
+    /// Hands queued steers to a provider stream that takes input mid-turn.
+    /// The first one it refuses goes back to the front of the queue with
+    /// everything behind it, so the between-calls drain keeps their order.
+    pub(super) async fn forward_pending_steers(
+        &self,
+        session_id: &str,
+        provider: &dyn Provider,
+    ) -> Vec<Message> {
+        let mut forwarded = Vec::new();
+        let mut steers = self.drain_pending_steers(session_id).await.into_iter();
+        while let Some(message) = steers.next() {
+            if !provider.deliver_mid_turn_message(&message).await {
+                let mut pending = self.pending_steers.lock().await;
+                let queue = pending.entry(session_id.to_string()).or_default();
+                for refused in std::iter::once(message).chain(steers).rev() {
+                    queue.push_front(refused);
+                }
+                break;
+            }
+            forwarded.push(message);
+        }
+        forwarded
+    }
+
+    pub(super) async fn emit_steer_prompt_hook(&self, session_id: &str, message: &Message) {
+        if !self
+            .hook_manager
+            .has_hooks(crate::hooks::HookEvent::UserPromptSubmit)
+        {
+            return;
+        }
+        let ctx =
+            crate::hooks::HookContext::new(crate::hooks::HookEvent::UserPromptSubmit, session_id)
+                .with_message(message.as_concat_text());
+        self.hook_manager
+            .emit(crate::hooks::HookEvent::UserPromptSubmit, ctx)
+            .await;
     }
 
     pub async fn discard_pending_steers(&self, session_id: &str) {

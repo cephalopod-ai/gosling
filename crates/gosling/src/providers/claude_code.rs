@@ -17,7 +17,7 @@ use std::time::Duration;
 use tempfile::NamedTempFile;
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::process::Command;
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc, oneshot};
 
 use super::base::{
     stream_from_single_message, ConfigKey, MessageStream, PermissionRouting, Provider,
@@ -65,6 +65,25 @@ const ASK_USER_QUESTION_TOOL: &str = "AskUserQuestion";
 /// Matches the desktop client's own elicitation timeout, after which it
 /// cancels the form on its side anyway.
 const ASK_USER_QUESTION_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// Opts back in to the CLI's background tasks (Bash `run_in_background`,
+/// Monitor, background agents). Off by default: each task reports through a
+/// turn the CLI starts on its own, and a turn that outlives
+/// `BACKGROUND_TASK_QUIET_WAIT` is only shown at the next prompt.
+const BACKGROUND_TASKS_CONFIG_KEY: &str = "CLAUDE_CODE_BACKGROUND_TASKS";
+
+/// How long a stream keeps listening after the CLI goes quiet with only
+/// background tasks left. A task that outlives it (a dev server, say) ends
+/// the turn instead of holding it open indefinitely.
+const BACKGROUND_TASK_QUIET_WAIT: Duration = Duration::from_secs(10 * 60);
+
+/// When background tasks outlived the previous stream, the turns they started
+/// since may already be waiting in the pipe. Reading until stdout has been
+/// this quiet keeps their `idle` from being taken as the new prompt's.
+const CATCH_UP_QUIET: Duration = Duration::from_millis(250);
+
+const UNATTENDED_TOOL_DENIAL: &str =
+    "No one was attending this Gosling turn, so the tool call was not approved. Ask the user in your next reply instead.";
 
 #[derive(Debug, Clone, Deserialize)]
 struct AskUserQuestion {
@@ -408,16 +427,114 @@ impl<T: Serialize> ControlResponse<T> {
     }
 }
 
+/// Decides tool requests that need no one: Auto mode and saved grants allow,
+/// Chat mode and saved denials deny.
+struct PermissionPolicy {
+    mode: GoslingMode,
+    provider_name: String,
+    permission_manager: Arc<PermissionManager>,
+}
+
+impl PermissionPolicy {
+    /// `None` means the user has to decide.
+    fn automatic(
+        &self,
+        tool_name: &str,
+        input: &serde_json::Map<String, Value>,
+        tool_use_id: &str,
+    ) -> Option<PermissionResponse> {
+        let saved = self
+            .permission_manager
+            .get_acp_provider_permission(&self.provider_name, tool_name);
+        if !matches!(self.mode, GoslingMode::Auto | GoslingMode::Chat)
+            && !matches!(
+                saved,
+                Some(PermissionLevel::AlwaysAllow | PermissionLevel::NeverAllow)
+            )
+        {
+            return None;
+        }
+        Some(
+            if self.mode != GoslingMode::Chat
+                && saved != Some(PermissionLevel::NeverAllow)
+                && (self.mode == GoslingMode::Auto || saved == Some(PermissionLevel::AlwaysAllow))
+            {
+                PermissionResponse::Allow {
+                    updated_input: input.clone(),
+                    tool_use_id: tool_use_id.to_string(),
+                }
+            } else {
+                PermissionResponse::Deny {
+                    message: if self.mode == GoslingMode::Chat {
+                        "This Gosling session is in chat mode: tools that change anything are disabled. Answer in text instead.".to_string()
+                    } else {
+                        "Saved permission denies this tool call".to_string()
+                    },
+                }
+            },
+        )
+    }
+}
+
+/// The assistant message a stream is filling. A new one starts with each CLI
+/// turn and with each mid-turn message, so later text renders below both.
+#[derive(Debug)]
+struct TurnMessage {
+    id: String,
+    created: i64,
+    has_text: bool,
+}
+
+impl TurnMessage {
+    fn new() -> Self {
+        Self {
+            id: uuid::Uuid::new_v4().to_string(),
+            created: chrono::Utc::now().timestamp(),
+            has_text: false,
+        }
+    }
+}
+
+#[derive(Debug)]
+struct ForwardedMessage {
+    uuid: String,
+    line: String,
+}
+
+/// How `deliver_mid_turn_message` reaches the running stream.
+#[derive(Debug)]
+struct LiveTurn {
+    session_id: String,
+    input: mpsc::UnboundedSender<ForwardedMessage>,
+    message: Arc<std::sync::Mutex<TurnMessage>>,
+}
+
+enum StreamInput {
+    Line(std::io::Result<Option<String>>),
+    Forwarded(ForwardedMessage),
+    BackgroundWaitElapsed,
+}
+
 struct CliProcess {
     child: tokio::process::Child,
     stdin: Box<dyn tokio::io::AsyncWrite + Unpin + Send>,
     reader: BufReader<Box<dyn tokio::io::AsyncRead + Unpin + Send>>,
+    /// Holds a stdout line whose read was dropped part-way; see `next_line`.
+    line_buf: Vec<u8>,
     #[allow(dead_code)]
     stderr_handle: tokio::task::JoinHandle<String>,
     current_model: String,
     log_model_update: bool,
     next_request_id: u64,
     needs_drain: bool,
+    /// Background tasks the CLI last reported running. Each one ends in a
+    /// turn the CLI starts by itself, which nobody sees unless a stream is
+    /// still reading.
+    background_tasks: HashSet<String>,
+    /// Set once the CLI emits `session_state_changed`: from then on `idle`,
+    /// not `result`, is where it has nothing more to say.
+    reports_session_state: bool,
+    idle: bool,
 }
 
 impl std::fmt::Debug for CliProcess {
@@ -441,7 +558,75 @@ impl CliProcess {
         body: ControlRequestBody,
     ) -> Result<Option<Value>, ProviderError> {
         let request_id = self.next_request_id();
-        exchange_control(&mut self.stdin, &mut self.reader, &request_id, body).await
+        let label = body.label();
+        write_control_request(&mut self.stdin, &request_id, body).await?;
+        loop {
+            let line = match self.next_line().await {
+                Ok(Some(line)) => line,
+                Ok(None) => return Err(control_terminated(label)),
+                Err(e) => return Err(control_read_failed(label, e)),
+            };
+            if let Some(response) = control_response_for(&line, &request_id, label) {
+                return response;
+            }
+            if let Ok(event) = serde_json::from_str::<Value>(line.trim()) {
+                self.observe(&event);
+            }
+        }
+    }
+
+    /// Cancel-safe: a read dropped part-way leaves its bytes in `line_buf`
+    /// for the next call, so a stream can race stdout against other input.
+    async fn next_line(&mut self) -> std::io::Result<Option<String>> {
+        let read = self.reader.read_until(b'\n', &mut self.line_buf).await?;
+        if read == 0 && self.line_buf.is_empty() {
+            return Ok(None);
+        }
+        let line = std::mem::take(&mut self.line_buf);
+        Ok(Some(String::from_utf8_lossy(&line).into_owned()))
+    }
+
+    async fn write_line(&mut self, line: &str) -> std::io::Result<()> {
+        self.stdin.write_all(line.as_bytes()).await?;
+        self.stdin.write_all(b"\n").await
+    }
+
+    /// Folds one stdout event into what is known about the CLI. Returns true
+    /// when the event leaves it between turns with nothing queued.
+    fn observe(&mut self, event: &Value) -> bool {
+        match event.get("type").and_then(Value::as_str) {
+            Some("result") if !self.reports_session_state => {
+                self.idle = true;
+                self.needs_drain = false;
+                true
+            }
+            Some("system") => match event.get("subtype").and_then(Value::as_str) {
+                Some("session_state_changed") => {
+                    self.reports_session_state = true;
+                    self.idle = event.get("state").and_then(Value::as_str) == Some("idle");
+                    self.needs_drain = !self.idle;
+                    self.idle
+                }
+                Some("init") => {
+                    self.idle = false;
+                    self.needs_drain = true;
+                    false
+                }
+                Some("background_tasks_changed") => {
+                    self.background_tasks = event
+                        .get("tasks")
+                        .and_then(Value::as_array)
+                        .into_iter()
+                        .flatten()
+                        .filter(|task| task.get("ambient").and_then(Value::as_bool) != Some(true))
+                        .filter_map(|task| task.get("task_id")?.as_str().map(String::from))
+                        .collect();
+                    false
+                }
+                _ => false,
+            },
+            _ => false,
+        }
     }
 
     async fn send_set_model(&mut self, model: &str) -> Result<(), ProviderError> {
@@ -457,33 +642,65 @@ impl CliProcess {
         Ok(())
     }
 
-    async fn drain_pending_response(&mut self) {
+    /// Reads past what the CLI still produces for a stream that was dropped
+    /// mid-turn. A tool request met here is answered, not discarded, so it
+    /// cannot leave the CLI blocked in front of the next prompt.
+    async fn drain_pending_response(&mut self, policy: &PermissionPolicy) {
         if !self.needs_drain {
             return;
         }
         tracing::debug!("Draining cancelled response from CLI process");
 
         let drain = async {
-            let mut line = String::new();
             loop {
-                line.clear();
-                match self.reader.read_line(&mut line).await {
-                    Ok(0) => break,
-                    Ok(_) => {
-                        let trimmed = line.trim();
-                        if trimmed.is_empty() {
-                            continue;
-                        }
-                        if let Ok(parsed) = serde_json::from_str::<Value>(trimmed) {
-                            match parsed.get("type").and_then(|t| t.as_str()) {
-                                Some("result") | Some("error") => break,
-                                _ => continue,
+                let line = match self.next_line().await {
+                    Ok(Some(line)) => line,
+                    Ok(None) | Err(_) => break,
+                };
+                let trimmed = line.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                let Ok(parsed) = serde_json::from_str::<Value>(trimmed) else {
+                    tracing::trace!(line = trimmed, "Non-JSON line during drain");
+                    continue;
+                };
+                if self.observe(&parsed) {
+                    break;
+                }
+                match parsed.get("type").and_then(Value::as_str) {
+                    Some("error") => break,
+                    Some("control_request") => {
+                        if let Ok(IncomingControlRequest {
+                            request_id,
+                            request:
+                                IncomingRequestBody::CanUseTool {
+                                    tool_name,
+                                    input,
+                                    tool_use_id,
+                                },
+                        }) = serde_json::from_value::<IncomingControlRequest>(parsed)
+                        {
+                            let unattended = PermissionResponse::Deny {
+                                message: UNATTENDED_TOOL_DENIAL.to_string(),
+                            };
+                            let response = if tool_name == ASK_USER_QUESTION_TOOL {
+                                unattended
+                            } else {
+                                policy
+                                    .automatic(&tool_name, &input, &tool_use_id)
+                                    .unwrap_or(unattended)
+                            };
+                            let line = serde_json::to_string(&ControlResponse::success(
+                                request_id, response,
+                            ))
+                            .expect("serializing a permission response cannot fail");
+                            if self.write_line(&line).await.is_err() {
+                                break;
                             }
-                        } else {
-                            tracing::trace!(line = trimmed, "Non-JSON line during drain");
                         }
                     }
-                    Err(_) => break,
+                    _ => {}
                 }
             }
         };
@@ -535,6 +752,9 @@ pub struct ClaudeCodeProvider {
     initial_mode: tokio::sync::Mutex<Option<GoslingMode>>,
     #[serde(skip)]
     permission_manager: Arc<PermissionManager>,
+    background_tasks: bool,
+    #[serde(skip)]
+    live_turn: std::sync::Mutex<Option<LiveTurn>>,
 }
 
 impl ClaudeCodeProvider {
@@ -643,6 +863,10 @@ impl ClaudeCodeProvider {
         cmd.current_dir(&self.working_dir);
         // Allow gosling to run inside a Claude Code session.
         cmd.env_remove("CLAUDECODE");
+        cmd.env("CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS", "1");
+        if !self.background_tasks {
+            cmd.env("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "1");
+        }
         cmd.arg("--input-format")
             .arg("stream-json")
             .arg("--output-format")
@@ -691,6 +915,7 @@ impl ClaudeCodeProvider {
         }
 
         cmd.arg("--include-partial-messages")
+            .arg("--replay-user-messages")
             .arg("--system-prompt")
             .arg(filtered_system)
             .arg("--model")
@@ -747,11 +972,15 @@ impl ClaudeCodeProvider {
             child,
             stdin: Box::new(stdin),
             reader: BufReader::new(Box::new(stdout)),
+            line_buf: Vec::new(),
             stderr_handle,
             current_model: model.model_name.clone(),
             log_model_update: false,
             next_request_id: 0,
             needs_drain: false,
+            background_tasks: HashSet::new(),
+            reports_session_state: false,
+            idle: true,
         };
 
         if control_protocol_enabled {
@@ -785,6 +1014,29 @@ async fn exchange_control(
     body: ControlRequestBody,
 ) -> Result<Option<Value>, ProviderError> {
     let label = body.label();
+    write_control_request(stdin, request_id, body).await?;
+
+    let mut line = String::new();
+    loop {
+        line.clear();
+        match reader.read_line(&mut line).await {
+            Ok(0) => return Err(control_terminated(label)),
+            Ok(_) => {
+                if let Some(response) = control_response_for(&line, request_id, label) {
+                    return response;
+                }
+            }
+            Err(e) => return Err(control_read_failed(label, e)),
+        }
+    }
+}
+
+async fn write_control_request(
+    stdin: &mut (impl AsyncWrite + Unpin),
+    request_id: &str,
+    body: ControlRequestBody,
+) -> Result<(), ProviderError> {
+    let label = body.label();
     let req = ControlRequest {
         msg_type: "control_request",
         request_id: request_id.to_string(),
@@ -794,49 +1046,42 @@ async fn exchange_control(
         ProviderError::RequestFailed(format!("Failed to serialize {label} request: {e}"))
     })?;
     req_str.push('\n');
-    stdin.write_all(req_str.as_bytes()).await.map_err(|e| {
-        ProviderError::RequestFailed(format!("Failed to write {label} request: {e}"))
-    })?;
+    stdin
+        .write_all(req_str.as_bytes())
+        .await
+        .map_err(|e| ProviderError::RequestFailed(format!("Failed to write {label} request: {e}")))
+}
 
-    let mut line = String::new();
-    loop {
-        line.clear();
-        match reader.read_line(&mut line).await {
-            Ok(0) => {
-                return Err(ProviderError::RequestFailed(format!(
-                    "CLI process terminated while waiting for {label} response"
-                )));
-            }
-            Ok(_) => {
-                let trimmed = line.trim();
-                if trimmed.is_empty() {
-                    continue;
-                }
-                if let Ok(msg) = serde_json::from_str::<IncomingControlResponse>(trimmed) {
-                    match msg.response {
-                        IncomingControlResponseBody::Success {
-                            request_id: ref rid,
-                            response,
-                        } if rid == request_id => return Ok(response),
-                        IncomingControlResponseBody::Error {
-                            request_id: ref rid,
-                            error,
-                        } if rid == request_id => {
-                            return Err(ProviderError::RequestFailed(format!(
-                                "{label} failed: {error}"
-                            )));
-                        }
-                        _ => continue,
-                    }
-                }
-            }
-            Err(e) => {
-                return Err(ProviderError::RequestFailed(format!(
-                    "Failed to read {label} response: {e}"
-                )));
-            }
-        }
+/// The outcome of control request `request_id` if `line` is its response.
+fn control_response_for(
+    line: &str,
+    request_id: &str,
+    label: &str,
+) -> Option<Result<Option<Value>, ProviderError>> {
+    let msg = serde_json::from_str::<IncomingControlResponse>(line.trim()).ok()?;
+    match msg.response {
+        IncomingControlResponseBody::Success {
+            request_id: ref rid,
+            response,
+        } if rid == request_id => Some(Ok(response)),
+        IncomingControlResponseBody::Error {
+            request_id: ref rid,
+            error,
+        } if rid == request_id => Some(Err(ProviderError::RequestFailed(format!(
+            "{label} failed: {error}"
+        )))),
+        _ => None,
     }
+}
+
+fn control_terminated(label: &str) -> ProviderError {
+    ProviderError::RequestFailed(format!(
+        "CLI process terminated while waiting for {label} response"
+    ))
+}
+
+fn control_read_failed(label: &str, error: std::io::Error) -> ProviderError {
+    ProviderError::RequestFailed(format!("Failed to read {label} response: {error}"))
 }
 
 /// Prefers each entry's `resolvedModel` over its alias: an alias like `opus`
@@ -860,6 +1105,13 @@ fn extract_model_aliases(response: Option<&Value>) -> Vec<String> {
 
 fn build_stream_json_input(content_blocks: &[Value], session_id: &str) -> String {
     let msg = json!({"type":"user","session_id":session_id,"message":{"role":"user","content":content_blocks}});
+    serde_json::to_string(&msg).expect("serializing JSON content blocks cannot fail")
+}
+
+/// Like `build_stream_json_input`, with a `uuid` the CLI echoes back (under
+/// `--replay-user-messages`) once the message has been taken into a turn.
+fn build_forwarded_input(content_blocks: &[Value], session_id: &str, uuid: &str) -> String {
+    let msg = json!({"type":"user","session_id":session_id,"uuid":uuid,"message":{"role":"user","content":content_blocks}});
     serde_json::to_string(&msg).expect("serializing JSON content blocks cannot fail")
 }
 
@@ -970,13 +1222,10 @@ impl gosling_providers::base::ProviderDescriptor for ClaudeCodeProvider {
             CLAUDE_CODE_DEFAULT_MODEL,
             CLAUDE_CODE_KNOWN_MODELS.to_vec(),
             CLAUDE_CODE_DOC_URL,
-            vec![ConfigKey::new(
-                "CLAUDE_CODE_COMMAND",
-                true,
-                false,
-                Some("claude"),
-                true,
-            )],
+            vec![
+                ConfigKey::new("CLAUDE_CODE_COMMAND", true, false, Some("claude"), true),
+                ConfigKey::new(BACKGROUND_TASKS_CONFIG_KEY, false, false, Some("false"), false),
+            ],
         )
     }
 }
@@ -1006,6 +1255,9 @@ impl ProviderDef for ClaudeCodeProvider {
             let config = crate::config::Config::global();
             let command: String = config.get_claude_code_command().unwrap_or_default().into();
             let resolved_command = SearchPaths::builder().with_npm().resolve(command)?;
+            let background_tasks = config
+                .get_param::<bool>(BACKGROUND_TASKS_CONFIG_KEY)
+                .unwrap_or(false);
 
             let mut resolved = Vec::with_capacity(extensions.len());
             for ext in extensions {
@@ -1025,6 +1277,8 @@ impl ProviderDef for ClaudeCodeProvider {
                 pending_confirmations: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
                 initial_mode: tokio::sync::Mutex::new(None),
                 permission_manager: PermissionManager::instance(),
+                background_tasks,
+                live_turn: std::sync::Mutex::new(None),
             })
         })
     }
@@ -1138,15 +1392,25 @@ impl Provider for ClaudeCodeProvider {
         };
         let ndjson_line = build_stream_json_input(&blocks, &session_id);
         let model_name = model_config.model_name.clone();
-        let message_id = uuid::Uuid::new_v4().to_string();
         let pending_confirmations = Arc::clone(&self.pending_confirmations);
         let permission_manager = Arc::clone(&self.permission_manager);
         let provider_name = self.name.clone();
-        let stream_initial_mode = self
-            .initial_mode
-            .lock()
-            .await
-            .unwrap_or_else(|| Config::global().effective_gosling_mode());
+        let policy = PermissionPolicy {
+            mode: self
+                .initial_mode
+                .lock()
+                .await
+                .unwrap_or_else(|| Config::global().effective_gosling_mode()),
+            provider_name: provider_name.clone(),
+            permission_manager: Arc::clone(&permission_manager),
+        };
+        let turn_message = Arc::new(std::sync::Mutex::new(TurnMessage::new()));
+        let (forward_tx, mut forwarded) = mpsc::unbounded_channel();
+        *self.live_turn.lock().unwrap() = Some(LiveTurn {
+            session_id: session_id.clone(),
+            input: forward_tx,
+            message: Arc::clone(&turn_message),
+        });
 
         Ok(Box::pin(try_stream! {
             // Single lock acquisition covers write-to-stdin and read-from-stdout,
@@ -1170,291 +1434,359 @@ impl Provider for ClaudeCodeProvider {
                 }
             }
 
-            process.drain_pending_response().await;
+            process.drain_pending_response(&policy).await;
             process.send_set_model(&model_name).await?;
 
-            process
-                .stdin
-                .write_all(ndjson_line.as_bytes())
-                .await
-                .map_err(|e| {
-                    ProviderError::RequestFailed(format!("Failed to write to stdin: {}", e))
+            // Background tasks outlived the previous stream, so turns they have
+            // started since may already be waiting; read those before the prompt.
+            let mut unsent_prompt = Some(ndjson_line);
+            if process.background_tasks.is_empty() {
+                let prompt = unsent_prompt.take().expect("prompt not sent yet");
+                process.write_line(&prompt).await.map_err(|e| {
+                    ProviderError::RequestFailed(format!("Failed to write to stdin: {e}"))
                 })?;
-            process.stdin.write_all(b"\n").await.map_err(|e| {
-                ProviderError::RequestFailed(format!("Failed to write newline to stdin: {}", e))
-            })?;
+                process.needs_drain = true;
+                process.idle = false;
+            }
 
-            process.needs_drain = true;
-            let mut line = String::new();
+            let mut unechoed: HashSet<String> = HashSet::new();
             let mut accumulated_usage = Usage::default();
             let mut stream_error: Option<ProviderError> = None;
-            let stream_timestamp = chrono::Utc::now().timestamp();
+            let mut separate_next_text = false;
 
             loop {
-                line.clear();
-                match process.reader.read_line(&mut line).await {
-                    Ok(0) => {
+                let input = if unsent_prompt.is_some() {
+                    match tokio::time::timeout(CATCH_UP_QUIET, process.next_line()).await {
+                        Ok(read) => StreamInput::Line(read),
+                        Err(_) => {
+                            let prompt = unsent_prompt.take().expect("prompt not sent yet");
+                            process.write_line(&prompt).await.map_err(|e| {
+                                ProviderError::RequestFailed(format!("Failed to write to stdin: {e}"))
+                            })?;
+                            process.needs_drain = true;
+                            process.idle = false;
+                            continue;
+                        }
+                    }
+                } else {
+                    let waiting_on_background = process.idle
+                        && !process.background_tasks.is_empty()
+                        && unechoed.is_empty();
+                    tokio::select! {
+                        biased;
+                        Some(message) = forwarded.recv() => StreamInput::Forwarded(message),
+                        read = process.next_line() => StreamInput::Line(read),
+                        _ = tokio::time::sleep(BACKGROUND_TASK_QUIET_WAIT), if waiting_on_background => {
+                            StreamInput::BackgroundWaitElapsed
+                        }
+                    }
+                };
+
+                let settled = match input {
+                    StreamInput::Forwarded(message) => {
+                        process.write_line(&message.line).await.map_err(|e| {
+                            ProviderError::RequestFailed(format!("Failed to forward a mid-turn message: {e}"))
+                        })?;
+                        process.needs_drain = true;
+                        unechoed.insert(message.uuid);
+                        continue;
+                    }
+                    StreamInput::BackgroundWaitElapsed => true,
+                    StreamInput::Line(Ok(None)) => {
                         process.needs_drain = false;
                         stream_error = Some(ProviderError::RequestFailed(
                             "Claude CLI process terminated unexpectedly".to_string(),
                         ));
                         break;
                     }
-                    Ok(_) => {
-                        let trimmed = line.trim();
-                        if trimmed.is_empty() {
-                            continue;
-                        }
-
-                        if let Ok(parsed) = serde_json::from_str::<Value>(trimmed) {
-                            match parsed.get("type").and_then(|t| t.as_str()) {
-                                Some("stream_event") => {
-                                    if let Some(event) = parsed.get("event") {
-                                        match event.get("type").and_then(|t| t.as_str()) {
-                                            Some("content_block_delta") => {
-                                                if let Some(text) = event
-                                                    .get("delta")
-                                                    .filter(|d| {
-                                                        d.get("type").and_then(|t| t.as_str())
-                                                            == Some("text_delta")
-                                                    })
-                                                    .and_then(|d| d.get("text"))
-                                                    .and_then(|t| t.as_str())
-                                                {
-                                                    if !text.is_empty() {
-                                                        let mut partial_message = Message::new(
-                                                            Role::Assistant,
-                                                            stream_timestamp,
-                                                            vec![MessageContent::text(text)],
-                                                        );
-                                                        partial_message.id =
-                                                            Some(message_id.clone());
-                                                        yield (Some(partial_message), None);
-                                                    }
-                                                }
-                                            }
-                                            Some("message_start") => {
-                                                if let Some(usage_info) = event
-                                                    .get("message")
-                                                    .and_then(|m| m.get("usage"))
-                                                {
-                                                    let new = extract_usage_tokens(usage_info);
-                                                    if let Some(i) = new.input_tokens {
-                                                        accumulated_usage.input_tokens = Some(i);
-                                                        accumulated_usage.cache_read_input_tokens =
-                                                            new.cache_read_input_tokens;
-                                                        accumulated_usage.cache_write_input_tokens =
-                                                            new.cache_write_input_tokens;
-                                                    }
-                                                }
-                                            }
-                                            Some("message_delta") => {
-                                                if let Some(usage_info) = event.get("usage") {
-                                                    let new = extract_usage_tokens(usage_info);
-                                                    if let Some(o) = new.output_tokens {
-                                                        accumulated_usage.output_tokens = Some(o);
-                                                    }
-                                                }
-                                            }
-                                            _ => {}
-                                        }
-                                    }
-                                }
-                                Some("result") => {
-                                    process.needs_drain = false;
-                                    if let Some(error) = terminal_result_error(&parsed) {
-                                        stream_error = Some(error);
-                                        break;
-                                    }
-                                    if let Some(usage_info) = parsed.get("usage") {
-                                        let new = extract_usage_tokens(usage_info);
-                                        let reports_own_cache = new.cache_read_input_tokens.is_some()
-                                            || new.cache_write_input_tokens.is_some();
-                                        let cache_read = new
-                                            .cache_read_input_tokens
-                                            .or(accumulated_usage.cache_read_input_tokens);
-                                        let cache_write = new
-                                            .cache_write_input_tokens
-                                            .or(accumulated_usage.cache_write_input_tokens);
-                                        // A result with raw input but no cache breakdown
-                                        // inherits the streamed breakdown; fold it back in
-                                        // so input stays inclusive of cache tokens.
-                                        let output_tokens =
-                                            new.output_tokens.or(accumulated_usage.output_tokens);
-                                        accumulated_usage = if new.input_tokens.is_some()
-                                            && !reports_own_cache
-                                        {
-                                            Usage::from_cache_exclusive_input(
-                                                new.input_tokens,
-                                                output_tokens,
-                                                None,
-                                                cache_read,
-                                                cache_write,
-                                            )
-                                        } else {
-                                            Usage::new(
-                                                new.input_tokens.or(accumulated_usage.input_tokens),
-                                                output_tokens,
-                                                None,
-                                            )
-                                            .with_cache_tokens(cache_read, cache_write)
-                                        };
-                                    }
-                                    break;
-                                }
-                                Some("error") => {
-                                    process.needs_drain = false;
-                                    stream_error = Some(error_from_event("Claude CLI", &parsed));
-                                    break;
-                                }
-                                Some("control_request") => {
-                                    if let Ok(IncomingControlRequest {
-                                        request_id,
-                                        request: IncomingRequestBody::CanUseTool { tool_name, input, tool_use_id },
-                                    }) = serde_json::from_str::<IncomingControlRequest>(trimmed) {
-                                        tracing::debug!(raw = %parsed, "can_use_tool control_request received");
-
-                                        if tool_name == ASK_USER_QUESTION_TOOL {
-                                            let questions = parse_ask_user_questions(&input);
-                                            let pending = ActionRequiredManager::global()
-                                                .open_pending(session_id.clone())
-                                                .await;
-                                            // Registered so a cancelled stream's cleanup
-                                            // above still sends the CLI a deny for this
-                                            // request instead of leaving it blocked.
-                                            let (cancel_guard, _) = oneshot::channel();
-                                            pending_confirmations.lock().await.insert(request_id.clone(), cancel_guard);
-
-                                            let elicitation = Message::assistant()
-                                                .with_content(MessageContent::action_required_elicitation(
-                                                    pending.id().to_string(),
-                                                    ask_user_question_message(&questions),
-                                                    ask_user_question_schema(&questions),
-                                                ))
-                                                .user_only();
-                                            yield (Some(elicitation), None);
-
-                                            let outcome = ActionRequiredManager::global()
-                                                .wait_for_pending(pending, ASK_USER_QUESTION_TIMEOUT)
-                                                .await;
-                                            pending_confirmations.lock().await.remove(&request_id);
-
-                                            let perm_resp = ask_user_question_response(&questions, input, tool_use_id, outcome);
-                                            let resp = ControlResponse::success(request_id, perm_resp);
-                                            let mut resp_str = serde_json::to_string(&resp).map_err(|e| {
-                                                ProviderError::RequestFailed(format!("Failed to serialize question response: {e}"))
-                                            })?;
-                                            resp_str.push('\n');
-                                            process.stdin.write_all(resp_str.as_bytes()).await.map_err(|e| {
-                                                ProviderError::RequestFailed(format!("Failed to write question response: {e}"))
-                                            })?;
-                                            continue;
-                                        }
-
-                                        let mode = stream_initial_mode;
-                                        let saved = permission_manager.get_acp_provider_permission(&provider_name, &tool_name);
-                                        if matches!(mode, GoslingMode::Auto | GoslingMode::Chat)
-                                            || matches!(saved, Some(PermissionLevel::AlwaysAllow | PermissionLevel::NeverAllow))
-                                        {
-                                            let perm_resp = if mode != GoslingMode::Chat
-                                                && saved != Some(PermissionLevel::NeverAllow)
-                                                && (mode == GoslingMode::Auto || saved == Some(PermissionLevel::AlwaysAllow))
-                                            {
-                                                PermissionResponse::Allow {
-                                                    updated_input: input,
-                                                    tool_use_id,
-                                                }
-                                            } else {
-                                                PermissionResponse::Deny {
-                                                    message: if mode == GoslingMode::Chat {
-                                                        "This Gosling session is in chat mode: tools that change anything are disabled. Answer in text instead.".to_string()
-                                                    } else {
-                                                        "Saved permission denies this tool call".to_string()
-                                                    },
-                                                }
-                                            };
-                                            let resp = ControlResponse::success(request_id, perm_resp);
-                                            let mut resp_str = serde_json::to_string(&resp).map_err(|e| {
-                                                ProviderError::RequestFailed(format!("Failed to serialize automatic permission response: {e}"))
-                                            })?;
-                                            resp_str.push('\n');
-                                            process.stdin.write_all(resp_str.as_bytes()).await.map_err(|e| {
-                                                ProviderError::RequestFailed(format!("Failed to write automatic permission response: {e}"))
-                                            })?;
-                                            continue;
-                                        }
-
-                                        let (tx, rx) = oneshot::channel();
-                                        pending_confirmations.lock().await.insert(request_id.clone(), tx);
-
-                                        let action_msg = Message::assistant().with_action_required(
-                                            request_id.clone(), tool_name.clone(), input.clone(), None, None, None,
-                                        );
-                                        yield (Some(action_msg), None);
-
-                                        let confirmation = rx.await.unwrap_or(PermissionConfirmation {
-                                            principal_type: PrincipalType::Tool,
-                                            permission: Permission::Cancel,
-                                        });
-                                        pending_confirmations.lock().await.remove(&request_id);
-
-                                        let persistent_level = match confirmation.permission {
-                                            Permission::AlwaysAllow => Some(PermissionLevel::AlwaysAllow),
-                                            Permission::AlwaysDeny => Some(PermissionLevel::NeverAllow),
-                                            _ => None,
-                                        };
-                                        if let Some(level) = persistent_level {
-                                            if let Err(error) = permission_manager.update_acp_provider_permission(&provider_name, &tool_name, level) {
-                                                let message = format!("Could not save Claude Code tool permission; the tool was not approved: {error}");
-                                                let response = ControlResponse::success(request_id.clone(), PermissionResponse::Deny { message: message.clone() });
-                                                let mut line = serde_json::to_string(&response).map_err(|error| ProviderError::RequestFailed(error.to_string()))?;
-                                                line.push('\n');
-                                                process.stdin.write_all(line.as_bytes()).await.map_err(|error| ProviderError::RequestFailed(error.to_string()))?;
-                                                Err::<(), _>(ProviderError::RequestFailed(message))?;
-                                            }
-                                        }
-
-                                        let perm_resp = match confirmation.permission {
-                                            Permission::AlwaysAllow | Permission::AllowOnce => {
-                                                PermissionResponse::Allow {
-                                                    updated_input: input,
-                                                    tool_use_id,
-                                                }
-                                            }
-                                            _ => PermissionResponse::Deny {
-                                                message: "User denied the tool call".to_string(),
-                                            },
-                                        };
-                                        let resp = ControlResponse::success(request_id, perm_resp);
-                                        let mut resp_str = serde_json::to_string(&resp).map_err(|e| {
-                                            ProviderError::RequestFailed(format!("Failed to serialize permission response: {e}"))
-                                        })?;
-                                        tracing::debug!(json = %resp_str, "can_use_tool control_response sent");
-                                        resp_str.push('\n');
-                                        process.stdin.write_all(resp_str.as_bytes()).await.map_err(|e| {
-                                            ProviderError::RequestFailed(format!("Failed to write permission response: {e}"))
-                                        })?;
-                                    }
-                                }
-                                Some("system") if process.log_model_update => {
-                                    if let Some(resolved) = parsed.get("model").and_then(|m| m.as_str()) {
-                                        tracing::debug!(
-                                            from = %process.current_model,
-                                            to = %resolved,
-                                            "set_model resolved"
-                                        );
-                                    }
-                                    process.log_model_update = false;
-                                }
-                                _ => {}
-                            }
-                        }
-                    }
-                    Err(e) => {
+                    StreamInput::Line(Err(e)) => {
                         process.needs_drain = false;
                         stream_error = Some(ProviderError::RequestFailed(format!(
                             "Failed to read streaming output: {e}"
                         )));
+                        break;
+                    }
+                    StreamInput::Line(Ok(Some(line))) => {
+                        let trimmed = line.trim();
+                        if trimmed.is_empty() {
+                            continue;
+                        }
+                        let Ok(parsed) = serde_json::from_str::<Value>(trimmed) else {
+                            continue;
+                        };
+                        let cli_settled = process.observe(&parsed);
+
+                        match parsed.get("type").and_then(|t| t.as_str()) {
+                            Some("stream_event") => {
+                                if let Some(event) = parsed.get("event") {
+                                    match event.get("type").and_then(|t| t.as_str()) {
+                                        Some("content_block_start") => {
+                                            separate_next_text = event
+                                                .pointer("/content_block/type")
+                                                .and_then(Value::as_str)
+                                                == Some("text");
+                                        }
+                                        Some("content_block_delta") => {
+                                            if let Some(text) = event
+                                                .get("delta")
+                                                .filter(|d| {
+                                                    d.get("type").and_then(|t| t.as_str())
+                                                        == Some("text_delta")
+                                                })
+                                                .and_then(|d| d.get("text"))
+                                                .and_then(|t| t.as_str())
+                                            {
+                                                if !text.is_empty() {
+                                                    let (id, created, separate) = {
+                                                        let mut message = turn_message.lock().unwrap();
+                                                        let separate = std::mem::take(&mut separate_next_text)
+                                                            && message.has_text;
+                                                        message.has_text = true;
+                                                        (message.id.clone(), message.created, separate)
+                                                    };
+                                                    let text = if separate {
+                                                        format!("\n\n{text}")
+                                                    } else {
+                                                        text.to_string()
+                                                    };
+                                                    let mut partial_message = Message::new(
+                                                        Role::Assistant,
+                                                        created,
+                                                        vec![MessageContent::text(text)],
+                                                    );
+                                                    partial_message.id = Some(id);
+                                                    yield (Some(partial_message), None);
+                                                }
+                                            }
+                                        }
+                                        Some("message_start") => {
+                                            if let Some(usage_info) = event
+                                                .get("message")
+                                                .and_then(|m| m.get("usage"))
+                                            {
+                                                let new = extract_usage_tokens(usage_info);
+                                                if let Some(i) = new.input_tokens {
+                                                    accumulated_usage.input_tokens = Some(i);
+                                                    accumulated_usage.cache_read_input_tokens =
+                                                        new.cache_read_input_tokens;
+                                                    accumulated_usage.cache_write_input_tokens =
+                                                        new.cache_write_input_tokens;
+                                                }
+                                            }
+                                        }
+                                        Some("message_delta") => {
+                                            if let Some(usage_info) = event.get("usage") {
+                                                let new = extract_usage_tokens(usage_info);
+                                                if let Some(o) = new.output_tokens {
+                                                    accumulated_usage.output_tokens = Some(o);
+                                                }
+                                            }
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            }
+                            Some("result") => {
+                                if let Some(error) = terminal_result_error(&parsed) {
+                                    stream_error = Some(error);
+                                    break;
+                                }
+                                if let Some(usage_info) = parsed.get("usage") {
+                                    let new = extract_usage_tokens(usage_info);
+                                    let reports_own_cache = new.cache_read_input_tokens.is_some()
+                                        || new.cache_write_input_tokens.is_some();
+                                    let cache_read = new
+                                        .cache_read_input_tokens
+                                        .or(accumulated_usage.cache_read_input_tokens);
+                                    let cache_write = new
+                                        .cache_write_input_tokens
+                                        .or(accumulated_usage.cache_write_input_tokens);
+                                    // A result with raw input but no cache breakdown
+                                    // inherits the streamed breakdown; fold it back in
+                                    // so input stays inclusive of cache tokens.
+                                    let output_tokens =
+                                        new.output_tokens.or(accumulated_usage.output_tokens);
+                                    accumulated_usage = if new.input_tokens.is_some()
+                                        && !reports_own_cache
+                                    {
+                                        Usage::from_cache_exclusive_input(
+                                            new.input_tokens,
+                                            output_tokens,
+                                            None,
+                                            cache_read,
+                                            cache_write,
+                                        )
+                                    } else {
+                                        Usage::new(
+                                            new.input_tokens.or(accumulated_usage.input_tokens),
+                                            output_tokens,
+                                            None,
+                                        )
+                                        .with_cache_tokens(cache_read, cache_write)
+                                    };
+                                }
+                                let usage = std::mem::take(&mut accumulated_usage);
+                                yield (None, Some(ProviderUsage::new(model_name.clone(), usage)));
+                                *turn_message.lock().unwrap() = TurnMessage::new();
+                            }
+                            Some("error") => {
+                                process.needs_drain = false;
+                                stream_error = Some(error_from_event("Claude CLI", &parsed));
+                                break;
+                            }
+                            Some("user") => {
+                                if parsed.get("isReplay").and_then(Value::as_bool) == Some(true) {
+                                    if let Some(uuid) = parsed.get("uuid").and_then(Value::as_str) {
+                                        unechoed.remove(uuid);
+                                    }
+                                }
+                            }
+                            Some("control_request") => {
+                                if let Ok(IncomingControlRequest {
+                                    request_id,
+                                    request: IncomingRequestBody::CanUseTool { tool_name, input, tool_use_id },
+                                }) = serde_json::from_str::<IncomingControlRequest>(trimmed) {
+                                    tracing::debug!(raw = %parsed, "can_use_tool control_request received");
+
+                                    if tool_name == ASK_USER_QUESTION_TOOL {
+                                        let questions = parse_ask_user_questions(&input);
+                                        let pending = ActionRequiredManager::global()
+                                            .open_pending(session_id.clone())
+                                            .await;
+                                        // Registered so a cancelled stream's cleanup
+                                        // above still sends the CLI a deny for this
+                                        // request instead of leaving it blocked.
+                                        let (cancel_guard, _) = oneshot::channel();
+                                        pending_confirmations.lock().await.insert(request_id.clone(), cancel_guard);
+
+                                        let elicitation = Message::assistant()
+                                            .with_content(MessageContent::action_required_elicitation(
+                                                pending.id().to_string(),
+                                                ask_user_question_message(&questions),
+                                                ask_user_question_schema(&questions),
+                                            ))
+                                            .user_only();
+                                        yield (Some(elicitation), None);
+
+                                        let outcome = ActionRequiredManager::global()
+                                            .wait_for_pending(pending, ASK_USER_QUESTION_TIMEOUT)
+                                            .await;
+                                        pending_confirmations.lock().await.remove(&request_id);
+
+                                        let perm_resp = ask_user_question_response(&questions, input, tool_use_id, outcome);
+                                        let resp = ControlResponse::success(request_id, perm_resp);
+                                        let mut resp_str = serde_json::to_string(&resp).map_err(|e| {
+                                            ProviderError::RequestFailed(format!("Failed to serialize question response: {e}"))
+                                        })?;
+                                        resp_str.push('\n');
+                                        process.stdin.write_all(resp_str.as_bytes()).await.map_err(|e| {
+                                            ProviderError::RequestFailed(format!("Failed to write question response: {e}"))
+                                        })?;
+                                        continue;
+                                    }
+
+                                    if let Some(perm_resp) = policy.automatic(&tool_name, &input, &tool_use_id) {
+                                        let resp = ControlResponse::success(request_id, perm_resp);
+                                        let mut resp_str = serde_json::to_string(&resp).map_err(|e| {
+                                            ProviderError::RequestFailed(format!("Failed to serialize automatic permission response: {e}"))
+                                        })?;
+                                        resp_str.push('\n');
+                                        process.stdin.write_all(resp_str.as_bytes()).await.map_err(|e| {
+                                            ProviderError::RequestFailed(format!("Failed to write automatic permission response: {e}"))
+                                        })?;
+                                        continue;
+                                    }
+
+                                    let (tx, rx) = oneshot::channel();
+                                    pending_confirmations.lock().await.insert(request_id.clone(), tx);
+
+                                    let action_msg = Message::assistant().with_action_required(
+                                        request_id.clone(), tool_name.clone(), input.clone(), None, None, None,
+                                    );
+                                    yield (Some(action_msg), None);
+
+                                    let confirmation = rx.await.unwrap_or(PermissionConfirmation {
+                                        principal_type: PrincipalType::Tool,
+                                        permission: Permission::Cancel,
+                                    });
+                                    pending_confirmations.lock().await.remove(&request_id);
+
+                                    let persistent_level = match confirmation.permission {
+                                        Permission::AlwaysAllow => Some(PermissionLevel::AlwaysAllow),
+                                        Permission::AlwaysDeny => Some(PermissionLevel::NeverAllow),
+                                        _ => None,
+                                    };
+                                    if let Some(level) = persistent_level {
+                                        if let Err(error) = permission_manager.update_acp_provider_permission(&provider_name, &tool_name, level) {
+                                            let message = format!("Could not save Claude Code tool permission; the tool was not approved: {error}");
+                                            let response = ControlResponse::success(request_id.clone(), PermissionResponse::Deny { message: message.clone() });
+                                            let mut line = serde_json::to_string(&response).map_err(|error| ProviderError::RequestFailed(error.to_string()))?;
+                                            line.push('\n');
+                                            process.stdin.write_all(line.as_bytes()).await.map_err(|error| ProviderError::RequestFailed(error.to_string()))?;
+                                            Err::<(), _>(ProviderError::RequestFailed(message))?;
+                                        }
+                                    }
+
+                                    let perm_resp = match confirmation.permission {
+                                        Permission::AlwaysAllow | Permission::AllowOnce => {
+                                            PermissionResponse::Allow {
+                                                updated_input: input,
+                                                tool_use_id,
+                                            }
+                                        }
+                                        _ => PermissionResponse::Deny {
+                                            message: "User denied the tool call".to_string(),
+                                        },
+                                    };
+                                    let resp = ControlResponse::success(request_id, perm_resp);
+                                    let mut resp_str = serde_json::to_string(&resp).map_err(|e| {
+                                        ProviderError::RequestFailed(format!("Failed to serialize permission response: {e}"))
+                                    })?;
+                                    tracing::debug!(json = %resp_str, "can_use_tool control_response sent");
+                                    resp_str.push('\n');
+                                    process.stdin.write_all(resp_str.as_bytes()).await.map_err(|e| {
+                                        ProviderError::RequestFailed(format!("Failed to write permission response: {e}"))
+                                    })?;
+                                }
+                            }
+                            Some("system")
+                                if process.log_model_update
+                                    && parsed.get("subtype").and_then(Value::as_str) == Some("init") =>
+                            {
+                                if let Some(resolved) = parsed.get("model").and_then(|m| m.as_str()) {
+                                    tracing::debug!(
+                                        from = %process.current_model,
+                                        to = %resolved,
+                                        "set_model resolved"
+                                    );
+                                }
+                                process.log_model_update = false;
+                            }
+                            _ => {}
+                        }
+
+                        cli_settled
+                            && unsent_prompt.is_none()
+                            && process.background_tasks.is_empty()
+                            && unechoed.is_empty()
+                    }
+                };
+
+                if settled {
+                    // Once closed, `deliver_mid_turn_message` reports failure and
+                    // the agent sends the message as the next request instead;
+                    // one that got in first is still answered in this stream.
+                    forwarded.close();
+                    let mut late = false;
+                    while let Ok(message) = forwarded.try_recv() {
+                        process.write_line(&message.line).await.map_err(|e| {
+                            ProviderError::RequestFailed(format!("Failed to forward a mid-turn message: {e}"))
+                        })?;
+                        process.needs_drain = true;
+                        unechoed.insert(message.uuid);
+                        late = true;
+                    }
+                    if !late {
                         break;
                     }
                 }
@@ -1463,10 +1795,29 @@ impl Provider for ClaudeCodeProvider {
             if let Some(err) = stream_error {
                 Err(err)?;
             }
-
-            let provider_usage = ProviderUsage::new(model_name, accumulated_usage);
-            yield (None, Some(provider_usage));
         }))
+    }
+
+    fn accepts_mid_turn_messages(&self) -> bool {
+        true
+    }
+
+    async fn deliver_mid_turn_message(&self, message: &Message) -> bool {
+        let blocks = self.last_user_content_blocks(std::slice::from_ref(message));
+        if blocks.is_empty() {
+            return false;
+        }
+        let live_turn = self.live_turn.lock().unwrap();
+        let Some(turn) = live_turn.as_ref() else {
+            return false;
+        };
+        let uuid = uuid::Uuid::new_v4().to_string();
+        let line = build_forwarded_input(&blocks, &turn.session_id, &uuid);
+        if turn.input.send(ForwardedMessage { uuid, line }).is_err() {
+            return false;
+        }
+        *turn.message.lock().unwrap() = TurnMessage::new();
+        true
     }
 }
 
@@ -2000,6 +2351,8 @@ mod tests {
             pending_confirmations: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             initial_mode: tokio::sync::Mutex::new(None),
             permission_manager: Arc::new(PermissionManager::new(tempdir().unwrap().keep())),
+            background_tasks: false,
+            live_turn: std::sync::Mutex::new(None),
         }
     }
 
@@ -2049,6 +2402,14 @@ mod tests {
     }
 
     fn make_test_process(canned_stdout: &str) -> (CliProcess, tokio::io::DuplexStream) {
+        test_process(Box::new(std::io::Cursor::new(
+            canned_stdout.as_bytes().to_vec(),
+        )))
+    }
+
+    fn test_process(
+        stdout: Box<dyn tokio::io::AsyncRead + Unpin + Send>,
+    ) -> (CliProcess, tokio::io::DuplexStream) {
         let child = tokio::process::Command::new("true")
             .spawn()
             .expect("failed to spawn `true`");
@@ -2058,14 +2419,16 @@ mod tests {
         let process = CliProcess {
             child,
             stdin: Box::new(stdin_writer),
-            reader: BufReader::new(Box::new(std::io::Cursor::new(
-                canned_stdout.as_bytes().to_vec(),
-            ))),
+            reader: BufReader::new(stdout),
+            line_buf: Vec::new(),
             stderr_handle: tokio::spawn(async { String::new() }),
             current_model: String::new(),
             log_model_update: false,
             next_request_id: 0,
             needs_drain: false,
+            background_tasks: HashSet::new(),
+            reports_session_state: false,
+            idle: true,
         };
         (process, stdin_reader)
     }
@@ -2674,5 +3037,386 @@ mod tests {
         let stdin_str = capture_stdin(&provider, stdin_reader).await;
         let response_data = extract_permission_response(&stdin_str, "stale_1");
         assert_eq!(response_data["behavior"], "deny");
+    }
+
+    const SET_MODEL_OK: &str =
+        r#"{"type":"control_response","response":{"subtype":"success","request_id":"req_0"}}"#;
+    const RUNNING: &str =
+        r#"{"type":"system","subtype":"session_state_changed","state":"running"}"#;
+    const IDLE: &str = r#"{"type":"system","subtype":"session_state_changed","state":"idle"}"#;
+    const INIT: &str = r#"{"type":"system","subtype":"init"}"#;
+    const TEXT_BLOCK: &str = r#"{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}"#;
+    const TOOL_BLOCK: &str = r#"{"type":"stream_event","event":{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"tu_x","name":"Bash","input":{}}}}"#;
+    const RESULT: &str = r#"{"type":"result","subtype":"success","result":"","usage":{"input_tokens":10,"output_tokens":5}}"#;
+    const NO_BACKGROUND_TASKS: &str =
+        r#"{"type":"system","subtype":"background_tasks_changed","tasks":[]}"#;
+
+    fn text_delta(text: &str) -> String {
+        json!({"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":text}}}).to_string()
+    }
+
+    async fn collect_stream(stream: &mut MessageStream) -> (Vec<(String, String)>, usize) {
+        use futures::StreamExt;
+        let mut texts = Vec::new();
+        let mut usages = 0;
+        while let Some(item) = stream.next().await {
+            let (message, usage) = item.unwrap();
+            if let Some(message) = message {
+                texts.push((message.id.clone().unwrap(), message.as_concat_text()));
+            }
+            usages += usize::from(usage.is_some());
+        }
+        (texts, usages)
+    }
+
+    #[test_case(false, Some("1") ; "background_tasks_are_off_by_default")]
+    #[test_case(true, None ; "operator_opted_back_in")]
+    fn command_disables_background_tasks_unless_opted_in(
+        background_tasks: bool,
+        disabled: Option<&str>,
+    ) {
+        let mut provider = make_provider();
+        provider.background_tasks = background_tasks;
+        let command = provider.build_stream_json_command();
+        let env = |key: &str| {
+            command
+                .as_std()
+                .get_envs()
+                .find(|(name, _)| *name == key)
+                .and_then(|(_, value)| value)
+                .and_then(|value| value.to_str())
+                .map(str::to_string)
+        };
+        assert_eq!(
+            env("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS").as_deref(),
+            disabled
+        );
+        assert_eq!(
+            env("CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS").as_deref(),
+            Some("1")
+        );
+    }
+
+    #[test_case(true ; "cli_reports_session_state")]
+    #[test_case(false ; "older_cli_without_session_state")]
+    #[tokio::test]
+    async fn turn_stays_open_until_a_background_task_reports(reports_session_state: bool) {
+        let started = text_delta("Started.");
+        let finished = text_delta("Finished.");
+        let never_read = text_delta("Never read.");
+        let lines: Vec<&str> = [
+            SET_MODEL_OK,
+            RUNNING,
+            INIT,
+            TEXT_BLOCK,
+            &started,
+            r#"{"type":"system","subtype":"background_tasks_changed","tasks":[{"task_id":"b1","task_type":"local_bash","description":"retire worktrees"}]}"#,
+            RESULT,
+            IDLE,
+            NO_BACKGROUND_TASKS,
+            r#"{"type":"system","subtype":"task_notification","task_id":"b1","status":"completed"}"#,
+            RUNNING,
+            INIT,
+            r#"{"type":"control_request","request_id":"perm_follow_up","request":{"subtype":"can_use_tool","tool_name":"Bash","input":{"command":"git worktree list"},"tool_use_id":"tu_1"}}"#,
+            TEXT_BLOCK,
+            &finished,
+            RESULT,
+            IDLE,
+            &never_read,
+        ]
+        .into_iter()
+        .filter(|line| reports_session_state || !line.contains("session_state_changed"))
+        .collect();
+
+        let (provider, mut stream, stdin) =
+            stream_with_canned_stdout_in_mode(&lines, GoslingMode::Auto).await;
+        let (texts, usages) = collect_stream(&mut stream).await;
+        drop(stream);
+
+        let shown: Vec<&str> = texts.iter().map(|(_, text)| text.as_str()).collect();
+        assert_eq!(shown, ["Started.", "Finished."]);
+        assert_ne!(
+            texts[0].0, texts[1].0,
+            "the follow-up turn renders as its own message"
+        );
+        assert_eq!(usages, 2);
+        let captured = capture_stdin(&provider, stdin).await;
+        assert_eq!(
+            extract_permission_response(&captured, "perm_follow_up")["behavior"],
+            "allow",
+            "the follow-up turn's tool request is answered instead of blocking the CLI"
+        );
+    }
+
+    #[tokio::test]
+    async fn ambient_background_tasks_do_not_hold_the_turn() {
+        let done = text_delta("Done.");
+        let never_read = text_delta("Never read.");
+        let (_provider, mut stream, _stdin) = stream_with_canned_stdout(&[
+            SET_MODEL_OK,
+            RUNNING,
+            TEXT_BLOCK,
+            &done,
+            r#"{"type":"system","subtype":"background_tasks_changed","tasks":[{"task_id":"w1","task_type":"monitor_ws","description":"housekeeping","ambient":true}]}"#,
+            RESULT,
+            IDLE,
+            &never_read,
+        ])
+        .await;
+
+        let (texts, _) = collect_stream(&mut stream).await;
+        assert_eq!(texts.len(), 1);
+        assert_eq!(texts[0].1, "Done.");
+    }
+
+    #[tokio::test]
+    async fn text_after_a_tool_call_starts_a_new_paragraph() {
+        let checking = text_delta("Checking.");
+        let found = text_delta("Found it.");
+        let (_provider, mut stream, _stdin) = stream_with_canned_stdout(&[
+            SET_MODEL_OK,
+            TEXT_BLOCK,
+            &checking,
+            TOOL_BLOCK,
+            TEXT_BLOCK,
+            &found,
+            RESULT,
+        ])
+        .await;
+
+        let (texts, _) = collect_stream(&mut stream).await;
+        let joined: String = texts.into_iter().map(|(_, text)| text).collect();
+        assert_eq!(joined, "Checking.\n\nFound it.");
+    }
+
+    #[test_case(GoslingMode::Auto, "allow" ; "auto_mode_lets_the_dropped_turn_finish")]
+    #[test_case(GoslingMode::Approve, "deny" ; "nobody_is_there_to_approve")]
+    #[tokio::test]
+    async fn draining_a_dropped_turn_answers_its_tool_requests(mode: GoslingMode, expected: &str) {
+        let stale = text_delta("Stale.");
+        let fresh = text_delta("Fresh.");
+        let lines = [
+            RUNNING,
+            r#"{"type":"control_request","request_id":"perm_stale","request":{"subtype":"can_use_tool","tool_name":"Bash","input":{"command":"ls"},"tool_use_id":"tu_s"}}"#,
+            TEXT_BLOCK,
+            &stale,
+            RESULT,
+            IDLE,
+            SET_MODEL_OK,
+            RUNNING,
+            INIT,
+            TEXT_BLOCK,
+            &fresh,
+            RESULT,
+            IDLE,
+        ];
+        let (mut process, stdin) = make_test_process(&lines.join("\n"));
+        process.needs_drain = true;
+        let provider = make_provider();
+        *provider.initial_mode.lock().await = Some(mode);
+        provider
+            .cli_process
+            .set(Arc::new(tokio::sync::Mutex::new(process)))
+            .unwrap();
+        let model = ModelConfig::new(CLAUDE_CODE_DEFAULT_MODEL)
+            .with_canonical_limits(CLAUDE_CODE_PROVIDER_NAME);
+        let mut stream = provider
+            .stream(&model, "", &[Message::user().with_text("next")], &[])
+            .await
+            .unwrap();
+
+        let (texts, _) = collect_stream(&mut stream).await;
+        drop(stream);
+
+        let shown: Vec<&str> = texts.iter().map(|(_, text)| text.as_str()).collect();
+        assert_eq!(shown, ["Fresh."]);
+        let captured = capture_stdin(&provider, stdin).await;
+        let response = extract_permission_response(&captured, "perm_stale");
+        assert_eq!(response["behavior"], expected);
+        if expected == "deny" {
+            assert_eq!(response["message"], UNATTENDED_TOOL_DENIAL);
+        }
+    }
+
+    type StreamItem = Result<(Option<Message>, Option<ProviderUsage>), ProviderError>;
+
+    /// Drives a stream against a CLI the test speaks for line by line, for
+    /// exchanges where what the CLI says next depends on what it was sent.
+    struct LiveCli {
+        stdin: tokio::io::Lines<BufReader<tokio::io::DuplexStream>>,
+        stdout: tokio::io::DuplexStream,
+        items: mpsc::UnboundedReceiver<StreamItem>,
+    }
+
+    impl LiveCli {
+        /// Starts a stream for the prompt "test" and answers its set_model
+        /// request, followed by `first_lines`.
+        async fn start(
+            provider: &ClaudeCodeProvider,
+            prepare: impl FnOnce(&mut CliProcess),
+            first_lines: &[&str],
+        ) -> Self {
+            let (stdout, stdout_reader) = tokio::io::duplex(64 * 1024);
+            let (mut process, stdin) = test_process(Box::new(stdout_reader));
+            prepare(&mut process);
+            *provider.initial_mode.lock().await = Some(GoslingMode::Auto);
+            provider
+                .cli_process
+                .set(Arc::new(tokio::sync::Mutex::new(process)))
+                .unwrap();
+            let model = ModelConfig::new(CLAUDE_CODE_DEFAULT_MODEL)
+                .with_canonical_limits(CLAUDE_CODE_PROVIDER_NAME);
+            let mut stream = provider
+                .stream(&model, "", &[Message::user().with_text("test")], &[])
+                .await
+                .unwrap();
+            let (tx, items) = mpsc::unbounded_channel();
+            tokio::spawn(async move {
+                use futures::StreamExt;
+                while let Some(item) = stream.next().await {
+                    if tx.send(item).is_err() {
+                        break;
+                    }
+                }
+            });
+
+            let mut cli = Self {
+                stdin: BufReader::new(stdin).lines(),
+                stdout,
+                items,
+            };
+            assert_eq!(cli.read_stdin().await["request"]["subtype"], "set_model");
+            cli.say(&[SET_MODEL_OK]).await;
+            cli.say(first_lines).await;
+            cli
+        }
+
+        async fn say(&mut self, lines: &[&str]) {
+            for line in lines {
+                self.stdout.write_all(line.as_bytes()).await.unwrap();
+                self.stdout.write_all(b"\n").await.unwrap();
+            }
+        }
+
+        async fn read_stdin(&mut self) -> Value {
+            let line = tokio::time::timeout(Duration::from_secs(5), self.stdin.next_line())
+                .await
+                .expect("the stream sent the CLI nothing")
+                .unwrap()
+                .expect("stdin closed");
+            serde_json::from_str(&line).unwrap()
+        }
+
+        /// The next assistant text the stream yields, as (message id, text).
+        async fn next_text(&mut self) -> (String, String) {
+            loop {
+                let item = tokio::time::timeout(Duration::from_secs(5), self.items.recv())
+                    .await
+                    .expect("the stream yielded nothing")
+                    .expect("the stream ended");
+                if let (Some(message), _) = item.unwrap() {
+                    return (message.id.clone().unwrap(), message.as_concat_text());
+                }
+            }
+        }
+
+        async fn expect_end(&mut self) {
+            loop {
+                match tokio::time::timeout(Duration::from_secs(5), self.items.recv())
+                    .await
+                    .expect("the stream did not end")
+                {
+                    None => return,
+                    Some(Ok((None, Some(_)))) => continue,
+                    Some(other) => panic!("expected the stream to end, got {other:?}"),
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn mid_turn_message_is_answered_before_the_stream_ends() {
+        let provider = make_provider();
+        let status = Message::user().with_text("status?");
+        assert!(
+            !provider.deliver_mid_turn_message(&status).await,
+            "no stream is running yet"
+        );
+
+        let working = text_delta("Working.");
+        let mut cli = LiveCli::start(&provider, |_| {}, &[]).await;
+        assert_eq!(
+            cli.read_stdin().await["message"]["content"][0]["text"],
+            "Human: test"
+        );
+        cli.say(&[RUNNING, INIT, TEXT_BLOCK, &working]).await;
+        let (working_id, _) = cli.next_text().await;
+
+        assert!(provider.deliver_mid_turn_message(&status).await);
+        let forwarded = cli.read_stdin().await;
+        assert_eq!(forwarded["message"]["content"][0]["text"], "Human: status?");
+        let uuid = forwarded["uuid"].as_str().unwrap().to_string();
+
+        // The CLI finishes the turn it was in before taking the message up,
+        // so this `idle` must not end the stream.
+        let done = text_delta("Done.");
+        cli.say(&[TEXT_BLOCK, &done, RESULT, IDLE]).await;
+        let (done_id, done_text) = cli.next_text().await;
+        assert_eq!(done_text, "Done.");
+        assert_ne!(
+            done_id, working_id,
+            "text after a delivered message renders below it"
+        );
+
+        let echo = json!({"type":"user","isReplay":true,"uuid":uuid,"message":{"role":"user","content":[{"type":"text","text":"Human: status?"}]}}).to_string();
+        let answer = text_delta("All seven removed.");
+        cli.say(&[RUNNING, INIT, &echo, TEXT_BLOCK, &answer, RESULT, IDLE])
+            .await;
+        let (answer_id, answer_text) = cli.next_text().await;
+        assert_eq!(answer_text, "All seven removed.");
+        assert_ne!(answer_id, done_id);
+        cli.expect_end().await;
+
+        assert!(
+            !provider.deliver_mid_turn_message(&status).await,
+            "the stream has ended"
+        );
+    }
+
+    #[tokio::test]
+    async fn turns_that_ran_while_no_stream_listened_are_read_before_the_prompt() {
+        let provider = make_provider();
+        let report = text_delta("Report.");
+        // The previous stream ended while a background task was running, and
+        // the turn reporting it has since run to `idle` with no one reading.
+        let mut cli = LiveCli::start(
+            &provider,
+            |process| {
+                process.background_tasks.insert("b1".to_string());
+                process.reports_session_state = true;
+            },
+            &[
+                RUNNING,
+                INIT,
+                TEXT_BLOCK,
+                &report,
+                NO_BACKGROUND_TASKS,
+                RESULT,
+                IDLE,
+            ],
+        )
+        .await;
+        assert_eq!(cli.next_text().await.1, "Report.");
+
+        assert_eq!(
+            cli.read_stdin().await["message"]["content"][0]["text"],
+            "Human: test",
+            "the prompt goes out once the backlog has been read"
+        );
+        let answer = text_delta("Answer.");
+        cli.say(&[RUNNING, INIT, TEXT_BLOCK, &answer, RESULT, IDLE])
+            .await;
+        assert_eq!(cli.next_text().await.1, "Answer.");
+        cli.expect_end().await;
     }
 }

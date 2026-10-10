@@ -5,7 +5,9 @@ for the relationship to cephalopod-ai/gosling.
 
 ## Standard sections
 
-- [specs/native-export-bundle.md](specs/native-export-bundle.md) — bounded, resumable native session acquisition with complete plan history; validation pending
+- [specs/native-export-bundle.md](specs/native-export-bundle.md) — bounded, resumable native session acquisition; scoped CLI validation and installed large-session capture qualified
+- [logs/session/2026-10-08-muninn-exporter-rollout.md](logs/session/2026-10-08-muninn-exporter-rollout.md) — approved build/test/install, compatibility repair, native capture/resume and validation limits
+- [logs/session/2026-10-06-native-export-bundle.md](logs/session/2026-10-06-native-export-bundle.md) — source implementation and review fixes; Cargo and installed exporter qualification pending
 - [architecture.md](architecture.md) — system architecture, including plan lifecycle, Context History, and Recall Brief boundaries
 - [architecture/shell-foundation.md](architecture/shell-foundation.md) — focused shell identity, provisioning, runtime, adapter, handoff, and host foundation
 - [architecture/shell-productization-contracts.md](architecture/shell-productization-contracts.md) — accepted product profile, process/preload, compatibility, lifecycle, diagnostics, release, and threat-model contracts

@@ -349,7 +349,7 @@ Export sessions in different formats for backup, sharing, migration, or document
 - **`-n, --name <name>`**: Export a specific session by name
 - **`--path <path>`**: Export a specific session by file path (legacy)
 - **`-o, --output <file>`**: Save exported content to a file (default: stdout)
-- **`--format <format>`**: Output format: `markdown`, `json`, `yaml`. Default is `markdown`
+- **`--format <format>`**: Output format: `markdown`, `json`, `yaml`, `json-pages`. Default is `markdown`
 - **`--nostr`**: Publish the JSON export as an encrypted Nostr event and print a `gosling://` share link
 - **`--relay <url>`**: Nostr relay to publish to; repeat the flag to use several relays
 - **`--no-redact`**: Keep secrets as they are instead of replacing them with `[REDACTED]` (for local backups; not allowed with `--nostr`)
@@ -358,6 +358,7 @@ Export sessions in different formats for backup, sharing, migration, or document
 - **`json`**: Complete session backup preserving all data including conversation history, metadata, and settings
 - **`yaml`**: Complete session backup in YAML format
 - **`markdown`**: Default format that creates a formatted, readable version of the conversation for documentation and sharing
+- **`json-pages`**: Bounded native acquisition including internal messages and plan history. Requires `--output DIRECTORY`; emits owner-only UTF-8 parts and a final completion manifest. The snapshot limit is 256 MiB, each part at most 1 MiB. Rerunning with the same snapshot verifies and resumes existing parts; changed or corrupt snapshots require a fresh directory. Nostr sharing is unavailable. Ordinary JSON import/export keeps its 16 MiB limit.
 
 Exports and share links are redacted the same way as [diagnostics reports](#session-diagnostics-options):
 every value in gosling's secret store, provider keys set in the environment, and credential-shaped text
@@ -381,6 +382,9 @@ gosling session export -n my-session -o session.md
 # Export to stdout in different formats
 gosling session export --session-id 20251108_4 --format json
 gosling session export -n my-session --format yaml
+
+# Bounded native acquisition for a registered memory adapter
+gosling session export --session-id 20251108_4 --format json-pages --output session-bundle
 
 # Export session by path (legacy)
 gosling session export --path ./my-session.jsonl -o exported.md

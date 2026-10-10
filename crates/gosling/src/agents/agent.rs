@@ -454,6 +454,7 @@ pub struct Agent {
     goal: Mutex<Option<String>>,
     grind: Mutex<Option<String>>,
     pending_steers: Mutex<HashMap<String, VecDeque<Message>>>,
+    steer_arrived: tokio::sync::Notify,
 }
 
 #[derive(Clone, Debug)]
@@ -675,6 +676,7 @@ impl Agent {
             goal: Mutex::new(None),
             grind: Mutex::new(None),
             pending_steers: Mutex::new(HashMap::new()),
+            steer_arrived: tokio::sync::Notify::new(),
         }
     }
 

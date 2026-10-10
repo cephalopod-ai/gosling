@@ -46,7 +46,7 @@ pub fn ensure_snapshot_bound(snapshot: &str) -> Result<()> {
 }
 
 fn digest(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
+    crate::utils::bytes_to_hex(Sha256::digest(bytes))
 }
 
 fn persist_or_verify(directory: &Path, name: &str, bytes: &[u8]) -> Result<()> {
@@ -64,7 +64,25 @@ fn persist_or_verify(directory: &Path, name: &str, bytes: &[u8]) -> Result<()> {
         }
         return Ok(());
     }
-    let mut temporary = tempfile::NamedTempFile::new_in(directory)?;
+    let staging = directory.join(".staging");
+    let mut builder = fs::DirBuilder::new();
+    #[cfg(unix)]
+    builder.mode(0o700);
+    match builder.create(&staging) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            let metadata = fs::symlink_metadata(&staging)?;
+            if !metadata.is_dir() || metadata.file_type().is_symlink() {
+                bail!("Export staging directory is invalid");
+            }
+            #[cfg(unix)]
+            if metadata.permissions().mode() & 0o077 != 0 {
+                bail!("Export staging directory must be owner-only");
+            }
+        }
+        Err(error) => return Err(error.into()),
+    }
+    let mut temporary = tempfile::NamedTempFile::new_in(staging)?;
     #[cfg(unix)]
     temporary
         .as_file()
@@ -139,15 +157,38 @@ pub fn write_bundle(
     }
     for item in fs::read_dir(directory)? {
         let name = item?.file_name();
-        if name != "intent.json"
+        if name != ".staging"
+            && name != "intent.json"
             && name != "manifest.json"
             && !bundle.parts.iter().any(|part| name == part.file.as_str())
         {
             bail!("Export bundle output contains an unrelated file");
         }
     }
+    let staging = directory.join(".staging");
+    match fs::symlink_metadata(&staging) {
+        Ok(metadata) => {
+            if !metadata.is_dir() || metadata.file_type().is_symlink() {
+                bail!("Export staging directory is invalid");
+            }
+            #[cfg(unix)]
+            if metadata.permissions().mode() & 0o077 != 0 {
+                bail!("Export staging directory must be owner-only");
+            }
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
     let mut intent = bundle.clone();
     intent.complete = false;
+    // Refuse a different completed snapshot before adding any new intent.
+    match fs::symlink_metadata(directory.join("manifest.json")) {
+        Ok(_) => {
+            persist_or_verify(directory, "manifest.json", &serde_json::to_vec(&bundle)?)?;
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
     persist_or_verify(directory, "intent.json", &serde_json::to_vec(&intent)?)?;
     for part in &bundle.parts {
         persist_or_verify(

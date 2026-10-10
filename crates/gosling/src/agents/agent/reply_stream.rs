@@ -172,20 +172,8 @@ impl Agent {
 
                 if can_drain_pending_steers {
                     for message in self.drain_pending_steers(&session_config.id).await {
-                        let message_text = message.as_concat_text();
-                        if !planning_turn
-                            && self
-                            .hook_manager
-                            .has_hooks(crate::hooks::HookEvent::UserPromptSubmit)
-                        {
-                            let ctx = crate::hooks::HookContext::new(
-                                crate::hooks::HookEvent::UserPromptSubmit,
-                                &session_config.id,
-                            )
-                            .with_message(message_text);
-                            self.hook_manager
-                                .emit(crate::hooks::HookEvent::UserPromptSubmit, ctx)
-                                .await;
+                        if !planning_turn {
+                            self.emit_steer_prompt_hook(&session_config.id, &message).await;
                         }
                         session_manager.add_message(&session_config.id, &message).await?;
                         conversation.push(message.clone());
@@ -446,8 +434,34 @@ impl Agent {
                 // reasoning without hiding final-only non-streaming thoughts.
                 let mut surfaced_thinking_in_turn = false;
                 let mut planning_review_committed = false;
+                let forwards_steers_mid_turn =
+                    !planning_turn && active_provider.accepts_mid_turn_messages();
 
-                'provider_stream: while let Some(next) = stream.next().await {
+                'provider_stream: loop {
+                    let wake = if forwards_steers_mid_turn {
+                        tokio::select! {
+                            next = stream.next() => ProviderStreamWake::Next(next),
+                            _ = self.steer_arrived.notified() => ProviderStreamWake::Steer,
+                        }
+                    } else {
+                        ProviderStreamWake::Next(stream.next().await)
+                    };
+                    let next = match wake {
+                        ProviderStreamWake::Next(Some(next)) => next,
+                        ProviderStreamWake::Next(None) => break,
+                        ProviderStreamWake::Steer => {
+                            for message in self
+                                .forward_pending_steers(&session_config.id, active_provider.as_ref())
+                                .await
+                            {
+                                self.emit_steer_prompt_hook(&session_config.id, &message).await;
+                                session_manager.add_message(&session_config.id, &message).await?;
+                                conversation.push(message.clone());
+                                yield AgentEvent::Message(message);
+                            }
+                            continue;
+                        }
+                    };
                     if is_token_cancelled(&cancel_token) || exit_chat {
                         break;
                     }
@@ -1655,6 +1669,11 @@ fn provider_error_advice(error: &ProviderError) -> &'static str {
 
 /// A reply cut off by a terminal provider error stays visible to the user, but
 /// it is not replayed to the model on the next turn as if it were complete.
+enum ProviderStreamWake<T> {
+    Next(Option<T>),
+    Steer,
+}
+
 fn hide_interrupted_reply_from_agent(messages: Conversation) -> Conversation {
     Conversation::new_unvalidated(messages.into_iter().map(|message| {
         let user_visible = message.metadata.user_visible;
