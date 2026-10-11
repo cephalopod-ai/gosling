@@ -45,6 +45,7 @@ gosling is compatible with a wide range of LLM providers, allowing you to choose
 | [Novita AI](https://novita.ai/)                                             | 90+ open-source models with OpenAI-compatible API and competitive pricing. Supports Kimi K2.5, DeepSeek, GLM, MiniMax, Qwen, and more.                                                                       | `NOVITA_API_KEY`                                                                                                  |
 | [Ollama](https://ollama.com/)                                               | Local model runner supporting Qwen, Llama, DeepSeek, and other open-source models. **Because this provider runs locally, you must first [download and run a model](#local-llms).**  | `OLLAMA_HOST`                                                                                                                                                                       |
 | [Ollama Cloud](https://ollama.com/)                                         | Access hosted models on ollama.com via OpenAI-compatible API. Requires an Ollama account and API key.  | `OLLAMA_CLOUD_API_KEY`                                                                                                                                                                       |
+| [oMLX](https://github.com/jundot/omlx)                                      | Run local MLX models on Apple Silicon with the oMLX server's OpenAI-compatible API. **Because this provider runs locally, you must first [download a model](#local-llms).** | `OMLX_HOST` (optional, defaults to `http://localhost:8000`), `OMLX_API_KEY` (optional, only if the server requires one) |
 | [OpenAI](https://platform.openai.com/api-keys)                              | Provides GPT-6 Astra (`gpt-6-astra`), GPT-6.1 Sol (`gpt-6.1-sol`), gpt-4o, o1, and other advanced language models. gosling routes GPT-6 tool calls through the Responses API and supports `low` through `max` reasoning for Astra and GPT-6.1 Sol. Also supports OpenAI-compatible endpoints (e.g., self-hosted LLaMA, vLLM, KServe). **o1-mini and o1-preview are not supported because gosling uses tool calling.** | `OPENAI_API_KEY`, `OPENAI_HOST` (optional), `OPENAI_ORGANIZATION` (optional), `OPENAI_PROJECT` (optional), `OPENAI_CUSTOM_HEADERS` (optional)                                       |
 | [OpenRouter](https://openrouter.ai/)                                        | API gateway for unified access to various models with features like rate-limiting management.                                                                                                                             | `OPENROUTER_API_KEY`, `OPENROUTER_HOST` (optional), `OPENROUTER_PARAMETERS` (optional)                                                                                              |
 | [Perplexity](https://www.perplexity.ai/)                                    | Chat models with built-in real-time web search grounding. OpenAI-compatible chat completions API at `https://api.perplexity.ai`.                                                                                          | `PERPLEXITY_API_KEY`                                                                                                                                                                |
@@ -1263,6 +1264,58 @@ Here are some local providers we support:
 
     :::tip Model Name
     Make sure the model name you enter in gosling matches the model identifier shown in LM Studio's server panel.
+    :::
+  </TabItem>
+  <TabItem value="omlx" label="oMLX">
+    [oMLX](https://github.com/jundot/omlx) runs MLX models locally on Apple Silicon and serves them through an OpenAI-compatible API.
+
+    1. Install oMLX and download a model that supports tool calling.
+    2. Start the oMLX server. It listens on `http://localhost:8000` by default.
+
+    3. Configure gosling to use oMLX:
+
+    <Tabs groupId="interface">
+      <TabItem value="ui" label="gosling Desktop" default>
+        1. Click the <PanelLeft className="inline" size={16} /> button in the top-left to open the sidebar.
+        2. Click the `Settings` button on the sidebar.
+        3. Click the `Models` tab.
+        4. Click `Configure providers`.
+        5. Choose `oMLX` from the provider list and click `Configure`.
+        6. Click `Submit`. Set the API key only if your oMLX server requires one.
+        7. Select a model served by oMLX.
+      </TabItem>
+      <TabItem value="cli" label="gosling CLI">
+        1. Run:
+        ```sh
+        gosling configure
+        ```
+        2. Select `Configure Providers` from the menu.
+        3. Choose `oMLX` as the provider.
+        4. Enter the name of a model served by oMLX.
+
+        ```
+        ┌   gosling-configure
+        │
+        ◇  What would you like to configure?
+        │  Configure Providers
+        │
+        ◇  Which model provider should we use?
+        │  oMLX
+        │
+        ◇  Enter a model from that provider:
+        │  Qwen3.8-27B-4bit
+        │
+        └  Configuration saved successfully
+        ```
+      </TabItem>
+    </Tabs>
+
+    :::tip Model Name
+    Use a model identifier returned by the oMLX server's `/v1/models` endpoint.
+    :::
+
+    :::note Non-default host or API key
+    If oMLX is bound to another host or port, set `OMLX_HOST`. If the server has API key verification enabled, set `OMLX_API_KEY`.
     :::
   </TabItem>
   <TabItem value="atomic-chat" label="Atomic Chat">

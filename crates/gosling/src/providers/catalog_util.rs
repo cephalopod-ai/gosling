@@ -129,6 +129,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_omlx_provider() {
+        let omlx = crate::providers::get_from_registry("omlx")
+            .await
+            .expect("omlx should be registered as a declarative provider");
+        assert_eq!(omlx.provider_type(), ProviderType::Declarative);
+        assert_eq!(omlx.metadata().display_name, "oMLX");
+
+        let setup_entries = get_setup_catalog_entries().await;
+        let setup_entry = setup_entries
+            .iter()
+            .find(|entry| entry.provider_id == "omlx")
+            .expect("omlx should be in the setup catalog");
+        assert_eq!(setup_entry.setup_method, ProviderSetupMethod::ConfigFields);
+
+        let host = setup_entry
+            .fields
+            .iter()
+            .find(|field| field.key == "OMLX_HOST")
+            .expect("omlx should expose a host field");
+        assert_eq!(host.default_value.as_deref(), Some("http://localhost:8000"));
+        assert!(!host.required);
+
+        let api_key = setup_entry
+            .fields
+            .iter()
+            .find(|field| field.key == "OMLX_API_KEY")
+            .expect("omlx should expose an API key field");
+        assert!(api_key.secret);
+        assert!(!api_key.required);
+    }
+
+    #[tokio::test]
     async fn setup_catalog_includes_gosling_and_curated_fields() {
         let entries = get_setup_catalog_entries().await;
 
