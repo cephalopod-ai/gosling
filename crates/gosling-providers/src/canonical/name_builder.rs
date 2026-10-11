@@ -351,6 +351,20 @@ mod tests {
             Some("opencode-go/kimi-k2.6".to_string())
         );
 
+        // === Mistral (gosling's mistral provider resolves via catalog id "mistralai") ===
+        assert_eq!(
+            map_to_canonical_model("mistralai", "mistral-large-4", r),
+            Some("mistralai/mistral-large-4".to_string())
+        );
+        assert_eq!(
+            map_to_canonical_model("mistralai", "zai-glm-5.3", r),
+            Some("mistralai/zai-glm-5.3".to_string())
+        );
+        assert_eq!(
+            map_to_canonical_model("mistralai", "mistral-medium-latest", r),
+            Some("mistralai/mistral-medium".to_string())
+        );
+
         // === OpenRouter ===
         assert_eq!(
             map_to_canonical_model("openrouter", "anthropic/claude-sonnet-4.5", r),

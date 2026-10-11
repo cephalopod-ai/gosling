@@ -169,6 +169,40 @@ fn pending_anthropic_models() -> Vec<(&'static str, CanonicalModel)> {
     )]
 }
 
+/// Models Mistral ships that the upstream catalog snapshot may not carry yet.
+/// Registered only when absent, so a refreshed snapshot always wins. The
+/// mistral-large-4 contract mirrors Mistral Large 3 (the bundled
+/// `mistralai/mistral-large` entry); pricing and dates stay empty until the
+/// snapshot publishes them.
+fn pending_mistral_models() -> Vec<(&'static str, CanonicalModel)> {
+    vec![(
+        "mistral-large-4",
+        CanonicalModel {
+            id: "mistralai/mistral-large-4".to_string(),
+            name: "Mistral Large 4".to_string(),
+            family: Some("mistral-large".to_string()),
+            attachment: Some(true),
+            reasoning: Some(false),
+            thinking_mode: None,
+            tool_call: true,
+            temperature: Some(true),
+            knowledge: None,
+            release_date: None,
+            last_updated: None,
+            modalities: Modalities {
+                input: vec![Modality::Text, Modality::Image],
+                output: vec![Modality::Text],
+            },
+            open_weights: Some(true),
+            cost: Pricing::default(),
+            limit: Limit {
+                context: 262_144,
+                output: Some(262_144),
+            },
+        },
+    )]
+}
+
 /// Shape of a current-generation Opus entry: `temperature` is rejected by the
 /// API for this tier (a non-default value earns a 400), and pricing follows the
 /// 5/25 per-Mtok Opus rates that 4.6 through 4.8 already carry.
@@ -213,6 +247,12 @@ pub fn apply_curated_model_contracts(registry: &mut CanonicalModelRegistry) {
     for (model_name, model) in pending_anthropic_models() {
         if registry.get("anthropic", model_name).is_none() {
             registry.register("anthropic", model_name, model);
+        }
+    }
+
+    for (model_name, model) in pending_mistral_models() {
+        if registry.get("mistralai", model_name).is_none() {
+            registry.register("mistralai", model_name, model);
         }
     }
 
@@ -388,6 +428,33 @@ mod tests {
         assert_eq!(opus_5.cost.output, Some(25.0));
         assert_eq!(opus_5.cost.cache_read, Some(0.5));
         assert_eq!(opus_5.cost.cache_write, Some(6.25));
+    }
+
+    #[test]
+    fn registers_pending_mistral_models_the_snapshot_has_not_published() {
+        let mut registry = CanonicalModelRegistry::new();
+        apply_curated_model_contracts(&mut registry);
+
+        let large_4 = registry.get_active("mistralai", "mistral-large-4").unwrap();
+        assert_eq!(large_4.name, "Mistral Large 4");
+        assert_eq!(large_4.family.as_deref(), Some("mistral-large"));
+        assert_eq!(large_4.limit.context, 262_144);
+        assert_eq!(large_4.limit.output, Some(262_144));
+        assert!(large_4.tool_call);
+        assert_eq!(large_4.reasoning, Some(false));
+    }
+
+    #[test]
+    fn a_published_snapshot_entry_wins_over_the_pending_mistral_stub() {
+        let mut registry = CanonicalModelRegistry::new();
+        let mut published = current_model("mistral-large-4");
+        published.name = "Mistral Large 4 (from snapshot)".to_string();
+        registry.register("mistralai", "mistral-large-4", published);
+
+        apply_curated_model_contracts(&mut registry);
+
+        let large_4 = registry.get_active("mistralai", "mistral-large-4").unwrap();
+        assert_eq!(large_4.name, "Mistral Large 4 (from snapshot)");
     }
 
     /// The stub must not drift from the shipped entries of the same tier.

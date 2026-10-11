@@ -5,11 +5,16 @@
   "description": "Frontier models from Mistral AI",
   "api_key_env": "MISTRAL_API_KEY",
   "base_url": "https://api.mistral.ai/v1/chat/completions",
+  "catalog_provider_id": "mistralai",
   "preserves_thinking": false,
   "models": [
     {
       "name": "mistral-medium-latest",
       "context_limit": 128000
+    },
+    {
+      "name": "mistral-large-4",
+      "context_limit": 262144
     },
     {
       "name": "mistral-small-2506",
@@ -50,6 +55,11 @@
     {
       "name": "ministral-3b-2410",
       "context_limit": 128000
+    },
+    {
+      "name": "zai-glm-5.3",
+      "context_limit": 1000000,
+      "reasoning": true
     }
   ],
   "supports_streaming": true
