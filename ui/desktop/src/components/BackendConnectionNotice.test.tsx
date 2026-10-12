@@ -52,5 +52,6 @@ describe('BackendConnectionNotice', () => {
     render(<BackendConnectionNotice />, { wrapper: IntlTestWrapper });
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Reconnect' })));
     expect(screen.getByRole('alert')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('Offline');
   });
 });

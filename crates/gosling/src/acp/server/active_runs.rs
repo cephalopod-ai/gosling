@@ -339,12 +339,9 @@ impl GoslingAcpAgent {
         .await?;
         let was_cancelled = active_run.was_cancelled();
 
-        // A steer queued for this run only belongs to a *future* run when the
-        // run it targeted was explicitly cancelled — an uncancelled run drains
-        // its own pending steers before it lets itself finish (see
-        // `reply_stream.rs`'s `has_pending_steers` checks), so anything left
-        // here on a normal completion is, at worst, a narrow race that should
-        // still reach the user on the next turn rather than vanish silently.
+        // Cancelled runs do not carry steers into another turn. Normal ACP
+        // completion closes its steering window after draining, while a failed
+        // run can leave pending input that needs reconciliation during recovery.
         if was_cancelled {
             let agent = {
                 let sessions = self.sessions.lock().await;
@@ -503,10 +500,6 @@ impl GoslingAcpAgent {
             .await?;
         self.reject_archived_session(&req.session_id).await?;
         let agent = self.get_session_agent(&req.session_id).await?;
-        let active_run_id = self
-            .require_active_run(&req.session_id, &req.expected_run_id)
-            .await?;
-
         let message = Self::convert_acp_prompt_to_message(&req.prompt);
         if message.content.is_empty() {
             return Err(agent_client_protocol::Error::invalid_params()
@@ -515,7 +508,21 @@ impl GoslingAcpAgent {
 
         let message_id = format!("steer_{}", Uuid::new_v4());
         let message = message.with_id(message_id.clone());
-        agent.steer(&req.session_id, message).await;
+        let active_run_id = {
+            let runs = self.active_prompt_runs.lock().await;
+            let run = runs
+                .get(&req.session_id)
+                .filter(|run| run.run_id == req.expected_run_id && !run.was_cancelled())
+                .ok_or_else(|| {
+                    agent_client_protocol::Error::invalid_params()
+                        .data("The active run ended or changed before the steer could be queued")
+                })?;
+            if !agent.try_steer_active_reply(&req.session_id, message).await {
+                return Err(agent_client_protocol::Error::invalid_params()
+                    .data("The reply is finishing; keep this message queued for the next turn"));
+            }
+            run.run_id.clone()
+        };
 
         if let Some(cx) = self.client_cx.get() {
             let _ = Self::send_queued_steer_update(

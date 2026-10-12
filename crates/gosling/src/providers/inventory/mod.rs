@@ -1081,7 +1081,10 @@ fn configured_models_to_inventory(
     let mut result: Vec<InventoryModel> = Vec::new();
     let mut seen_names: HashSet<String> = HashSet::new();
     for model in models {
-        let enriched = enriched_model(provider_family, &model.name, Some(model.context_limit));
+        let mut enriched = enriched_model(provider_family, &model.name, Some(model.context_limit));
+        if model.reasoning {
+            enriched.reasoning = Some(true);
+        }
         if seen_names.insert(enriched.name.clone()) {
             result.push(enriched);
         }
@@ -1108,7 +1111,26 @@ fn inventory_models_from_snapshot(
 ) -> Vec<InventoryModel> {
     match snapshot {
         Some(snapshot) if !snapshot.models.is_empty() || snapshot.last_updated_at.is_some() => {
-            snapshot.models.clone()
+            let configured_by_id: HashMap<_, _> = configured_models
+                .iter()
+                .map(|model| (model.name.as_str(), model))
+                .collect();
+            snapshot
+                .models
+                .iter()
+                .cloned()
+                .map(|mut model| {
+                    if let Some(configured) = configured_by_id.get(model.id.as_str()) {
+                        if configured.reasoning {
+                            model.reasoning = Some(true);
+                        }
+                        if model.context_limit.is_none() && configured.context_limit > 0 {
+                            model.context_limit = Some(configured.context_limit);
+                        }
+                    }
+                    model
+                })
+                .collect()
         }
         _ => configured_models_to_inventory(provider_family, configured_models),
     }
@@ -1353,6 +1375,23 @@ mod tests {
             configured_models_to_inventory("chatgpt_codex", &[ModelInfo::new("gpt-5.4", 258_400)]);
 
         assert_eq!(models[0].context_limit, Some(258_400));
+    }
+
+    #[test]
+    fn declared_reasoning_survives_initial_inventory_and_a_refresh() {
+        let mut configured = ModelInfo::new("fixture-reasoning-model", 4096);
+        configured.reasoning = true;
+        let initial = configured_models_to_inventory("fixture", &[configured.clone()]);
+        assert_eq!(initial[0].reasoning, Some(true));
+        let snapshot = InventorySnapshot {
+            models: vec![enriched_model("fixture", &configured.name, None)],
+            last_updated_at: Some(Utc::now()),
+            last_refresh_attempt_at: None,
+            last_refresh_error: None,
+        };
+        let refreshed = inventory_models_from_snapshot(Some(&snapshot), "fixture", &[configured]);
+        assert_eq!(refreshed[0].reasoning, Some(true));
+        assert_eq!(refreshed[0].context_limit, Some(4096));
     }
 
     #[test]

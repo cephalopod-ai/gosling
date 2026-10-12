@@ -12,7 +12,7 @@ use anyhow::{anyhow, Error};
 use async_stream::try_stream;
 use chrono;
 use futures::Stream;
-use rmcp::model::{object, CallToolRequestParams, Content, RawContent, Role, Tool};
+use rmcp::model::{CallToolRequestParams, Content, RawContent, Role, Tool};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::ops::Deref;
@@ -217,6 +217,11 @@ pub enum ResponsesStreamEvent {
         #[serde(default)]
         response: Option<Value>,
     },
+    #[serde(rename = "response.incomplete")]
+    ResponseIncomplete {
+        sequence_number: i32,
+        response: Value,
+    },
     #[serde(rename = "response.function_call_arguments.delta")]
     FunctionCallArgumentsDelta {
         sequence_number: i32,
@@ -271,6 +276,7 @@ fn is_known_responses_stream_event_type(event_type: &str) -> bool {
             | "response.output_text.done"
             | "response.completed"
             | "response.failed"
+            | "response.incomplete"
             | "response.function_call_arguments.delta"
             | "response.function_call_arguments.done"
             | "response.refusal.delta"
@@ -592,6 +598,13 @@ pub fn create_responses_request(
     messages: &[Message],
     tools: &[Tool],
 ) -> anyhow::Result<Value, Error> {
+    if model_config.request_param::<bool>("background") == Some(true) {
+        return Err(ProviderError::UsageError(
+            "Background Responses are not supported by this provider; remove background: true"
+                .to_owned(),
+        )
+        .into());
+    }
     let mut input_items = Vec::new();
 
     if !system.is_empty() {
@@ -680,10 +693,51 @@ pub fn create_responses_request(
         json!(model_config.max_output_tokens()),
     );
 
+    if let Some(params) = &model_config.request_params {
+        let obj = payload.as_object_mut().unwrap();
+        for (key, value) in params {
+            if !matches!(
+                key.as_str(),
+                "model" | "input" | "tools" | "stream" | "stream_options" | "thinking_effort"
+            ) {
+                obj.insert(key.clone(), value.clone());
+            }
+        }
+    }
+
     Ok(payload)
 }
 
+fn function_arguments(arguments: &str) -> anyhow::Result<serde_json::Map<String, Value>> {
+    if arguments.is_empty() {
+        return Ok(serde_json::Map::new());
+    }
+    let parsed: Value = serde_json::from_str(arguments).map_err(|_| {
+        ProviderError::RequestFailed(
+            "Responses function call arguments are not valid JSON".to_owned(),
+        )
+    })?;
+    object_arguments(parsed)
+}
+
+fn object_arguments(arguments: Value) -> anyhow::Result<serde_json::Map<String, Value>> {
+    match arguments {
+        Value::Object(arguments) => Ok(arguments),
+        _ => Err(ProviderError::RequestFailed(
+            "Responses function call arguments must be a JSON object".to_owned(),
+        )
+        .into()),
+    }
+}
+
 pub fn responses_api_to_message(response: &ResponsesApiResponse) -> anyhow::Result<Message> {
+    if response.status != "completed" {
+        return Err(ProviderError::RequestFailed(format!(
+            "Responses API returned a {} response",
+            response.status
+        ))
+        .into());
+    }
     let mut content = Vec::new();
 
     for item in &response.output {
@@ -711,7 +765,7 @@ pub fn responses_api_to_message(response: &ResponsesApiResponse) -> anyhow::Resu
                             content.push(MessageContent::tool_request(
                                 id.clone(),
                                 Ok(CallToolRequestParams::new(name.clone())
-                                    .with_arguments(object(input.clone()))),
+                                    .with_arguments(object_arguments(input.clone())?)),
                             ));
                         }
                     }
@@ -727,21 +781,21 @@ pub fn responses_api_to_message(response: &ResponsesApiResponse) -> anyhow::Resu
                 let request_id = call_id.clone().or_else(|| id.clone()).ok_or_else(|| {
                     anyhow!("Responses function_call output missing call_id and id")
                 })?;
-                let parsed_args = if arguments.is_empty() {
-                    json!({})
-                } else {
-                    serde_json::from_str(arguments).unwrap_or_else(|_| json!({}))
-                };
+                let parsed_args = function_arguments(arguments)?;
 
                 content.push(MessageContent::tool_request(
                     request_id,
-                    Ok(CallToolRequestParams::new(name.clone())
-                        .with_arguments(object(parsed_args))),
+                    Ok(CallToolRequestParams::new(name.clone()).with_arguments(parsed_args)),
                 ));
             }
         }
     }
 
+    if content.is_empty() {
+        return Err(
+            ProviderError::RequestFailed("Responses API returned no content".to_owned()).into(),
+        );
+    }
     let mut message = Message::new(Role::Assistant, chrono::Utc::now().timestamp(), content);
 
     message = message.with_id(response.id.clone());
@@ -785,16 +839,11 @@ fn process_streaming_output_items(
                             name,
                             arguments,
                         } => {
-                            let parsed_args = if arguments.is_empty() {
-                                json!({})
-                            } else {
-                                serde_json::from_str(&arguments).unwrap_or_else(|_| json!({}))
-                            };
+                            let parsed_args = function_arguments(&arguments)?;
 
                             content.push(MessageContent::tool_request(
                                 id,
-                                Ok(CallToolRequestParams::new(name)
-                                    .with_arguments(object(parsed_args))),
+                                Ok(CallToolRequestParams::new(name).with_arguments(parsed_args)),
                             ));
                         }
                     }
@@ -810,15 +859,11 @@ fn process_streaming_output_items(
                 let request_id = call_id.or(id).ok_or_else(|| {
                     anyhow!("Responses function_call output missing call_id and id")
                 })?;
-                let parsed_args = if arguments.is_empty() {
-                    json!({})
-                } else {
-                    serde_json::from_str(&arguments).unwrap_or_else(|_| json!({}))
-                };
+                let parsed_args = function_arguments(&arguments)?;
 
                 content.push(MessageContent::tool_request(
                     request_id,
-                    Ok(CallToolRequestParams::new(name).with_arguments(object(parsed_args))),
+                    Ok(CallToolRequestParams::new(name).with_arguments(parsed_args)),
                 ));
             }
         }
@@ -842,6 +887,8 @@ where
         let mut final_usage: Option<ProviderUsage> = None;
         let mut output_items: Vec<ResponseOutputItemInfo> = Vec::new();
         let mut is_text_response = false;
+        let mut saw_completion = false;
+        let mut yielded_any_content = false;
 
         'outer: while let Some(response) = stream.next().await {
             let response_str = response?;
@@ -870,6 +917,7 @@ where
             };
 
             if data_line == "[DONE]" {
+                saw_completion = true;
                 break 'outer;
             }
 
@@ -901,6 +949,7 @@ where
                             msg = msg.with_id(id.clone());
                         }
 
+                        yielded_any_content = true;
                         yield (Some(msg), None);
                     }
                 }
@@ -914,6 +963,7 @@ where
                 }
 
                 ResponsesStreamEvent::ResponseCompleted { response, .. } => {
+                    saw_completion = true;
                     let model = model_name.as_ref().unwrap_or(&response.model);
                     let usage = response.usage.as_ref().map_or_else(
                         Usage::default,
@@ -953,6 +1003,7 @@ where
                             msg = msg.with_id(id.clone());
                         }
 
+                        yielded_any_content = true;
                         yield (Some(msg), None);
                     }
                 }
@@ -972,6 +1023,14 @@ where
                     Err::<(), ProviderError>(classify_stream_error("Responses API failed", &error))?;
                 }
 
+                ResponsesStreamEvent::ResponseIncomplete { response, .. } => {
+                    let reason = response.get("incomplete_details").and_then(|details| details.get("reason"))
+                        .and_then(Value::as_str).unwrap_or("unknown reason");
+                    Err::<(), ProviderError>(ProviderError::RequestFailed(redact_provider_error_text(
+                        &format!("Responses API returned an incomplete response: {reason}")
+                    )))?;
+                }
+
                 ResponsesStreamEvent::Error { error } => {
                     Err::<(), ProviderError>(classify_stream_error("Responses API error", &error))?;
                 }
@@ -982,8 +1041,16 @@ where
             }
         }
 
+        if !saw_completion {
+            Err::<(), ProviderError>(ProviderError::NetworkError("Responses stream ended before completion".to_owned()))?;
+        }
+
         // Process final output items and yield usage data
         let content = process_streaming_output_items(output_items, is_text_response)?;
+
+        if content.is_empty() && !yielded_any_content {
+            Err::<(), ProviderError>(ProviderError::RequestFailed("Responses API returned no content".to_owned()))?;
+        }
 
         if !content.is_empty() {
             let mut message = Message::new(Role::Assistant, chrono::Utc::now().timestamp(), content);

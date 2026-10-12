@@ -262,5 +262,17 @@ export const cleanupRecordedBackendProcesses = async (
     }
   }
 
-  await writeRecords(registryPath, stillRunning);
+  await updateRecords(registryPath, (current) => [
+    ...current.filter(
+      (record) =>
+        !records.some(
+          (checked) => checked.pid === record.pid && checked.startedAt === record.startedAt
+        )
+    ),
+    ...stillRunning.filter((record) =>
+      current.some(
+        (existing) => existing.pid === record.pid && existing.startedAt === record.startedAt
+      )
+    ),
+  ]);
 };

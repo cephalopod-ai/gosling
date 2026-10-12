@@ -201,6 +201,21 @@ describe('useChatSession history navigation', () => {
     expect(getSelectedSessionInputs(SESSION_ID)).toEqual(['notes']);
   });
 
+  it('does not queue a delivered steer again when its acknowledgement arrives after the run finishes', async () => {
+    const { result } = renderActiveChat();
+    vi.mocked(acpSteerSession).mockImplementation(async () => {
+      acpChatSessionActions.setMessages(SESSION_ID, [message('steer-1')]);
+      setActiveRun(null);
+      return { messageId: 'steer-1' } as never;
+    });
+    await act(async () => {
+      expect(
+        await result.current.onSteerQueuedMessage?.({ msg: 'Use the notes', images: [] })
+      ).toBe(true);
+    });
+    expect(getSelectedSessionInputs(SESSION_ID)).toEqual([]);
+  });
+
   it('does not steer a different run when input preparation finishes late', async () => {
     const { result } = renderActiveChat();
     vi.mocked(resolveSessionLibraryInputs).mockImplementation(async () => {

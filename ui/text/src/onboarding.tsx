@@ -614,12 +614,13 @@ export default function Onboarding({
   const [fetchKey, setFetchKey] = useState(0);
 
   useEffect(() => {
+    if (phase !== "loading" && phase !== "saving") return;
     const t = setInterval(
       () => setSpinIdx((i) => (i + 1) % SPINNER_FRAMES.length),
       300,
     );
     return () => clearInterval(t);
-  }, []);
+  }, [phase]);
 
   useEffect(() => {
     (async () => {

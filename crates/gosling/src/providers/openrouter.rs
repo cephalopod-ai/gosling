@@ -6,7 +6,9 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 
 use super::api_client::{ApiClient, AuthMethod};
-use super::base::{ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata};
+use super::base::{
+    await_stream_start, ConfigKey, MessageStream, Provider, ProviderDef, ProviderMetadata,
+};
 use super::openai_compatible::{handle_status, stream_openai_compat};
 use super::retry::ProviderRetry;
 use crate::conversation::message::Message;
@@ -147,10 +149,6 @@ fn update_request_for_anthropic(original_payload: &Value) -> Value {
         }
     }
     payload
-}
-
-fn is_gemini_model(model_name: &str) -> bool {
-    model_name.starts_with("google/")
 }
 
 fn parse_openrouter_parameters(raw: Value) -> Result<HashMap<String, Value>> {
@@ -314,31 +312,29 @@ impl Provider for OpenRouterProvider {
             payload = update_request_for_anthropic(&payload);
         }
 
-        if is_gemini_model(&model_config.model_name) {
-            openrouter_format::add_reasoning_details_to_request(&mut payload, messages);
-        }
+        openrouter_format::add_reasoning_details_to_request(&mut payload, messages);
         openrouter_format::apply_reasoning_config(&mut payload, model_config);
 
         if let Some(obj) = payload.as_object_mut() {
             obj.insert("transforms".to_string(), json!(["middle-out"]));
         }
 
-        let mut log = start_log(model_config, &payload)?;
-
-        let response = self
-            .with_retry(|| async {
+        self.with_retry(|| async {
+            let mut log = start_log(model_config, &payload)?;
+            let response = async {
                 let resp = self
                     .api_client
                     .response_post("api/v1/chat/completions", &payload)
                     .await?;
                 handle_status(resp).await
-            })
+            }
             .await
             .inspect_err(|e| {
                 let _ = log.error(e);
             })?;
-
-        stream_openai_compat(response, log)
+            await_stream_start(stream_openai_compat(response, log)?).await
+        })
+        .await
     }
 }
 

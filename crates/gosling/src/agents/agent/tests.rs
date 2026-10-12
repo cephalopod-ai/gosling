@@ -2466,6 +2466,83 @@ async fn discard_pending_steers_clears_queued_messages() {
 }
 
 #[tokio::test]
+async fn active_reply_steering_closes_atomically_with_the_last_pending_message_check() {
+    let agent = Agent::new();
+    let session_id = "session-steer-window";
+    assert!(
+        !agent
+            .try_steer_active_reply(session_id, Message::user().with_text("too early"))
+            .await
+    );
+    let window = agent.begin_steer_window(session_id);
+    assert!(
+        agent
+            .try_steer_active_reply(session_id, Message::user().with_text("active"))
+            .await
+    );
+    assert!(!agent.close_steer_window_if_empty(session_id).await);
+    assert_eq!(agent.drain_pending_steers(session_id).await.len(), 1);
+    assert!(agent.close_steer_window_if_empty(session_id).await);
+    assert!(
+        !agent
+            .try_steer_active_reply(session_id, Message::user().with_text("too late"))
+            .await
+    );
+    assert!(!agent.has_pending_steers(session_id).await);
+    drop(window);
+    let window = agent.begin_steer_window(session_id);
+    assert!(
+        agent
+            .try_steer_active_reply(session_id, Message::user().with_text("next run"))
+            .await
+    );
+    agent.discard_pending_steers(session_id).await;
+    drop(window);
+    assert!(
+        !agent
+            .try_steer_active_reply(session_id, Message::user().with_text("closed"))
+            .await
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn simultaneous_steer_and_reply_close_cannot_both_succeed() {
+    let agent = Arc::new(Agent::new());
+    for index in 0..32 {
+        let session_id = format!("steer-race-{index}");
+        let window = agent.begin_steer_window(&session_id);
+        let barrier = Arc::new(tokio::sync::Barrier::new(2));
+        let sender = {
+            let agent = agent.clone();
+            let barrier = barrier.clone();
+            let session_id = session_id.clone();
+            tokio::spawn(async move {
+                barrier.wait().await;
+                agent
+                    .try_steer_active_reply(&session_id, Message::user().with_text("instruction"))
+                    .await
+            })
+        };
+        let closer = {
+            let agent = agent.clone();
+            let session_id = session_id.clone();
+            tokio::spawn(async move {
+                barrier.wait().await;
+                agent.close_steer_window_if_empty(&session_id).await
+            })
+        };
+        let accepted = sender.await.unwrap();
+        let closed = closer.await.unwrap();
+        assert_ne!(accepted, closed);
+        assert_eq!(
+            agent.drain_pending_steers(&session_id).await.len(),
+            usize::from(accepted)
+        );
+        drop(window);
+    }
+}
+
+#[tokio::test]
 async fn steer_reaches_a_provider_stream_that_takes_input_mid_turn() -> Result<()> {
     let temp_dir = tempfile::tempdir()?;
     let provider = Arc::new(MidTurnProvider::default());

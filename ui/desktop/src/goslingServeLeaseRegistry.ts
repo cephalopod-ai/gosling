@@ -17,6 +17,7 @@ export interface GoslingServeLease {
 export class GoslingServeLeaseRegistry {
   private leases = new Set<GoslingServeLease>();
   private leasesByWindowId = new Map<number, GoslingServeLease>();
+  private cleanupPromises = new Map<GoslingServeLease, Promise<void>>();
 
   constructor(private readonly logger: Logger) {}
 
@@ -137,6 +138,8 @@ export class GoslingServeLeaseRegistry {
   }
 
   async cleanupLease(lease: GoslingServeLease) {
+    const pending = this.cleanupPromises.get(lease);
+    if (pending) return pending;
     if (lease.cleanedUp) {
       return;
     }
@@ -148,11 +151,15 @@ export class GoslingServeLeaseRegistry {
     }
     lease.windowIds.clear();
 
-    try {
-      await lease.cleanup();
-    } catch (error) {
-      this.logger.error('Failed to cleanup gosling serve backend:', error);
-    }
+    const cleanup = (async () => {
+      try {
+        await lease.cleanup();
+      } catch (error) {
+        this.logger.error('Failed to cleanup gosling serve backend:', error);
+      }
+    })().finally(() => this.cleanupPromises.delete(lease));
+    this.cleanupPromises.set(lease, cleanup);
+    await cleanup;
   }
 
   activeLeaseCount(): number {
@@ -160,7 +167,11 @@ export class GoslingServeLeaseRegistry {
   }
 
   async cleanupAll() {
-    await Promise.all(this.uniqueLeases().map((lease) => this.cleanupLease(lease)));
+    const pending = [...this.cleanupPromises.values()];
+    await Promise.all([
+      ...pending,
+      ...this.uniqueLeases().map((lease) => this.cleanupLease(lease)),
+    ]);
   }
 
   private uniqueLeases(): GoslingServeLease[] {

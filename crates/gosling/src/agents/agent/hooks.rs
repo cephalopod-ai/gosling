@@ -5,6 +5,20 @@
 
 use super::*;
 
+pub(super) struct SteerWindowGuard {
+    sessions: Arc<std::sync::Mutex<HashSet<String>>>,
+    session_id: String,
+}
+
+impl Drop for SteerWindowGuard {
+    fn drop(&mut self) {
+        self.sessions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(&self.session_id);
+    }
+}
+
 impl Agent {
     /// Emit a lifecycle hook event with no extra context. Useful for events
     /// that have no matcher (e.g. `SessionStart`, `SessionEnd`).
@@ -109,6 +123,50 @@ impl Agent {
             .or_default()
             .push_back(message);
         self.steer_arrived.notify_one();
+    }
+
+    pub(super) fn begin_steer_window(&self, session_id: &str) -> SteerWindowGuard {
+        self.accepting_steer_sessions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(session_id.to_owned());
+        SteerWindowGuard {
+            sessions: self.accepting_steer_sessions.clone(),
+            session_id: session_id.to_owned(),
+        }
+    }
+
+    pub(crate) async fn try_steer_active_reply(&self, session_id: &str, message: Message) -> bool {
+        let mut pending = self.pending_steers.lock().await;
+        let accepting = self
+            .accepting_steer_sessions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if !accepting.contains(session_id) {
+            return false;
+        }
+        pending
+            .entry(session_id.to_owned())
+            .or_default()
+            .push_back(message);
+        drop(accepting);
+        self.steer_arrived.notify_one();
+        true
+    }
+
+    pub(super) async fn close_steer_window_if_empty(&self, session_id: &str) -> bool {
+        let pending = self.pending_steers.lock().await;
+        if pending
+            .get(session_id)
+            .is_some_and(|messages| !messages.is_empty())
+        {
+            return false;
+        }
+        self.accepting_steer_sessions
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(session_id);
+        true
     }
 
     /// Hands queued steers to a provider stream that takes input mid-turn.

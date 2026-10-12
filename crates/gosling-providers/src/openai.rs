@@ -744,6 +744,11 @@ impl Provider for OpenAiProvider {
                 },
             )?;
             let payload = self.sanitize_request_for_compat(payload);
+            let payload = if self.name == "mistral" {
+                crate::formats::mistral::prepare_request(payload, model_config)
+            } else {
+                payload
+            };
 
             if self.supports_streaming {
                 self.with_retry(|| async {

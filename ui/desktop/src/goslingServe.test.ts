@@ -1,5 +1,6 @@
 // @vitest-environment node
 import fs from 'node:fs';
+import fsPromises from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -134,6 +135,7 @@ describe('buildLocalServeUrls', () => {
 
 describe('startGoslingServe', () => {
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.unstubAllEnvs();
     process.chdir(originalCwd);
 
@@ -144,6 +146,72 @@ describe('startGoslingServe', () => {
       }
     }
   });
+
+  it.skipIf(process.platform === 'win32')(
+    'observes an early exit while registry publication is delayed',
+    async () => {
+      const tempDir = makeTempDir();
+      const marker = path.join(tempDir, 'started');
+      const processRegistryPath = path.join(tempDir, 'backend-processes.json');
+      const goslingPath = makeExecutable(
+        path.join(tempDir, 'gosling'),
+        `#!/usr/bin/env sh\nprintf started > '${marker}'\nexit 7\n`
+      );
+      vi.stubEnv('GOSLING_BINARY', goslingPath);
+      const rename = fsPromises.rename.bind(fsPromises);
+      let release!: () => void;
+      const blocked = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      vi.spyOn(fsPromises, 'rename').mockImplementationOnce(async (source, destination) => {
+        await blocked;
+        await rename(source, destination);
+      });
+      const logger = { info: vi.fn(), error: vi.fn() };
+      const startup = startGoslingServe({
+        serverSecret: 'test-secret',
+        dir: tempDir,
+        processRegistryPath,
+        logger,
+        readinessFetch: vi.fn(async () => new Response(null, { status: 200 })),
+      });
+      let exitWasObserved = false;
+      try {
+        await waitForFileLines(marker);
+        for (let attempt = 0; attempt < 20; attempt += 1) {
+          exitWasObserved = logger.info.mock.calls.some((call) =>
+            String(call[0]).includes('process exited')
+          );
+          if (exitWasObserved) break;
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+      } finally {
+        release();
+      }
+      await expect(startup).rejects.toThrow('Process exited with code 7');
+      expect(exitWasObserved).toBe(true);
+      expect(JSON.parse(fs.readFileSync(processRegistryPath, 'utf8')).processes).toEqual([]);
+    }
+  );
+
+  it.skipIf(process.platform === 'win32')(
+    'finishes cleanup when spawning fails before a child exists',
+    async () => {
+      const tempDir = makeTempDir();
+      const goslingPath = makeExecutable(
+        path.join(tempDir, 'gosling'),
+        '#!/missing-gosling-test-interpreter\n'
+      );
+      vi.stubEnv('GOSLING_BINARY', goslingPath);
+      await expect(
+        startGoslingServe({
+          serverSecret: 'test-secret',
+          dir: tempDir,
+          logger: { info: vi.fn(), error: vi.fn() },
+        })
+      ).rejects.toThrow('did not become ready');
+    }
+  );
 
   it.skipIf(process.platform === 'win32')('uses the injected readiness fetch', async () => {
     const tempDir = makeTempDir();

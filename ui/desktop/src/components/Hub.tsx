@@ -77,8 +77,22 @@ const i18n = defineMessages({
 function useClock(): { time: string; meridiem: string; hour: number } {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
-    const interval = setInterval(() => setNow(new Date()), 30_000);
-    return () => clearInterval(interval);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const schedule = () => {
+      clearTimeout(timer);
+      if (document.visibilityState !== 'visible') return;
+      timer = setTimeout(update, 60_000 - (Date.now() % 60_000));
+    };
+    const update = () => {
+      if (document.visibilityState === 'visible') setNow(new Date());
+      schedule();
+    };
+    schedule();
+    document.addEventListener('visibilitychange', update);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('visibilitychange', update);
+    };
   }, []);
 
   const hour = now.getHours();

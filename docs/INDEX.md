@@ -36,6 +36,7 @@ for the relationship to cephalopod-ai/gosling.
 - [polish/documentation-stewardship-report.md](polish/documentation-stewardship-report.md) — latest stewardship gate results and remaining risks
 - [polish/test-ledger.md](polish/test-ledger.md) — current validation commands, results, and evidence limits
 - [logs/](logs/) — retained session evidence and logging conventions
+- [logs/session/2026-10-12-provider-lifecycle-refresh-audit.md](logs/session/2026-10-12-provider-lifecycle-refresh-audit.md) — provider API compatibility, steering and shutdown races, process supervision and refresh repairs; validation and remaining state/native-platform gaps
 - [logs/session/2026-10-06-supabase-disable-during-restore.md](logs/session/2026-10-06-supabase-disable-during-restore.md) — saved-chat extension removal during pending login, startup cancellation and busy-chat feedback; runtime/deployment verification limits
 - [logs/session/2026-10-02-scoped-authentication.md](logs/session/2026-10-02-scoped-authentication.md) — session/workspace auth controls, future-chat defaults, scoped MCP stores, and validation limits
 - [logs/session/2026-10-02-muninn-recall-tool-schema.md](logs/session/2026-10-02-muninn-recall-tool-schema.md) — ChatGPT tool-schema repair for repeated invented Muninn cursors and scope selectors; source-only validation limits

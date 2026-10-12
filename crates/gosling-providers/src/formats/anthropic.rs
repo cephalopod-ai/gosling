@@ -141,6 +141,7 @@ const DATA_FIELD: &str = "data";
 const EVENT_MESSAGE_START: &str = "message_start";
 const EVENT_MESSAGE_DELTA: &str = "message_delta";
 const EVENT_MESSAGE_STOP: &str = "message_stop";
+const EVENT_ERROR: &str = "error";
 const EVENT_CONTENT_BLOCK_START: &str = "content_block_start";
 const EVENT_CONTENT_BLOCK_DELTA: &str = "content_block_delta";
 const EVENT_CONTENT_BLOCK_STOP: &str = "content_block_stop";
@@ -771,6 +772,7 @@ where
         let mut message_id: Option<String> = None;
         let mut thinking: Option<ThinkingState> = None;
         let mut stop_reason: Option<String> = None;
+        let mut saw_message_stop = false;
 
         while let Some(line_result) = stream.next().await {
             let line = line_result?;
@@ -785,19 +787,21 @@ where
 
             // Handle end of stream
             if data_part.trim() == "[DONE]" {
+                saw_message_stop = true;
                 break;
             }
 
             // Parse the JSON event
-            let event: StreamingEvent = match serde_json::from_str(data_part) {
-                Ok(event) => event,
-                Err(e) => {
-                    tracing::debug!("Failed to parse streaming event: {} - Line: {}", e, data_part);
-                    continue;
-                }
-            };
+            let event: StreamingEvent = serde_json::from_str(data_part)?;
 
             match event.event_type.as_str() {
+                EVENT_ERROR => {
+                    let error = event.data.get("error");
+                    let kind = error.and_then(|error| error.get("type")).and_then(Value::as_str);
+                    let message = error.and_then(|error| error.get("message")).and_then(Value::as_str)
+                        .unwrap_or("Anthropic stream returned an error without details");
+                    Err(ProviderError::from_models_error_payload(kind, message))?;
+                }
                 EVENT_MESSAGE_START => {
                     if let Some(message_data) = event.data.get("message") {
                         if let Some(id) = message_data.get("id").and_then(|v| v.as_str()) {
@@ -988,6 +992,7 @@ where
                     continue;
                 }
                 EVENT_MESSAGE_STOP => {
+                    saw_message_stop = true;
                     if let Some(usage_data) = event.data.get("usage") {
                         let usage = get_usage(usage_data).unwrap_or_default();
                         let model = event.data.get("model")
@@ -1004,6 +1009,10 @@ where
                     continue;
                 }
             }
+        }
+
+        if !saw_message_stop {
+            Err(ProviderError::NetworkError("Anthropic stream ended before message_stop".to_string()))?;
         }
 
         // A tool_use block left open at stream end never received its
