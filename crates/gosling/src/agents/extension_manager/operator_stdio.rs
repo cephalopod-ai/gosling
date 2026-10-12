@@ -106,12 +106,12 @@ pub async fn connect_operator_stdio_client(
 
     match client_result {
         Ok(client) => {
-            let child = Arc::new(std::sync::Mutex::new(Some(child)));
+            let cancellation_token = CancellationToken::new();
             let (exit_status, _) = tokio::sync::watch::channel(OperatorProcessExit::Running);
-            spawn_operator_child_supervisor(Arc::clone(&child), exit_status.clone());
+            spawn_operator_child_supervisor(child, cancellation_token.clone(), exit_status.clone());
             Ok(OperatorStdioClient {
                 client,
-                _child: OperatorChildGuard { child },
+                _child: OperatorChildGuard { cancellation_token },
                 exit_status,
             })
         }
@@ -158,50 +158,30 @@ impl OperatorStdioClient {
 }
 
 struct OperatorChildGuard {
-    child: Arc<std::sync::Mutex<Option<tokio::process::Child>>>,
+    cancellation_token: CancellationToken,
 }
 
 impl Drop for OperatorChildGuard {
     fn drop(&mut self) {
-        if let Ok(mut child) = self.child.lock() {
-            if let Some(mut child) = child.take() {
-                let _ = child.start_kill();
-                if let Ok(runtime) = tokio::runtime::Handle::try_current() {
-                    runtime.spawn(async move {
-                        let _ = child.wait().await;
-                    });
-                }
-            }
-        }
+        self.cancellation_token.cancel();
     }
 }
 
 fn spawn_operator_child_supervisor(
-    child: Arc<std::sync::Mutex<Option<tokio::process::Child>>>,
+    mut child: tokio::process::Child,
+    cancellation_token: CancellationToken,
     exit_status: tokio::sync::watch::Sender<OperatorProcessExit>,
 ) {
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_millis(100));
-        loop {
-            interval.tick().await;
-            let exited = match child.lock() {
-                Ok(mut child) => {
-                    let exited = matches!(
-                        child.as_mut().map(tokio::process::Child::try_wait),
-                        Some(Ok(Some(_))) | Some(Err(_)) | None
-                    );
-                    if exited {
-                        child.take();
-                    }
-                    exited
-                }
-                Err(_) => true,
-            };
-            if exited {
-                exit_status.send_replace(OperatorProcessExit::Exited);
-                return;
-            }
+        let result = tokio::select! {
+            result = child.wait() => Some(result),
+            _ = cancellation_token.cancelled() => None,
+        };
+        if !matches!(result, Some(Ok(_))) {
+            let _ = child.start_kill();
+            let _ = tokio::time::timeout(Duration::from_secs(1), child.wait()).await;
         }
+        exit_status.send_replace(OperatorProcessExit::Exited);
     });
 }
 
@@ -272,6 +252,44 @@ impl<R: AsyncRead + Unpin> AsyncRead for BoundedLineReader<R> {
 mod operator_stdio_tests {
     use super::BoundedLineReader;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn supervisor_reaps_the_child_when_its_guard_is_dropped() {
+        use super::*;
+        let mut command = Command::new("sleep");
+        command.arg("60");
+        configure_shell_owned_subprocess(&mut command);
+        let child = command.spawn().unwrap();
+        let pid = child.id().unwrap();
+        let cancellation_token = CancellationToken::new();
+        let (exit_status, mut receiver) = tokio::sync::watch::channel(OperatorProcessExit::Running);
+        spawn_operator_child_supervisor(child, cancellation_token.clone(), exit_status);
+        drop(OperatorChildGuard { cancellation_token });
+        tokio::time::timeout(Duration::from_secs(2), receiver.changed())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(*receiver.borrow(), OperatorProcessExit::Exited);
+        assert!(!crate::subprocess::process_is_alive(pid).await);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn supervisor_notifies_natural_exit_without_a_polling_tick() {
+        use super::*;
+        let mut command = Command::new("sh");
+        command.args(["-c", "exit 0"]);
+        configure_shell_owned_subprocess(&mut command);
+        let child = command.spawn().unwrap();
+        let (exit_status, mut receiver) = tokio::sync::watch::channel(OperatorProcessExit::Running);
+        spawn_operator_child_supervisor(child, CancellationToken::new(), exit_status);
+        tokio::time::timeout(Duration::from_secs(2), receiver.changed())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(*receiver.borrow(), OperatorProcessExit::Exited);
+    }
 
     #[tokio::test]
     async fn bounded_reader_accepts_exactly_sized_json_lines() {

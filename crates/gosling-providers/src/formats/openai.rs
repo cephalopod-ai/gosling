@@ -110,6 +110,8 @@ struct ContentPart {
     text: Option<String>,
     #[serde(rename = "thoughtSignature")]
     thought_signature: Option<String>,
+    #[serde(default)]
+    thinking: Vec<ContentPart>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default)]
@@ -126,12 +128,33 @@ struct Delta {
 impl Delta {
     /// Prefer `reasoning_content` (DeepSeek/OpenRouter) over `reasoning`
     /// (vLLM); some servers (gpt-oss via vLLM) emit both. Skip empty values.
-    fn reasoning_text(&self) -> Option<&str> {
-        self.reasoning_content
+    fn reasoning_text(&self) -> Option<std::borrow::Cow<'_, str>> {
+        let raw = self
+            .reasoning_content
             .as_deref()
             .filter(|s| !s.is_empty())
-            .or_else(|| self.reasoning.as_deref().filter(|s| !s.is_empty()))
+            .or_else(|| self.reasoning.as_deref().filter(|s| !s.is_empty()));
+        if let Some(raw) = raw {
+            return Some(std::borrow::Cow::Borrowed(raw));
+        }
+        if let Some(DeltaContent::Array(parts)) = &self.content {
+            let thinking = content_part_thinking(parts);
+            if !thinking.is_empty() {
+                return Some(std::borrow::Cow::Owned(thinking));
+            }
+        }
+        None
     }
+}
+
+fn content_part_thinking(parts: &[ContentPart]) -> String {
+    parts
+        .iter()
+        .filter(|part| part.r#type == "thinking")
+        .flat_map(|part| &part.thinking)
+        .filter(|part| part.r#type == "text")
+        .filter_map(|part| part.text.as_deref())
+        .collect()
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -900,9 +923,19 @@ pub fn response_to_message(response: &Value) -> anyhow::Result<Message> {
         }
     }
 
-    if let Some(text) = original.get("content") {
-        if let Some(text_str) = text.as_str() {
-            let (cleaned, inline_thinking) = split_think_blocks(text_str);
+    if let Some(value) = original.get("content").filter(|value| !value.is_null()) {
+        let delta_content: DeltaContent = serde_json::from_value(value.clone())?;
+        if !has_structured_thinking {
+            if let DeltaContent::Array(parts) = &delta_content {
+                let thinking = content_part_thinking(parts);
+                if !thinking.is_empty() {
+                    has_structured_thinking = true;
+                    content.push(MessageContent::thinking(thinking, ""));
+                }
+            }
+        }
+        if let (Some(text), _) = extract_content_and_signature(Some(&delta_content)) {
+            let (cleaned, inline_thinking) = split_think_blocks(&text);
 
             if !has_structured_thinking && !inline_thinking.is_empty() {
                 content.push(MessageContent::thinking(inline_thinking, ""));
@@ -1354,7 +1387,7 @@ where
                     accumulated_reasoning.extend(details.iter().cloned());
                 }
                 if let Some(rc) = chunk.choices[0].delta.reasoning_text() {
-                    accumulated_reasoning_content.push_str(rc);
+                    accumulated_reasoning_content.push_str(&rc);
                     if !rc.is_empty() {
                         saw_structured_reasoning = true;
                         pending_inline_thinking.clear();
@@ -1409,7 +1442,7 @@ where
                                         accumulated_reasoning.extend(details.iter().cloned());
                                     }
                                     if let Some(rc) = tool_chunk.choices[0].delta.reasoning_text() {
-                                        accumulated_reasoning_content.push_str(rc);
+                                        accumulated_reasoning_content.push_str(&rc);
                                         if !rc.is_empty() {
                                             saw_structured_reasoning = true;
                                             pending_inline_thinking.clear();
@@ -1593,7 +1626,7 @@ where
 
                 if let Some(reasoning) = chunk.choices[0].delta.reasoning_text() {
                     let signature = last_signature.as_deref().unwrap_or("");
-                    content.push(MessageContent::thinking(reasoning, signature));
+                    content.push(MessageContent::thinking(reasoning.as_ref(), signature));
                     yielded_reasoning_content_len = accumulated_reasoning_content.len();
                 }
 
@@ -1863,8 +1896,9 @@ pub fn openai_reasoning_effort_for_thinking(
     effort: ThinkingEffort,
 ) -> Option<String> {
     if effort == ThinkingEffort::Off {
+        let normalized = model_name.to_ascii_lowercase();
         return Some(
-            if model_name.to_ascii_lowercase().contains("gpt-6") {
+            if normalized.contains("gpt-6-astra") || normalized.contains("gpt-6.1-sol") {
                 "low"
             } else {
                 "none"
@@ -3267,6 +3301,8 @@ mod tests {
     #[test_case("gpt-5.6-luna", ThinkingEffort::Ultra, Some("max"); "luna falls back to max")]
     #[test_case("gpt-6-astra", ThinkingEffort::Off, Some("low"); "astra raises off to its minimum")]
     #[test_case("gpt-6.1-sol", ThinkingEffort::Off, Some("low"); "gpt 6.1 sol raises off to its minimum")]
+    #[test_case("gpt-6-sol", ThinkingEffort::Off, Some("none"); "gpt 6 sol supports off")]
+    #[test_case("gpt-6-luna", ThinkingEffort::Off, Some("none"); "gpt 6 luna supports off")]
     #[test_case("gpt-6-astra", ThinkingEffort::Ultra, Some("max"); "astra lowers ultra to its maximum")]
     #[test_case("gpt-6.1-sol", ThinkingEffort::Ultra, Some("max"); "gpt 6.1 sol lowers ultra to its maximum")]
     fn test_reasoning_effort_uses_supported_level(

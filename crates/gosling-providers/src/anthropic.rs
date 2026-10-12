@@ -9,12 +9,15 @@ use async_trait::async_trait;
 use futures::TryStreamExt;
 use reqwest::StatusCode;
 use serde_json::Value;
+use std::collections::HashSet;
 use std::io;
 use tokio::pin;
 use tokio_util::io::StreamReader;
 
 use super::api_client::ApiClient;
-use super::base::{ConfigKey, MessageStream, ModelInfo, Provider, ProviderMetadata};
+use super::base::{
+    await_stream_start, ConfigKey, MessageStream, ModelInfo, Provider, ProviderMetadata,
+};
 use super::formats::anthropic::{
     create_request, response_to_streaming_message, AnthropicFormatOptions, ANTHROPIC_PROVIDER_NAME,
 };
@@ -155,74 +158,103 @@ impl AnthropicProviderBuilder {
 
 impl AnthropicProvider {
     async fn fetch_models_from_api(&self) -> Result<Vec<String>, ProviderError> {
-        let response = self.api_client.request("v1/models").response_get().await?;
-
-        if response.status() == StatusCode::NOT_FOUND {
-            let body = response.text().await.unwrap_or_default();
-            let msg = serde_json::from_str::<Value>(&body)
-                .ok()
-                .and_then(|p| {
-                    p.get("error")
-                        .and_then(|e| e.get("message"))
-                        .and_then(|m| m.as_str())
-                        .map(String::from)
-                })
-                .unwrap_or_else(|| "models endpoint not found".to_string());
-            return Err(ProviderError::EndpointNotFound(msg));
-        }
-
-        // Check HTTP status first — non-success responses (auth errors,
-        // rate limits, bad requests, etc.) propagate unchanged.
-        let response = handle_status(response).await?;
-
-        // Read the response body. Network errors (timeouts, connection resets)
-        // must propagate — only JSON decode failures indicate a non-models
-        // endpoint (e.g. an HTML error page from a misconfigured base URL).
-        let body = response.text().await.map_err(|e| {
-            ProviderError::NetworkError(format!("Failed to read response body: {}", e))
-        })?;
-        let json: Value = serde_json::from_str(&body).map_err(|e| {
-            ProviderError::EndpointNotFound(format!("Response body is not valid JSON: {}", e))
-        })?;
-
-        // Check for the standard error shape first — this is always an
-        // error regardless of whether `data` is also present.
-        if let Some(err_obj) = json.get("error") {
-            let msg = err_obj
-                .get("message")
-                .and_then(|v| v.as_str())
-                .unwrap_or("unknown error");
-            let kind = err_obj.get("type").and_then(|v| v.as_str());
-            return Err(ProviderError::from_models_error_payload(kind, msg));
-        }
-
-        // A 200 response whose body isn't a models payload (no `data` array)
-        // is treated as `EndpointNotFound` so that `fetch_supported_models`
-        // can fall back to the predefined list. Before giving up, check for
-        // a top-level `message` field as an error indicator — some providers
-        // return {"message": "invalid api key"} instead of the standard
-        // {"error": {"message": "..."}} shape. Only treat it as an error
-        // when `data` is missing, so that a valid payload like
-        // {"data": [...], "message": "ok"} is not rejected.
-        let arr = match json.get("data").and_then(|v| v.as_array()) {
-            Some(arr) => arr,
-            None => {
-                if let Some(msg) = json.get("message").and_then(|v| v.as_str()) {
-                    let kind = json.get("type").and_then(|v| v.as_str());
-                    return Err(ProviderError::from_models_error_payload(kind, msg));
+        let mut models = Vec::new();
+        let mut after_id: Option<String> = None;
+        let mut cursors = HashSet::new();
+        loop {
+            let models_path = {
+                let mut params = url::form_urlencoded::Serializer::new(String::new());
+                params.append_pair("limit", "1000");
+                if let Some(cursor) = &after_id {
+                    params.append_pair("after_id", cursor);
                 }
-                return Err(ProviderError::EndpointNotFound(
-                    "response is not a models payload (missing 'data' array)".into(),
+                format!("v1/models?{}", params.finish())
+            };
+            let response = self.api_client.request(&models_path).response_get().await?;
+
+            if response.status() == StatusCode::NOT_FOUND {
+                let body = response.text().await.unwrap_or_default();
+                let msg = serde_json::from_str::<Value>(&body)
+                    .ok()
+                    .and_then(|p| {
+                        p.get("error")
+                            .and_then(|e| e.get("message"))
+                            .and_then(|m| m.as_str())
+                            .map(String::from)
+                    })
+                    .unwrap_or_else(|| "models endpoint not found".to_string());
+                return Err(ProviderError::EndpointNotFound(msg));
+            }
+
+            // Check HTTP status first — non-success responses (auth errors,
+            // rate limits, bad requests, etc.) propagate unchanged.
+            let response = handle_status(response).await?;
+
+            // Read the response body. Network errors (timeouts, connection resets)
+            // must propagate — only JSON decode failures indicate a non-models
+            // endpoint (e.g. an HTML error page from a misconfigured base URL).
+            let body = response.text().await.map_err(|e| {
+                ProviderError::NetworkError(format!("Failed to read response body: {}", e))
+            })?;
+            let json: Value = serde_json::from_str(&body).map_err(|e| {
+                ProviderError::EndpointNotFound(format!("Response body is not valid JSON: {}", e))
+            })?;
+
+            // Check for the standard error shape first — this is always an
+            // error regardless of whether `data` is also present.
+            if let Some(err_obj) = json.get("error") {
+                let msg = err_obj
+                    .get("message")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown error");
+                let kind = err_obj.get("type").and_then(|v| v.as_str());
+                return Err(ProviderError::from_models_error_payload(kind, msg));
+            }
+
+            // A 200 response whose body isn't a models payload (no `data` array)
+            // is treated as `EndpointNotFound` so that `fetch_supported_models`
+            // can fall back to the predefined list. Before giving up, check for
+            // a top-level `message` field as an error indicator — some providers
+            // return {"message": "invalid api key"} instead of the standard
+            // {"error": {"message": "..."}} shape. Only treat it as an error
+            // when `data` is missing, so that a valid payload like
+            // {"data": [...], "message": "ok"} is not rejected.
+            let arr = match json.get("data").and_then(|v| v.as_array()) {
+                Some(arr) => arr,
+                None => {
+                    if let Some(msg) = json.get("message").and_then(|v| v.as_str()) {
+                        let kind = json.get("type").and_then(|v| v.as_str());
+                        return Err(ProviderError::from_models_error_payload(kind, msg));
+                    }
+                    return Err(ProviderError::EndpointNotFound(
+                        "response is not a models payload (missing 'data' array)".into(),
+                    ));
+                }
+            };
+
+            models.extend(
+                arr.iter()
+                    .filter_map(|m| m.get("id").and_then(Value::as_str).map(str::to_string)),
+            );
+            if json.get("has_more").and_then(Value::as_bool) != Some(true) {
+                models.sort();
+                models.dedup();
+                return Ok(models);
+            }
+            let cursor = json
+                .get("last_id")
+                .and_then(Value::as_str)
+                .filter(|cursor| !cursor.is_empty())
+                .ok_or_else(|| {
+                    ProviderError::RequestFailed("Models pagination has no last_id".into())
+                })?;
+            if !cursors.insert(cursor.to_owned()) || cursors.len() >= 100 {
+                return Err(ProviderError::RequestFailed(
+                    "Models pagination did not terminate".into(),
                 ));
             }
-        };
-
-        let mut models: Vec<String> = arr
-            .iter()
-            .filter_map(|m| m.get("id").and_then(|v| v.as_str()).map(str::to_string))
-            .collect();
-        models.sort();
-        Ok(models)
+            after_id = Some(cursor.to_owned());
+        }
     }
 }
 
@@ -320,33 +352,27 @@ impl Provider for AnthropicProvider {
             .unwrap()
             .insert("stream".to_string(), Value::Bool(true));
 
-        let mut log = start_log(model_config, &payload)?;
-
-        let response = self
-            .with_retry(|| async {
+        self.with_retry(|| async {
+            let mut log = start_log(model_config, &payload)?;
+            let response = async {
                 let request = self.api_client.request("v1/messages");
                 let resp = request.response_post(&payload).await?;
                 handle_status(resp).await
-            })
-            .await
-            .inspect_err(|e| {
-                let _ = log.error(e);
-            })?;
-
-        let stream = response.bytes_stream().map_err(io::Error::other);
-
-        Ok(Box::pin(try_stream! {
-            let stream_reader = StreamReader::new(stream);
-            let framed = tokio_util::codec::FramedRead::new(stream_reader, tokio_util::codec::LinesCodec::new()).map_err(anyhow::Error::from);
-
-            let message_stream = response_to_streaming_message(framed);
-            pin!(message_stream);
-            while let Some(message) = futures::StreamExt::next(&mut message_stream).await {
-                let (message, usage) = message.map_err(ProviderError::from_stream_error)?;
-                log.write(&message, usage.as_ref().map(|f| f.usage).as_ref())?;
-                yield (message, usage);
-            }
-        }))
+            }.await.inspect_err(|e| { let _ = log.error(e); })?;
+            let stream = response.bytes_stream().map_err(io::Error::other);
+            let messages: MessageStream = Box::pin(try_stream! {
+                let stream_reader = StreamReader::new(stream);
+                let framed = tokio_util::codec::FramedRead::new(stream_reader, tokio_util::codec::LinesCodec::new()).map_err(anyhow::Error::from);
+                let message_stream = response_to_streaming_message(framed);
+                pin!(message_stream);
+                while let Some(message) = futures::StreamExt::next(&mut message_stream).await {
+                    let (message, usage) = message.map_err(ProviderError::from_stream_error)?;
+                    log.write(&message, usage.as_ref().map(|f| f.usage).as_ref())?;
+                    yield (message, usage);
+                }
+            });
+            await_stream_start(messages).await
+        }).await
     }
 }
 

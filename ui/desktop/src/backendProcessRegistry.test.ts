@@ -110,6 +110,31 @@ const GOSLING_SERVE_SHAPE_ARGS = [
 ];
 
 describe.skipIf(process.platform === 'win32')('cleanupRecordedBackendProcesses', () => {
+  it('preserves a backend registered while stale-process cleanup is in flight', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'gosling-process-registry-'));
+    temporaryDirectories.push(directory);
+    const registryPath = path.join(directory, 'backend-processes.json');
+    const backend = spawn(process.execPath, GOSLING_SERVE_SHAPE_ARGS);
+    spawnedProcesses.push(backend);
+    await registerBackendProcess(registryPath, {
+      ...processRecord,
+      pid: backend.pid!,
+      parentPid: process.pid,
+      binaryPath: process.execPath,
+    });
+    const fresh = { ...processRecord, pid: 987654, startedAt: '2026-10-12T00:00:00.000Z' };
+    let registration: Promise<void> | undefined;
+    await cleanupRecordedBackendProcesses(registryPath, {
+      info: () => {
+        registration = registerBackendProcess(registryPath, fresh);
+      },
+      error: vi.fn(),
+    });
+    await registration;
+    const records = JSON.parse(await fs.readFile(registryPath, 'utf8')).processes;
+    expect(records).toEqual([fresh]);
+  });
+
   it('keeps a record whose spawning process is still alive, live or in the registry', async () => {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'gosling-process-registry-'));
     temporaryDirectories.push(directory);

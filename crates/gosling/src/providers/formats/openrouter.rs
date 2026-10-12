@@ -7,16 +7,6 @@ use serde_json::{json, Value};
 
 pub const REASONING_DETAILS_KEY: &str = "reasoning_details";
 
-fn has_assistant_content(message: &Message) -> bool {
-    message.content.iter().any(|c| match c {
-        MessageContent::Text(t) => !t.text.is_empty(),
-        MessageContent::Image(_) => true,
-        MessageContent::ToolRequest(req) => req.tool_call.is_ok(),
-        MessageContent::FrontendToolRequest(req) => req.tool_call.is_ok(),
-        _ => false,
-    })
-}
-
 pub fn extract_reasoning_details(response: &Value) -> Option<Vec<Value>> {
     response
         .get("choices")
@@ -52,38 +42,34 @@ pub fn response_to_message(response: &Value) -> anyhow::Result<Message> {
 }
 
 pub fn add_reasoning_details_to_request(payload: &mut Value, messages: &[Message]) {
-    let mut assistant_reasoning: Vec<Option<Vec<Value>>> = messages
+    let details_by_call: std::collections::HashMap<_, _> = messages
         .iter()
-        .filter(|m| m.is_agent_visible())
-        .filter(|m| m.role == Role::Assistant)
-        .filter(|m| has_assistant_content(m))
-        .map(|message| {
-            message.content.iter().find_map(|c| match c {
-                MessageContent::ToolRequest(req) => get_reasoning_details(&req.metadata),
-                _ => None,
-            })
+        .filter(|message| message.is_agent_visible() && message.role == Role::Assistant)
+        .flat_map(|message| &message.content)
+        .filter_map(|content| match content {
+            MessageContent::ToolRequest(request) => get_reasoning_details(&request.metadata)
+                .map(|details| (request.id.as_str(), details)),
+            _ => None,
         })
         .collect();
 
-    if let Some(payload_messages) = payload
-        .as_object_mut()
-        .and_then(|obj| obj.get_mut("messages"))
-        .and_then(|m| m.as_array_mut())
-    {
-        let mut assistant_idx = 0;
-        for payload_msg in payload_messages.iter_mut() {
-            if payload_msg.get("role").and_then(|r| r.as_str()) == Some("assistant") {
-                if assistant_idx < assistant_reasoning.len() {
-                    if let Some(details) = assistant_reasoning
-                        .get_mut(assistant_idx)
-                        .and_then(|d| d.take())
-                    {
-                        if let Some(obj) = payload_msg.as_object_mut() {
-                            obj.insert("reasoning_details".to_string(), json!(details));
-                        }
-                    }
-                }
-                assistant_idx += 1;
+    if let Some(payload_messages) = payload.get_mut("messages").and_then(Value::as_array_mut) {
+        for message in payload_messages {
+            if message.get("role").and_then(Value::as_str) != Some("assistant") {
+                continue;
+            }
+            let details = message
+                .get("tool_calls")
+                .and_then(Value::as_array)
+                .and_then(|calls| {
+                    calls.iter().find_map(|call| {
+                        let id = call.get("id")?.as_str()?;
+                        details_by_call.get(id)
+                    })
+                })
+                .cloned();
+            if let Some(details) = details {
+                message["reasoning_details"] = json!(details);
             }
         }
     }
@@ -128,6 +114,23 @@ pub fn apply_reasoning_config(payload: &mut Value, model_config: &ModelConfig) {
 mod tests {
     use super::*;
     use std::collections::HashMap;
+
+    #[test]
+    fn reasoning_details_follow_tool_call_ids_after_message_reformatting() {
+        let details = json!([{"type": "reasoning.encrypted", "data": "opaque", "index": 0}]);
+        let request = response_to_message(&json!({"choices": [{"message": {
+            "tool_calls": [{"id": "call-1", "type": "function", "function": {"name": "read", "arguments": "{}"}}],
+            "reasoning_details": details
+        }}]})).unwrap();
+        let messages = [Message::assistant().with_text("Checking"), request];
+        let mut payload = json!({"messages": [
+            {"role": "assistant", "tool_calls": [{"id": "call-1"}]},
+            {"role": "assistant", "content": "Unrelated"}
+        ]});
+        add_reasoning_details_to_request(&mut payload, &messages);
+        assert_eq!(payload["messages"][0]["reasoning_details"], details);
+        assert!(payload["messages"][1].get("reasoning_details").is_none());
+    }
 
     #[test]
     fn test_extract_reasoning_details() {

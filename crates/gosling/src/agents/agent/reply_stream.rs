@@ -135,6 +135,7 @@ impl Agent {
             session.agent_type = "gosling",
         );
         let inner = Box::pin(async_stream::try_stream! {
+            let _steer_window = (!planning_turn).then(|| self.begin_steer_window(&session_config.id));
             let mut turns_taken = 0u32;
             let max_turns = session_config.max_turns.unwrap_or_else(|| {
                 Config::global()
@@ -1584,17 +1585,14 @@ impl Agent {
                         .await
                     {
                         crate::hooks::HookDecision::Allow => {
-                            // A steer can arrive while the (potentially slow,
-                            // plugin-defined) stop hook above is running, after
-                            // the check that gated entry into this match — catch
-                            // it here too rather than breaking out from under it,
-                            // which would otherwise let `clear_active_run` discard
-                            // it as an ordinary cancellation would (GOS-STEER-001).
-                            if self.has_pending_steers(&session_config.id).await {
-                                retrying_after_stop_hook_denial = true;
-                            } else {
+                            // Queue inspection and closure share the steering lock:
+                            // an accepted message keeps this reply alive; a late one
+                            // stays queued in the client for its next turn.
+                            if self.close_steer_window_if_empty(&session_config.id).await {
                                 stop_hook_handled_for_exit = true;
                                 break;
+                            } else {
+                                retrying_after_stop_hook_denial = true;
                             }
                         }
                         crate::hooks::HookDecision::Deny { reason, plugin } => {

@@ -106,12 +106,35 @@ describe('GoslingServeLeaseRegistry', () => {
     expect(store.activeLeaseCount()).toBe(0);
   });
 
+  it('waits for cleanup already started by a closing window before completing shutdown', async () => {
+    let finish!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const cleanup = vi.fn(() => pending);
+    const store = new GoslingServeLeaseRegistry(createLogger());
+    const lease = store.create(createGoslingServeResult({ cleanup }), 'local-secret');
+    store.attachWindow(1, lease);
+    const closingWindow = store.releaseWindow(1);
+    let shutdownComplete = false;
+    const shutdown = store.cleanupAll().then(() => {
+      shutdownComplete = true;
+    });
+    const repeat = store.cleanupLease(lease);
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(shutdownComplete).toBe(false);
+    expect(cleanup).toHaveBeenCalledOnce();
+    finish();
+    await Promise.all([closingWindow, shutdown, repeat]);
+    expect(shutdownComplete).toBe(true);
+    expect(store.activeLeaseCount()).toBe(0);
+  });
+
   it('creates an external ACP lease without process cleanup', async () => {
     const store = new GoslingServeLeaseRegistry(createLogger());
-    const lease = store.createExternal(
-      'wss://example.com/gosling/acp',
-      'external-secret'
-    );
+    const lease = store.createExternal('wss://example.com/gosling/acp', 'external-secret');
 
     store.attachWindow(1, lease);
 
@@ -126,11 +149,7 @@ describe('GoslingServeLeaseRegistry', () => {
   it('cleans up external leases after the last attached window is released', async () => {
     const cleanup = vi.fn(async () => undefined);
     const store = new GoslingServeLeaseRegistry(createLogger());
-    const lease = store.createExternal(
-      'wss://example.com/gosling/acp',
-      'external-secret',
-      cleanup
-    );
+    const lease = store.createExternal('wss://example.com/gosling/acp', 'external-secret', cleanup);
     store.attachWindow(1, lease);
     store.attachWindow(2, lease);
 

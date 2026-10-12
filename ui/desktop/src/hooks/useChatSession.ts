@@ -415,6 +415,13 @@ export function useChatSession({
         };
         const latestSnapshot = acpChatSessionStore.getSnapshot(sessionId) ?? getCurrentSnapshot();
         if (latestSnapshot?.activeRunId !== activeRunId) {
+          if (
+            latestSnapshot?.messages.some((message) => message.id === response.messageId) &&
+            !latestSnapshot.pendingLocalSteerMessageIds.has(response.messageId)
+          ) {
+            clearSelectedSessionInputs(sessionId, selectedInputIds);
+            return true;
+          }
           return false;
         }
 

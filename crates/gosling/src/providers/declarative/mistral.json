@@ -6,15 +6,27 @@
   "api_key_env": "MISTRAL_API_KEY",
   "base_url": "https://api.mistral.ai/v1/chat/completions",
   "catalog_provider_id": "mistralai",
-  "preserves_thinking": false,
+  "preserves_thinking": true,
   "models": [
     {
       "name": "mistral-medium-latest",
-      "context_limit": 128000
+      "context_limit": 262144,
+      "reasoning": true
+    },
+    {
+      "name": "mistral-medium-3-5",
+      "context_limit": 262144,
+      "reasoning": true
+    },
+    {
+      "name": "mistral-small-2603",
+      "context_limit": 256000,
+      "reasoning": true
     },
     {
       "name": "mistral-large-4",
-      "context_limit": 262144
+      "context_limit": 1000000,
+      "reasoning": true
     },
     {
       "name": "mistral-small-2506",
@@ -57,7 +69,7 @@
       "context_limit": 128000
     },
     {
-      "name": "zai-glm-5.3",
+      "name": "zai-glm-5-3",
       "context_limit": 1000000,
       "reasoning": true
     }

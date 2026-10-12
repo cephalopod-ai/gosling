@@ -107,14 +107,17 @@ impl ProviderEntry {
             }
         }
 
-        if model.context_limit.is_none() {
-            if let Some(info) = self
-                .metadata
-                .known_models
-                .iter()
-                .find(|m| m.name.eq_ignore_ascii_case(&model.model_name) && m.context_limit > 0)
-            {
+        if let Some(info) = self
+            .metadata
+            .known_models
+            .iter()
+            .find(|m| m.name.eq_ignore_ascii_case(&model.model_name))
+        {
+            if model.context_limit.is_none() && info.context_limit > 0 {
                 model.context_limit = Some(info.context_limit);
+            }
+            if model.reasoning.is_none() && info.reasoning {
+                model.reasoning = Some(true);
             }
         }
 
@@ -480,5 +483,40 @@ mod tests {
         let entry = registry.entries.get("claude-code").unwrap();
 
         assert!(entry.executes_tools_outside_gosling());
+    }
+
+    #[test]
+    fn declared_reasoning_reaches_model_config_without_overriding_explicit_off() {
+        let mut config = test_config();
+        config.models[0].reasoning = true;
+        let mut registry = ProviderRegistry::new(None);
+        registry.register_with_name_and_inventory_configured::<OpenAiProviderDef, _, _, _>(
+            &config,
+            ProviderType::Declarative,
+            false,
+            |_| unreachable!("constructor is not used by this test"),
+            || {
+                Ok(InventoryIdentityInput::new(
+                    "custom_gateway",
+                    "custom_gateway",
+                ))
+            },
+            || false,
+        );
+        let entry = registry.entries.get("custom_gateway").unwrap();
+        let mut model = ModelConfig::new("test-model");
+        model.context_limit = Some(4096);
+        assert_eq!(
+            entry
+                .normalize_model_config(model.clone())
+                .unwrap()
+                .reasoning,
+            Some(true)
+        );
+        model.reasoning = Some(false);
+        assert_eq!(
+            entry.normalize_model_config(model).unwrap().reasoning,
+            Some(false)
+        );
     }
 }

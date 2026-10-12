@@ -628,14 +628,38 @@ mod tests {
     }
 
     #[test]
-    fn test_mistral_omits_replayed_reasoning_content() {
+    fn test_mistral_replays_thinking_as_content_instead_of_reasoning_content() {
+        use gosling_providers::conversation::message::Message;
+        use gosling_providers::formats::openai::{
+            create_request_with_options, OpenAiFormatOptions,
+        };
+        use gosling_providers::images::ImageFormat;
+        use gosling_providers::model::ModelConfig;
         let json = include_str!("../providers/declarative/mistral.json");
         let config = deserialize_provider_config(json).expect("mistral.json should parse");
-
-        assert!(
-            !config.preserves_thinking,
-            "Mistral rejects reasoning_content on assistant request messages"
+        let model = ModelConfig::new("mistral-large-4");
+        let payload = create_request_with_options(
+            &model,
+            "System",
+            &[Message::assistant()
+                .with_thinking("Prior reasoning", "")
+                .with_text("Prior answer")],
+            &[],
+            &ImageFormat::OpenAi,
+            true,
+            OpenAiFormatOptions {
+                preserve_thinking_context: config.preserves_thinking,
+            },
+        )
+        .unwrap();
+        let payload = gosling_providers::formats::mistral::prepare_request(payload, &model);
+        let assistant = &payload["messages"][1];
+        assert!(assistant.get("reasoning_content").is_none());
+        assert_eq!(
+            assistant["content"][0]["thinking"][0]["text"],
+            "Prior reasoning"
         );
+        assert_eq!(assistant["content"][1]["text"], "Prior answer");
     }
 
     #[test]
@@ -646,7 +670,7 @@ mod tests {
         assert_eq!(config.catalog_provider_id.as_deref(), Some("mistralai"));
         let names: Vec<&str> = config.models.iter().map(|m| m.name.as_str()).collect();
         assert!(names.contains(&"mistral-large-4"));
-        assert!(names.contains(&"zai-glm-5.3"));
+        assert!(names.contains(&"zai-glm-5-3"));
         // The first entry is the provider's default model.
         assert_eq!(names.first(), Some(&"mistral-medium-latest"));
     }

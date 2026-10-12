@@ -454,6 +454,7 @@ pub struct Agent {
     goal: Mutex<Option<String>>,
     grind: Mutex<Option<String>>,
     pending_steers: Mutex<HashMap<String, VecDeque<Message>>>,
+    accepting_steer_sessions: Arc<std::sync::Mutex<HashSet<String>>>,
     steer_arrived: tokio::sync::Notify,
 }
 
@@ -676,6 +677,7 @@ impl Agent {
             goal: Mutex::new(None),
             grind: Mutex::new(None),
             pending_steers: Mutex::new(HashMap::new()),
+            accepting_steer_sessions: Arc::new(std::sync::Mutex::new(HashSet::new())),
             steer_arrived: tokio::sync::Notify::new(),
         }
     }

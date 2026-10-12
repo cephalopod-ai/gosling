@@ -505,34 +505,20 @@ export const startGoslingServe = async ({
   }
 
   let unregisterProcessRecordPromise: Promise<void> | null = null;
+  let registerProcessRecordPromise: Promise<void> | null = null;
   const unregisterTrackedProcess = async () => {
     if (!processRegistryPath || !goslingProcess.pid) {
       return;
     }
-    unregisterProcessRecordPromise ??= unregisterBackendProcess(
-      processRegistryPath,
-      goslingProcess.pid
-    ).catch((error) => {
+    const pid = goslingProcess.pid;
+    unregisterProcessRecordPromise ??= (async () => {
+      await registerProcessRecordPromise;
+      await unregisterBackendProcess(processRegistryPath, pid);
+    })().catch((error) => {
       logger.error('Failed to unregister gosling serve process:', error);
     });
     await unregisterProcessRecordPromise;
   };
-
-  if (processRegistryPath && goslingProcess.pid) {
-    try {
-      await registerBackendProcess(processRegistryPath, {
-        pid: goslingProcess.pid,
-        parentPid: process.pid,
-        binaryPath: goslingPath,
-        args,
-        workingDir,
-        startedAt: new Date().toISOString(),
-      });
-      startupTrace?.record('process_registry_recorded', { pid: goslingProcess.pid });
-    } catch (error) {
-      logger.error('Failed to register gosling serve process:', error);
-    }
-  }
 
   let exited = false;
   let spawnFailed = false;
@@ -605,6 +591,21 @@ export const startGoslingServe = async ({
 
   goslingProcess.stderr?.on('data', onStderrData);
 
+  let processGroupReaped = false;
+  const reapBackendGroup = () => {
+    if (processGroupReaped || process.platform === 'win32' || !goslingProcess.pid) return;
+    try {
+      process.kill(-goslingProcess.pid, 'SIGKILL');
+      processGroupReaped = true;
+    } catch (error) {
+      if (isMissingProcessError(error)) {
+        processGroupReaped = true;
+      } else {
+        logger.error('Error while reaping the gosling serve process group:', error);
+      }
+    }
+  };
+
   goslingProcess.on('exit', (code, signal) => {
     exited = true;
     exitCode = code;
@@ -618,6 +619,7 @@ export const startGoslingServe = async ({
       startupTrace.record('child_exit', { code, signal });
     }
     resolveFingerprint(null);
+    reapBackendGroup();
     void unregisterTrackedProcess();
   });
 
@@ -626,13 +628,35 @@ export const startGoslingServe = async ({
     errorLog.push(error.message);
     logger.error(`Failed to start gosling serve on port ${port} and dir ${workingDir}`, error);
     startupTrace?.record('spawn_error', { message: error.message, name: error.name });
+    resolveFingerprint(null);
   });
+
+  // Child events can fire while registry I/O is pending. Install listeners first
+  // and make exit-time removal wait for publication of the process record.
+  if (processRegistryPath && goslingProcess.pid) {
+    registerProcessRecordPromise = registerBackendProcess(processRegistryPath, {
+      pid: goslingProcess.pid,
+      parentPid: process.pid,
+      binaryPath: goslingPath,
+      args,
+      workingDir,
+      startedAt: new Date().toISOString(),
+    })
+      .then(() => {
+        startupTrace?.record('process_registry_recorded', { pid: goslingProcess.pid });
+      })
+      .catch((error) => {
+        logger.error('Failed to register gosling serve process:', error);
+      });
+    await registerProcessRecordPromise;
+  }
 
   let cleanupPromise: Promise<void> | null = null;
   const cleanup = (): Promise<void> => {
     cleanupPromise ??= (async () => {
       const closed = await new Promise<boolean>((resolve) => {
-        if (exited) {
+        if (exited || spawnFailed) {
+          if (exited) reapBackendGroup();
           resolve(true);
           return;
         }
@@ -657,7 +681,12 @@ export const startGoslingServe = async ({
         const signalBackendTree = (signal: NodeJS.Signals) => {
           if (process.platform === 'win32') {
             if (goslingProcess.pid) {
-              spawn('taskkill', ['/pid', goslingProcess.pid.toString(), '/f', '/t']);
+              spawn('taskkill', ['/pid', goslingProcess.pid.toString(), '/f', '/t'], {
+                stdio: 'ignore',
+                windowsHide: true,
+              }).on('error', (error) => {
+                logger.error('Failed to terminate gosling serve process tree:', error);
+              });
             }
             return;
           }
@@ -678,15 +707,7 @@ export const startGoslingServe = async ({
         };
 
         const onClose = () => {
-          if (process.platform !== 'win32') {
-            try {
-              signalBackendTree('SIGKILL');
-            } catch (error) {
-              if (!isMissingProcessError(error)) {
-                logger.error('Error while reaping the gosling serve process group:', error);
-              }
-            }
-          }
+          reapBackendGroup();
           finish(true);
         };
 
