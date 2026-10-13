@@ -595,6 +595,21 @@ impl SessionStorage {
             return Err(SessionNotFound.into());
         }
 
+        let owner_pid = sqlx::query_scalar::<_, i64>(
+            "SELECT owner_pid FROM session_turn_leases WHERE session_id = ?",
+        )
+        .bind(session_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+        if let Some(owner_pid) = owner_pid {
+            let owner_pid = u32::try_from(owner_pid)?;
+            // Deletion cannot wait for a revoked lease's next heartbeat to stop
+            // external side effects, so even an expired live owner must settle.
+            if crate::subprocess::process_is_alive(owner_pid).await {
+                anyhow::bail!("This session has an active turn. Stop its response and retry deletion after it finishes.");
+            }
+        }
+
         Self::delete_plan_history_in_tx(&mut tx, session_id).await?;
 
         sqlx::query("DELETE FROM skill_admissions WHERE session_id = ?")

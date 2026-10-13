@@ -11,6 +11,7 @@ impl Agent {
         permission_manager: Arc<PermissionManager>,
         provider: SharedProvider,
         session_manager: Arc<SessionManager>,
+        extension_manager: &Arc<ExtensionManager>,
     ) -> ToolInspectionManager {
         let mut tool_inspection_manager = ToolInspectionManager::new();
 
@@ -26,11 +27,10 @@ impl Agent {
         )));
 
         // Add permission inspector (medium-high priority)
-        tool_inspection_manager.add_inspector(Box::new(PermissionInspector::new(
-            permission_manager,
-            provider,
-            session_manager.clone(),
-        )));
+        tool_inspection_manager.add_inspector(Box::new(
+            PermissionInspector::new(permission_manager, provider, session_manager.clone())
+                .with_extension_manager(extension_manager),
+        ));
 
         // Opt-in, off by default: flags out-of-scope paths when a session has
         // "restrict tools to working directories" turned on.

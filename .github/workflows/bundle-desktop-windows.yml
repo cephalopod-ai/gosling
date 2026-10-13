@@ -14,6 +14,19 @@ on:
         type: string
         default: 'standard'
   workflow_call:
+    secrets:
+      AZURE_CLIENT_ID:
+        required: false
+      AZURE_TENANT_ID:
+        required: false
+      AZURE_SUBSCRIPTION_ID:
+        required: false
+      AZURE_SIGNING_ENDPOINT:
+        required: false
+      AZURE_SIGNING_ACCOUNT_NAME:
+        required: false
+      AZURE_CERTIFICATE_PROFILE_NAME:
+        required: false
     inputs:
       version:
         description: 'Version to build'

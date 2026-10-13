@@ -34,7 +34,7 @@ pub(super) fn sync_delegate_timeout_from(config: &Config) -> Option<Duration> {
     (secs > 0).then(|| Duration::from_secs(secs))
 }
 
-pub(super) fn delegate_mode(executes_tools_outside_gosling: bool) -> GoslingMode {
+pub(crate) fn delegate_mode(executes_tools_outside_gosling: bool) -> GoslingMode {
     if executes_tools_outside_gosling {
         GoslingMode::Chat
     } else {
@@ -52,7 +52,7 @@ pub(super) fn delegate_mode_notice(mode: GoslingMode) -> &'static str {
 
 /// A delegate answers no approval prompts, so it may only be started by a
 /// parent whose operator already runs tools without approval.
-pub(super) fn ensure_parent_allows_delegation(parent_mode: GoslingMode) -> Result<(), String> {
+pub(crate) fn ensure_parent_allows_delegation(parent_mode: GoslingMode) -> Result<(), String> {
     if parent_mode == GoslingMode::Auto {
         return Ok(());
     }
@@ -285,7 +285,7 @@ impl SummonClient {
 /// Resolve a requested `working_dir` override against the parent session
 /// directory. Relative paths are joined to the parent dir; the result must
 /// canonicalize to an existing directory contained within the parent dir.
-pub(super) fn resolve_working_dir(
+pub(crate) fn resolve_working_dir(
     parent_dir: &Path,
     requested: &str,
 ) -> Result<PathBuf, anyhow::Error> {

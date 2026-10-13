@@ -903,10 +903,30 @@ fn ensure_gitignored_if_in_repo(path: &Path) {
     if crate::hints::find_git_root(path).is_none() {
         return;
     }
-    if crate::hints::build_gitignore(path)
-        .matched(path, true)
-        .is_ignore()
-    {
+    let ignored = std::process::Command::new("git")
+        .args([
+            "-c",
+            "safe.bareRepository=explicit",
+            "-c",
+            "core.fsmonitor=false",
+            "-C",
+        ])
+        .arg(path)
+        .args(["check-ignore", "--quiet", "--no-index", "--"])
+        .arg(path)
+        .output()
+        .ok()
+        .and_then(|result| match result.status.code() {
+            Some(0) => Some(true),
+            Some(1) => Some(false),
+            _ => None,
+        })
+        .unwrap_or_else(|| {
+            crate::hints::build_gitignore(path)
+                .matched(path, true)
+                .is_ignore()
+        });
+    if ignored {
         return;
     }
     let Some(parent) = path.parent() else {
@@ -917,22 +937,43 @@ fn ensure_gitignored_if_in_repo(path: &Path) {
     };
 
     let gitignore_path = parent.join(".gitignore");
-    let mut contents = std::fs::read_to_string(&gitignore_path).unwrap_or_default();
-    let entry = format!("/{name}/");
-    if contents.lines().any(|line| line.trim() == entry) {
+    if name.contains(['\n', '\r']) {
         return;
     }
-    if !contents.is_empty() && !contents.ends_with('\n') {
-        contents.push('\n');
-    }
-    contents.push_str(&entry);
-    contents.push('\n');
-    if let Err(error) = std::fs::write(&gitignore_path, contents) {
-        warn!(
-            path = %gitignore_path.display(),
-            %error,
-            "Failed to add output folder to .gitignore"
-        );
+    let escaped: String = name
+        .chars()
+        .flat_map(|character| {
+            if matches!(character, '\\' | '*' | '?' | '[' | ']' | ' ') {
+                vec!['\\', character]
+            } else {
+                vec![character]
+            }
+        })
+        .collect();
+    let entry = format!("/{escaped}/");
+    let result = (|| -> Result<()> {
+        use std::io::{Read, Write};
+        let mut file = std::fs::OpenOptions::new()
+            .read(true)
+            .append(true)
+            .create(true)
+            .open(&gitignore_path)?;
+        fs2::FileExt::lock_exclusive(&file)?;
+        let mut contents = String::new();
+        file.read_to_string(&mut contents)?;
+        if !contents.lines().any(|line| line.trim() == entry) {
+            let separator = if contents.is_empty() || contents.ends_with('\n') {
+                ""
+            } else {
+                "\n"
+            };
+            file.write_all(format!("{separator}{entry}\n").as_bytes())?;
+            file.sync_all()?;
+        }
+        Ok(())
+    })();
+    if let Err(error) = result {
+        warn!(path = %gitignore_path.display(), %error, "Failed to add output folder to .gitignore");
     }
 }
 

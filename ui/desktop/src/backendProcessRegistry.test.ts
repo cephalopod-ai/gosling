@@ -52,8 +52,9 @@ describe('backend process registry persistence', () => {
 
     await registerBackendProcess(registryPath, processRecord);
 
-    expect(rename).toHaveBeenCalledOnce();
-    const [temporaryPath, destinationPath] = rename.mock.calls[0];
+    const publication = rename.mock.calls.filter(([, destination]) => destination === registryPath);
+    expect(publication).toHaveLength(1);
+    const [temporaryPath, destinationPath] = publication[0];
     expect(path.dirname(temporaryPath.toString())).toBe(directory);
     expect(destinationPath).toBe(registryPath);
     expect(JSON.parse(await fs.readFile(registryPath, 'utf8'))).toEqual({
@@ -67,7 +68,12 @@ describe('backend process registry persistence', () => {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'gosling-process-registry-'));
     temporaryDirectories.push(directory);
     const registryPath = path.join(directory, 'backend-processes.json');
-    vi.spyOn(fs, 'rename').mockRejectedValueOnce(new Error('simulated rename failure'));
+    const rename = fs.rename;
+    vi.spyOn(fs, 'rename').mockImplementation((source, destination) =>
+      destination === registryPath
+        ? Promise.reject(new Error('simulated rename failure'))
+        : rename(source, destination)
+    );
 
     await expect(registerBackendProcess(registryPath, processRecord)).rejects.toThrow(
       'simulated rename failure'

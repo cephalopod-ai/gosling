@@ -7,6 +7,7 @@ use rmcp::model::CallToolResult;
 use rmcp::model::{AnnotateAble, RawResource};
 use rmcp::model::{InitializeResult, JsonObject};
 use rmcp::{object, ServiceError as Error};
+use tempfile::tempdir;
 
 use rmcp::model::ListPromptsResult;
 use rmcp::model::ListResourcesResult;

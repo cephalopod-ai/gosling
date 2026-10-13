@@ -6399,6 +6399,52 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn deleting_a_session_rejects_a_live_turn_before_removing_history() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = SessionManager::new(temp_dir.path().to_path_buf());
+        let session = manager
+            .create_session(
+                PathBuf::from("/tmp/test"),
+                "Busy session".into(),
+                SessionType::User,
+                GoslingMode::Auto,
+            )
+            .await
+            .unwrap();
+        manager
+            .add_message(
+                &session.id,
+                &Message::user().with_text("preserve this history"),
+            )
+            .await
+            .unwrap();
+        let lease = manager
+            .acquire_session_turn_lease(&session.id, None)
+            .await
+            .unwrap();
+        assert!(manager
+            .delete_session(&session.id)
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("active turn"));
+        assert_eq!(
+            manager
+                .get_session(&session.id, true)
+                .await
+                .unwrap()
+                .conversation
+                .unwrap()
+                .messages()
+                .len(),
+            1
+        );
+        lease.release().await.unwrap();
+        manager.delete_session(&session.id).await.unwrap();
+        assert!(manager.get_session(&session.id, false).await.is_err());
+    }
+
+    #[tokio::test]
     async fn shutdown_waits_for_a_turn_lease_release_still_in_flight() {
         let temp_dir = TempDir::new().unwrap();
         let manager = SessionManager::new(temp_dir.path().to_path_buf());

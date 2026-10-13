@@ -11,7 +11,7 @@ impl ExtensionManager {
         config: ExtensionConfig,
         client: McpClientBox,
         info: Option<ServerInfo>,
-        temp_dir: Option<TempDir>,
+        temp_dir: Option<tempfile::TempDir>,
     ) {
         let normalized = name_to_key(&name);
         let config_name = config.key();
@@ -33,10 +33,10 @@ impl ExtensionManager {
         if let Some(replaced) = replaced {
             replaced.shutdown().await;
         }
-        self.extensions.lock().await.insert(
-            normalized,
-            Extension::new(config.clone(), config.clone(), client, info, temp_dir, None),
-        );
+        let mut extension =
+            Extension::new(config.clone(), config.clone(), client, info, None, None);
+        extension._client_temp_dir = temp_dir;
+        self.extensions.lock().await.insert(normalized, extension);
         self.invalidate_tools_cache_and_bump_version().await;
     }
 

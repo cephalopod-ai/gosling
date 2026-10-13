@@ -68,15 +68,15 @@ for extension settings, previews, and filter behavior.
 
 Version `1.3.0` introduced **Website Logins** under
 **Settings → Credentials**: the agent receives a named placeholder instead of the password, while
-gosling checks the destination origin, substitutes the secret only for the approved tool call, and
+gosling checks the declared destination, asks for approval for each use (including Auto mode), and
 redacts it from returned tool content. Folder-specific permission prompts can also grant access for
 the current session or add a durable trusted folder. See the [v1.3.0 source notes](documentation/docs/release-notes/v1.3.0.md)
 and [Website logins manual](documentation/docs/guides/website-logins.md).
 
-The current source and verified local macOS arm64 build are `1.4.0`. The latest Desktop repairs
-add clearer backend failures and reconnect guidance, keep UI state with its backend, correct image
-preview switching and composer focus, tighten startup folder grants, and clarify credential storage
-and completion notices. See the [v1.4.0 source and build notes](documentation/docs/release-notes/v1.4.0.md).
+The current source version is `1.5.0`; see the [v1.5.0 source notes](documentation/docs/release-notes/v1.5.0.md).
+The verified September 29 local macOS arm64 build was `1.4.0`. Its installation evidence remains
+in the [v1.4.0 source and build notes](documentation/docs/release-notes/v1.4.0.md); it does not
+verify a later source revision or installed package.
 
 `v1.2.3` adds file timestamps, workspace unread-chat indicators, output contributor/revision history,
 and a separate **Copy contents** action for complete text documents. It also fixes modal layering
@@ -239,7 +239,7 @@ for configuration, trust, and removal guidance.
 ## Quick links
 
 - [Documentation index](documentation/INDEX.md) - user manuals, architecture, publishing, and stewardship
-- [v1.4.0 source and build notes](documentation/docs/release-notes/v1.4.0.md), [v1.3.0 source notes](documentation/docs/release-notes/v1.3.0.md), and [release-note archive](documentation/docs/release-notes/)
+- [v1.5.0 source notes](documentation/docs/release-notes/v1.5.0.md), [v1.4.0 source and build notes](documentation/docs/release-notes/v1.4.0.md), [v1.3.0 source notes](documentation/docs/release-notes/v1.3.0.md), and [release-note archive](documentation/docs/release-notes/)
 - [Website logins](documentation/docs/guides/website-logins.md)
 - [Release process](RELEASE.md) and [release checklist](RELEASE_CHECKLIST.md)
 - [Context History and compaction](documentation/docs/guides/sessions/smart-context-management.md#context-history) and [CLI commands](documentation/docs/guides/gosling-cli-commands.md)

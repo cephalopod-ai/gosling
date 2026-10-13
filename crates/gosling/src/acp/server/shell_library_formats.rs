@@ -187,35 +187,44 @@ fn open_bounded_office_document(path: &Path, format: DocumentFormat) -> Result<D
     Ok(Document::from_reader(Cursor::new(bounded), format)?)
 }
 
-/// Normalize the same input snapshot into stored entries before the Office parser
-/// reads it. Its allocator trusts declared ZIP sizes; both sizes and actual bytes
-/// must be bounded, and reopening the source would lose that guarantee.
+/// Validate the actual expansion of every entry in the same immutable snapshot
+/// the Office parser receives. Declared sizes alone cannot establish that bound.
 fn bounded_office_archive(bytes: Vec<u8>, byte_limit: u64) -> Result<Vec<u8>> {
-    let mut archive = zip::ZipArchive::new(Cursor::new(bytes))?;
+    let mut archive = zip::ZipArchive::new(Cursor::new(bytes.as_slice()))?;
     anyhow::ensure!(
         archive.len() <= MAX_OFFICE_ARCHIVE_ENTRIES,
         "office document has too many archive entries"
     );
     let mut total = 0u64;
-    let mut output = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    let options =
-        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    let mut declared_total = 0u64;
     for index in 0..archive.len() {
         let entry = archive.by_index(index)?;
+        declared_total = declared_total.saturating_add(entry.size());
         let remaining = byte_limit - total;
         anyhow::ensure!(
-            entry.size() <= remaining,
+            declared_total <= byte_limit,
             "office document expands beyond the extraction limit"
         );
-        output.start_file(entry.name(), options)?;
-        let copied = std::io::copy(&mut entry.take(remaining + 1), &mut output)?;
+        let mut expanded = Vec::new();
+        let read = entry.take(remaining + 1).read_to_end(&mut expanded);
+        let copied = expanded.len() as u64;
         anyhow::ensure!(
             copied <= remaining,
             "office document expands beyond the extraction limit"
         );
+        if let Err(error) = read {
+            // Match office_oxide's tolerance for complete entries with stale CRCs.
+            if error.kind() != std::io::ErrorKind::InvalidData
+                || !error.to_string().contains("checksum")
+                || expanded.is_empty()
+            {
+                return Err(error.into());
+            }
+        }
         total += copied;
     }
-    Ok(output.finish()?.into_inner())
+    drop(archive);
+    Ok(bytes)
 }
 
 fn office_format_for_mime(mime_type: &str) -> Option<DocumentFormat> {
@@ -394,7 +403,9 @@ mod tests {
             )
             .unwrap();
         source.write_all(b"evidence").unwrap();
-        let bytes = bounded_office_archive(source.finish().unwrap().into_inner(), 8).unwrap();
+        let original = source.finish().unwrap().into_inner();
+        let bytes = bounded_office_archive(original.clone(), 8).unwrap();
+        assert_eq!(bytes, original);
         let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
         let mut content = String::new();
         archive
@@ -403,6 +414,27 @@ mod tests {
             .read_to_string(&mut content)
             .unwrap();
         assert_eq!(content, "evidence");
+    }
+
+    #[test]
+    fn bounded_office_archive_preserves_tolerated_stale_crc_bytes() {
+        use std::io::Write;
+        let mut source = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        source
+            .start_file(
+                "word/document.xml",
+                zip::write::SimpleFileOptions::default(),
+            )
+            .unwrap();
+        source.write_all(b"evidence").unwrap();
+        let mut bytes = source.finish().unwrap().into_inner();
+        let central = bytes
+            .windows(4)
+            .position(|bytes| bytes == b"PK\x01\x02")
+            .unwrap();
+        bytes[14..18].copy_from_slice(&0u32.to_le_bytes());
+        bytes[central + 16..central + 20].copy_from_slice(&0u32.to_le_bytes());
+        assert_eq!(bounded_office_archive(bytes.clone(), 8).unwrap(), bytes);
     }
 
     fn write_image(path: &Path, format: ImageOutputFormat) {

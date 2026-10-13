@@ -2,6 +2,7 @@
 // Production callers keep stable manager, helper, and operator-transport paths here.
 // Responsibility modules live under extension_manager/ behind this public surface.
 
+use crate::owned_temp::{OwnedTempDir, EXTENSION_PREFIX};
 use anyhow::Result;
 #[cfg(unix)]
 use axum::http::HeaderValue;
@@ -26,7 +27,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
-use tempfile::{tempdir, TempDir};
 use tokio::io::{AsyncRead, AsyncReadExt, ReadBuf};
 use tokio::process::Command;
 use tokio::sync::Mutex;
@@ -192,7 +192,8 @@ struct Extension {
 
     client: McpClientBox,
     server_info: Option<ServerInfo>,
-    _temp_dir: Option<tempfile::TempDir>,
+    _temp_dir: Option<OwnedTempDir>,
+    _client_temp_dir: Option<tempfile::TempDir>,
     /// Set when this extension's server runs inside a shared Docker
     /// container via `docker exec`. Killing the local `docker exec` client
     /// (which is all `client`'s own drop/cleanup does) does not terminate
@@ -206,7 +207,7 @@ impl Extension {
         resolved_config: ExtensionConfig,
         client: McpClientBox,
         server_info: Option<ServerInfo>,
-        temp_dir: Option<tempfile::TempDir>,
+        temp_dir: Option<OwnedTempDir>,
         docker_process: Option<DockerExecProcess>,
     ) -> Self {
         Self {
@@ -215,6 +216,7 @@ impl Extension {
             resolved_config,
             server_info,
             _temp_dir: temp_dir,
+            _client_temp_dir: None,
             docker_process,
         }
     }
@@ -275,6 +277,7 @@ pub struct ExtensionManager {
     client_name: String,
     capabilities: ExtensionManagerCapabilities,
     code_execution_runtime: CodeExecutionRuntime,
+    extension_staging_root: std::path::PathBuf,
 }
 
 /// A flattened representation of a resource used by the agent to prepare inference
@@ -326,6 +329,9 @@ impl ExtensionManager {
         use_login_shell_path: bool,
         code_execution_runtime: CodeExecutionRuntime,
     ) -> Self {
+        let extension_staging_root = session_manager.data_dir().join("extension-staging");
+        crate::owned_temp::sweep(&extension_staging_root, EXTENSION_PREFIX);
+        crate::agents::large_response_handler::sweep_large_response_cache();
         Self {
             extensions: Mutex::new(HashMap::new()),
             lifecycle_lock: Mutex::new(()),
@@ -343,6 +349,7 @@ impl ExtensionManager {
             client_name,
             capabilities,
             code_execution_runtime,
+            extension_staging_root,
         }
     }
 
@@ -716,7 +723,8 @@ impl ExtensionManager {
                     // Resolved env can contain keyring secrets; pass them via
                     // an --env-file instead of `-e KEY=VALUE`, which would put
                     // them in argv and be readable via `ps`/`/proc/<pid>/cmdline`.
-                    let env_file_dir = tempdir()?;
+                    let env_file_dir =
+                        OwnedTempDir::new_in(&self.extension_staging_root, EXTENSION_PREFIX)?;
                     let env_file_path = env_file_dir.path().join("docker-exec.env");
                     write_docker_env_file(&env_file_path, &all_envs)?;
                     temp_dir = Some(env_file_dir);
@@ -761,7 +769,7 @@ impl ExtensionManager {
                     extension_malware_check::deny_if_malicious_pypi_dependencies(deps).await?;
                 }
 
-                let dir = tempdir()?;
+                let dir = OwnedTempDir::new_in(&self.extension_staging_root, EXTENSION_PREFIX)?;
                 let file_path = dir.path().join(format!("{}.py", name));
                 temp_dir = Some(dir);
                 std::fs::write(&file_path, code)?;

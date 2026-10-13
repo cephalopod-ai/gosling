@@ -1,11 +1,17 @@
 use crate::config::Config;
 use crate::security::scanner::PromptInjectionScanner;
-use chrono::Utc;
+use once_cell::sync::Lazy;
 use rmcp::model::{CallToolResult, Content, ErrorData};
 use std::fs::File;
 use std::io::Write;
+use std::sync::Mutex;
 
 const DEFAULT_LARGE_TEXT_THRESHOLD: usize = 200_000;
+const RESPONSE_CACHE_PREFIX: &str = ".gosling-response-staging-";
+const MAX_RESPONSE_CACHE_BYTES: u64 = 64 * 1024 * 1024;
+const MAX_RESPONSE_CACHE_FILES: usize = 1000;
+static RESPONSE_CACHE: Lazy<Mutex<Option<crate::owned_temp::OwnedTempDir>>> =
+    Lazy::new(|| Mutex::new(None));
 
 fn large_text_threshold() -> usize {
     Config::global()
@@ -45,7 +51,7 @@ pub fn process_tool_response(
                                 Ok(file_path) => {
                                     // Create a new text content with reference to the file
                                     let message = format!(
-                                        "The response returned from the tool call was larger ({} characters) and is stored in the file which you can use other tools to examine or search in: {}",
+                                        "The response returned from the tool call was larger ({} characters) and is stored in a temporary, bounded cache (copy it elsewhere for long-term use). Use other tools to examine or search in: {}",
                                         text_content.text.chars().count(),
                                         file_path
                                     );
@@ -121,21 +127,70 @@ fn with_warning(warning: Option<String>, message: String) -> String {
 /// tools - must not be left world-readable, and the directory itself
 /// must not be usable as a pre-planted symlink to redirect writes
 /// elsewhere.
+pub(crate) fn sweep_large_response_cache() {
+    crate::owned_temp::sweep(
+        &std::env::temp_dir().join("gosling_mcp_responses"),
+        RESPONSE_CACHE_PREFIX,
+    );
+}
+
 fn write_large_text_to_file(content: &str) -> Result<String, std::io::Error> {
-    let temp_dir = std::env::temp_dir().join("gosling_mcp_responses");
-    std::fs::create_dir_all(&temp_dir)?;
-    restrict_to_owner(&temp_dir)?;
-    reject_symlink(&temp_dir)?;
-
-    // Generate a unique filename with timestamp
-    let timestamp = Utc::now().format("%Y%m%d_%H%M%S%.6f");
-    let filename = format!("mcp_response_{}.txt", timestamp);
-    let file_path = temp_dir.join(&filename);
-
+    if content.len() as u64 > MAX_RESPONSE_CACHE_BYTES {
+        return Err(std::io::Error::other(
+            "Tool response exceeds the temporary-cache byte limit",
+        ));
+    }
+    let root = std::env::temp_dir().join("gosling_mcp_responses");
+    std::fs::create_dir_all(&root)?;
+    reject_symlink(&root)?;
+    restrict_to_owner(&root)?;
+    let mut cache = RESPONSE_CACHE
+        .lock()
+        .map_err(|_| std::io::Error::other("response cache lock poisoned"))?;
+    if cache
+        .as_ref()
+        .is_none_or(|directory| !directory.path().is_dir())
+    {
+        *cache = Some(crate::owned_temp::OwnedTempDir::new_in(
+            &root,
+            RESPONSE_CACHE_PREFIX,
+        )?);
+    }
+    let directory = cache.as_ref().expect("response cache initialized").path();
+    reserve_response_cache(directory, content.len() as u64)?;
+    let file_path = directory.join(format!("mcp_response_{}.txt", uuid::Uuid::new_v4()));
     let mut file = open_owner_only(&file_path)?;
-    file.write_all(content.as_bytes())?;
+    if let Err(error) = file.write_all(content.as_bytes()) {
+        drop(file);
+        let _ = std::fs::remove_file(&file_path);
+        return Err(error);
+    }
+    Ok(file_path.to_string_lossy().into_owned())
+}
 
-    Ok(file_path.to_string_lossy().to_string())
+fn reserve_response_cache(directory: &std::path::Path, incoming_bytes: u64) -> std::io::Result<()> {
+    let mut count = 1;
+    let mut bytes = incoming_bytes;
+    for entry in std::fs::read_dir(directory)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name.starts_with("mcp_response_")
+            && name.ends_with(".txt")
+            && entry.file_type()?.is_file()
+        {
+            count += 1;
+            bytes = bytes.saturating_add(entry.metadata()?.len());
+        }
+    }
+    // Previously advertised files remain readable for this process's lifetime,
+    // including results that have not yet reached the model in the same batch.
+    if count > MAX_RESPONSE_CACHE_FILES || bytes > MAX_RESPONSE_CACHE_BYTES {
+        return Err(std::io::Error::other(
+            "Temporary response cache is full; existing response files were preserved",
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(unix)]
@@ -164,15 +219,17 @@ fn open_owner_only(path: &std::path::Path) -> std::io::Result<File> {
     use std::os::unix::fs::OpenOptionsExt;
     std::fs::OpenOptions::new()
         .write(true)
-        .create(true)
-        .truncate(true)
+        .create_new(true)
         .mode(0o600)
         .open(path)
 }
 
 #[cfg(not(unix))]
 fn open_owner_only(path: &std::path::Path) -> std::io::Result<File> {
-    File::create(path)
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
 }
 
 #[cfg(test)]
@@ -182,6 +239,24 @@ mod tests {
     use std::borrow::Cow;
     use std::fs;
     use std::path::Path;
+
+    #[test]
+    fn cache_reservation_refuses_overflow_without_invalidating_response_paths() {
+        let root = tempfile::tempdir().unwrap();
+        let old = root.path().join("mcp_response_old.txt");
+        let file = File::create(&old).unwrap();
+        file.set_len(MAX_RESPONSE_CACHE_BYTES).unwrap();
+        file.set_modified(std::time::UNIX_EPOCH).unwrap();
+        drop(file);
+        let recent = root.path().join("mcp_response_recent.txt");
+        fs::write(&recent, "recent").unwrap();
+        let unrelated = root.path().join("user-notes.txt");
+        fs::write(&unrelated, "preserve").unwrap();
+        assert!(reserve_response_cache(root.path(), 1).is_err());
+        assert!(old.exists());
+        assert_eq!(fs::read_to_string(recent).unwrap(), "recent");
+        assert_eq!(fs::read_to_string(unrelated).unwrap(), "preserve");
+    }
 
     #[test]
     fn test_small_text_response_passes_through() {
@@ -274,20 +349,14 @@ mod tests {
                 .contains("The response returned from the tool call was larger"));
             assert!(text_content.text.contains("characters"));
 
-            // Extract the file path from the message
-            if let Some(file_path) = text_content.text.split("stored in the file: ").nth(1) {
-                // Verify the file exists and contains the original text
-                let path = Path::new(file_path.trim());
-                if path.exists() {
-                    // Only check content if file exists (may not exist in CI environments)
-                    if let Ok(file_content) = fs::read_to_string(path) {
-                        assert_eq!(file_content, large_text);
-                    }
-
-                    // Clean up the file
-                    let _ = fs::remove_file(path); // Ignore errors on cleanup
-                }
-            }
+            let file_path = text_content
+                .text
+                .split("examine or search in: ")
+                .nth(1)
+                .expect("response path");
+            let path = Path::new(file_path.trim());
+            assert_eq!(fs::read_to_string(path).unwrap(), large_text);
+            fs::remove_file(path).unwrap();
         } else {
             panic!("Expected text content");
         }
@@ -341,13 +410,17 @@ mod tests {
                 .text
                 .contains("The response returned from the tool call was larger"));
 
-            // Extract the file path and clean up
-            if let Some(file_path) = text_content.text.split("stored in the file: ").nth(1) {
-                let path = Path::new(file_path.trim());
-                if path.exists() {
-                    let _ = fs::remove_file(path); // Ignore errors on cleanup
-                }
-            }
+            let file_path = text_content
+                .text
+                .split("examine or search in: ")
+                .nth(1)
+                .expect("response path");
+            let path = Path::new(file_path.trim());
+            assert_eq!(
+                fs::read_to_string(path).unwrap(),
+                "a".repeat(DEFAULT_LARGE_TEXT_THRESHOLD + 1000)
+            );
+            fs::remove_file(path).unwrap();
         } else {
             panic!("Expected text content");
         }

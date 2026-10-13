@@ -33,7 +33,7 @@ The supported command and security controls are:
 | `--platform desktop` | Identifies requests as coming from gosling Desktop. |
 | `--tls` | Serves ACP over TLS. Without certificate paths, gosling creates or reuses a local self-signed certificate. |
 | `--tls-cert-path` and `--tls-key-path` | Use a specific PEM certificate and private key. Both are required together. The server refuses to start with an expired certificate and warns when the certificate is not valid yet. |
-| `GOSLING_SERVER__SECRET_KEY` | Requires the matching token on status and ACP connections. |
+| `GOSLING_SERVER__SECRET_KEY` | Requires the matching token on ACP connections and authenticated MCP app access. |
 | `--allowed-origin` | Replaces the default loopback CORS origins with one or more exact origins (`scheme://host[:port]`, or `null`/`file://`). Wildcards and values with a path, query or trailing slash are rejected at startup. Refused origins are logged as warnings. |
 
 `gosling serve` refuses to start without `GOSLING_SERVER__SECRET_KEY` unless
@@ -76,16 +76,17 @@ Confirm that the process is listening:
 lsof -nP -iTCP:3284 -sTCP:LISTEN
 ```
 
-Then check the authenticated status route. Add `-k` only when using the generated self-signed TLS
+Then check the readiness route. `/health` and `/status` do not require a token; they disclose
+liveness and database readiness. Keep these routes behind your network boundary when using a
+non-loopback listener. Add `-k` only when using the generated self-signed TLS
 certificate:
 
 ```bash
-curl -i http://127.0.0.1:3284/status \
-  -H 'X-Secret-Key: YOUR_LONG_RANDOM_SECRET'
+curl -i http://127.0.0.1:3284/status
 ```
 
 For TLS, use `https://127.0.0.1:3284/status -k`. A successful status response proves that the
-listener and shared secret are working. Desktop performs a second authenticated ACP probe before
+listener and session database are ready. Desktop performs a separate authenticated ACP probe before
 opening a chat.
 
 ## Configure Desktop

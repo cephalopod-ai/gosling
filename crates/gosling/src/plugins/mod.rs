@@ -543,14 +543,24 @@ fn write_install_metadata(
 ///
 /// Staging directories are named after the owning process id so one left by a
 /// killed install or update can be removed once that process is gone.
-pub(in crate::plugins) fn staging_dir_in(install_root: &Path) -> Result<tempfile::TempDir> {
+pub(in crate::plugins) fn staging_dir_in(
+    install_root: &Path,
+) -> Result<crate::owned_temp::OwnedTempDir> {
     remove_abandoned_staging_dirs(install_root);
-    Ok(tempfile::Builder::new()
-        .prefix(&format!("{STAGING_DIR_PREFIX}{}-", std::process::id()))
-        .tempdir_in(install_root)?)
+    Ok(crate::owned_temp::OwnedTempDir::new_in(
+        install_root,
+        STAGING_DIR_PREFIX,
+    )?)
 }
 
 fn remove_abandoned_staging_dirs(install_root: &Path) {
+    crate::owned_temp::sweep(install_root, STAGING_DIR_PREFIX);
+    #[cfg(unix)]
+    remove_legacy_staging_dirs(install_root);
+}
+
+#[cfg(unix)]
+fn remove_legacy_staging_dirs(install_root: &Path) {
     let Ok(entries) = fs::read_dir(install_root) else {
         return;
     };
@@ -568,18 +578,15 @@ fn remove_abandoned_staging_dirs(install_root: &Path) {
         if !is_real_dir || owner_pid == std::process::id() || staging_owner_is_running(owner_pid) {
             continue;
         }
-        let _ = fs::remove_dir_all(entry.path());
+        if let Err(error) = fs::remove_dir_all(entry.path()) {
+            warn!(path = %entry.path().display(), %error, "Could not remove abandoned plugin staging directory");
+        }
     }
 }
 
 #[cfg(unix)]
 fn staging_owner_is_running(pid: u32) -> bool {
     crate::subprocess::process_is_running(pid)
-}
-
-#[cfg(not(unix))]
-fn staging_owner_is_running(_pid: u32) -> bool {
-    true
 }
 
 fn replace_plugin_dir(source: &Path, destination: &Path) -> Result<()> {

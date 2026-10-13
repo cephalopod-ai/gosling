@@ -29,7 +29,7 @@ flowchart LR
     Store --> JSON[(workspaces.json)]
     Credentials --> Config[Config secure storage]
     Config --> Keyring[(OS keyring / protected fallback)]
-    Handlers --> Sessions[SessionManager v36 snapshots, handoffs, plans, compaction history, and turn lease]
+    Handlers --> Sessions[SessionManager v38 snapshots, handoffs, plans, compaction history, and turn lease]
     Sessions --> DB[(sessions.db)]
     Agent[Agent / provider construction] --> Service
     Agent --> Credentials
@@ -79,13 +79,13 @@ from later workspace edits remain prohibited. See ADR-0017 and its 2026-10-02 am
 | Module                              | Layer               | Owns                                                                                                 | Must not own                                            | Allowed dependencies                                          | Public surface                                            |
 | ----------------------------------- | ------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------- | --------------------------------------------------------- |
 | `gosling-sdk-types::workspace`      | domain contract     | canonical DTOs, enums, typed requests/responses                                                      | persistence, provider construction, UI                  | serde/schemars/ACP derive                                     | workspace/profile DTOs and request types                  |
-| `gosling::workspace::model`         | domain              | store envelope and internal snapshot conversions                                                     | IO, UI, keyring calls                                   | canonical DTOs                                                | internal versioned record types                           |
 | `gosling::workspace::validation`    | domain/application  | normalization, folder status, template/import validation                                             | persistence or UI messages                              | std paths, canonical DTOs                                     | validation report and normalized workspace                |
-| `gosling::workspace::store`         | adapter             | lock/read/migrate/atomic-write of workspace metadata                                                 | secret values, session rows, provider creation          | model, fs2, std filesystem                                    | load/mutate/export/import primitives                      |
+| `gosling::workspace::store`         | adapter             | store envelope, lock/read/migrate/atomic-write of workspace metadata                                                 | secret values, session rows, provider creation          | canonical DTOs, fs2, std filesystem                                    | load/mutate/export/import primitives                      |
+| `gosling::workspace::bootstrap` | application | first-run distribution templates and provider-profile migration | renderer state, raw secret export | store, Config, canonical DTOs | workspace initialization |
+| `gosling::workspace::planning_access` | capability adapter | bounded tree, text read and search within session roots | ambient paths after opening a root, mutation | cap-std, session snapshot | planning evidence reads |
 | `gosling::workspace::credentials`   | application         | metadata lifecycle, secure key naming, scoped resolution                                             | raw keyring API, renderer response values               | store, provider registry metadata, Config                     | create/update/delete/resolve/test profile                 |
-| `gosling::workspace::context`       | domain/application  | non-secret session snapshot and prompt rendering                                                     | credentials or global active state                      | canonical DTOs                                                | snapshot builder/prompt renderer                          |
-| `gosling::workspace::service`       | application         | CRUD policy, active/default invariants, preparation for sessions                                     | transport/UI/SQLite details                             | store, validator, credentials, context                        | operations used by ACP and Agent                          |
-| `acp::server::workspaces`           | interface           | request parsing, error mapping, response mapping                                                     | domain decisions or direct file writes                  | WorkspaceService                                              | `_gosling/unstable/workspaces/*` methods                  |
+| `gosling::workspace::service`       | application         | CRUD policy, active/default invariants, session snapshots and non-secret prompt rendering                                     | transport/UI/SQLite details                             | store, validator, credentials, canonical DTOs                        | operations used by ACP and Agent                          |
+| `acp::server::workspace_handlers`           | interface           | request parsing, error mapping, response mapping                                                     | domain decisions or direct file writes                  | WorkspaceService                                              | `_gosling/unstable/workspaces/*` methods                  |
 | `SessionManager` workspace fields   | adapter             | nullable session snapshot columns and queries                                                        | live workspace/profile mutation                         | canonical snapshot DTO                                        | create/copy/read/update/filter snapshot                   |
 | `SessionManager` artifact inventory | adapter             | durable session/path metadata, discovery provenance, legacy message backfill                         | file copies, file reads, or renderer authorization      | persisted messages and successful tool results                | list/upsert/copy/delete artifact metadata                 |
 | `ConfigResolutionScope`             | infrastructure seam | task-scoped logical config/secret resolution                                                         | workspace metadata policy                               | Config secure storage                                         | scoped async execution + typed reads                      |
@@ -333,6 +333,15 @@ restrictive admissions. Admissions end with the turn and never transfer through 
 export, or handoff. Import drops file-supplied Deep Research paths, and compaction keeps
 imported-untrusted status on summaries of imported history. Provider-owned tool runtimes cannot be
 constrained, so restricted skill selection is refused there.
+
+## Current session schema
+
+The live `sessions.db` schema is v38 (`CURRENT_SCHEMA_VERSION`). Context History was
+introduced in v36; v37 adds turn-scoped skill admissions described in ADR-0023.
+Migration v38 adds `session_id_high_water` and an insertion trigger that keeps the
+largest sequence used for each date. Migration backfills existing sessions. Session
+creation increments the stored sequence, so deleting the highest-numbered session
+cannot cause its ID to be reused. This is allocator state, not a new user workflow.
 
 ## Error taxonomy
 

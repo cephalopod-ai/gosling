@@ -41,6 +41,11 @@ const i18n = defineMessages({
     id: 'securityToggle.promptInjectionMlDescription',
     defaultMessage: 'Use ML models to detect potential prompt injection in your chat',
   },
+  classifierContentScope: {
+    id: 'securityToggle.classifierContentScope',
+    defaultMessage:
+      'Enabling ML scanning sends complete tool arguments and recent user messages to the configured endpoint. These may contain secrets or personal data. Use an endpoint you trust.',
+  },
   detectionModel: {
     id: 'securityToggle.detectionModel',
     defaultMessage: 'Detection Model',
@@ -80,7 +85,8 @@ const i18n = defineMessages({
   },
   mlEndpointDescription: {
     id: 'securityToggle.mlEndpointDescription',
-    defaultMessage: 'Enter the full URL for your ML classification service (including model identifier)',
+    defaultMessage:
+      'Enter the full URL for your ML classification service (including model identifier)',
   },
   mlTokenDescription: {
     id: 'securityToggle.mlTokenDescription',
@@ -190,8 +196,7 @@ export const SecurityToggle = () => {
   const commandClassifierOverride = window.appConfig?.get(
     'SECURITY_COMMAND_CLASSIFIER_ENABLED_OVERRIDE'
   ) as string | undefined;
-  const isPromptOverridden =
-    promptEnabledOverride === 'true' || promptEnabledOverride === 'false';
+  const isPromptOverridden = promptEnabledOverride === 'true' || promptEnabledOverride === 'false';
   const isCommandClassifierOverridden =
     commandClassifierOverride === 'true' || commandClassifierOverride === 'false';
   const promptOverrideValue = promptEnabledOverride === 'true';
@@ -397,6 +402,9 @@ export const SecurityToggle = () => {
                 <p className="text-xs text-text-secondary max-w-md mt-[2px]">
                   {intl.formatMessage(i18n.commandInjectionDescription)}
                 </p>
+                <p className="text-xs text-text-secondary max-w-md mt-1">
+                  {intl.formatMessage(i18n.classifierContentScope)}
+                </p>
                 {isCommandClassifierOverridden && (
                   <>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
@@ -474,6 +482,9 @@ export const SecurityToggle = () => {
                 </h4>
                 <p className="text-xs text-text-secondary max-w-md mt-[2px]">
                   {intl.formatMessage(i18n.promptInjectionMlDescription)}
+                </p>
+                <p className="text-xs text-text-secondary max-w-md mt-1">
+                  {intl.formatMessage(i18n.classifierContentScope)}
                 </p>
               </div>
               <div className="flex items-center">

@@ -34,7 +34,7 @@ Ask gosling to sign in to the saved website and identify the account by name. Th
 `website_logins` tool lists the non-secret account details and password placeholder. When the agent
 passes that placeholder to another tool, gosling:
 
-1. checks that the tool call's website origin matches the saved login;
+1. checks that the tool call's declared `url` origin matches the saved login;
 2. asks for approval, including in Auto mode;
 3. substitutes the password immediately before dispatch; and
 4. replaces the password with its placeholder in the tool result and progress notifications.

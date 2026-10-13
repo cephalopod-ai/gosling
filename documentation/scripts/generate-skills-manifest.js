@@ -11,14 +11,13 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const { SOURCE_COMMIT, preparePinnedSource } = require('./agent-skills-source');
 const matter = require('gray-matter');
 const { isSupportedGooseSkill } = require('./goose-compat');
 
 // Configuration
-const AGENT_SKILLS_REPO = 'https://github.com/block/Agent-Skills.git';
 const AGENT_SKILLS_REPO_URL = 'https://github.com/block/Agent-Skills';
-const TEMP_DIR = path.join(__dirname, '..', '.tmp');
+const TEMP_DIR = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'gosling-skills-'));
 const CLONED_REPO_DIR = path.join(TEMP_DIR, 'agent-skills');
 const MANIFEST_OUTPUT = path.join(__dirname, '..', 'static', 'skills-manifest.json');
 const EXTERNAL_SKILLS_FILE = path.join(__dirname, '..', 'static', 'external-skills.json');
@@ -30,40 +29,16 @@ const SKIP_DIRS = ['.github', 'node_modules', '.git'];
  * Clone or update the Agent-Skills repository
  */
 function cloneAgentSkillsRepo() {
-  console.log('[generate-skills-manifest] Fetching Agent-Skills repository...');
-  
-  // Create temp directory if it doesn't exist
-  if (!fs.existsSync(TEMP_DIR)) {
-    fs.mkdirSync(TEMP_DIR, { recursive: true });
-  }
-  
-  // Remove existing clone if present
-  if (fs.existsSync(CLONED_REPO_DIR)) {
-    console.log('[generate-skills-manifest] Removing existing clone...');
-    fs.rmSync(CLONED_REPO_DIR, { recursive: true, force: true });
-  }
-  
-  // Shallow clone the repository
-  try {
-    execSync(`git clone --depth 1 ${AGENT_SKILLS_REPO} ${CLONED_REPO_DIR}`, {
-      stdio: 'pipe',
-      timeout: 60000 // 60 second timeout
-    });
-    console.log('[generate-skills-manifest] Successfully cloned Agent-Skills repository');
-  } catch (error) {
-    console.error('[generate-skills-manifest] ERROR: Failed to clone Agent-Skills repository');
-    console.error('[generate-skills-manifest] Error:', error.message);
-    throw new Error('Failed to fetch Agent-Skills repository. Build cannot continue.');
-  }
+  preparePinnedSource(CLONED_REPO_DIR);
 }
 
 /**
  * Clean up temporary files
  */
 function cleanup() {
-  if (fs.existsSync(CLONED_REPO_DIR)) {
+  if (fs.existsSync(TEMP_DIR)) {
     console.log('[generate-skills-manifest] Cleaning up temporary files...');
-    fs.rmSync(CLONED_REPO_DIR, { recursive: true, force: true });
+    fs.rmSync(TEMP_DIR, { recursive: true, force: true });
   }
 }
 
@@ -109,7 +84,7 @@ function generateViewSourceUrl(skillId, isExternal, sourceUrl) {
     return sourceUrl;
   }
   // Official skill from Agent-Skills repo
-  return `${AGENT_SKILLS_REPO_URL}/tree/main/${skillId}`;
+  return `${AGENT_SKILLS_REPO_URL}/tree/${SOURCE_COMMIT}/${skillId}`;
 }
 
 /**
@@ -211,6 +186,7 @@ function processOfficialSkills() {
     }
     
     const skillId = entry.name;
+    if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(skillId)) throw new Error('Invalid skill directory id');
     const skillDir = path.join(CLONED_REPO_DIR, skillId);
     
     // Skip if not a skill directory (no SKILL.md)
@@ -225,6 +201,11 @@ function processOfficialSkills() {
       const parsed = matter(rawContent);
       const frontmatter = parsed.data || {};
       const content = parsed.content || '';
+      if (typeof frontmatter.name !== 'string' || !frontmatter.name.trim()
+          || typeof frontmatter.description !== 'string' || !frontmatter.description.trim()
+          || typeof frontmatter.author !== 'string' || !frontmatter.author.trim()) {
+        throw new Error('Skill frontmatter is missing required string metadata');
+      }
       
       const supportingFiles = getSupportingFiles(skillDir);
       const sourceUrl = frontmatter.source_url || frontmatter.sourceUrl;
@@ -255,7 +236,7 @@ function processOfficialSkills() {
       skills.push(skill);
       console.log(`[generate-skills-manifest] Processed official skill: ${skillId}`);
     } catch (error) {
-      console.error(`[generate-skills-manifest] Error processing ${skillId}:`, error.message);
+      throw new Error(`Invalid skill ${skillId}: ${error.message}`);
     }
   }
   
@@ -345,6 +326,7 @@ function generateManifest() {
       officialCount: officialSkills.length,
       externalCount: externalSkills.length,
       sourceRepo: AGENT_SKILLS_REPO_URL,
+      sourceCommit: SOURCE_COMMIT,
     };
     
     // Write manifest

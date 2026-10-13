@@ -385,6 +385,23 @@ async fn stale_generation_is_rejected_and_failure_state_is_durable() {
         Some("target initialization failed; [REDACTED]")
     );
     assert!(latest.redaction_report.redaction_count > 0);
+    assert!(manager
+        .update_handoff_status(
+            &prepared.snapshot_id,
+            SessionHandoffStatusDto::Activating,
+            None
+        )
+        .await
+        .is_err());
+    assert_eq!(
+        manager
+            .latest_handoff_snapshot(&session_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .status,
+        SessionHandoffStatusDto::Failed
+    );
 }
 
 #[tokio::test]

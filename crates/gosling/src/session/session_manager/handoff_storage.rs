@@ -131,6 +131,21 @@ impl SessionStorage {
         .fetch_one(&mut *tx)
         .await?;
         let mut snapshot: SessionHandoffSnapshotV1Dto = serde_json::from_str(&snapshot_json)?;
+        let previous_status = snapshot.status;
+        use SessionHandoffStatusDto::{
+            Activating, Active, Failed, Prepared, RolledBack, Superseded,
+        };
+        anyhow::ensure!(
+            matches!(
+                (previous_status, status),
+                (Prepared, Activating | Failed | Superseded)
+                    | (Activating, Active | Failed | RolledBack | Superseded)
+                    | (Active, RolledBack | Superseded)
+            ),
+            "Invalid handoff status transition: {} to {}",
+            status_name(previous_status),
+            status_name(status)
+        );
         snapshot.status = status;
         snapshot.failure = None;
         if let Some(failure) = failure {
@@ -140,16 +155,21 @@ impl SessionStorage {
             snapshot.activated_at = Some(Utc::now().to_rfc3339());
         }
         let snapshot_json = serde_json::to_string(&snapshot)?;
-        sqlx::query(
-            "UPDATE session_handoff_snapshots SET status = ?, failure = ?, activated_at = ?, snapshot_json = ? WHERE snapshot_id = ?",
+        let updated = sqlx::query(
+            "UPDATE session_handoff_snapshots SET status = ?, failure = ?, activated_at = ?, snapshot_json = ? WHERE snapshot_id = ? AND status = ?",
         )
         .bind(status_name(status))
         .bind(&snapshot.failure)
         .bind(&snapshot.activated_at)
         .bind(snapshot_json)
         .bind(snapshot_id)
+        .bind(status_name(previous_status))
         .execute(&mut *tx)
         .await?;
+        anyhow::ensure!(
+            updated.rows_affected() == 1,
+            "Handoff status changed before transition"
+        );
         tx.commit().await?;
         Ok(snapshot)
     }

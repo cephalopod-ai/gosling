@@ -10,6 +10,13 @@ Compatibility is handled by a deterministic normalization step:
 - Skills discovery prefers `/skills-manifest.json`, then falls back to `https://goose-docs.ai/skills-manifest.json`.
 - Goose install schemes and commands are rewritten to gosling equivalents.
 - Source links and provenance are preserved with `sourceCatalog`, `sourceCatalogUrl`, and `compatibilityNote`.
+- Build-time skill manifests and ZIPs use the shared commit pin in
+  `scripts/agent-skills-source.js`. The pin matches the five checked-in published
+  skill bodies as of October 12, 2026. Source validation rejects symlinks, oversized
+  trees and invalid frontmatter; generated manifests include `sourceCommit` and
+  source links name that revision. Change the pin through a reviewed repository
+  patch. This stabilizes hosted content; existing install commands and live Goose
+  fallback catalogs retain their external-source trust boundary.
 - CI/review-policy skills that are not part of Gosling's supported workflow (`code-review` and `testing-strategy`) are excluded from generated and live-fallback skill catalogs.
 
 For offline or build-time onboarding, use:

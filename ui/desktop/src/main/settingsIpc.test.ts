@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { execFile } from 'node:child_process';
+import { dialog } from 'electron';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -13,7 +14,9 @@ import {
 import { desktopCommandChannels } from '../ipc/channels';
 import { defaultSettings } from '../utils/settings';
 
-vi.mock('electron', () => ({ dialog: { showOpenDialog: vi.fn() } }));
+vi.mock('electron', () => ({
+  dialog: { showOpenDialog: vi.fn(), showMessageBox: vi.fn(async () => ({ response: 1 })) },
+}));
 
 describe('settings IPC registration', () => {
   it('registers every original settings and research channel once', () => {
@@ -99,6 +102,29 @@ describe('ensureGitignoredIfInRepo', () => {
 
     const gitignore = await fs.readFile(path.join(repo, '.gitignore'), 'utf8');
     expect(gitignore).toBe('/Library/\n');
+  });
+
+  it('preserves existing rules under concurrent additions', async () => {
+    const repo = await makeRepo();
+    await fs.writeFile(path.join(repo, '.gitignore'), 'existing-rule');
+    const first = path.join(repo, 'Library');
+    const second = path.join(repo, 'Other');
+    await fs.mkdir(first);
+    await fs.mkdir(second);
+    await Promise.all([ensureGitignoredIfInRepo(first), ensureGitignoredIfInRepo(second)]);
+    const rules = await fs.readFile(path.join(repo, '.gitignore'), 'utf8');
+    expect(rules.startsWith('existing-rule\n')).toBe(true);
+    expect(rules).toContain('/Library/\n');
+    expect(rules).toContain('/Other/\n');
+  });
+
+  it('leaves ignore rules unchanged when native confirmation is canceled', async () => {
+    const repo = await makeRepo();
+    const library = path.join(repo, 'Library');
+    await fs.mkdir(library);
+    vi.mocked(dialog.showMessageBox).mockResolvedValueOnce({ response: 0, checkboxChecked: false });
+    await ensureGitignoredIfInRepo(library);
+    await expect(fs.access(path.join(repo, '.gitignore'))).rejects.toThrow();
   });
 
   it('leaves no .gitignore behind outside a git repository', async () => {

@@ -208,7 +208,7 @@ impl WorkspaceStore {
                     Ok(document)
                 }
                 Err(_error) if self.is_recoverable_malformed_store(&self.path)? => {
-                    self.recover_malformed_store(working_folder)
+                    self.recover_malformed_store()
                 }
                 Err(error) => Err(error),
             }
@@ -291,30 +291,22 @@ impl WorkspaceStore {
             .is_none_or(|version| version <= u64::from(STORE_SCHEMA_VERSION)))
     }
 
-    fn recover_malformed_store(&self, working_folder: &Path) -> Result<WorkspaceStoreDocument> {
+    fn recover_malformed_store(&self) -> Result<WorkspaceStoreDocument> {
+        let recovered = self.read_document(&self.temp_path).map_err(|_| anyhow!(
+            "Workspace settings are malformed at {}. The original file was preserved and no settings were reset. Restore a valid backup, or move this file aside explicitly to initialize new settings.",
+            self.path.display()
+        ))?;
         let backup = self.directory.join(format!(
             "workspaces.corrupt-{}.json",
             Uuid::now_v7().as_simple()
         ));
         fs::rename(&self.path, &backup)?;
         set_private_file_permissions(&backup)?;
-        tracing::warn!(
-            backup_path = %backup.display(),
-            "Malformed workspace store was preserved and recovered"
-        );
-
-        if self.temp_path.exists() {
-            if let Ok(document) = self.read_document(&self.temp_path) {
-                fs::rename(&self.temp_path, &self.path)?;
-                set_private_file_permissions(&self.path)?;
-                self.sync_directory()?;
-                return Ok(document);
-            }
-        }
-
-        let document = WorkspaceStoreDocument::create_default(working_folder);
-        self.write_document(&document)?;
-        Ok(document)
+        fs::rename(&self.temp_path, &self.path)?;
+        set_private_file_permissions(&self.path)?;
+        self.sync_directory()?;
+        tracing::warn!(backup_path = %backup.display(), "Malformed workspace store was preserved and recovered from its valid temporary snapshot");
+        Ok(recovered)
     }
 
     fn write_document(&self, document: &WorkspaceStoreDocument) -> Result<()> {
@@ -424,26 +416,16 @@ mod tests {
     }
 
     #[test]
-    fn malformed_store_is_backed_up_and_reinitialized() {
+    fn malformed_store_without_valid_recovery_fails_and_preserves_settings() {
         let temp = tempfile::tempdir().unwrap();
         let working = tempfile::tempdir().unwrap();
         let store = WorkspaceStore::new(temp.path());
         store.load_or_initialize(working.path()).unwrap();
         fs::write(store.path(), b"{not-json").unwrap();
-
-        let recovered = store.load_or_initialize(working.path()).unwrap();
-        assert_eq!(recovered.workspaces[0].name, "Default");
-        let backup = fs::read_dir(store.path().parent().unwrap())
-            .unwrap()
-            .map(|entry| entry.unwrap().path())
-            .find(|path| {
-                path.file_name()
-                    .unwrap()
-                    .to_string_lossy()
-                    .starts_with("workspaces.corrupt-")
-            })
-            .unwrap();
-        assert_eq!(fs::read(backup).unwrap(), b"{not-json");
+        let error = store.load_or_initialize(working.path()).unwrap_err();
+        assert!(error.to_string().contains("no settings were reset"));
+        assert_eq!(fs::read(store.path()).unwrap(), b"{not-json");
+        assert!(store.load_or_initialize(working.path()).is_err());
     }
 
     #[test]

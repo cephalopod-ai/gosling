@@ -1,7 +1,7 @@
 //! Peekaboo helper functions for macOS GUI automation via the Peekaboo CLI.
 //!
-//! These are used by `ComputerControllerServer` on macOS to auto-install
-//! and invoke peekaboo. This module does not expose its own MCP server —
+//! `ComputerControllerServer` uses these to locate user-installed Peekaboo.
+//! The explicit installation helper is not called by MCP tool dispatch. This module does not expose its own MCP server —
 //! peekaboo is accessed through the `computer_control` tool on macOS.
 
 const BREW_FORMULA: &str = "steipete/tap/peekaboo";

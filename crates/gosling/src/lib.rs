@@ -26,6 +26,7 @@ pub mod model_config;
 pub mod oauth;
 #[cfg(feature = "otel")]
 pub mod otel;
+mod owned_temp;
 pub mod permission;
 pub mod plugins;
 #[cfg(feature = "telemetry")]

@@ -520,10 +520,8 @@ const SplashScreen = React.memo(function SplashScreen({
 
 function App({
   serverConnection,
-  initialPrompt,
 }: {
   serverConnection: Stream | string;
-  initialPrompt?: string;
 }) {
   const { exit } = useApp();
   const { stdout } = useStdout();
@@ -587,7 +585,6 @@ function App({
   const sessionIdRef = useRef<string | null>(null);
   const sessionCwdRef = useRef<string>(process.cwd());
   const streamBuf = useRef("");
-  const sentInitialPrompt = useRef(false);
   const queueRef = useRef<string[]>([]);
   const isProcessingRef = useRef(false);
   const promptActiveRef = useRef(false);
@@ -795,11 +792,7 @@ function App({
         setLoading(false);
         setStatus("ready");
 
-        if (initialPrompt && !sentInitialPrompt.current) {
-          sentInitialPrompt.current = true;
-          await sendPrompt(initialPrompt);
-          setTimeout(() => exit(), 100);
-        } else if (queueRef.current.length > 0) {
+        if (queueRef.current.length > 0) {
           // The input bar is live while the session is still being created,
           // and only a finished prompt drains the queue otherwise.
           processQueue();
@@ -810,7 +803,7 @@ function App({
         setLoading(false);
       }
     },
-    [initialPrompt, sendPrompt, processQueue, exit],
+    [processQueue],
   );
 
   const handleOnboardingComplete = useCallback(() => {
@@ -880,7 +873,7 @@ function App({
         }
         if (cancelled) return;
 
-        if (!hasProvider && !initialPrompt) {
+        if (!hasProvider) {
           setNeedsOnboarding(true);
           setLoading(false);
           setStatus("setup required");
@@ -901,7 +894,6 @@ function App({
     };
   }, [
     serverConnection,
-    initialPrompt,
     createSession,
     appendAgent,
     handleToolCall,
@@ -1036,7 +1028,7 @@ function App({
   const currentTurn = turns[effectiveTurnIdx];
   const isViewingHistory = viewTurnIdx !== -1 && viewTurnIdx < turns.length - 1;
   const isLatest = !isViewingHistory;
-  const showInputBar = !initialPrompt && !isViewingHistory;
+  const showInputBar = !isViewingHistory;
 
   const headerH = 2;
   const isPasteMode = pastedFull !== null;
@@ -1185,7 +1177,6 @@ function App({
       const viewingHistory =
         viewTurnIdx !== -1 && viewTurnIdx < turns.length - 1;
       const multilineOwnsArrows =
-        !initialPrompt &&
         !viewingHistory &&
         pastedFull === null &&
         input.includes("\n");
@@ -1588,7 +1579,7 @@ async function main() {
 
   // Interactive TUI mode
   const { waitUntilExit } = render(
-    <App serverConnection={serverConnection} initialPrompt={cli.flags.text} />,
+    <App serverConnection={serverConnection} />,
     { exitOnCtrlC: false },
   );
 

@@ -9,6 +9,7 @@ import {
   TEXT_SECONDARY,
 } from "../colors.js";
 import { SCROLL_FAST_MULTIPLIER } from "../constants.js";
+import { truncateTerminalText } from "../utils.js";
 
 const PAD_X = 2;
 const PAD_Y = 1;
@@ -62,12 +63,9 @@ export function DiffViewer({
     return split;
   }, [content]);
 
-  const innerWidth = Math.max(width - PAD_X * 2, 10);
+  const innerWidth = Math.max(width - PAD_X * 2, 1);
   const innerHeight = Math.max(height - PAD_Y * 2, 3);
-  const viewportHeight = Math.max(
-    innerHeight - HEADER_LINES - FOOTER_LINES,
-    1,
-  );
+  const viewportHeight = Math.max(innerHeight - HEADER_LINES - FOOTER_LINES, 1);
   const maxScroll = Math.max(lines.length - viewportHeight, 0);
 
   const [scroll, setScroll] = useState(0);
@@ -118,11 +116,12 @@ export function DiffViewer({
 
   const atEnd = scroll >= maxScroll;
   const atStart = scroll === 0;
-  const position = maxScroll === 0
-    ? "ALL"
-    : atEnd
-    ? "END"
-    : `${Math.round((scroll / maxScroll) * 100)}%`;
+  const position =
+    maxScroll === 0
+      ? "ALL"
+      : atEnd
+        ? "END"
+        : `${Math.round((scroll / maxScroll) * 100)}%`;
 
   return (
     <Box
@@ -132,14 +131,12 @@ export function DiffViewer({
       paddingX={PAD_X}
       paddingY={PAD_Y}
     >
-      <Box width={innerWidth} justifyContent="space-between" flexShrink={0}>
-        <Text color={TEXT_PRIMARY} bold>
-          git diff{truncated ? " (truncated)" : ""}
-        </Text>
-        <Text color={TEXT_DIM}>
-          {atStart ? "" : "↑ "}lines {scroll + 1}–
-          {Math.min(scroll + viewportHeight, lines.length)} / {lines.length}
-          {" "}[{position}]
+      <Box width={innerWidth} height={HEADER_LINES} flexShrink={0}>
+        <Text color={TEXT_PRIMARY} bold wrap="truncate">
+          {truncateTerminalText(
+            `git diff${truncated ? " (truncated)" : ""} · ${atStart ? "" : "↑ "}lines ${scroll + 1}–${Math.min(scroll + viewportHeight, lines.length)} / ${lines.length} [${position}]`,
+            innerWidth,
+          )}
         </Text>
       </Box>
       <Box flexDirection="column" width={innerWidth} height={viewportHeight}>
@@ -190,21 +187,13 @@ export function DiffViewer({
           }
         })}
       </Box>
-      <Box width={innerWidth} flexShrink={0}>
-        <Text color={GOLD}>q</Text>
-        <Text color={TEXT_DIM}> close · </Text>
-        <Text color={GOLD}>↑↓</Text>
-        <Text color={TEXT_DIM}>/</Text>
-        <Text color={GOLD}>j k</Text>
-        <Text color={TEXT_DIM}> scroll · </Text>
-        <Text color={GOLD}>space</Text>
-        <Text color={TEXT_DIM}>/</Text>
-        <Text color={GOLD}>b</Text>
-        <Text color={TEXT_DIM}> page · </Text>
-        <Text color={GOLD}>g</Text>
-        <Text color={TEXT_DIM}>/</Text>
-        <Text color={GOLD}>G</Text>
-        <Text color={TEXT_DIM}> top/bottom</Text>
+      <Box width={innerWidth} height={FOOTER_LINES} flexShrink={0}>
+        <Text color={TEXT_DIM} wrap="truncate">
+          {truncateTerminalText(
+            "q close · ↑↓/j k scroll · space/b page · g/G top/bottom",
+            innerWidth,
+          )}
+        </Text>
       </Box>
     </Box>
   );

@@ -194,6 +194,8 @@ export function ArtifactRouterProvider({ children }: { children: React.ReactNode
         defaultId: 0,
         title: 'Create workspace output folder',
         message: `Create “${output.label}” at ${output.path}?`,
+        detail:
+          'Inside a Git repository, Gosling also adds this folder to the adjacent .gitignore when needed.',
       });
       if (response.response !== 1) return 'canceled';
       await acpCreateWorkspaceOutput(item.workspace.id, output.id);

@@ -1,7 +1,7 @@
 name: Rebuild Skills Marketplace
 
-# This workflow rebuilds the documentation site to pull in new skills
-# from the Agent-Skills repository. It runs:
+# This workflow rebuilds the documentation site from the pinned Agent-Skills
+# snapshot. Updating that pin requires a reviewed repository change. It runs:
 # 1. Every hour on a schedule
 # 2. On manual trigger for testing
 

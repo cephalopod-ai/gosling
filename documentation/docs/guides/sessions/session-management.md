@@ -128,6 +128,14 @@ In your first session, gosling prompts you to [set up an LLM (Large Language Mod
 Use [`GOSLING_DISABLE_SESSION_NAMING`](/docs/guides/environment-variables#session-management) to keep the default name instead of calling a model to generate one (useful in CI/headless workflows). The default name in gosling Desktop is "New Chat" and the default name in gosling CLI is "CLI Session".
 :::
 
+## Archive behavior
+
+Archiving hides a chat from ordinary active-session lists and prevents new prompts and planning
+operations until it is restored. It does not freeze the entire record: metadata, exports, extension
+configuration and deletion remain available. Explicit CLI resume restores an archived chat and
+prints the restoration notice shown below. Deleting an active chat first cancels its local response
+and waits for it to stop; a busy turn in another connection or process prevents deletion.
+
 ## Exit Session
 Note that sessions are automatically saved when you exit.
 <Tabs groupId="interface">

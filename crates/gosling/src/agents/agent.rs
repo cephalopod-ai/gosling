@@ -639,20 +639,21 @@ impl Agent {
         let permission_manager = Arc::clone(&config.permission_manager);
         let use_login_shell_path = config.resolve_use_login_shell_path();
         let code_execution_runtime = config.code_execution_runtime;
+        let extension_manager = Arc::new(ExtensionManager::new(
+            provider.clone(),
+            session_manager,
+            client_name,
+            capabilities,
+            use_login_shell_path,
+            code_execution_runtime,
+        ));
         Self {
             provider: provider.clone(),
             config,
             current_gosling_mode: Mutex::new(initial_mode),
             gosling_mode_changes,
             state_transition: Mutex::new(()),
-            extension_manager: Arc::new(ExtensionManager::new(
-                provider.clone(),
-                session_manager,
-                client_name,
-                capabilities,
-                use_login_shell_path,
-                code_execution_runtime,
-            )),
+            extension_manager: extension_manager.clone(),
             frontend_extensions: Mutex::new(HashMap::new()),
             config_extension_keys: Mutex::new(HashSet::new()),
             extension_load_controls: Mutex::new(HashMap::new()),
@@ -666,6 +667,7 @@ impl Agent {
                 permission_manager,
                 provider.clone(),
                 inspection_session_manager,
+                &extension_manager,
             ),
             hook_manager: crate::hooks::HookManager::load(
                 std::env::current_dir().ok().as_deref(),

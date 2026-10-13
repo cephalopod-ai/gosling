@@ -42,6 +42,45 @@ function serializeRawInput(rawInput: unknown): string | undefined {
   return json;
 }
 
+export function permissionPromptLayout(
+  height: number,
+  optionCount: number,
+  hasInput: boolean,
+  selected: number,
+) {
+  const available = Math.max(height - 4, 0);
+  const minimumInputRows = hasInput && available >= 3 ? 2 : 0;
+  const showFooter = available >= optionCount + minimumInputRows + 2;
+  const optionBudget = Math.max(
+    available - minimumInputRows - (showFooter ? 2 : 0),
+    0,
+  );
+  const showOptionIndicator = optionCount > optionBudget && optionBudget >= 2;
+  const optionRows = Math.min(
+    optionCount,
+    optionBudget - (showOptionIndicator ? 1 : 0),
+  );
+  const optionStart = Math.max(
+    0,
+    Math.min(selected - Math.floor(optionRows / 2), optionCount - optionRows),
+  );
+  const payloadLineBudget =
+    minimumInputRows > 0
+      ? available -
+        optionRows -
+        (showOptionIndicator ? 1 : 0) -
+        (showFooter ? 2 : 0) -
+        1
+      : 0;
+  return {
+    showFooter,
+    showOptionIndicator,
+    optionRows,
+    optionStart,
+    payloadLineBudget,
+  };
+}
+
 export function PermissionPrompt({
   request,
   width,
@@ -65,25 +104,25 @@ export function PermissionPrompt({
   const [selected, setSelected] = useState(initialIndex);
   const [payloadScroll, setPayloadScroll] = useState(0);
 
-  const boxWidth = Math.max(width, 20);
-  const boxHeight = Math.max(height, 10);
+  const boxWidth = Math.max(width, 6);
+  const boxHeight = Math.max(height, 4);
   const contentWidth = Math.max(boxWidth - 4, 1);
   const toolName = request.toolCall.title ?? request.toolCall.toolCallId;
   const rawInput = serializeRawInput(request.toolCall.rawInput);
   const payloadLines = rawInput ? wrapTerminalText(rawInput, contentWidth) : [];
-  const baseLines = 2 + 1 + 1 + options.length + (rawInput ? 1 : 0);
-  const showFooter = boxHeight >= baseLines + (rawInput ? 1 : 0) + 2;
-  const showOptionsMargin =
-    boxHeight >= baseLines + (rawInput ? 1 : 0) + (showFooter ? 2 : 0) + 1;
-  const payloadLineBudget = rawInput
-    ? Math.max(
-        1,
-        boxHeight -
-          baseLines -
-          (showFooter ? 2 : 0) -
-          (showOptionsMargin ? 1 : 0),
-      )
-    : 0;
+  const {
+    showFooter,
+    showOptionIndicator,
+    optionRows,
+    optionStart,
+    payloadLineBudget,
+  } = permissionPromptLayout(
+    boxHeight,
+    options.length,
+    Boolean(rawInput),
+    selected,
+  );
+  const visibleOptions = options.slice(optionStart, optionStart + optionRows);
   const maxPayloadScroll = Math.max(payloadLines.length - payloadLineBudget, 0);
   const visiblePayloadLines = payloadLines.slice(
     Math.min(payloadScroll, maxPayloadScroll),
@@ -104,7 +143,7 @@ export function PermissionPrompt({
       setSelected((i) => (i - 1 + options.length) % options.length);
     } else if (key.downArrow) {
       setSelected((i) => (i + 1) % options.length);
-    } else if (key.return) {
+    } else if (key.return && optionRows > 0) {
       const option = options[selected];
       if (option) {
         onRespond({
@@ -125,13 +164,13 @@ export function PermissionPrompt({
       borderColor={GOLD}
       paddingX={1}
     >
-      <Text bold color={GOLD}>
-        Permission requested
+      <Text bold color={GOLD} wrap="truncate">
+        {truncateTerminalText("Permission requested", contentWidth)}
       </Text>
       <Text wrap="truncate" color={TEXT_PRIMARY}>
         {truncateTerminalText(toolName, contentWidth)}
       </Text>
-      {rawInput ? (
+      {rawInput && payloadLineBudget > 0 ? (
         <Box flexDirection="column">
           <Text color={TEXT_DIM} wrap="truncate">
             {truncateTerminalText(
@@ -153,14 +192,22 @@ export function PermissionPrompt({
           ))}
         </Box>
       ) : null}
-      <Box flexDirection="column" marginTop={showOptionsMargin ? 1 : 0}>
-        {options.map((option, index) => (
+      <Box flexDirection="column">
+        {showOptionIndicator ? (
+          <Text color={TEXT_DIM} wrap="truncate">
+            {truncateTerminalText(
+              `Choices ${optionStart + 1}-${optionStart + optionRows} of ${options.length}`,
+              contentWidth,
+            )}
+          </Text>
+        ) : null}
+        {visibleOptions.map((option, offset) => (
           <Text
             key={option.optionId}
-            color={index === selected ? TEAL : TEXT_DIM}
+            color={optionStart + offset === selected ? TEAL : TEXT_DIM}
             wrap="truncate"
           >
-            {index === selected ? "> " : "  "}
+            {optionStart + offset === selected ? "> " : "  "}
             {truncateTerminalText(
               optionLabel(option.kind, option.optionId, option.name),
               contentWidth - 2,

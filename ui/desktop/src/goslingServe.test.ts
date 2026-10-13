@@ -213,6 +213,36 @@ describe('startGoslingServe', () => {
     }
   );
 
+  it.skipIf(process.platform === 'win32')(
+    'retries observed bind collisions at most three times',
+    async () => {
+      const tempDir = makeTempDir();
+      const marker = path.join(tempDir, 'attempts');
+      const goslingPath = makeExecutable(
+        path.join(tempDir, 'gosling'),
+        `#!/usr/bin/env sh
+printf 'attempt\n' >> '${marker}'
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = '--port' ]; then shift; port="$1"; fi
+  shift
+done
+printf 'gosling serve could not use http://127.0.0.1:%s: Address already in use (os error 48)\n' "$port" >&2
+exit 1
+`
+      );
+      vi.stubEnv('GOSLING_BINARY', goslingPath);
+      await expect(
+        startGoslingServe({
+          serverSecret: 'test-secret',
+          dir: tempDir,
+          logger: { info: vi.fn(), error: vi.fn() },
+          readinessFetch: vi.fn(async () => new Response(null, { status: 503 })),
+        })
+      ).rejects.toThrow('Address already in use');
+      expect(fs.readFileSync(marker, 'utf8').trim().split('\n')).toHaveLength(3);
+    }
+  );
+
   it.skipIf(process.platform === 'win32')('uses the injected readiness fetch', async () => {
     const tempDir = makeTempDir();
     const goslingPath = makeExecutable(

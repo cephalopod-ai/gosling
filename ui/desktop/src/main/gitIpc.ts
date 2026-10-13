@@ -90,7 +90,7 @@ export function isPathGitIgnored(dir: string, targetPath: string): Promise<boole
   return new Promise((resolve) => {
     execFile(
       'git',
-      gitArgs(dir, ['check-ignore', '--quiet', targetPath]),
+      gitArgs(dir, ['check-ignore', '--quiet', '--no-index', '--', targetPath]),
       { timeout: 3000 },
       (error) => {
         resolve(!error);

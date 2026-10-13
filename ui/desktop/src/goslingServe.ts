@@ -404,7 +404,24 @@ const buildGoslingServeEnv = (
   return env;
 };
 
-export const startGoslingServe = async ({
+class ServePortCollision extends Error {}
+
+export const startGoslingServe = async (
+  options: StartGoslingServeOptions
+): Promise<GoslingServeResult> => {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await startGoslingServeAttempt(options);
+    } catch (error) {
+      if (!(error instanceof ServePortCollision) || attempt >= 2) throw error;
+      (options.logger ?? defaultLogger).error(
+        'gosling serve port was taken before binding; retrying with a new port'
+      );
+    }
+  }
+};
+
+const startGoslingServeAttempt = async ({
   dir,
   serverSecret,
   shell,
@@ -749,6 +766,18 @@ export const startGoslingServe = async ({
     goslingProcess.stderr?.resume();
   };
 
+  const startupError = (message: string): Error => {
+    const bindFailure =
+      exited &&
+      exitCode !== 0 &&
+      errorLog.some(
+        (line) =>
+          line.includes(`gosling serve could not use ${httpBaseUrl}`) &&
+          /address already in use|EADDRINUSE|os error (48|98|10048)/i.test(line)
+      );
+    return bindFailure ? new ServePortCollision(message) : new Error(message);
+  };
+
   let pinnedTlsFingerprint: string | undefined;
   if (tls && usePinnedTlsReadiness) {
     startupTrace?.record('fingerprint_wait_start', { timeoutMs: TLS_FINGERPRINT_TIMEOUT_MS });
@@ -766,7 +795,7 @@ export const startGoslingServe = async ({
         exitCode,
         exitSignal,
       });
-      throw new Error(
+      throw startupError(
         withStartupDiagnosticsPath(
           `gosling serve did not emit TLS certificate fingerprint on ${statusUrl}.${exitDetails}${stderrDetails}`,
           startupDiagnosticsPath
@@ -790,7 +819,7 @@ export const startGoslingServe = async ({
       ? ` Process exited with code ${exitCode} and signal ${exitSignal}.`
       : '';
     const stderrDetails = errorLog.length ? ` Stderr: ${errorLog.join('\n')}` : '';
-    throw new Error(
+    throw startupError(
       withStartupDiagnosticsPath(
         `gosling serve did not become ready on ${statusUrl}.${exitDetails}${stderrDetails}`,
         startupDiagnosticsPath
@@ -814,7 +843,7 @@ export const startGoslingServe = async ({
         exitCode,
         exitSignal,
       });
-      throw new Error(
+      throw startupError(
         withStartupDiagnosticsPath(
           `gosling serve did not emit TLS certificate fingerprint on ${statusUrl}.${exitDetails}${stderrDetails}`,
           startupDiagnosticsPath

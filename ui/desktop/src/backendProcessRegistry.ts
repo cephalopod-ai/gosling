@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { Logger } from './goslingServe';
+import { withProcessFileLock } from './utils/processFileLock';
 
 export interface BackendProcessRecord {
   pid: number;
@@ -77,12 +78,23 @@ const writeRecords = async (
   );
   let renamed = false;
   try {
-    await fs.writeFile(temporaryPath, `${JSON.stringify(file, null, 2)}\n`, {
-      encoding: 'utf8',
-      mode: 0o600,
-    });
+    const descriptor = await fs.open(temporaryPath, 'wx', 0o600);
+    try {
+      await descriptor.writeFile(`${JSON.stringify(file, null, 2)}\n`, 'utf8');
+      await descriptor.sync();
+    } finally {
+      await descriptor.close();
+    }
     await fs.rename(temporaryPath, registryPath);
     renamed = true;
+    if (process.platform !== 'win32') {
+      const directory = await fs.open(path.dirname(registryPath), 'r');
+      try {
+        await directory.sync();
+      } finally {
+        await directory.close();
+      }
+    }
   } finally {
     if (!renamed) {
       await fs.rm(temporaryPath, { force: true }).catch(() => undefined);
@@ -98,8 +110,10 @@ const updateRecords = async (
   const nextUpdate = previousUpdate
     .catch(() => undefined)
     .then(async () => {
-      const records = await readRecords(registryPath);
-      await writeRecords(registryPath, update(records));
+      await withProcessFileLock(registryPath, async () => {
+        const records = await readRecords(registryPath);
+        await writeRecords(registryPath, update(records));
+      });
     });
 
   registryUpdateQueues.set(registryPath, nextUpdate);

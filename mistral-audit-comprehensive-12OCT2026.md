@@ -1688,3 +1688,8 @@ Per `cross_lens_escalation.md` v3.1 — secondary lenses so patches add the corr
 ---
 
 *End of report. Generated 2026-10-12 by Mistral Vibe (lead) with 7 subagent audit groups, per the agent-skills audit pack (`000_common/audit-base/` contracts, `010_audit/` lenses and standalones). Read-only audit; playtest excluded per operator. Session log: `docs/logs/session/2026-10-12-mistral-comprehensive-audit.md`.*
+
+
+## Repair disposition addendum — 2026-10-12
+
+The original audit above is retained as historical evidence. Current per-ID repairs, contract-based counterfindings, remaining work and validation limits are tracked in [the Mistral repair record](docs/logs/session/2026-10-12-mistral-findings-repair.md). The operator selected static-only validation and per-call saved-password approval with disclosure of external-tool trust. Source edits and static checks do not establish live CI execution, credential rotation or installed-app verification.

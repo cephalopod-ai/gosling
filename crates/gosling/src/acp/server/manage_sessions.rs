@@ -381,15 +381,52 @@ impl GoslingAcpAgent {
         &self,
         req: DeleteSessionRequest,
     ) -> Result<EmptyResponse, agent_client_protocol::Error> {
-        self.session_manager
-            .delete_session(&req.session_id)
+        let session_id = &req.session_id;
+        let gate = self
+            .sessions
+            .lock()
             .await
-            .internal_err()?;
-        self.sessions.lock().await.remove(&req.session_id);
+            .get(session_id)
+            .map(|session| Arc::clone(&session.operation_gate));
+        let transition = gate
+            .as_ref()
+            .map(|gate| gate.queue_provider_transition(None, false))
+            .transpose()?;
+        if let Some(token) = self
+            .active_prompt_runs
+            .lock()
+            .await
+            .get(session_id)
+            .map(|run| run.cancel_token.clone())
+        {
+            token.cancel();
+        }
+        if let Some(transition) = &transition {
+            tokio::time::timeout(std::time::Duration::from_secs(30), transition.wait_until_idle()).await
+                .map_err(|_| agent_client_protocol::Error::invalid_params().data("The response has not stopped yet; session was not deleted. Retry after it finishes."))?;
+        }
+        let _turn_claim = self
+            .session_manager
+            .claim_local_turn(session_id)
+            .ok_or_else(|| {
+                agent_client_protocol::Error::invalid_params().data(
+                    "This session is busy in another connection; stop it there before deleting.",
+                )
+            })?;
         self.agent_manager
-            .remove_session_if_loaded(&req.session_id)
+            .remove_session_if_loaded(session_id)
             .await
-            .internal_err_ctx("Failed to remove in-memory agent")?;
+            .internal_err_ctx("Failed to stop in-memory agent before deletion")?;
+        // A rejected database delete must not leave a shut-down agent cached as usable.
+        self.closed_session_ids
+            .lock()
+            .await
+            .insert(session_id.clone());
+        self.sessions.lock().await.remove(session_id);
+        self.session_manager
+            .delete_session(session_id)
+            .await
+            .internal_err_ctx("Session was not deleted; reload it before continuing")?;
         Ok(EmptyResponse {})
     }
 

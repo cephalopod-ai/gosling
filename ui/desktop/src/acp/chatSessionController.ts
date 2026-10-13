@@ -188,6 +188,15 @@ async function createSession(
 
 const inFlightSessionLoads = new Map<string, Promise<boolean>>();
 const preparingPromptAttempts = new Set<string>();
+const sessionsNeedingHistoryRefresh = new Set<string>();
+
+function assertHistorySynchronized(sessionId: string): void {
+  if (sessionsNeedingHistoryRefresh.has(sessionId)) {
+    throw new Error(
+      'Reload this session before sending or editing: an interrupted history edit needs reconciliation.'
+    );
+  }
+}
 
 async function loadSession(
   sessionId: string,
@@ -221,6 +230,7 @@ async function loadSessionSnapshot(
   const connectionGeneration = getAcpConnectionGeneration();
   if (
     !force &&
+    !sessionsNeedingHistoryRefresh.has(sessionId) &&
     cached?.session &&
     connectionGeneration !== null &&
     cached.connectionGeneration === connectionGeneration
@@ -281,6 +291,7 @@ async function loadSessionSnapshot(
         totalCount: meta.historyLoad.totalCount ?? null,
       });
     }
+    sessionsNeedingHistoryRefresh.delete(sessionId);
     return true;
   } catch (error) {
     console.error('Failed to load ACP session:', error);
@@ -335,6 +346,7 @@ async function submitMessage(
   options: AcpSubmitMessageOptions
 ): Promise<void> {
   assertNoPendingPromptCancellation(sessionId);
+  assertHistorySynchronized(sessionId);
 
   const snapshot = acpChatSessionStore.getSnapshot(sessionId);
   if (snapshot?.activePromptAttemptId) {
@@ -510,6 +522,7 @@ async function updateMessage(
   options: AcpSubmitMessageOptions
 ): Promise<void> {
   assertNoPendingPromptCancellation(sessionId);
+  assertHistorySynchronized(sessionId);
 
   const resolvedEditType = editType ?? 'fork';
   const currentSnapshot = options.getCurrentSnapshot();
@@ -572,8 +585,10 @@ async function updateMessage(
 
   acpChatSessionActions.setChatState(sessionId, ChatState.Thinking);
 
+  let truncationAcknowledged = false;
   try {
     await acpTruncateSessionConversation(sessionId, message.created);
+    truncationAcknowledged = true;
 
     const truncatedMessages = currentMessages.filter((m) => m.created < message.created);
     const updatedUserMessage = createUserMessage(newContent);
@@ -590,6 +605,13 @@ async function updateMessage(
     await submitMessage(sessionId, updatedUserMessage, options);
   } catch (error) {
     acpChatSessionActions.setChatState(sessionId, ChatState.Idle);
+    if (!truncationAcknowledged) {
+      sessionsNeedingHistoryRefresh.add(sessionId);
+      // A lost response cannot tell us whether the destructive operation committed.
+      // Read backend truth; never retry truncation or submit the edit automatically.
+      await inFlightSessionLoads.get(sessionId);
+      await loadSession(sessionId, { force: true });
+    }
     throw error;
   }
 }

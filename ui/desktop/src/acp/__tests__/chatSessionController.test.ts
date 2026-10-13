@@ -580,6 +580,27 @@ describe('acpChatSessionController.updateMessage', () => {
     vi.mocked(acpChatSessionActions.waitForPromptCancellation).mockResolvedValue(undefined);
   });
 
+  it('reconciles backend history after a lost truncate response without resubmitting', async () => {
+    vi.mocked(acpTruncateSessionConversation).mockRejectedValueOnce(new Error('response lost'));
+    vi.mocked(getAcpConnectionGeneration).mockReturnValue(1);
+    vi.mocked(acpLoadSession).mockResolvedValue(mockLoadResult());
+    vi.mocked(acpListSessionArtifacts).mockResolvedValue([]);
+    vi.mocked(sessionInfoToSession).mockReturnValue(loadedSession());
+    vi.mocked(refreshAcpSessionPlan).mockResolvedValue(undefined);
+    const existing = userMessage();
+    const current = { ...snapshotWithActivePrompt(null), messages: [existing] };
+    await expect(
+      acpChatSessionController.updateMessage(SESSION_ID, existing.id, 'Updated', 'edit', {
+        getCurrentSnapshot: () => current,
+        onFinish: vi.fn(),
+      })
+    ).rejects.toThrow('response lost');
+    expect(acpLoadSession).toHaveBeenCalledWith(SESSION_ID);
+    expect(acpChatSessionActions.finishSessionLoad).toHaveBeenCalled();
+    expect(acpTruncateSessionConversation).toHaveBeenCalledTimes(1);
+    expect(acpPromptSession).not.toHaveBeenCalled();
+  });
+
   it('rejects edits before truncating while cancellation is pending', async () => {
     vi.mocked(acpChatSessionStore.getSnapshot).mockReturnValue({
       ...snapshotWithActivePrompt(null),

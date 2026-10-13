@@ -353,8 +353,12 @@ impl Agent {
             };
 
             let has_extended_hook = match category {
-                ToolCategory::Shell => hook_manager.has_hooks(crate::hooks::HookEvent::AfterShellExecution),
-                ToolCategory::Write => hook_manager.has_hooks(crate::hooks::HookEvent::AfterFileEdit),
+                ToolCategory::Shell => {
+                    hook_manager.has_hooks(crate::hooks::HookEvent::AfterShellExecution)
+                }
+                ToolCategory::Write => {
+                    hook_manager.has_hooks(crate::hooks::HookEvent::AfterFileEdit)
+                }
                 _ => false,
             };
             if !hook_manager.has_hooks(event) && !has_extended_hook {

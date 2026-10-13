@@ -2900,6 +2900,9 @@
   "securityToggle.classificationEndpointDescription": {
     "defaultMessage": "Enter the full URL for your classification service"
   },
+  "securityToggle.classifierContentScope": {
+    "defaultMessage": "Enabling ML scanning sends complete tool arguments and recent user messages to the configured endpoint. These may contain secrets or personal data. Use an endpoint you trust."
+  },
   "securityToggle.commandClassifierActive": {
     "defaultMessage": "Command classifier active (auto-configured from environment)"
   },

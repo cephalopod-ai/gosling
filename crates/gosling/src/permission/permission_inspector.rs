@@ -10,13 +10,14 @@ use anyhow::Result;
 use async_trait::async_trait;
 use rmcp::model::Tool;
 use std::collections::HashSet;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 /// Combines stored tool policy, execution mode and SmartApprove classification.
 pub struct PermissionInspector {
     pub permission_manager: Arc<PermissionManager>,
     provider: SharedProvider,
     session_manager: Arc<crate::session::SessionManager>,
+    extension_manager: Weak<crate::agents::extension_manager::ExtensionManager>,
 }
 
 impl PermissionInspector {
@@ -29,7 +30,16 @@ impl PermissionInspector {
             permission_manager,
             provider,
             session_manager,
+            extension_manager: Weak::new(),
         }
+    }
+
+    pub(crate) fn with_extension_manager(
+        mut self,
+        manager: &Arc<crate::agents::extension_manager::ExtensionManager>,
+    ) -> Self {
+        self.extension_manager = Arc::downgrade(manager);
+        self
     }
 
     /// Delegates to `PermissionManager::apply_tool_annotations`. Server-authored
@@ -213,13 +223,27 @@ impl ToolInspector for PermissionInspector {
                 };
 
             for candidate in &read_only_candidates {
-                // Model output alone cannot grant a tool with recognized side effects.
-                // The name-based gate still applies to a positive judgment. (SEC-GOS-013, LLM-GSL-006)
+                let verified_non_mutating =
+                    match (self.extension_manager.upgrade(), &candidate.tool_call) {
+                        (Some(manager), Ok(call)) => manager
+                            .resolve_tool(session_id, &call.name)
+                            .await
+                            .ok()
+                            .is_some_and(|resolved| {
+                                crate::agents::interaction_policy::is_verified_non_mutating(
+                                    &resolved.host_identity,
+                                )
+                            }),
+                        _ => false,
+                    };
+                // A model judgment can tighten policy, but cannot establish the
+                // effects of an arbitrary external tool or a familiar-looking name.
                 let can_auto_approve = candidate
                     .tool_call
                     .as_ref()
                     .map(|tool_call| {
                         judge_read_only_tool_names.contains(&tool_call.name.to_string())
+                            && verified_non_mutating
                             && !tool_class::has_recognized_side_effects(&tool_call.name)
                     })
                     .unwrap_or(false);

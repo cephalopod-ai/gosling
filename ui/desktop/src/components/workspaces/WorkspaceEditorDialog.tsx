@@ -1098,6 +1098,8 @@ export function WorkspaceEditorDialog({
                             buttons: ['Cancel', 'Create folder'],
                             defaultId: 0,
                             message: `Create ${output.path}?`,
+                            detail:
+                              'Inside a Git repository, Gosling also adds this folder to the adjacent .gitignore when needed.',
                           });
                           if (response.response === 1) {
                             try {

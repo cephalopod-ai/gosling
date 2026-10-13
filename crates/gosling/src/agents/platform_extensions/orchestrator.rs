@@ -2,13 +2,13 @@ use crate::agents::extension::PlatformExtensionContext;
 use crate::agents::mcp_client::{Error, McpClientTrait};
 use crate::agents::tool_execution::ToolCallContext;
 use crate::agents::{AgentEvent, SessionConfig};
-use crate::config::{Config, ExtensionConfig, GoslingMode};
+use crate::config::{Config, ExtensionConfig};
 use crate::context_mgmt::format_message_for_compacting;
 use crate::conversation::message::{ActionRequiredData, Message};
 use crate::execution::manager::AgentManager;
 use crate::providers;
 use crate::providers::base::Provider;
-use crate::session::extension_data::EnabledExtensionsState;
+use crate::session::extension_data::{EnabledExtensionsState, ExtensionData, ExtensionState};
 use crate::session::session_manager::SessionType;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -20,7 +20,6 @@ use rmcp::model::{
 };
 use schemars::{schema_for, JsonSchema};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
@@ -392,35 +391,57 @@ impl OrchestratorClient {
             .unwrap_or("Orchestrated Agent")
             .to_string();
 
-        let raw_path = PathBuf::from(&working_dir);
-        let path = if raw_path.is_absolute() {
-            raw_path
-        } else {
-            let base = self
-                .context
-                .session
-                .as_ref()
-                .map(|s| s.working_dir.clone())
-                .unwrap_or_else(|| PathBuf::from("."));
-            base.join(&raw_path)
-        };
-
-        let path = path
-            .canonicalize()
-            .map_err(|e| format!("Invalid working directory '{}': {}", working_dir, e))?;
-
-        if !path.is_dir() {
-            return Err(format!("'{}' is not a directory", working_dir));
+        let parent = self
+            .context
+            .session_manager
+            .get_session(parent_session_id, false)
+            .await
+            .map_err(|e| e.to_string())?;
+        if parent.session_type == SessionType::SubAgent {
+            return Err("Subagents cannot start further agents".to_string());
         }
-
-        // Orchestrator-managed agents have no ACP client or UI attached to answer a
-        // permission prompt, so they must run in the same Auto+SubAgent combination
-        // delegate() subagents use: Agent::redirect_unapprovable_subagent_requests
-        // only auto-resolves unanswerable approval requests for that exact
-        // combination, and SmartApprove+User (the prior default) left any
-        // sensitive-tool-call request stuck in needs_approval forever, hanging
-        // send_message with no way for the orchestrator or its caller to recover.
-        let mode = GoslingMode::Auto;
+        super::summon::ensure_parent_allows_delegation(parent.gosling_mode)?;
+        let path = super::summon::resolve_working_dir(&parent.working_dir, &working_dir)
+            .map_err(|e| e.to_string())?;
+        let authentication = crate::authentication::session_authentication(&parent.extension_data)
+            .map_err(|e| e.to_string())?;
+        if authentication.provider_disconnected {
+            return Err("Parent provider authentication is disconnected".to_string());
+        }
+        let parent_provider = self.get_provider().await?;
+        let mode = super::summon::delegate_mode(parent_provider.executes_tools_outside_gosling());
+        let model_config = self
+            .context
+            .model_config_for_session(parent_session_id)
+            .await?;
+        let extensions = EnabledExtensionsState::extensions_or_default(
+            Some(&parent.extension_data),
+            Config::global(),
+        );
+        for extension in &extensions {
+            if let Some(binding) = authentication.extensions.get(&extension.key()) {
+                if binding.credential_namespace.is_some() && !binding.disconnected {
+                    let destination =
+                        crate::authentication::extension_destination(extension, &path)
+                            .map_err(|e| e.to_string())?;
+                    if binding.destination.as_deref() != Some(destination.as_str()) {
+                        return Err(format!("Scoped authentication for {} does not authorize the child directory; use the parent's directory or configure a separate agent explicitly", extension.key()));
+                    }
+                }
+            }
+        }
+        let mut extension_data = ExtensionData::new();
+        extension_data.extension_states.insert(
+            crate::authentication::SESSION_AUTHENTICATION_KEY.to_string(),
+            serde_json::to_value(authentication).map_err(|e| e.to_string())?,
+        );
+        EnabledExtensionsState::new(extensions)
+            .to_extension_data(&mut extension_data)
+            .map_err(|e| e.to_string())?;
+        extension_data.extension_states.insert(
+            "output_agent.v1".to_string(),
+            serde_json::json!({"parentSessionId": parent_session_id, "name": name}),
+        );
 
         let session = self
             .context
@@ -428,6 +449,36 @@ impl OrchestratorClient {
             .create_session(path, name.clone(), SessionType::SubAgent, mode)
             .await
             .map_err(|e| format!("Failed to create session: {}", e))?;
+        let mut snapshot = self
+            .context
+            .session_manager
+            .update(&session.id)
+            .additional_working_dirs(parent.additional_working_dirs.clone())
+            .restrict_tools_to_working_dirs(parent.restrict_tools_to_working_dirs)
+            .workspace_context(parent.workspace_context.clone())
+            .extension_data(extension_data)
+            .provider_name(parent_provider.get_name())
+            .model_config(model_config.clone());
+        if let (Some(id), Some(name), Some(context)) = (
+            &parent.workspace_id,
+            &parent.workspace_name,
+            &parent.workspace_context,
+        ) {
+            snapshot = snapshot.workspace_snapshot(
+                id.clone(),
+                name.clone(),
+                parent.credential_profile_id.clone(),
+                parent.credential_profile_name.clone(),
+                parent.credential_binding_id.clone(),
+                context.clone(),
+            );
+        } else if let (Some(id), Some(name)) = (
+            &parent.credential_profile_id,
+            &parent.credential_profile_name,
+        ) {
+            snapshot = snapshot.credential_profile_snapshot(id.clone(), name.clone());
+        }
+        snapshot.apply().await.map_err(|e| e.to_string())?;
         self.context
             .session_manager
             .inherit_skill_admissions(parent_session_id, &session.id)
@@ -442,16 +493,10 @@ impl OrchestratorClient {
             .await
             .map_err(|e| format!("Failed to create agent: {}", e))?;
 
-        let parent_provider = self.get_provider().await?;
-        let extensions = self.parent_extensions();
-        let model_config = self.parent_model_config(parent_provider.get_name()).await?;
-        let provider = providers::create(parent_provider.get_name(), extensions)
-            .await
-            .map_err(|e| format!("Failed to create provider for new agent: {}", e))?;
         agent
-            .update_provider(provider, model_config, &session.id)
+            .provider()
             .await
-            .map_err(|e| format!("Failed to set provider on new agent: {}", e))?;
+            .map_err(|e| format!("Failed to restore provider for new agent: {e}"))?;
 
         Ok(CallToolResult::success(vec![Content::text(format!(
             "Started agent session '{}' with ID: {}\n\nUse send_message with this session_id to interact with it.",
@@ -731,6 +776,78 @@ mod tests {
     use futures::stream;
     use std::time::Duration;
     use tokio::time::timeout;
+
+    #[tokio::test]
+    async fn start_agent_rejects_unapproved_parents_and_outside_directories() {
+        use crate::config::GoslingMode;
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let data = tempfile::tempdir().unwrap();
+        let manager = Arc::new(crate::session::SessionManager::new(
+            data.path().to_path_buf(),
+        ));
+        let client = OrchestratorClient::new(PlatformExtensionContext {
+            extension_manager: None,
+            session_manager: Arc::clone(&manager),
+            session: None,
+            use_login_shell_path: false,
+            code_execution_runtime: crate::config::CodeExecutionRuntime::Enabled,
+        })
+        .unwrap();
+        let user = manager
+            .create_session(
+                root.path().to_path_buf(),
+                "Parent".into(),
+                SessionType::User,
+                GoslingMode::SmartApprove,
+            )
+            .await
+            .unwrap();
+        let arguments = || {
+            Some(
+                serde_json::json!({"working_dir": "."})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            )
+        };
+        let error = client
+            .handle_start_agent(&user.id, arguments())
+            .await
+            .unwrap_err();
+        assert!(error.contains("Autonomous"));
+        let child = manager
+            .create_session(
+                root.path().to_path_buf(),
+                "Child".into(),
+                SessionType::SubAgent,
+                GoslingMode::Auto,
+            )
+            .await
+            .unwrap();
+        assert!(client
+            .handle_start_agent(&child.id, arguments())
+            .await
+            .unwrap_err()
+            .contains("Subagents cannot"));
+        manager
+            .update(&user.id)
+            .gosling_mode(GoslingMode::Auto)
+            .apply()
+            .await
+            .unwrap();
+        let arguments = Some(
+            serde_json::json!({"working_dir": outside.path()})
+                .as_object()
+                .unwrap()
+                .clone(),
+        );
+        assert!(client
+            .handle_start_agent(&user.id, arguments)
+            .await
+            .unwrap_err()
+            .contains("outside the parent"));
+    }
 
     fn pending_forever_after<'a>(
         first: anyhow::Result<AgentEvent>,

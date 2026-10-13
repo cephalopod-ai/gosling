@@ -31,7 +31,7 @@ host-enforced planning boundary can still deny a request or require review.
 |------|-------------|----------|
 | **Completely Autonomous** | The ordinary permission layer does not prompt for unknown or `Ask Before` tools. Saved `Never Allow` rules and stricter security, egress, hook, workspace, and planning decisions still apply. | Users who accept tool execution without routine confirmation |
 | **Manual Approval** | gosling asks for confirmation before each ordinary tool call. A confirmation cannot override a denial from a stricter policy layer. | Users who want to review every ordinary tool call |
-| **Smart Approval** | gosling may approve a tool only when its read-only classifier and host-side side-effect checks agree; uncertain, sensitive, or explicitly configured tools require approval or are denied. | Users who want low-risk reads automated while retaining review gates |
+| **Smart Approval** | Without an explicit user grant, auto-approval requires both a read-only classification and a verified non-mutating in-process tool identity. Unknown and external tools require approval; familiar names and MCP read-only annotations do not establish that identity. | Users who want verified host reads automated while retaining review gates |
 | **Chat Only** | gosling does not publish gosling-hosted tools to the model. | Users who want a conversational session without gosling-hosted automation |
 
 :::warning

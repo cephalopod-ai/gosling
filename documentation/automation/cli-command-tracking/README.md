@@ -62,6 +62,17 @@ To test unreleased changes, explicitly pass `HEAD`:
 ./scripts/run-pipeline.sh v1.19.0 HEAD
 ```
 
+## CI execution boundary
+
+`docs-update-cli-ref.yml` uses deterministic extraction and diffing, then invokes
+`scripts/synthesize-ci-guide.py` for a tool-free request in an isolated working directory and state
+root. The synthesis job has a read-only GitHub token and non-persisted checkout credentials. Only
+the synthesis step receives the provider key. The fixed guide is checked for its frontmatter, real
+Markdown sections outside code fences, and size before becoming a candidate artifact. A separate
+job without the model key proposes a pull request containing only that guide. The generated diff
+requires human review. The local `run-pipeline.sh` examples above retain their existing agent
+workflow; they do not provide the CI isolation boundary.
+
 ## Architecture
 
 ### Modular Pipeline Design

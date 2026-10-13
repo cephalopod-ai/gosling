@@ -88,6 +88,17 @@ Implemented in `e79427faf` (persistence and breadth pruning) and `88470e9c0` (se
 grants). Session evidence is retained locally under `docs/logs/session/`, which `.gitignore`
 excludes from the repository.
 
+### Security repair: renderer requests (2026-10-12)
+
+The Mistral finding SEC-GSL-201 supersedes the renderer-trust sentence above.
+Renderer-supplied session paths now request a native main-process confirmation
+before adding a root that main has not already approved. Credential/system roots
+and their ancestors are refused on this request path. Existing native-picker
+approvals retain their explicit user-selected scope, including transient broad
+roots; a renderer request cannot create that approval. The prompt discloses read,
+write and delete access. Requested grants remain transient and window-scoped.
+Source and validation limits: `docs/logs/session/2026-10-12-mistral-findings-repair.md`.
+
 ## Amendment: remembered workspace folders (2026-10-02)
 
 The operator explicitly requested that folders added from an active chat automatically carry into
@@ -114,3 +125,14 @@ The saved primary and additional paths are supplied to the model independently o
 optional per-turn context. Paths are escaped data and do not themselves grant permission or bypass
 the host's folder policy. Desktop refreshes workspace state locally and across other windows after
 a successful addition. Source and validation evidence: `docs/logs/session/2026-10-02-working-folder-memory.md`.
+
+### Historical v24 migration clarification — 2026-10-12
+
+Schema migration v24 clears `restrict_tools_to_working_dirs` on **all** existing rows with a
+non-null `workspace_id`. It cannot distinguish flags force-seeded by earlier workspace builds
+from an operator's deliberate workspace flag. This was the historical move to the opt-in policy,
+not a current permission downgrade during every load. Non-workspace/imported-session flags are
+retained; workspace folder policy remains enforced independently. An operator upgrading from
+before v24 who needs the additional provider restriction must re-enable it after migration.
+STT-GSL-003 is recorded as a historical policy tradeoff; this repair does not rewrite migration
+history or claim to recover intent that was never stored.

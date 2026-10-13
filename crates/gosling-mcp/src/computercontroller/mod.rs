@@ -456,7 +456,7 @@ impl ComputerControllerServer {
               - Create and run Shell, Ruby, or AppleScript scripts
               - Scripts can save their output to files
 
-            computer_control — Peekaboo CLI for macOS UI automation (auto-installed via Homebrew).
+            computer_control — Peekaboo CLI for macOS UI automation (must be installed by the user).
               Peekaboo captures/inspects screens, targets UI elements, drives input, and manages
               apps/windows/menus. Pass a peekaboo subcommand string as the `command` parameter.
               Set `capture_screenshot: true` to capture the screen after actions (click, type, etc.).
@@ -1039,7 +1039,7 @@ impl ComputerControllerServer {
     }
 
     /// Control the computer using Peekaboo CLI for macOS GUI automation.
-    /// Auto-installs via Homebrew on first use.
+    /// Requires an existing user-installed Peekaboo executable.
     #[cfg(target_os = "macos")]
     #[tool(
         name = "computer_control",
@@ -1155,24 +1155,11 @@ impl ComputerControllerServer {
             self.peekaboo_installed.store(true, Ordering::Relaxed);
             return Ok(());
         }
-        tracing::info!("Peekaboo not found, attempting auto-install via brew");
-        match crate::peekaboo::auto_install_peekaboo() {
-            Ok(()) => {
-                self.peekaboo_installed.store(true, Ordering::Relaxed);
-                tracing::info!("Peekaboo installed successfully");
-                Ok(())
-            }
-            Err(msg) => Err(ErrorData::new(
-                ErrorCode::INTERNAL_ERROR,
-                format!(
-                    "Peekaboo is not installed and auto-install failed: {}\n\
-                     Install manually with: brew install steipete/tap/peekaboo\n\
-                     Peekaboo requires macOS 15+ (Sequoia) with Screen Recording and Accessibility permissions.",
-                    msg
-                ),
-                None,
-            )),
-        }
+        Err(ErrorData::new(
+            ErrorCode::RESOURCE_NOT_FOUND,
+            "Peekaboo is not installed. Ask the user to review and install it manually; computer_control never installs software. The Homebrew formula is steipete/tap/peekaboo. Peekaboo requires macOS 15+ with Screen Recording and Accessibility permissions.",
+            None,
+        ))
     }
 
     #[cfg(target_os = "macos")]

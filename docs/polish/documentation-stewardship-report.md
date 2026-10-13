@@ -1,5 +1,15 @@
 # Documentation stewardship report
 
+## Advisory metadata notice — 2026-10-12
+
+The current source declares 1.5.0. The July `.giles/*.yaml` reports and historical
+`governance/` records are timestamped advisory evidence; their counts, crash flags
+and historical machine paths are not a fresh assessment of this checkout.
+No new Giles scan or fleet-compliance promotion was performed in the Mistral
+repair. Preserve those records as provenance and use the dated repair log for
+current finding dispositions. The installed-build and full-pass sections below
+retain their original dates and validation scope.
+
 ## Focused refresh — 2026-09-29
 
 The current 1.4.0 source and verified local macOS arm64 build are reflected in the root/Desktop

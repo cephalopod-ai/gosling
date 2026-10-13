@@ -1,5 +1,10 @@
 # Gosling integration plan for future Tagteam
 
+> Historical plan — Tagteam support was removed on August 27, 2026 in
+> `602ae43c2` and `2e4f22fb5`. Session migration v30 removes its persisted tables.
+> The implementation/in-progress status below describes July 2026 and is not
+> the current product state. Retained as design provenance.
+
 **Status:** Phase 1 implemented and locally validated; Phase 2 is in progress
 behind the disabled feature; Phases 3-4 remain gated and deferred.
 **Plan date:** 2026-07-12.

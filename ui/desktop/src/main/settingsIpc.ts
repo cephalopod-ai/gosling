@@ -7,6 +7,7 @@ import { dialog } from 'electron';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { getGitRepoRoot, isPathGitIgnored } from './gitIpc';
+import { withProcessFileLock } from '../utils/processFileLock';
 import type { RendererDirectoryGrantRegistry } from '../utils/rendererDirectoryGrants';
 import {
   defaultResearchLibraryPath,
@@ -27,18 +28,39 @@ export async function ensureGitignoredIfInRepo(directoryPath: string): Promise<v
   if (await isPathGitIgnored(repoRoot, directoryPath)) return;
 
   const parent = path.dirname(directoryPath);
-  const entry = `/${path.basename(directoryPath)}/`;
+  const name = path.basename(directoryPath);
+  if (/[\r\n]/.test(name)) return;
+  const entry = `/${name.replace(/[\\*?\[\] ]/g, '\\$&')}/`;
   const gitignorePath = path.join(parent, '.gitignore');
-  let contents = '';
+  const approval = await dialog.showMessageBox({
+    type: 'question',
+    title: 'Ignore Research Library files in Git?',
+    message: `Add ${entry} to ${gitignorePath}?`,
+    detail:
+      'This keeps Research Library files out of Git. Cancel leaves your ignore rules unchanged.',
+    buttons: ['Cancel', 'Add ignore rule'],
+    defaultId: 0,
+    cancelId: 0,
+  });
+  if (approval.response !== 1) return;
   try {
-    contents = await fs.readFile(gitignorePath, 'utf8');
-  } catch {
-    contents = '';
-  }
-  if (contents.split('\n').some((line) => line.trim() === entry)) return;
-  if (contents && !contents.endsWith('\n')) contents += '\n';
-  try {
-    await fs.writeFile(gitignorePath, `${contents}${entry}\n`, 'utf8');
+    await withProcessFileLock(gitignorePath, async () => {
+      let contents = '';
+      try {
+        contents = await fs.readFile(gitignorePath, 'utf8');
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
+      if (contents.split('\n').some((line) => line.trim() === entry)) return;
+      const separator = contents && !contents.endsWith('\n') ? '\n' : '';
+      const file = await fs.open(gitignorePath, 'a');
+      try {
+        await file.writeFile(`${separator}${entry}\n`, 'utf8');
+        await file.sync();
+      } finally {
+        await file.close();
+      }
+    });
   } catch (error) {
     console.warn('Failed to add research library folder to .gitignore:', error);
   }

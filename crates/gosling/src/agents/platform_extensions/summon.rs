@@ -34,6 +34,9 @@ use tracing::{info, warn};
 
 mod async_delegation;
 mod delegate_config;
+pub(super) use delegate_config::{
+    delegate_mode, ensure_parent_allows_delegation, resolve_working_dir,
+};
 mod delegation;
 mod loading;
 mod mcp;
@@ -41,9 +44,7 @@ mod source_discovery;
 mod task_tracking;
 
 #[cfg(test)]
-use delegate_config::{
-    delegate_mode, delegate_mode_notice, resolve_working_dir, sync_delegate_timeout_from,
-};
+use delegate_config::{delegate_mode_notice, sync_delegate_timeout_from};
 pub use source_discovery::discover_filesystem_sources;
 use source_discovery::{
     build_instructions_with_context, build_subagent_instructions, delegate_authority_summary,

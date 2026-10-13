@@ -19,6 +19,14 @@ Pattern-based prompt injection detection is enabled by default. You can tune or 
 
 In addition, you can optionally enable [ML-based scanning](#enhanced-detection-with-machine-learning) using a specified model.
 
+:::warning Before enabling ML scanning
+ML scanning sends complete tool-argument text and recent user messages to the configured
+classification endpoint. This content is not redacted and may include credentials,
+personal data or private project material. Use an endpoint whose access and retention
+policy you trust. Pattern-only scanning stays local. Environment overrides that enable
+the classifier have the same content-egress scope as the Desktop toggles.
+:::
+
 :::important
 These checks provide a safeguard, not a guarantee. They detect known patterns but cannot catch all possible threats, especially novel or sophisticated attacks.
 :::

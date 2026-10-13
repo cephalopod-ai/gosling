@@ -17,6 +17,15 @@ This tutorial covers how to integrate gosling with Langfuse to monitor your gosl
 
 ## Configure gosling to Connect to Langfuse
 
+:::warning Conversation content leaves the host
+Enabling Langfuse exports full user messages, assistant responses and observation fields
+to the configured backend. These fields are not automatically redacted and may contain
+secrets or personal data. Review the destination's access and retention policies before
+setting these variables. Optional OTLP tracing/log export can also include complete
+message bodies and span fields; enabling those exporters is a content-sharing decision,
+not just a performance-metrics setting.
+:::
+
 Set the environment variables so that gosling (written in Rust) can connect to the Langfuse server.
 
 ```bash

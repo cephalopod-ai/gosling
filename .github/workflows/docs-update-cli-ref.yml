@@ -23,7 +23,7 @@ on:
         required: false
         type: boolean
         default: true
-      
+
   # Automatic triggering on releases
   # Uses edited to catch when release-action updates the release with artifacts
   release:
@@ -36,19 +36,21 @@ jobs:
     name: Update CLI Documentation
     runs-on: ubuntu-latest
     permissions:
-      contents: write       # Create branches and commit files
-      pull-requests: write  # Create PRs
-    
-    env:
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-    
+      contents: read
+    outputs:
+      old_version: ${{ steps.versions.outputs.old_version }}
+      new_version: ${{ steps.versions.outputs.new_version }}
+      has_changes: ${{ steps.extract.outputs.has_changes }}
+      publish: ${{ github.event_name == 'release' || github.event.inputs.dry_run != 'true' }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0  # Fetch all history for version comparison
           fetch-tags: true  # Fetch all tags so we can checkout version tags
-      
+          persist-credentials: false
+
       - name: Fetch upstream tags (for forks)
         if: github.repository != 'cephalopod-ai/gosling'
         run: |
@@ -57,27 +59,27 @@ jobs:
           git fetch upstream --tags --force
           echo "✅ Fetched tags from upstream (fork mode)"
           echo "Total tags available: $(git tag | wc -l)"
-      
+
       - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y jq ripgrep
-      
+
       - name: Set up Rust
         uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
         with:
           toolchain: '1.92'
-      
+
       - name: Set up Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: '3.11'
-      
+
       - name: Set up Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: '20'
-      
+
       - name: Install gosling CLI
         run: |
           mkdir -p /home/runner/.local/bin
@@ -85,7 +87,7 @@ jobs:
           install -m 0755 target/debug/gosling /home/runner/.local/bin/gosling
           echo "/home/runner/.local/bin" >> $GITHUB_PATH
           /home/runner/.local/bin/gosling --version
-      
+
       - name: Configure gosling for CI
         env:
           GOSLING_PROVIDER: ${{ vars.GOSLING_PROVIDER || 'anthropic' }}
@@ -104,7 +106,7 @@ jobs:
 
           echo "✅ Created gosling config:"
           cat ~/.config/gosling/config.yaml
-      
+
       - name: Determine versions to compare
         id: versions
         env:
@@ -117,13 +119,13 @@ jobs:
           get_previous_release() {
             gh release list --limit 2 --json tagName --jq '.[].tagName' | sed -n '2p'
           }
-          
+
           if [ -n "$INPUT_OLD_VERSION" ]; then
             OLD_VERSION="$INPUT_OLD_VERSION"
           else
             OLD_VERSION=$(get_previous_release)
           fi
-          
+
           if [ -n "$INPUT_NEW_VERSION" ]; then
             NEW_VERSION="$INPUT_NEW_VERSION"
           elif [ "$EVENT_NAME" = "release" ]; then
@@ -131,19 +133,19 @@ jobs:
           else
             NEW_VERSION="HEAD"  # For testing unreleased changes
           fi
-          
+
           if [ -z "$OLD_VERSION" ] || [ -z "$NEW_VERSION" ]; then
             echo "Error: Could not determine versions to compare"
             exit 1
           fi
-          
+
           echo "old_version=$OLD_VERSION" >> $GITHUB_OUTPUT
           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
           echo "OLD_VERSION=$OLD_VERSION" >> $GITHUB_ENV
           echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
-          
+
           echo "✅ Comparing $OLD_VERSION → $NEW_VERSION"
-      
+
       - name: Extract and compare CLI structures
         id: extract
         timeout-minutes: 30  # Building gosling takes time
@@ -152,49 +154,29 @@ jobs:
           GOSLING_REPO: ${{ github.workspace }}
         run: |
           set -o pipefail  # Ensure pipeline failures are caught
-          
+
           mkdir -p output
-          ./scripts/run-pipeline.sh "$OLD_VERSION" "$NEW_VERSION" 2>&1 | tee output/pipeline.log
-          
+          ./scripts/extract-cli-structure.sh "$OLD_VERSION" > output/old-cli-structure.json
+          ./scripts/extract-cli-structure.sh "$NEW_VERSION" > output/new-cli-structure.json
+          python3 scripts/diff-cli-structures.py output/old-cli-structure.json output/new-cli-structure.json > output/cli-changes.json
+
           HAS_CHANGES=$(jq -r '.has_changes' output/cli-changes.json)
           echo "has_changes=$HAS_CHANGES" >> $GITHUB_OUTPUT
-          
+
           if [ "$HAS_CHANGES" = "false" ]; then
             echo "✅ No changes detected"
           else
             echo "✅ Changes detected"
           fi
-      
+
       - name: Update gosling-cli-commands.md (AI synthesis)
         if: steps.extract.outputs.has_changes == 'true'
         timeout-minutes: 10
-        working-directory: documentation/automation/cli-command-tracking/output
         env:
-          CLI_COMMANDS_PATH: ${{ github.workspace }}/documentation/docs/guides/gosling-cli-commands.md
-        run: |
-          echo "🔍 Environment diagnostics:"
-          echo "  GOSLING_PROVIDER: $GOSLING_PROVIDER"
-          echo "  GOSLING_MODEL: $GOSLING_MODEL"
-          if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
-            echo "  ANTHROPIC_API_KEY: configured"
-          else
-            echo "  ANTHROPIC_API_KEY: not set"
-          fi
-          echo "  CLI_COMMANDS_PATH: $CLI_COMMANDS_PATH"
-          echo "  HOME: $HOME"
-          echo "  PATH: $PATH"
-          echo ""
-          echo "📁 Gosling config file:"
-          cat ~/.config/gosling/config.yaml || echo "Config file not found!"
-          echo ""
-          echo "📁 Current directory:"
-          pwd
-          ls -la
-          echo ""
-          echo "🤖 Applying changes to gosling-cli-commands.md..."
-          gosling run --instructions ../prompts/update-cli-commands.prompt.md \
-            --system "$(cat ../prompts/update-cli-commands.system.md)"
-      
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GOSLING_MODEL: ${{ vars.GOSLING_MODEL || 'claude-opus-4-5' }}
+        run: python3 documentation/automation/cli-command-tracking/scripts/synthesize-ci-guide.py
+
       - name: Upload automation outputs
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -205,69 +187,15 @@ jobs:
             documentation/automation/cli-command-tracking/output/*.md
             documentation/automation/cli-command-tracking/output/*.log
           retention-days: 30
-      
-      - name: Create Pull Request
-        if: |
-          steps.extract.outputs.has_changes == 'true' && 
-          (github.event.inputs.dry_run != 'true' || github.event_name == 'release')
-        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1  # v8.1.1
+
+      - name: Upload candidate guide
+        if: steps.extract.outputs.has_changes == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          branch: docs/auto-cli-commands-${{ steps.versions.outputs.new_version }}
-          delete-branch: true
-          
-          commit-message: |
-            docs: Update CLI commands for ${{ steps.versions.outputs.new_version }}
-            
-            Automated update based on CLI changes between ${{ steps.versions.outputs.old_version }} and ${{ steps.versions.outputs.new_version }}.
-          
-          title: "docs: Update CLI Commands Guide for ${{ steps.versions.outputs.new_version }}"
-          body: |
-            ## Summary
+          name: cli-docs-candidate-${{ github.run_id }}
+          path: documentation/docs/guides/gosling-cli-commands.md
+          retention-days: 30
 
-            This PR updates the CLI Commands Guide based on command and option changes detected between **${{ steps.versions.outputs.old_version }}** and **${{ steps.versions.outputs.new_version }}**.
-
-            ### Type of Change
-            - [x] Documentation
-
-            ### AI Assistance
-            - [x] This PR was created or reviewed with AI assistance
-
-            #### 🤖 Automation Details
-            
-            - **Workflow**: docs-update-cli-ref.yml
-            - **Triggered by**: ${{ github.event_name }}
-            - **Previous version**: ${{ steps.versions.outputs.old_version }}
-            - **New version**: ${{ steps.versions.outputs.new_version }}
-            
-            #### 📋 Changes Detected
-            
-            Review the workflow artifacts for detailed change analysis:
-            - cli-changes.json - Structured diff of changes
-            - cli-changes.md - Human-readable change documentation
-            - update-summary.md - Summary of documentation updates applied
-            
-            Download artifacts from the [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}).
-            
-            ### ✅ Review Checklist
-            
-            - [ ] Verify all CLI changes are accurately documented
-            - [ ] Check that examples are updated correctly
-            - [ ] Ensure new commands are in the correct sections
-            - [ ] Confirm no unintended changes were made
-            
-            ### 🔗 Related
-            
-            - Release: ${{ github.event.release.html_url || 'N/A' }}
-            
-            ---
-            
-            *This PR was automatically generated by the CLI Documentation Automation workflow.*
-          
-          labels: |
-            documentation
-            automated
-            cli-commands
-      
       - name: Workflow summary
         if: always()
         env:
@@ -282,24 +210,24 @@ jobs:
           echo "**Changes Detected**: $HAS_CHANGES" >> $GITHUB_STEP_SUMMARY
           echo "**Dry Run Mode**: $DRY_RUN" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          
+
           if [ "$HAS_CHANGES" = "true" ]; then
             echo "### ✅ Documentation Updated" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "The CLI Commands Guide has been updated to reflect changes in $NEW_VERSION." >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            
+
             if [ "$DRY_RUN" = "true" ]; then
               echo "**Note**: Running in dry-run mode - no PR was created. Review the artifacts to see the generated changes." >> $GITHUB_STEP_SUMMARY
             else
-              echo "A pull request has been created with the documentation updates." >> $GITHUB_STEP_SUMMARY
+              echo "The separate publication job will propose the candidate as a pull request for human review." >> $GITHUB_STEP_SUMMARY
             fi
           else
             echo "### ℹ️ No Changes Needed" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "No CLI command changes were detected between $OLD_VERSION and $NEW_VERSION." >> $GITHUB_STEP_SUMMARY
           fi
-          
+
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 📦 Artifacts" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -308,3 +236,85 @@ jobs:
           echo "- Change detection results" >> $GITHUB_STEP_SUMMARY
           echo "- Human-readable change documentation" >> $GITHUB_STEP_SUMMARY
           echo "- Documentation update summary" >> $GITHUB_STEP_SUMMARY
+
+  publish-docs:
+    needs: update-docs
+    if: needs.update-docs.outputs.has_changes == 'true' && needs.update-docs.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout trusted base for publication
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Download candidate document
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: cli-docs-candidate-${{ github.run_id }}
+          path: candidate
+      - name: Stage only the candidate guide
+        run: cp candidate/gosling-cli-commands.md documentation/docs/guides/gosling-cli-commands.md
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1  # v8.1.1
+        with:
+          branch: docs/auto-cli-commands-${{ needs.update-docs.outputs.new_version }}
+          delete-branch: true
+          add-paths: documentation/docs/guides/gosling-cli-commands.md
+
+          commit-message: |
+            docs: Update CLI commands for ${{ needs.update-docs.outputs.new_version }}
+
+            Automated update based on CLI changes between ${{ needs.update-docs.outputs.old_version }} and ${{ needs.update-docs.outputs.new_version }}.
+
+          title: "docs: Update CLI Commands Guide for ${{ needs.update-docs.outputs.new_version }}"
+          body: |
+            ## Summary
+
+            This is untrusted model output. Human review of the complete diff is required before merge.
+
+            This PR updates the CLI Commands Guide based on command and option changes detected between **${{ needs.update-docs.outputs.old_version }}** and **${{ needs.update-docs.outputs.new_version }}**.
+
+            ### Type of Change
+            - [x] Documentation
+
+            ### AI Assistance
+            - [x] This PR was created or reviewed with AI assistance
+
+            #### 🤖 Automation Details
+
+            - **Workflow**: docs-update-cli-ref.yml
+            - **Triggered by**: ${{ github.event_name }}
+            - **Previous version**: ${{ needs.update-docs.outputs.old_version }}
+            - **New version**: ${{ needs.update-docs.outputs.new_version }}
+
+            #### 📋 Changes Detected
+
+            Review the workflow artifacts for detailed change analysis:
+            - cli-changes.json - Structured diff of changes
+            - update-summary.md - Summary of documentation updates applied
+
+            Download artifacts from the [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}).
+
+            ### ✅ Review Checklist
+
+            - [ ] Verify all CLI changes are accurately documented
+            - [ ] Check that examples are updated correctly
+            - [ ] Ensure new commands are in the correct sections
+            - [ ] Confirm no unintended changes were made
+
+            ### 🔗 Related
+
+            - Release: ${{ github.event.release.html_url || 'N/A' }}
+
+            ---
+
+            *This PR was automatically generated by the CLI Documentation Automation workflow.*
+
+          labels: |
+            documentation
+            automated
+            cli-commands

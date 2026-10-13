@@ -30,6 +30,11 @@ your home folder for gosling Desktop, or the current directory of `gosling acp` 
 (an absolute `GOSLING_WORKING_DIR` takes precedence). Start a server from the folder you want as
 the default, or edit the workspace afterwards. `gosling shell-validate` never creates it.
 
+Malformed workspace settings produce a load error that names the preserved settings file. Gosling
+does not silently reset them to defaults. Restore a valid backup, or deliberately move the malformed
+file aside to initialize fresh settings. A valid pending temporary snapshot can still be recovered;
+the malformed original is retained as a private `workspaces.corrupt-*.json` backup.
+
 ## Start or filter workspace chats
 
 Open the sidebar and expand **Workspaces**.
@@ -87,7 +92,10 @@ tool provider. Authentication in provisioned shells continues to follow the shel
 The primary folder must exist and be a directory before a new chat can start. A missing optional
 reference or output folder produces a warning instead of disabling the entire app. If an output is
 marked **Allow explicit creation if missing**, edit the saved workspace and choose **Create now**;
-gosling asks for confirmation before creating it.
+gosling asks for confirmation before creating it. Inside a Git repository, creation also adds the
+folder to its adjacent `.gitignore` when needed; the confirmation discloses this change. Existing
+ignore-file contents are preserved with an append-only write. Research Library ignore rules require
+a separate native confirmation.
 
 A folder whose path goes through a symbolic link that points outside the folder holding the link
 (for example an output `project/out` linked to `/elsewhere`) produces a warning such as "folder
@@ -281,7 +289,9 @@ adds a new revision. If the file changed since you opened history, refresh befor
 missing file can be exported from history but is not recreated by restore. After Trash, expand
 **Saved history for removed outputs** to export revisions. Restore the live file from OS Trash
 before using **Restore revision**. Saved history belongs to the path and can be available to later
-authorized chats that register that same path.
+authorized chats that register that same path. Deleting a chat preserves this path-wide history,
+including the original file bytes. Chat deletion is not a purge of output revisions; see
+`docs/adr/0018-output-contribution-history.md` in the source repository for the retention contract.
 
 Saved revisions can also be exported when the current file is unreadable or exceeds the
 8 MiB snapshot limit. Restore stays disabled until gosling can safely read the current file.

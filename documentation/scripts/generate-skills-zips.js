@@ -5,18 +5,19 @@
  * and outputs them to static/skills-data-zips/<skillId>.zip
  * 
  * Note: This script should run AFTER generate-skills-manifest.js
- * because it relies on the cloned repo being present in .tmp/agent-skills
+ * Both scripts use the same pinned source; a cleaned clone can be fetched again.
  * 
  * Run this before building the documentation site.
  */
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
+const { preparePinnedSource } = require('./agent-skills-source');
+const { isSupportedGooseSkill } = require('./goose-compat');
 
 // Configuration - must match generate-skills-manifest.js
-const AGENT_SKILLS_REPO = 'https://github.com/block/Agent-Skills.git';
-const TEMP_DIR = path.join(__dirname, '..', '.tmp');
+const TEMP_DIR = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'gosling-skills-'));
 const CLONED_REPO_DIR = path.join(TEMP_DIR, 'agent-skills');
 const ZIPS_OUTPUT_DIR = path.join(__dirname, '..', 'static', 'skills-data-zips');
 
@@ -27,30 +28,8 @@ const SKIP_DIRS = ['.github', 'node_modules', '.git'];
  * Clone the Agent-Skills repository if not already present
  */
 function ensureRepoCloned() {
-  if (fs.existsSync(CLONED_REPO_DIR)) {
-    console.log('[generate-skills-zips] Agent-Skills repo already cloned');
-    return true;
-  }
-  
-  console.log('[generate-skills-zips] Cloning Agent-Skills repository...');
-  
-  // Create temp directory if it doesn't exist
-  if (!fs.existsSync(TEMP_DIR)) {
-    fs.mkdirSync(TEMP_DIR, { recursive: true });
-  }
-  
-  try {
-    execSync(`git clone --depth 1 ${AGENT_SKILLS_REPO} ${CLONED_REPO_DIR}`, {
-      stdio: 'pipe',
-      timeout: 60000
-    });
-    console.log('[generate-skills-zips] Successfully cloned Agent-Skills repository');
-    return true;
-  } catch (error) {
-    console.error('[generate-skills-zips] ERROR: Failed to clone Agent-Skills repository');
-    console.error('[generate-skills-zips] Error:', error.message);
-    return false;
-  }
+  preparePinnedSource(CLONED_REPO_DIR);
+  return true;
 }
 
 /**
@@ -65,9 +44,9 @@ function isSkillDirectory(dirPath) {
  * Clean up temporary files
  */
 function cleanup() {
-  if (fs.existsSync(CLONED_REPO_DIR)) {
+  if (fs.existsSync(TEMP_DIR)) {
     console.log('[generate-skills-zips] Cleaning up temporary files...');
-    fs.rmSync(CLONED_REPO_DIR, { recursive: true, force: true });
+    fs.rmSync(TEMP_DIR, { recursive: true, force: true });
   }
 }
 
@@ -98,33 +77,38 @@ function generateSkillZips() {
   const skillDirs = entries
     .filter(d => d.isDirectory() && !SKIP_DIRS.includes(d.name))
     .map(d => d.name)
-    .filter(name => isSkillDirectory(path.join(CLONED_REPO_DIR, name)));
+    .filter(name => isSkillDirectory(path.join(CLONED_REPO_DIR, name)))
+    .filter(id => isSupportedGooseSkill({ id }));
   
   let generatedCount = 0;
   
   for (const skillId of skillDirs) {
-    const skillDir = path.join(CLONED_REPO_DIR, skillId);
+    if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(skillId)) throw new Error('Invalid skill directory id');
     const zipPath = path.join(ZIPS_OUTPUT_DIR, `${skillId}.zip`);
     
     try {
       // Use the system zip command to create the archive
       // cd into the cloned repo and zip the skill folder to preserve the folder name
-      execSync(`cd "${CLONED_REPO_DIR}" && zip -r "${zipPath}" "${skillId}"`, {
-        stdio: 'pipe'
+      execFileSync('zip', ['-r', zipPath, skillId], {
+        cwd: CLONED_REPO_DIR,
+        stdio: 'pipe',
+        timeout: 60000,
       });
       
       const stats = fs.statSync(zipPath);
       console.log(`[generate-skills-zips] Created: ${skillId}.zip (${(stats.size / 1024).toFixed(1)} KB)`);
       generatedCount++;
     } catch (error) {
-      console.error(`[generate-skills-zips] Error creating ZIP for ${skillId}:`, error.message);
+      throw new Error(`Failed to publish ZIP for ${skillId}: ${error.message}`);
     }
   }
   
   console.log(`[generate-skills-zips] Generated ${generatedCount} ZIP files in ${ZIPS_OUTPUT_DIR}`);
   
-  // Clean up the cloned repo
-  cleanup();
 }
 
-generateSkillZips();
+try {
+  generateSkillZips();
+} finally {
+  cleanup();
+}
