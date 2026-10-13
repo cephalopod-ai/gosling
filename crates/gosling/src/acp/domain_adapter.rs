@@ -17,6 +17,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
+use tokio_util::task::AbortOnDropHandle;
 
 const ADAPTER_SESSION_ID: &str = "domain-adapter";
 
@@ -27,6 +28,7 @@ pub struct McpDomainAdapter {
     request_timeout: Duration,
     working_dir: PathBuf,
     status: tokio::sync::watch::Sender<DomainAdapterStatus>,
+    _process_status: AbortOnDropHandle<()>,
 }
 
 impl McpDomainAdapter {
@@ -57,18 +59,10 @@ impl McpDomainAdapter {
         }
 
         let (status, _) = tokio::sync::watch::channel(DomainAdapterStatus::Ready);
-        let mut process_exit = client.subscribe_exit();
-        let process_status = status.clone();
-        tokio::spawn(async move {
-            while process_exit.changed().await.is_ok() {
-                if *process_exit.borrow()
-                    == crate::agents::extension_manager::OperatorProcessExit::Exited
-                {
-                    process_status.send_replace(DomainAdapterStatus::Crashed);
-                    return;
-                }
-            }
-        });
+        let process_status = AbortOnDropHandle::new(tokio::spawn(Self::forward_process_status(
+            client.subscribe_exit(),
+            status.clone(),
+        )));
 
         Ok(Self {
             descriptor,
@@ -77,7 +71,40 @@ impl McpDomainAdapter {
             request_timeout,
             working_dir,
             status,
+            _process_status: process_status,
         })
+    }
+
+    async fn forward_process_status(
+        mut process_exit: tokio::sync::watch::Receiver<
+            crate::agents::extension_manager::OperatorProcessExit,
+        >,
+        status: tokio::sync::watch::Sender<DomainAdapterStatus>,
+    ) {
+        loop {
+            // subscribe() starts caught up, so an exit before subscription
+            // must be read before waiting for another change.
+            if *process_exit.borrow_and_update()
+                == crate::agents::extension_manager::OperatorProcessExit::Exited
+            {
+                status.send_replace(DomainAdapterStatus::Crashed);
+                return;
+            }
+            if process_exit.changed().await.is_err() {
+                return;
+            }
+        }
+    }
+
+    fn mark_hung(status: &tokio::sync::watch::Sender<DomainAdapterStatus>) {
+        status.send_if_modified(|current| {
+            if *current == DomainAdapterStatus::Crashed {
+                false
+            } else {
+                *current = DomainAdapterStatus::Hung;
+                true
+            }
+        });
     }
 
     async fn call_tool<T>(
@@ -177,7 +204,7 @@ impl DomainAdapter for McpDomainAdapter {
                 .err()
                 .is_some_and(|error| error.to_string() == "ADAPTER_OPERATION_TIMEOUT")
             {
-                status.send_replace(DomainAdapterStatus::Hung);
+                Self::mark_hung(&status);
             }
             result
         })
@@ -210,7 +237,7 @@ impl DomainAdapter for McpDomainAdapter {
                 .err()
                 .is_some_and(|error| error.to_string() == "ADAPTER_OPERATION_TIMEOUT")
             {
-                status.send_replace(DomainAdapterStatus::Hung);
+                Self::mark_hung(&status);
             }
             result
         })

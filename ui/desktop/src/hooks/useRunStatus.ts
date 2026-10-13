@@ -61,7 +61,8 @@ export function useRunStatus(sessionId: string, snapshot: AcpChatSessionSnapshot
       if (
         lifecycle.active &&
         lifecycle === lifecycleRef.current &&
-        snapshotRef.current?.connectionGeneration === generation
+        snapshotRef.current?.connectionGeneration === generation &&
+        snapshotRef.current?.activePromptAttemptId === promptAttemptId
       ) {
         setResult((previous) => ({
           ...status,
@@ -77,7 +78,8 @@ export function useRunStatus(sessionId: string, snapshot: AcpChatSessionSnapshot
       if (
         lifecycle.active &&
         lifecycle === lifecycleRef.current &&
-        snapshotRef.current?.connectionGeneration === generation
+        snapshotRef.current?.connectionGeneration === generation &&
+        snapshotRef.current?.activePromptAttemptId === promptAttemptId
       ) {
         setResult((previous) => ({
           checkedAt: Date.now(),

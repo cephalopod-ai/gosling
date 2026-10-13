@@ -18,6 +18,7 @@ use tokio::sync::OnceCell;
 use tokio::task::JoinHandle;
 use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
+use tokio_util::task::AbortOnDropHandle;
 
 use super::process_tree::ProcessTreeGuard;
 use crate::subprocess::SubprocessExt;
@@ -158,6 +159,8 @@ const OUTPUT_LIMIT_LINES: usize = 2000;
 pub const OUTPUT_LIMIT_BYTES: usize = 50_000;
 const OUTPUT_PREVIEW_LINES: usize = 50;
 const DEFAULT_SHELL_TIMEOUT_SECS: u64 = 300;
+const MAX_COLLECTED_BYTES: usize = 10 * 1024 * 1024;
+const MAX_COLLECTED_LINES: usize = 50_000;
 
 fn effective_shell_timeout_secs(configured: Option<u64>) -> u64 {
     configured
@@ -199,7 +202,7 @@ pub struct ShellOutput {
     #[serde(default)]
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub timed_out: bool,
-    /// True if output collection was cut short after the shell exited.
+    /// True if capture limits or a drain deadline discarded output.
     #[serde(default)]
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub output_truncated: bool,
@@ -471,7 +474,7 @@ impl ShellTool {
 
         if execution.output_truncated {
             rendered.push_str(
-                "\n\nOutput may be incomplete because stream draining timed out after process exit.",
+                "\n\nOutput is incomplete because a capture limit or stream-draining deadline was reached.",
             );
         }
         if let Some(error) = &execution.output_collection_error {
@@ -556,8 +559,11 @@ async fn run_command(
         .ok_or_else(|| "Failed to capture stderr".to_string())?;
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-    let output_task = tokio::spawn(collect_tagged_lines(child_stdout, child_stderr, tx));
-    let abort_handle = output_task.abort_handle();
+    let mut output_task = AbortOnDropHandle::new(tokio::spawn(collect_tagged_lines(
+        child_stdout,
+        child_stderr,
+        tx,
+    )));
 
     enum Completion {
         Exited(std::io::Result<std::process::ExitStatus>),
@@ -606,11 +612,11 @@ async fn run_command(
     let mut output_collection_error = None;
     let output_truncated = match tokio::time::timeout(
         Duration::from_millis(OUTPUT_DRAIN_TIMEOUT_MILLIS),
-        output_task,
+        &mut output_task,
     )
     .await
     {
-        Ok(Ok(Ok(()))) => false,
+        Ok(Ok(Ok(capped))) => capped,
         Ok(Ok(Err(e))) => {
             output_collection_error = Some(format!("Failed to collect shell output: {}", e));
             false
@@ -623,7 +629,7 @@ async fn run_command(
             tracing::debug!(
                     "output drain timed out after {OUTPUT_DRAIN_TIMEOUT_MILLIS}ms (backgrounded process?)"
                 );
-            abort_handle.abort();
+            output_task.abort();
             true
         }
     };
@@ -813,11 +819,15 @@ where
 }
 
 /// Collect lines from stdout and stderr and send `(is_stderr, line)` tuples to `tx`.
-async fn collect_tagged_lines(
-    stdout: tokio::process::ChildStdout,
-    stderr: tokio::process::ChildStderr,
+async fn collect_tagged_lines<O, E>(
+    stdout: O,
+    stderr: E,
     tx: tokio::sync::mpsc::UnboundedSender<(bool, String)>,
-) -> Result<(), std::io::Error> {
+) -> Result<bool, std::io::Error>
+where
+    O: tokio::io::AsyncRead + Unpin,
+    E: tokio::io::AsyncRead + Unpin,
+{
     // Downstream display/file truncation only runs after the whole output is
     // collected, so without a cap here a single command emitting a flood of
     // output (a verbose build, `find /`, `yes`) buffers unboundedly in memory
@@ -825,32 +835,41 @@ async fn collect_tagged_lines(
     // once we cross a hard cap (well above the display limit so normal output is
     // unaffected) but keep draining the pipes so the child never blocks on a
     // full pipe. Per-line size is bounded by `bounded_line_stream`, so neither
-    // many lines nor one giant line can grow memory without limit.
-    const MAX_COLLECTED_BYTES: usize = 10 * 1024 * 1024;
+    // many lines nor one giant line can grow memory without limit. Count empty
+    // lines too: their queue nodes consume memory even without text bytes.
     let stdout_lines = bounded_line_stream(stdout, false);
     let stderr_lines = bounded_line_stream(stderr, true);
     let mut merged = std::pin::pin!(stdout_lines.merge(stderr_lines));
 
     let mut collected_bytes: usize = 0;
+    let mut collected_lines: usize = 0;
     let mut capped = false;
     while let Some(item) = merged.next().await {
         let (is_stderr, line) = item?;
-        if collected_bytes < MAX_COLLECTED_BYTES {
-            collected_bytes += line.len();
-            let _ = tx.send((is_stderr, String::from_utf8_lossy(&line).into_owned()));
-            if collected_bytes >= MAX_COLLECTED_BYTES && !capped {
-                capped = true;
-                let _ = tx.send((
-                    true,
-                    format!(
-                        "[output exceeded {} bytes; further output discarded]",
-                        MAX_COLLECTED_BYTES
-                    ),
-                ));
-            }
+        if capped {
+            continue;
+        }
+        let line = String::from_utf8_lossy(&line).into_owned();
+        if collected_lines >= MAX_COLLECTED_LINES
+            || collected_bytes + line.len() + 1 > MAX_COLLECTED_BYTES
+        {
+            capped = true;
+            let _ = tx.send((
+                true,
+                format!(
+                    "[output exceeded capture limit ({} bytes or {} lines); further output discarded]",
+                    MAX_COLLECTED_BYTES, MAX_COLLECTED_LINES
+                ),
+            ));
+            continue;
+        }
+        collected_bytes += line.len() + 1;
+        collected_lines += 1;
+        if tx.send((is_stderr, line)).is_err() {
+            return Ok(capped);
         }
     }
-    Ok(())
+    Ok(capped)
 }
 
 /// Build a human-readable truncation notice with platform-appropriate commands.
@@ -1112,6 +1131,45 @@ mod tests {
 
         let notice = truncation_notice(info);
         assert!(notice.contains("Full output saved to"));
+    }
+
+    #[tokio::test]
+    async fn capture_bounds_blank_lines_and_still_drains_the_input() {
+        let output = vec![b'\n'; MAX_COLLECTED_LINES + 100];
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        assert!(
+            collect_tagged_lines(output.as_slice(), tokio::io::empty(), tx)
+                .await
+                .unwrap()
+        );
+        let mut lines = 0;
+        while let Some((_, line)) = rx.recv().await {
+            lines += 1;
+            if lines <= MAX_COLLECTED_LINES {
+                assert!(line.is_empty());
+            } else {
+                assert!(line.contains("further output discarded"));
+            }
+        }
+        assert_eq!(lines, MAX_COLLECTED_LINES + 1);
+    }
+
+    #[tokio::test]
+    async fn capture_preserves_normal_output_without_truncation() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        assert!(
+            !collect_tagged_lines(&b"first\n\nlast"[..], tokio::io::empty(), tx)
+                .await
+                .unwrap()
+        );
+        let mut lines = Vec::new();
+        while let Some(item) = rx.recv().await {
+            lines.push(item);
+        }
+        assert_eq!(
+            split_lines(&lines),
+            ("first\n\nlast".into(), "".into(), "first\n\nlast".into())
+        );
     }
 
     #[test]

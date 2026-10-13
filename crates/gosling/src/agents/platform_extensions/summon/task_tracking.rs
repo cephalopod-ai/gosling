@@ -13,7 +13,16 @@ pub struct BackgroundTask {
     pub handle: JoinHandle<Result<String>>,
     pub cancellation_token: CancellationToken,
     pub notification_buffer: Arc<Mutex<Vec<ServerNotification>>>,
-    pub(super) _slot: OwnedSemaphorePermit,
+    pub(super) _slot: Arc<OwnedSemaphorePermit>,
+}
+
+impl Drop for BackgroundTask {
+    fn drop(&mut self) {
+        // A load may own the task outside the registry while awaiting its result.
+        // Abandoning that load must not detach work or free a slot for a live child.
+        self.cancellation_token.cancel();
+        self.handle.abort();
+    }
 }
 
 pub struct CompletedTask {
@@ -245,7 +254,7 @@ impl SummonClient {
             }
 
             if cancel {
-                let task = running.remove(task_id).unwrap();
+                let mut task = running.remove(task_id).unwrap();
                 drop(running);
 
                 task.cancellation_token.cancel();
@@ -253,9 +262,8 @@ impl SummonClient {
                 let duration = task.started_at.elapsed();
                 let turns_taken = task.turns.load(Ordering::Relaxed);
 
-                let mut handle = task.handle;
                 let output = tokio::select! {
-                    result = &mut handle => {
+                    result = &mut task.handle => {
                         match result {
                             Ok(Ok(s)) => s,
                             Ok(Err(e)) => format!("Error: {}", e),
@@ -263,7 +271,8 @@ impl SummonClient {
                         }
                     }
                     _ = tokio::time::sleep(Duration::from_secs(5)) => {
-                        handle.abort();
+                        task.handle.abort();
+                        let _ = (&mut task.handle).await;
                         "Task did not stop in time (aborted)".to_string()
                     }
                 };
@@ -369,11 +378,11 @@ impl SummonClient {
 
         let mut completed = self.completed_tasks.lock().await;
 
-        for (id, task) in finished {
+        for (id, mut task) in finished {
             let duration = task.started_at.elapsed();
             let turns_taken = task.turns.load(Ordering::Relaxed);
 
-            let result = match task.handle.await {
+            let result = match (&mut task.handle).await {
                 Ok(Ok(output)) => {
                     info!("Background task {} completed successfully", id);
                     Ok(output)
@@ -392,7 +401,7 @@ impl SummonClient {
                 id.clone(),
                 CompletedTask {
                     id,
-                    description: task.description,
+                    description: std::mem::take(&mut task.description),
                     result,
                     turns_taken,
                     duration,

@@ -1234,7 +1234,7 @@ You review code."#;
                     }),
                     cancellation_token: CancellationToken::new(),
                     notification_buffer: buffer,
-                    _slot: client.try_reserve_background_task_slot().unwrap(),
+                    _slot: Arc::new(client.try_reserve_background_task_slot().unwrap()),
                 },
             );
         }
@@ -1360,7 +1360,7 @@ You review code."#;
                     }),
                     cancellation_token: token.clone(),
                     notification_buffer: Arc::new(Mutex::new(Vec::new())),
-                    _slot: client.try_reserve_background_task_slot().unwrap(),
+                    _slot: Arc::new(client.try_reserve_background_task_slot().unwrap()),
                 },
             );
         }
@@ -1403,7 +1403,7 @@ You review code."#;
                     }),
                     cancellation_token: CancellationToken::new(),
                     notification_buffer: Arc::new(Mutex::new(Vec::new())),
-                    _slot: client.try_reserve_background_task_slot().unwrap(),
+                    _slot: Arc::new(client.try_reserve_background_task_slot().unwrap()),
                 },
             );
         }

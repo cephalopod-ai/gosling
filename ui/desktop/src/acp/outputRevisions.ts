@@ -38,16 +38,22 @@ let activeBatches = 0;
 const waitingBatches: Array<() => void> = [];
 
 async function flushBatch(batch: PendingBatch): Promise<void> {
+  if (batch.waitersByPath.size === 0) return;
   if (activeBatches >= 4) await new Promise<void>((resolve) => waitingBatches.push(resolve));
   activeBatches += 1;
   try {
+    if (batch.waitersByPath.size === 0) return;
     const client = await getAcpClient();
     const paths = [...batch.waitersByPath.keys()];
     const revisionByPath = new Map<string, OutputRevisionDto | null | undefined>();
     for (let offset = 0; offset < paths.length; offset += MAX_BATCH_PATHS) {
+      const pendingPaths = paths
+        .slice(offset, offset + MAX_BATCH_PATHS)
+        .filter((path) => batch.waitersByPath.has(path));
+      if (pendingPaths.length === 0) continue;
       const response = await client.gosling.sessionOutputsLatestBatch_unstable({
         sessionId: batch.sessionId,
-        paths: paths.slice(offset, offset + MAX_BATCH_PATHS),
+        paths: pendingPaths,
       });
       for (const entry of response.revisions) revisionByPath.set(entry.path, entry.revision);
     }
@@ -92,9 +98,30 @@ export function getLatestOutputRevision(
         void flushBatch(batch!);
       }, 0);
     }
-    const waiters = batch.waitersByPath.get(path);
-    if (waiters) waiters.push({ resolve, reject });
-    else batch.waitersByPath.set(path, [{ resolve, reject }]);
+    const currentBatch = batch;
+    const waiter: LatestRevisionWaiter = {
+      resolve: (revision) => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(revision);
+      },
+      reject: (reason) => {
+        signal.removeEventListener('abort', onAbort);
+        reject(reason);
+      },
+    };
+    const onAbort = () => {
+      const waiters = currentBatch.waitersByPath.get(path);
+      const index = waiters?.indexOf(waiter) ?? -1;
+      if (waiters && index >= 0) {
+        waiters.splice(index, 1);
+        if (waiters.length === 0) currentBatch.waitersByPath.delete(path);
+      }
+      waiter.reject(signal.reason);
+    };
+    const waiters = currentBatch.waitersByPath.get(path);
+    if (waiters) waiters.push(waiter);
+    else currentBatch.waitersByPath.set(path, [waiter]);
+    signal.addEventListener('abort', onAbort, { once: true });
   });
 }
 

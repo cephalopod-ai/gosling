@@ -122,59 +122,59 @@ impl GoslingAcpAgent {
         )))
     }
 
-    fn spawn_domain_adapter_status_notifier(&self) {
+    fn spawn_domain_adapter_status_notifier(
+        &self,
+    ) -> Option<tokio_util::task::AbortOnDropHandle<()>> {
         if !self.supports_gosling_custom_notifications() {
-            return;
+            return None;
         }
-        let Some(mut status) = self.shell_runtime.subscribe_domain_adapter_status() else {
-            return;
-        };
-        let Some(cx) = self.client_cx.get().cloned() else {
-            return;
-        };
-        tokio::spawn(async move {
-            while status.changed().await.is_ok() {
-                if cx
-                    .send_notification(DomainStatusNotification {
-                        status: *status.borrow(),
-                    })
-                    .is_err()
-                {
-                    return;
+        let mut status = self.shell_runtime.subscribe_domain_adapter_status()?;
+        let cx = self.client_cx.get().cloned()?;
+        Some(tokio_util::task::AbortOnDropHandle::new(tokio::spawn(
+            async move {
+                while status.changed().await.is_ok() {
+                    if cx
+                        .send_notification(DomainStatusNotification {
+                            status: *status.borrow(),
+                        })
+                        .is_err()
+                    {
+                        return;
+                    }
                 }
-            }
-        });
+            },
+        )))
     }
 
-    fn spawn_plan_update_notifier(&self) {
+    fn spawn_plan_update_notifier(&self) -> Option<tokio_util::task::AbortOnDropHandle<()>> {
         if !self.supports_gosling_custom_notifications() {
-            return;
+            return None;
         }
-        let Some(cx) = self.client_cx.get().cloned() else {
-            return;
-        };
+        let cx = self.client_cx.get().cloned()?;
         let mut updates = self.session_manager.plans().subscribe();
-        tokio::spawn(async move {
-            loop {
-                match updates.recv().await {
-                    Ok(update) => {
-                        if cx
-                            .send_notification(plans::plan_update_notification(update))
-                            .is_err()
-                        {
-                            return;
+        Some(tokio_util::task::AbortOnDropHandle::new(tokio::spawn(
+            async move {
+                loop {
+                    match updates.recv().await {
+                        Ok(update) => {
+                            if cx
+                                .send_notification(plans::plan_update_notification(update))
+                                .is_err()
+                            {
+                                return;
+                            }
                         }
-                    }
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
-                        warn!(
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                            warn!(
                             skipped,
                             "ACP plan-update subscriber lagged; clients can refresh with plan/get"
                         );
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
                     }
-                    Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
                 }
-            }
-        });
+            },
+        )))
     }
 
     pub(super) async fn on_initialize(
@@ -223,8 +223,17 @@ impl GoslingAcpAgent {
             )
             .mcp_capabilities(McpCapabilities::new().http(true))
             .meta(Some(shell_capabilities_meta(&self.shell_runtime)));
-        self.spawn_domain_adapter_status_notifier();
-        self.spawn_plan_update_notifier();
+        self.notification_tasks
+            .get_or_init(|| async {
+                [
+                    self.spawn_domain_adapter_status_notifier(),
+                    self.spawn_plan_update_notifier(),
+                ]
+                .into_iter()
+                .flatten()
+                .collect()
+            })
+            .await;
         self.client_initialized
             .store(true, std::sync::atomic::Ordering::Release);
         Ok(InitializeResponse::new(protocol_version)

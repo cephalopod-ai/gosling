@@ -130,6 +130,14 @@ describe('ACP elicitation requests', () => {
       'cancelled'
     );
     await expect(sessionOneResponse).resolves.toEqual({ action: 'cancel' });
+    expect(acpChatSessionActions.resolveUserInputRequest).toHaveBeenCalledWith(
+      'session-1',
+      `elicitation:${sessionOneRequest.id}`
+    );
+    expect(acpChatSessionActions.resolveUserInputRequest).not.toHaveBeenCalledWith(
+      'session-2',
+      `elicitation:${sessionTwoRequest.id}`
+    );
     await expectStillPending(sessionTwoResponse);
 
     expect(resolveAcpElicitationRequest('session-2', sessionTwoRequest.id, {})).toBe(true);

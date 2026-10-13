@@ -11,7 +11,7 @@ impl SummonClient {
         session_id: &str,
         params: DelegateParams,
     ) -> Result<(Vec<Content>, String), String> {
-        let task_slot = self.try_reserve_background_task_slot()?;
+        let task_slot = Arc::new(self.try_reserve_background_task_slot()?);
 
         let session = self
             .context
@@ -59,7 +59,10 @@ impl SummonClient {
         );
 
         let mut background_tasks = self.background_tasks.lock().await;
+        let task_slot_guard = Arc::clone(&task_slot);
         let handle = tokio::spawn(async move {
+            // Keep admission occupied until cancellation actually drops the child future.
+            let _task_slot = task_slot_guard;
             run_subagent_task(SubagentRunParams {
                 config: agent_config,
                 task: SubagentTask {

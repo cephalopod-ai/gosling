@@ -151,6 +151,26 @@ describe('useRunStatus', () => {
     expect(checkSessionRunStatus).toHaveBeenCalledTimes(2);
   });
 
+  it('ignores the old turn result when a new attempt starts on the same connection', async () => {
+    let finish!: (status: SessionRunStatus) => void;
+    vi.mocked(checkSessionRunStatus).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+    );
+    const current = snapshot();
+    const { result, rerender } = renderHook((state) => useRunStatus(sessionId, state), {
+      initialProps: current,
+    });
+    rerender({ ...current, activePromptAttemptId: 'prompt-2' });
+    vi.mocked(checkSessionRunStatus).mockReturnValue(new Promise(() => {}));
+    await act(async () => {
+      finish({ ...checked(), backendResponded: false, error: 'old turn failed' });
+    });
+    expect(result.current.result).toBeNull();
+    expect(checkSessionRunStatus).toHaveBeenCalledTimes(2);
+  });
+
   it('queues a check for newly discovered agents without overlapping the current check', async () => {
     let resolve!: (value: SessionRunStatus) => void;
     vi.mocked(checkSessionRunStatus).mockReturnValueOnce(

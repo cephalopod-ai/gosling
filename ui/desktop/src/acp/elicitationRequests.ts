@@ -95,6 +95,10 @@ export function cancelAcpElicitationRequestsForSession(sessionId: string): void 
       pendingRequests.delete(key);
       clearTimeout(pending.timeoutId);
       acpChatSessionActions.setElicitationStatus(sessionId, pending.request.id, 'cancelled');
+      acpChatSessionActions.resolveUserInputRequest(
+        sessionId,
+        acpElicitationUserInputRequestId(pending.request.id)
+      );
       pending.resolve(cancelledElicitationResponse());
     }
   }

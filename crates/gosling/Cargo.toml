@@ -154,7 +154,7 @@ blake3 = { version = "1", default-features = false, features = ["std"] }
 fs2 = { workspace = true }
 tokio-stream = { workspace = true, features = ["io-util"] }
 tempfile = { workspace = true }
-tokio-util = { workspace = true, features = ["compat"] }
+tokio-util = { workspace = true, features = ["compat", "rt"] }
 agent-client-protocol-schema = { workspace = true }
 agent-client-protocol = { workspace = true, features = ["unstable"] }
 agent-client-protocol-http = { workspace = true }
