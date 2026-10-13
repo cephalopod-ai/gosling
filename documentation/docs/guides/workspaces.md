@@ -94,7 +94,8 @@ reference or output folder produces a warning instead of disabling the entire ap
 marked **Allow explicit creation if missing**, edit the saved workspace and choose **Create now**;
 gosling asks for confirmation before creating it. Inside a Git repository, creation also adds the
 folder to its adjacent `.gitignore` when needed; the confirmation discloses this change. Existing
-ignore-file contents are preserved with an append-only write. Research Library ignore rules require
+ignore-file contents are preserved with an append-only write. Rust and Desktop serialize additions
+using the same adjacent `.gitignore.lock` directory protocol. Research Library ignore rules require
 a separate native confirmation.
 
 A folder whose path goes through a symbolic link that points outside the folder holding the link

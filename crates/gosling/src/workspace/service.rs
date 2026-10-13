@@ -493,7 +493,7 @@ impl WorkspaceService {
             bail!("output folder is unavailable on this platform");
         }
         std::fs::create_dir_all(&path)?;
-        ensure_gitignored_if_in_repo(&path);
+        ensure_gitignored_if_in_repo(&path).await;
         self.validate(&WorkspaceMutation::from(&workspace))
     }
 
@@ -899,7 +899,7 @@ pub(super) fn validate_workspace_boundary(mutation: &WorkspaceMutation) -> Resul
 /// workspace output folder is gosling's own scratch space, not something the
 /// user's repo should track by default. Best-effort: a failure here must
 /// never block the folder from being created.
-fn ensure_gitignored_if_in_repo(path: &Path) {
+async fn ensure_gitignored_if_in_repo(path: &Path) {
     if crate::hints::find_git_root(path).is_none() {
         return;
     }
@@ -951,6 +951,13 @@ fn ensure_gitignored_if_in_repo(path: &Path) {
         })
         .collect();
     let entry = format!("/{escaped}/");
+    let publication_lock = match acquire_ignore_file_lock(&gitignore_path).await {
+        Ok(lock) => lock,
+        Err(error) => {
+            warn!(path = %gitignore_path.display(), %error, "Failed to lock output folder ignore rules");
+            return;
+        }
+    };
     let result = (|| -> Result<()> {
         use std::io::{Read, Write};
         let mut file = std::fs::OpenOptions::new()
@@ -972,8 +979,163 @@ fn ensure_gitignored_if_in_repo(path: &Path) {
         }
         Ok(())
     })();
+    drop(publication_lock);
     if let Err(error) = result {
         warn!(path = %gitignore_path.display(), %error, "Failed to add output folder to .gitignore");
+    }
+}
+
+// Shared with Desktop's utils/processFileLock.ts: publish a nonempty directory
+// atomically, and recover only an exact dead-owner token before removing it.
+struct IgnoreFileLock {
+    directory: PathBuf,
+    owner_file: String,
+}
+
+impl Drop for IgnoreFileLock {
+    fn drop(&mut self) {
+        if let Err(error) = std::fs::remove_file(self.directory.join(&self.owner_file)) {
+            if error.kind() != std::io::ErrorKind::NotFound {
+                warn!(%error, "Could not release ignore-file lock owner");
+            }
+        }
+        let _ = remove_empty_ignore_lock(&self.directory);
+    }
+}
+
+fn remove_empty_ignore_lock(directory: &Path) -> std::io::Result<()> {
+    match std::fs::remove_dir(directory) {
+        Ok(()) => Ok(()),
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::NotFound
+                    | std::io::ErrorKind::DirectoryNotEmpty
+                    | std::io::ErrorKind::AlreadyExists
+            ) =>
+        {
+            Ok(())
+        }
+        Err(error) => Err(error),
+    }
+}
+
+fn ignore_lock_owner_pid(token: &str) -> Option<u32> {
+    let (pid, nonce) = token.split_once('-')?;
+    if pid.is_empty() || !pid.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    let parsed = Uuid::parse_str(nonce).ok()?;
+    if parsed.to_string() != nonce {
+        return None;
+    }
+    pid.parse().ok()
+}
+
+async fn recover_ignore_file_lock(directory: &Path) -> Result<()> {
+    let metadata = match std::fs::symlink_metadata(directory) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        bail!("Ignore-file lock must be a real directory");
+    }
+    let entries = match std::fs::read_dir(directory)
+        .and_then(|entries| entries.collect::<std::io::Result<Vec<_>>>())
+    {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
+    if entries.is_empty() {
+        return Ok(remove_empty_ignore_lock(directory)?);
+    }
+    if entries.len() != 1 {
+        return Ok(());
+    }
+    let owner_name = entries[0].file_name();
+    let Some(token) = owner_name
+        .to_str()
+        .and_then(|name| name.strip_suffix(".owner"))
+    else {
+        return Ok(());
+    };
+    let Some(pid) = ignore_lock_owner_pid(token) else {
+        return Ok(());
+    };
+    if crate::subprocess::process_is_alive(pid).await {
+        return Ok(());
+    }
+    match std::fs::remove_file(directory.join(owner_name)) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    Ok(remove_empty_ignore_lock(directory)?)
+}
+
+async fn acquire_ignore_file_lock(file_path: &Path) -> Result<IgnoreFileLock> {
+    let parent = file_path
+        .parent()
+        .ok_or_else(|| anyhow!("Ignore file has no parent"))?;
+    let name = file_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| anyhow!("Invalid ignore filename"))?;
+    let prefix = format!(".{name}.lock-candidate-");
+    for entry in std::fs::read_dir(parent)? {
+        let entry = entry?;
+        if !entry.file_type()?.is_dir() {
+            continue;
+        }
+        let entry_name = entry.file_name();
+        let Some(pid) = entry_name
+            .to_str()
+            .and_then(|name| name.strip_prefix(&prefix))
+            .and_then(ignore_lock_owner_pid)
+        else {
+            continue;
+        };
+        if !crate::subprocess::process_is_alive(pid).await {
+            recover_ignore_file_lock(&entry.path()).await?;
+        }
+    }
+    let token = format!("{}-{}", std::process::id(), Uuid::new_v4());
+    let staged = parent.join(format!("{prefix}{token}"));
+    let destination = parent.join(format!("{name}.lock"));
+    std::fs::create_dir(&staged)?;
+    let mut guard = IgnoreFileLock {
+        directory: staged,
+        owner_file: format!("{token}.owner"),
+    };
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(guard.directory.join(&guard.owner_file))?;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        match std::fs::rename(&guard.directory, &destination) {
+            Ok(()) => {
+                guard.directory = destination;
+                return Ok(guard);
+            }
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::AlreadyExists
+                        | std::io::ErrorKind::DirectoryNotEmpty
+                        | std::io::ErrorKind::PermissionDenied
+                ) =>
+            {
+                recover_ignore_file_lock(&destination).await?;
+                if std::time::Instant::now() >= deadline {
+                    bail!("Timed out waiting for the ignore-file lock");
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+            }
+            Err(error) => return Err(error.into()),
+        }
     }
 }
 
@@ -1623,6 +1785,83 @@ mod tests {
 
         let gitignore = std::fs::read_to_string(root.path().join(".gitignore")).unwrap();
         assert_eq!(gitignore, "/outputs/\n");
+    }
+
+    #[tokio::test]
+    async fn concurrent_output_creation_preserves_rules_without_duplicates() {
+        let data = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir(root.path().join(".git")).unwrap();
+        std::fs::write(root.path().join(".gitignore"), "existing-rule").unwrap();
+        let service = WorkspaceService::initialize(data.path(), root.path())
+            .await
+            .unwrap();
+        let workspace = service.create(mutation(root.path())).await.unwrap();
+        let (first, second) = tokio::join!(
+            service.create_output_folder(&workspace.id, "output"),
+            service.create_output_folder(&workspace.id, "output")
+        );
+        first.unwrap();
+        second.unwrap();
+        assert_eq!(
+            std::fs::read_to_string(root.path().join(".gitignore")).unwrap(),
+            "existing-rule\n/outputs/\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn output_creation_waits_for_a_live_desktop_ignore_writer() {
+        let data = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir(root.path().join(".git")).unwrap();
+        let service = WorkspaceService::initialize(data.path(), root.path())
+            .await
+            .unwrap();
+        let workspace = service.create(mutation(root.path())).await.unwrap();
+        let lock = root.path().join(".gitignore.lock");
+        std::fs::create_dir(&lock).unwrap();
+        let owner = format!("{}-{}.owner", std::process::id(), Uuid::new_v4());
+        std::fs::write(lock.join(&owner), "").unwrap();
+        let attempt = tokio::time::timeout(
+            std::time::Duration::from_millis(75),
+            service.create_output_folder(&workspace.id, "output"),
+        )
+        .await;
+        assert!(
+            attempt.is_err(),
+            "ignore-file write must wait for the Desktop owner"
+        );
+        assert!(!root.path().join(".gitignore").exists());
+        assert!(lock.join(&owner).is_file());
+        std::fs::write(root.path().join(".gitignore"), "desktop-rule").unwrap();
+        std::fs::remove_file(lock.join(owner)).unwrap();
+        std::fs::remove_dir(lock).unwrap();
+        service
+            .create_output_folder(&workspace.id, "output")
+            .await
+            .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(root.path().join(".gitignore")).unwrap(),
+            "desktop-rule\n/outputs/\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn ignore_lock_preserves_a_live_desktop_compatible_owner() {
+        let root = tempfile::tempdir().unwrap();
+        let directory = root.path().join(".gitignore.lock");
+        std::fs::create_dir(&directory).unwrap();
+        let owner = format!("{}-{}.owner", std::process::id(), Uuid::new_v4());
+        std::fs::write(directory.join(&owner), "").unwrap();
+        recover_ignore_file_lock(&directory).await.unwrap();
+        assert!(directory.join(&owner).is_file());
+        std::fs::remove_file(directory.join(&owner)).unwrap();
+        let guard = acquire_ignore_file_lock(&root.path().join(".gitignore"))
+            .await
+            .unwrap();
+        assert!(directory.join(&guard.owner_file).is_file());
+        drop(guard);
+        assert!(!directory.exists());
     }
 
     #[tokio::test]

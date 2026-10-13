@@ -114,8 +114,10 @@ pub async fn process_is_alive(pid: u32) -> bool {
     match command.output().await {
         // Fail open: if we can't determine liveness, assume the process is still
         // alive rather than risk shutting ourselves down on a transient error.
-        Ok(output) => String::from_utf8_lossy(&output.stdout).contains(&pid.to_string()),
-        Err(_) => true,
+        Ok(output) if output.status.success() => {
+            String::from_utf8_lossy(&output.stdout).contains(&pid.to_string())
+        }
+        _ => true,
     }
 }
 

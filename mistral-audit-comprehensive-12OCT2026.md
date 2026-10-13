@@ -1692,4 +1692,10 @@ Per `cross_lens_escalation.md` v3.1 — secondary lenses so patches add the corr
 
 ## Repair disposition addendum — 2026-10-12
 
-The original audit above is retained as historical evidence. Current per-ID repairs, contract-based counterfindings, remaining work and validation limits are tracked in [the Mistral repair record](docs/logs/session/2026-10-12-mistral-findings-repair.md). The operator selected static-only validation and per-call saved-password approval with disclosure of external-tool trust. Source edits and static checks do not establish live CI execution, credential rotation or installed-app verification.
+The original audit above remains historical evidence. All49 detailed IDs have a current local source repair or source-grounded disposition in [the Mistral repair record](docs/logs/session/2026-10-12-mistral-findings-repair.md), with per-ID evidence and residual boundaries. Source commits `89dcef692` and `5fc8dc068` were created by another workspace process while the repair continued; final record/shared-lock amendments are local changes. The source patch received independent union re-audit and a separate completeness inspection.
+
+**Status: completed with partial verification.** At the operator's request, validation covers formatting, typechecks, syntax, workflow/source assertions and documentation scans. No Rust build/test/clippy, live workflow, packaged-app or installed-app verification was performed after that directive. Thirteen Desktop grant tests passed before it.
+
+The password repair implements the operator-selected declared-URL check plus mandatory per-call approval and explicitly trusts the approved tool. Orchestrator starts are parent-gated and directory-confined; its global session-management capability remains disclosed, without per-parent isolation. ADR0018 retention/recovery, ADR0015 external references, narrow archive semantics and historical v24 policy are recorded as contract dispositions. LLM-GSL-004's nested-delegation claim is falsified by the existing one-level guard.
+
+**External follow-up:** rotate/revoke and investigate the previously exposed10 CI secrets and verify live GitHub protections/signing/deployment. Legacy unowned temporary residue requires review. These actions are not represented as performed; see the repair record for precise limits.

@@ -25,6 +25,21 @@ host-enforced planning boundary can still deny a request or require review.
   ></iframe>
 </details>
 
+## Orchestrator scope
+
+The optional Orchestrator extension is a single-operator session management capability. Its
+`list_sessions`, `view_session`, `send_message`, and `interrupt_agent` tools can act on sessions
+throughout the operator's local store; they do not enforce ownership by the current parent agent.
+Ordinary permission inspection still applies to each call. Enabling this extension in an autonomous
+chat grants the model broad session-management power, including sending work to an existing agent
+with that agent's own mode and authorized folders. This surface is not a multi-user isolation boundary.
+
+`start_agent` requires an Autonomous parent, refuses nested starts from subagents, and confines the
+new working directory to the parent's directory. It inherits folder policy, admitted-skill limits,
+extensions and scoped sign-ins. A different child directory that invalidates a scoped extension's
+destination is refused. Providers that execute their own tools use a Chat-mode child. A separate
+provider instance is restored from the child snapshot.
+
 ## Permission Modes
 
 | Mode | Description | Best For |
