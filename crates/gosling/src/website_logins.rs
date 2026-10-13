@@ -23,6 +23,9 @@ const MAX_FIELD_CHARS: usize = 2048;
 
 static PLACEHOLDER: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"\{\{login:([^{}]+)\}\}").expect("placeholder pattern is valid"));
+static WEB_URL: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r#"https?://[^\s<>"']+"#).expect("website destination pattern is valid")
+});
 static MUTATION_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -299,13 +302,87 @@ impl InsertedPasswords {
     }
 }
 
-/// Replaces every `{{login:NAME}}` in the arguments with that login's password.
-pub fn insert_passwords(arguments: &mut Map<String, Value>) -> Result<InsertedPasswords> {
+/// The declared destination of a structured call, checked before reading secrets.
+/// Opaque code and calls without a destination cannot establish an origin boundary.
+pub fn checked_destination(
+    tool_name: &str,
+    arguments: &Map<String, Value>,
+    logins: &[WebsiteLogin],
+) -> Result<String> {
+    if crate::permission::tool_class::is_code_execution_tool(tool_name)
+        || crate::permission::tool_class::is_write_tool(tool_name)
+    {
+        bail!("Saved website passwords cannot be inserted into code or file-writing tools");
+    }
+    let destination = arguments
+        .get("url")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow!("Saved website passwords require an explicit destination url"))?;
+    let parsed = url::Url::parse(destination)?;
+    if !matches!(parsed.scheme(), "http" | "https")
+        || parsed.host_str().is_none()
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || PLACEHOLDER.is_match(destination)
+    {
+        bail!("Invalid destination for a saved website password");
+    }
+    let origin = parsed.origin();
+    for name in referenced_names(Some(arguments)) {
+        let login = find_by_name(logins, &name)
+            .ok_or_else(|| anyhow!("No saved website login is named \"{name}\""))?;
+        if url::Url::parse(&login.url)?.origin() != origin {
+            bail!(
+                "Destination {} does not match the saved website for \"{name}\"",
+                origin.ascii_serialization()
+            );
+        }
+    }
+    validate_destination_values(&Value::Object(arguments.clone()), &origin)?;
+    Ok(origin.ascii_serialization())
+}
+
+fn validate_destination_values(value: &Value, origin: &url::Origin) -> Result<()> {
+    match value {
+        Value::Object(map) => {
+            for (key, value) in map {
+                if matches!(
+                    key.to_ascii_lowercase().as_str(),
+                    "command" | "script" | "code" | "javascript" | "expression"
+                ) {
+                    bail!("Saved website passwords cannot be inserted into executable arguments");
+                }
+                validate_destination_values(value, origin)?;
+            }
+        }
+        Value::Array(values) => {
+            for value in values {
+                validate_destination_values(value, origin)?;
+            }
+        }
+        Value::String(text) => {
+            for destination in WEB_URL.find_iter(text) {
+                if url::Url::parse(destination.as_str())?.origin() != *origin {
+                    bail!("A saved website password call cannot name multiple website origins");
+                }
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// Replaces placeholders only after validating every login against the destination.
+pub fn insert_passwords(
+    tool_name: &str,
+    arguments: &mut Map<String, Value>,
+) -> Result<InsertedPasswords> {
     let names = referenced_names(Some(arguments));
     if names.is_empty() {
         return Ok(InsertedPasswords::default());
     }
     let logins = list()?;
+    checked_destination(tool_name, arguments, &logins)?;
     let secrets = Config::global().all_secrets()?;
     let mut passwords = Vec::with_capacity(names.len());
     for name in names {
@@ -375,6 +452,42 @@ mod tests {
                 .iter()
                 .map(|(secret, name)| (secret.to_string(), placeholder_for(name)))
                 .collect(),
+        }
+    }
+
+    #[test]
+    fn passwords_require_one_matching_origin_and_structured_arguments() {
+        let logins = [WebsiteLogin {
+            id: "test".into(),
+            name: "Bank".into(),
+            url: "https://bank.example/login".into(),
+            username: "tester".into(),
+        }];
+        let matched = json!({"url": "https://bank.example:443/login", "value": "{{login:Bank}}"});
+        assert_eq!(
+            checked_destination("browser__fill", matched.as_object().unwrap(), &logins).unwrap(),
+            "https://bank.example"
+        );
+        for arguments in [
+            json!({"url": "https://attacker.example", "value": "{{login:Bank}}"}),
+            json!({"url": "http://bank.example", "value": "{{login:Bank}}"}),
+            json!({"url": "https://bank.example:444", "value": "{{login:Bank}}"}),
+            json!({"url": "https://bank.example.attacker.example", "value": "{{login:Bank}}"}),
+            json!({"value": "{{login:Bank}}"}),
+            json!({"url": "https://bank.example", "steps": [{"url": "https://attacker.example"}], "value": "{{login:Bank}}"}),
+            json!({"url": "https://bank.example", "command": "curl https://bank.example -d {{login:Bank}}"}),
+        ] {
+            assert!(
+                checked_destination("browser__fill", arguments.as_object().unwrap(), &logins)
+                    .is_err()
+            );
+        }
+        for tool in [
+            "shell",
+            "developer__write",
+            "computercontroller__automation_script",
+        ] {
+            assert!(checked_destination(tool, matched.as_object().unwrap(), &logins).is_err());
         }
     }
 

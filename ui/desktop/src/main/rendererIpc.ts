@@ -12,7 +12,11 @@ import type { GoslingServeLeaseRegistry } from '../goslingServeLeaseRegistry';
 import { desktopCommandChannels, rendererEventChannels } from '../ipc/channels';
 import type { McpAppProxyCsp } from '../ipc/channels';
 import type { RendererDirectoryGrantRegistry } from '../utils/rendererDirectoryGrants';
-import { canonicalDirectory, isOverlyBroadRoot } from '../utils/rendererDirectoryGrants';
+import {
+  canonicalDirectory,
+  isOverlyBroadRoot,
+  isSensitiveDirectory,
+} from '../utils/rendererDirectoryGrants';
 import { addRecentDir, loadRecentDirs } from '../utils/recentDirs';
 import { GIT_IPC_CHANNELS, registerGitIpcHandlers } from './gitIpc';
 
@@ -154,18 +158,16 @@ export function registerRendererIpcHandlers(
     if (dir) addRecentDir(dir);
   });
   targetIpcMain.handle(desktopCommandChannels.listRecentDirs, () => loadRecentDirs());
-  // A session's own working directories are readable in the pane without a second
-  // picker trip. This trusts the renderer for the paths, which is the same trust the
-  // per-file artifact capability already carries; the guards below keep a bad or
-  // compromised caller from turning it into a grant on the home directory, a
-  // filesystem root, a symlink, or anything that is not an existing directory.
+  // Renderer-supplied paths are requests, not authorization. Only a native
+  // confirmation can add roots that main has not already granted.
   targetIpcMain.handle(
     desktopCommandChannels.grantSessionDirectories,
-    (event, directories: string[]) => {
+    async (event, directories: string[]) => {
       if (!Array.isArray(directories) || directories.length > MAX_SESSION_DIRECTORY_GRANTS) {
         return [];
       }
       const granted: string[] = [];
+      const requested = new Set<string>();
       for (const directory of directories) {
         if (typeof directory !== 'string' || !directory || directory.length > 4096) continue;
         try {
@@ -175,11 +177,36 @@ export function registerRendererIpcHandlers(
           // Resolve before granting: canonicalDirectory refuses symlinks and
           // non-directories, and the breadth check has to decide before any grant.
           const root = canonicalDirectory(directory);
-          if (isOverlyBroadRoot(root)) continue;
-          rendererDirectoryGrants.grantSelectedPath(event.sender.id, root, false);
-          granted.push(root);
+          if (isOverlyBroadRoot(root) || isSensitiveDirectory(root)) continue;
+          if (rendererDirectoryGrants.isGrantedDirectory(event.sender.id, root)) granted.push(root);
+          else requested.add(root);
         } catch {
           // A moved or deleted directory simply stays ungranted.
+        }
+      }
+      if (requested.size > 0) {
+        const window = BrowserWindow.fromWebContents(event.sender);
+        if (!window) return granted;
+        const confirmation = await dialog.showMessageBox(window, {
+          type: 'question',
+          title: 'Allow access to session folders?',
+          message: 'Allow this window to read, write, and delete files in these folders?',
+          detail: [...requested].join('\n'),
+          buttons: ['Cancel', 'Allow access'],
+          defaultId: 0,
+          cancelId: 0,
+          noLink: true,
+        });
+        if (confirmation.response !== 1 || event.sender.isDestroyed()) return granted;
+        for (const root of requested) {
+          // Re-resolve after the dialog so a replaced directory cannot inherit approval.
+          try {
+            if (canonicalDirectory(root) !== root || isSensitiveDirectory(root)) continue;
+            rendererDirectoryGrants.grantSelectedPath(event.sender.id, root, false);
+            granted.push(root);
+          } catch {
+            // A removed or replaced directory stays ungranted.
+          }
         }
       }
       return granted;

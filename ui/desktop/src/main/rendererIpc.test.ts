@@ -14,8 +14,8 @@ import {
 
 vi.mock('electron', () => ({
   app: { getPath: vi.fn(() => '/tmp') },
-  BrowserWindow: {},
-  dialog: { showOpenDialog: vi.fn() },
+  BrowserWindow: { fromWebContents: vi.fn(() => ({})) },
+  dialog: { showOpenDialog: vi.fn(), showMessageBox: vi.fn() },
 }));
 
 const temporaryDirectories: string[] = [];
@@ -75,7 +75,7 @@ describe('renderer IPC', () => {
     expect(grantSelectedPath).not.toHaveBeenCalled();
   });
 
-  it('grants a session its own directories, refusing anything too broad to be useful', () => {
+  it('requires native approval for new roots and refuses broad or invalid directories', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gosling-session-grants-'));
     temporaryDirectories.push(root);
     const project = path.join(root, 'project');
@@ -105,9 +105,19 @@ describe('renderer IPC', () => {
     );
     const grant = handle.mock.calls.find(
       ([channel]) => channel === 'grant-session-directories'
-    )?.[1] as (event: { sender: { id: number } }, dirs: unknown) => string[];
+    )?.[1] as (
+      event: { sender: { id: number; isDestroyed: () => boolean } },
+      dirs: unknown
+    ) => Promise<string[]>;
 
-    const granted = grant({ sender: { id: 7 } }, [
+    const event = { sender: { id: 7, isDestroyed: () => false } };
+    vi.mocked(dialog.showMessageBox).mockResolvedValue({ response: 0, checkboxChecked: false });
+    expect(await grant(event, [project])).toEqual([]);
+    expect(grants.isGrantedDirectory(7, project)).toBe(false);
+
+    vi.mocked(dialog.showMessageBox).mockResolvedValue({ response: 1, checkboxChecked: false });
+
+    const granted = await grant(event, [
       project,
       os.homedir(), // would subsume every other grant
       path.dirname(os.homedir()), // contains the home directory, so subsumes it too
@@ -124,8 +134,11 @@ describe('renderer IPC', () => {
     // Nothing durable: the session's folders are re-granted on load, not remembered.
     expect(fs.existsSync(path.join(root, 'grants.json'))).toBe(false);
 
-    expect(grant({ sender: { id: 7 } }, 'not-an-array')).toEqual([]);
-    expect(grant({ sender: { id: 7 } }, new Array(65).fill(project))).toEqual([]);
+    vi.mocked(dialog.showMessageBox).mockClear();
+    expect(await grant(event, [project])).toEqual([fs.realpathSync.native(project)]);
+    expect(dialog.showMessageBox).not.toHaveBeenCalled();
+    expect(await grant(event, 'not-an-array')).toEqual([]);
+    expect(await grant(event, new Array(65).fill(project))).toEqual([]);
   });
 
   it('registers renderer readiness and the original handler set', () => {

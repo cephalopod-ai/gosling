@@ -35,13 +35,16 @@ Ask gosling to sign in to the saved website and identify the account by name. Th
 passes that placeholder to another tool, gosling:
 
 1. checks that the tool call's website origin matches the saved login;
-2. asks for approval unless the session is in Auto mode;
+2. asks for approval, including in Auto mode;
 3. substitutes the password immediately before dispatch; and
 4. replaces the password with its placeholder in the tool result and progress notifications.
 
 :::warning Match the saved website
 A password placeholder is restricted to the saved website's origin. Save the actual sign-in URL,
-and review the destination shown in the approval prompt before allowing the call.
+and review the declared destination shown in the approval prompt before allowing the call.
+The call must supply a full destination in its `url` argument. Calls without a destination,
+calls naming multiple origins, and code or file-writing calls are refused. Browser tools that
+fill the current page without a URL cannot use saved passwords through this interface.
 :::
 
 ## Security boundary
@@ -51,8 +54,9 @@ and review the destination shown in the approval prompt before allowing the call
 - The model and conversation transcript receive the placeholder, not the stored password.
 - Substitution applies to a single approved tool call. gosling redacts that password from the
   call's returned content, including structured values and progress notifications.
-- Auto mode skips the confirmation prompt. Use an approval-based mode when you want to review each
-  credential use.
+- Every credential use requires confirmation, even in Auto mode. The origin check covers the
+  tool's declared destination; the external tool must honor that destination and its redirect
+  policy. Only grant access to trusted browser tools.
 - Redaction protects gosling's tool-output path; it cannot control what the destination website or
   an external browser tool records after receiving the credential.
 

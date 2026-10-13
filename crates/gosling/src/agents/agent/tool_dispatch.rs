@@ -546,7 +546,7 @@ fn insert_website_login_passwords(
             None,
         ));
     }
-    crate::website_logins::insert_passwords(arguments)
+    crate::website_logins::insert_passwords(&tool_call.name, arguments)
         .map_err(|error| ErrorData::new(ErrorCode::INVALID_PARAMS, error.to_string(), None))
 }
 

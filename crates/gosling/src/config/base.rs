@@ -69,7 +69,8 @@ pub(crate) fn write_secrets_file(path: &Path, content: &str) -> std::io::Result<
         file.sync_all()?;
     }
 
-    std::fs::rename(&temp_path, path)
+    std::fs::rename(&temp_path, path)?;
+    sync_parent_directory(path)
 }
 
 /// Atomically write `content` to `path` via a temp file + fsync + rename, so a
@@ -91,7 +92,22 @@ pub(crate) fn write_file_atomic(path: &Path, content: &str) -> std::io::Result<(
         file.sync_all()?;
     }
 
-    std::fs::rename(&temp_path, path)
+    std::fs::rename(&temp_path, path)?;
+    sync_parent_directory(path)
+}
+
+fn sync_parent_directory(path: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        let parent = path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+            .unwrap_or(Path::new("."));
+        std::fs::File::open(parent)?.sync_all()?;
+    }
+    #[cfg(not(unix))]
+    let _ = path;
+    Ok(())
 }
 
 #[cfg(feature = "system-keyring")]

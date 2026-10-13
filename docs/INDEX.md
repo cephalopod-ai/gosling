@@ -36,6 +36,7 @@ for the relationship to cephalopod-ai/gosling.
 - [polish/documentation-stewardship-report.md](polish/documentation-stewardship-report.md) — latest stewardship gate results and remaining risks
 - [polish/test-ledger.md](polish/test-ledger.md) — current validation commands, results, and evidence limits
 - [logs/](logs/) — retained session evidence and logging conventions
+- [logs/session/2026-10-12-mistral-comprehensive-audit.md](logs/session/2026-10-12-mistral-comprehensive-audit.md) — comprehensive read-only screening audit (13 lenses + 21 standalones; playtest excluded); 45 findings (3 High) and validation limits; full report at repo root `mistral-audit-comprehensive-12OCT2026.md`
 - [logs/session/2026-10-12-provider-lifecycle-refresh-audit.md](logs/session/2026-10-12-provider-lifecycle-refresh-audit.md) — provider API compatibility, steering and shutdown races, process supervision and refresh repairs; validation and remaining state/native-platform gaps
 - [logs/session/2026-10-06-supabase-disable-during-restore.md](logs/session/2026-10-06-supabase-disable-during-restore.md) — saved-chat extension removal during pending login, startup cancellation and busy-chat feedback; runtime/deployment verification limits
 - [logs/session/2026-10-02-scoped-authentication.md](logs/session/2026-10-02-scoped-authentication.md) — session/workspace auth controls, future-chat defaults, scoped MCP stores, and validation limits

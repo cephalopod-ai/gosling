@@ -19,6 +19,37 @@ impl Drop for SteerWindowGuard {
     }
 }
 
+async fn hooks_allowed(
+    session_manager: &crate::session::SessionManager,
+    session_id: &str,
+    event: crate::hooks::HookEvent,
+) -> bool {
+    match session_manager.plans().interaction_policy(session_id).await {
+        Ok(crate::session::InteractionPolicy::Normal) => true,
+        Ok(crate::session::InteractionPolicy::Planning { .. }) => {
+            tracing::warn!(
+                security.event_type = "planning_side_channel_denied",
+                security.reason = "planning_lifecycle_hook_denied",
+                hook.event = %event,
+                session.id = session_id,
+                "host planning boundary suppressed a command-backed lifecycle hook"
+            );
+            false
+        }
+        Err(error) => {
+            tracing::warn!(
+                security.event_type = "planning_side_channel_denied",
+                security.reason = "planning_state_unavailable",
+                hook.event = %event,
+                session.id = session_id,
+                error = %error,
+                "host planning boundary could not verify durable state for a lifecycle hook"
+            );
+            false
+        }
+    }
+}
+
 impl Agent {
     /// Emit a lifecycle hook event with no extra context. Useful for events
     /// that have no matcher (e.g. `SessionStart`, `SessionEnd`).
@@ -47,35 +78,8 @@ impl Agent {
         if !self.hook_manager.has_hooks(event) {
             return;
         }
-        match self
-            .config
-            .session_manager
-            .plans()
-            .interaction_policy(session_id)
-            .await
-        {
-            Ok(crate::session::InteractionPolicy::Normal) => {}
-            Ok(crate::session::InteractionPolicy::Planning { .. }) => {
-                tracing::warn!(
-                    security.event_type = "planning_side_channel_denied",
-                    security.reason = "planning_lifecycle_hook_denied",
-                    hook.event = %event,
-                    session.id = session_id,
-                    "host planning boundary suppressed a command-backed lifecycle hook"
-                );
-                return;
-            }
-            Err(error) => {
-                tracing::warn!(
-                    security.event_type = "planning_side_channel_denied",
-                    security.reason = "planning_state_unavailable",
-                    hook.event = %event,
-                    session.id = session_id,
-                    error = %error,
-                    "host planning boundary could not verify durable state for a lifecycle hook"
-                );
-                return;
-            }
+        if !hooks_allowed(&self.config.session_manager, session_id, event).await {
+            return;
         }
         self.hook_manager
             .emit(event, crate::hooks::HookContext::new(event, session_id))
@@ -94,6 +98,15 @@ impl Agent {
         if !self.hook_manager.has_hooks(crate::hooks::HookEvent::Stop) {
             return;
         }
+        if !hooks_allowed(
+            &self.config.session_manager,
+            session_id,
+            crate::hooks::HookEvent::Stop,
+        )
+        .await
+        {
+            return;
+        }
         self.hook_manager
             .emit(
                 crate::hooks::HookEvent::Stop,
@@ -107,6 +120,18 @@ impl Agent {
         session_id: &str,
         last_assistant_message: &str,
     ) -> crate::hooks::HookDecision {
+        if !self.hook_manager.has_hooks(crate::hooks::HookEvent::Stop) {
+            return crate::hooks::HookDecision::Allow;
+        }
+        if !hooks_allowed(
+            &self.config.session_manager,
+            session_id,
+            crate::hooks::HookEvent::Stop,
+        )
+        .await
+        {
+            return crate::hooks::HookDecision::Allow;
+        }
         self.hook_manager
             .emit_blocking(
                 crate::hooks::HookEvent::Stop,
@@ -200,6 +225,15 @@ impl Agent {
         {
             return;
         }
+        if !hooks_allowed(
+            &self.config.session_manager,
+            session_id,
+            crate::hooks::HookEvent::UserPromptSubmit,
+        )
+        .await
+        {
+            return;
+        }
         let ctx =
             crate::hooks::HookContext::new(crate::hooks::HookEvent::UserPromptSubmit, session_id)
                 .with_message(message.as_concat_text());
@@ -281,6 +315,9 @@ impl Agent {
         if !self.hook_manager.has_hooks(event) {
             return;
         }
+        if !hooks_allowed(&self.config.session_manager, session_id, event).await {
+            return;
+        }
         let mut ctx = crate::hooks::HookContext::new(event, session_id)
             .with_tool(tool_name.to_string(), tool_input)
             .with_working_dir(working_dir.to_string());
@@ -295,6 +332,7 @@ impl Agent {
         session: &Session,
     ) -> ToolCallResult {
         let hook_manager = self.hook_manager.clone();
+        let session_manager = self.config.session_manager.clone();
         let session_id = session.id.clone();
         let working_dir = session.working_dir.to_string_lossy().to_string();
         let tool_name = tool_call.name.to_string();
@@ -314,6 +352,17 @@ impl Agent {
                 _ => crate::hooks::HookEvent::PostToolUseFailure,
             };
 
+            let has_extended_hook = match category {
+                ToolCategory::Shell => hook_manager.has_hooks(crate::hooks::HookEvent::AfterShellExecution),
+                ToolCategory::Write => hook_manager.has_hooks(crate::hooks::HookEvent::AfterFileEdit),
+                _ => false,
+            };
+            if !hook_manager.has_hooks(event) && !has_extended_hook {
+                return processed_result;
+            }
+            if !hooks_allowed(&session_manager, &session_id, event).await {
+                return processed_result;
+            }
             if hook_manager.has_hooks(event) {
                 let ctx = crate::hooks::HookContext::new(event, &session_id)
                     .with_tool(tool_name.clone(), tool_input.clone())
@@ -338,7 +387,9 @@ impl Agent {
                     _ => None,
                 };
                 if let Some((ext_event, Some(matcher))) = extended {
-                    if hook_manager.has_hooks(ext_event) {
+                    if hook_manager.has_hooks(ext_event)
+                        && hooks_allowed(&session_manager, &session_id, ext_event).await
+                    {
                         let mut ctx = crate::hooks::HookContext::new(ext_event, &session_id)
                             .with_tool(tool_name, tool_input)
                             .with_working_dir(working_dir);

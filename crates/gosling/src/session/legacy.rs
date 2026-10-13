@@ -1,7 +1,7 @@
 use crate::conversation::message::MessageMetadata;
 use crate::conversation::Conversation;
 use crate::session::Session;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use chrono::{DateTime, Local, NaiveDateTime, TimeZone, Utc};
 use std::fs;
 use std::io::{self, BufRead};
@@ -59,7 +59,7 @@ pub fn load_session(session_name: &str, session_path: &Path) -> Result<Session> 
         ..Default::default()
     };
 
-    if let Some(Ok(line)) = lines.next() {
+    if let Some(line) = lines.next().transpose()? {
         let mut metadata_json: serde_json::Value = serde_json::from_str(&line)
             .map_err(|_| anyhow::anyhow!("Invalid session metadata JSON"))?;
 
@@ -88,16 +88,22 @@ pub fn load_session(session_name: &str, session_path: &Path) -> Result<Session> 
         session.id = session_name.to_string();
     }
 
-    for line in lines.map_while(Result::ok) {
-        if let Ok(mut message_json) = serde_json::from_str::<serde_json::Value>(&line) {
-            if let Some(obj) = message_json.as_object_mut() {
-                obj.entry("metadata")
-                    .or_insert(serde_json::to_value(MessageMetadata::default())?);
-            }
-            if let Ok(message) = serde_json::from_value(message_json) {
-                messages.push(message);
-            }
+    for (index, line) in lines.enumerate() {
+        let line_number = index + 2;
+        let line =
+            line.with_context(|| format!("Cannot read legacy session line {line_number}"))?;
+        if line.trim().is_empty() {
+            continue;
         }
+        let mut message_json = serde_json::from_str::<serde_json::Value>(&line)
+            .with_context(|| format!("Invalid legacy session JSON on line {line_number}"))?;
+        if let Some(obj) = message_json.as_object_mut() {
+            obj.entry("metadata")
+                .or_insert(serde_json::to_value(MessageMetadata::default())?);
+        }
+        let message = serde_json::from_value(message_json)
+            .with_context(|| format!("Invalid legacy session message on line {line_number}"))?;
+        messages.push(message);
     }
 
     if !messages.is_empty() {
@@ -119,6 +125,19 @@ mod tests {
     use super::*;
     use rmcp::model::Role;
     use tempfile::TempDir;
+
+    #[test]
+    fn malformed_legacy_message_never_becomes_a_successful_partial_import() {
+        let root = TempDir::new().unwrap();
+        let path = root.path().join("session.jsonl");
+        let metadata = r#"{"description":"test","id":"session","created_at":"2024-01-01T12:00:00Z","updated_at":"2024-01-01T12:00:00Z","extension_data":{},"message_count":0}"#;
+        for malformed in ["{not json}", r#"{"role":"invalid"}"#] {
+            fs::write(&path, format!("{metadata}\n{malformed}\n")).unwrap();
+            let error = load_session("session", &path).unwrap_err();
+            assert!(error.to_string().contains("line 2"));
+            assert!(fs::read_to_string(&path).unwrap().contains(malformed));
+        }
+    }
 
     #[test]
     fn test_load_legacy_session_without_metadata() {

@@ -2,7 +2,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { RendererDirectoryGrantRegistry, isOverlyBroadRoot } from './rendererDirectoryGrants';
+import {
+  RendererDirectoryGrantRegistry,
+  isOverlyBroadRoot,
+  isSensitiveDirectory,
+} from './rendererDirectoryGrants';
 
 const temporaryDirectories: string[] = [];
 
@@ -27,6 +31,23 @@ afterEach(() => {
 });
 
 describe('RendererDirectoryGrantRegistry', () => {
+  it('blocks credential and system roots, including descendants and platform aliases', () => {
+    const home = fs.realpathSync.native(os.homedir());
+    for (const root of ['.ssh', '.aws', '.gnupg', '.config', 'Library', 'AppData']) {
+      expect(isSensitiveDirectory(path.join(home, root))).toBe(true);
+      expect(isSensitiveDirectory(path.join(home, root, 'nested'))).toBe(true);
+    }
+    if (process.platform !== 'win32') {
+      expect(isSensitiveDirectory('/etc')).toBe(true);
+      expect(isSensitiveDirectory('/private/etc')).toBe(true);
+      expect(isSensitiveDirectory('/usr')).toBe(true);
+    }
+    expect(isSensitiveDirectory(path.join(home, 'Work'))).toBe(false);
+    expect(isSensitiveDirectory(path.join(home, '.ssh-backup'))).toBe(false);
+    if (process.platform === 'darwin') {
+      expect(isSensitiveDirectory(`/System/Volumes/Data${home}/.ssh`)).toBe(true);
+    }
+  });
   it('keeps a picked folder approved across windows and restarts, and nothing else', () => {
     const { approved, denied, storePath } = fixture();
     const registry = new RendererDirectoryGrantRegistry(storePath);

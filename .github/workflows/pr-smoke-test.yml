@@ -1,17 +1,8 @@
 on:
-  pull_request:
-    branches:
-      - main
   push:
     branches:
       - main
   workflow_dispatch:
-    inputs:
-      branch:
-        description: "Branch to test"
-        required: true
-        default: "main"
-        type: string
 
 name: Live Provider Tests
 
@@ -21,10 +12,10 @@ permissions:
 jobs:
   check-fork:
     runs-on: ubuntu-latest
-    # Skip entire workflow for fork PRs and dependabot PRs (they don't have access to secrets)
-    if: github.actor != 'dependabot[bot]' && (github.event_name == 'workflow_dispatch' || github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository)
+    # Live credentials are available only to the reviewed main branch.
+    if: github.actor != 'dependabot[bot]' && github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || github.event_name == 'push')
     steps:
-      - run: echo "Not a fork PR - proceeding with smoke tests"
+      - run: echo "Reviewed main branch - proceeding with live tests"
 
   changes:
     runs-on: ubuntu-latest
@@ -35,7 +26,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
-          ref: ${{ github.event.inputs.branch || github.ref }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
       - name: Check for code changes
@@ -87,7 +78,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
-          ref: ${{ github.event.inputs.branch || github.ref }}
+          ref: ${{ github.sha }}
 
       - uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1.17.0
 
@@ -118,7 +109,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
-          ref: ${{ github.event.inputs.branch || github.ref }}
+          ref: ${{ github.sha }}
 
       - name: Download Binary
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
@@ -194,7 +185,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
-          ref: ${{ github.event.inputs.branch || github.ref }}
+          ref: ${{ github.sha }}
 
       - name: Download Binary
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
@@ -238,7 +229,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
-          ref: ${{ github.event.inputs.branch || github.ref }}
+          ref: ${{ github.sha }}
 
       - name: Download Binary
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1

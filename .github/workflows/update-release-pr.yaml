@@ -1,7 +1,7 @@
 name: Update Release Notes
 
 on:
-  pull_request:
+  pull_request_target:
     types:
       - synchronize
     branches:
@@ -15,10 +15,12 @@ permissions:
 jobs:
   update-release-notes:
     runs-on: ubuntu-latest
-    if: startsWith(github.event.pull_request.head.ref, 'release/') && github.event.pull_request.user.login == 'github-actions[bot]'
+    if: github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.event.pull_request.head.ref, 'release/') && github.event.pull_request.user.login == 'github-actions[bot]'
     steps:
     - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
       with:
+        ref: ${{ github.event.pull_request.base.sha }}
+        persist-credentials: false
         fetch-depth: 0
 
     - uses: cashapp/activate-hermit@e49f5cb4dd64ff0b0b659d1d8df499595451155a # v1

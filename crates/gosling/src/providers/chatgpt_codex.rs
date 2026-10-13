@@ -443,8 +443,12 @@ impl TokenCache {
         Ok(())
     }
 
-    fn clear(&self) {
-        let _ = std::fs::remove_file(&self.cache_path);
+    fn clear(&self) -> Result<()> {
+        match std::fs::remove_file(&self.cache_path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error.into()),
+        }
     }
 }
 
@@ -946,8 +950,8 @@ impl ChatGptCodexAuthProvider {
         }
     }
 
-    fn clear_cached_tokens(&self) {
-        self.cache.clear();
+    fn clear_cached_tokens(&self) -> Result<()> {
+        self.cache.clear()
     }
 
     async fn get_valid_token(&self) -> Result<TokenData> {
@@ -992,7 +996,7 @@ impl ChatGptCodexAuthProvider {
             }
             Err(e) => {
                 tracing::warn!("Token refresh failed, will re-authenticate: {}", e);
-                self.cache.clear();
+                self.cache.clear()?;
                 Ok(None)
             }
         }
@@ -1026,8 +1030,7 @@ pub struct ChatGptCodexProvider {
 
 impl ChatGptCodexProvider {
     pub async fn cleanup() -> Result<()> {
-        TokenCache::new().clear();
-        Ok(())
+        TokenCache::new().clear()
     }
 
     pub async fn from_env(
@@ -1267,7 +1270,9 @@ impl Provider for ChatGptCodexProvider {
 
     async fn configure_oauth(&self) -> Result<(), ProviderError> {
         let previous_token = self.auth_provider.cache.load();
-        self.auth_provider.clear_cached_tokens();
+        self.auth_provider
+            .clear_cached_tokens()
+            .map_err(|error| ProviderError::Authentication(error.to_string()))?;
 
         let result = perform_oauth_flow(self.auth_provider.state.as_ref())
             .await
@@ -1327,6 +1332,22 @@ impl Provider for ChatGptCodexProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn token_removal_reports_failure_and_is_idempotent() {
+        let root = tempfile::tempdir().unwrap();
+        let cache = TokenCache {
+            cache_path: root.path().join("token.json"),
+        };
+        cache.clear().unwrap();
+        std::fs::write(&cache.cache_path, "test-token").unwrap();
+        cache.clear().unwrap();
+        assert!(!cache.cache_path.exists());
+        std::fs::create_dir(&cache.cache_path).unwrap();
+        assert!(cache.clear().is_err());
+        assert!(cache.cache_path.is_dir());
+    }
+
     use crate::conversation::message::Message;
     use gosling_providers::thinking::ThinkingEffort;
     use gosling_test_support::TEST_IMAGE_B64;
@@ -1366,7 +1387,7 @@ mod tests {
         let root_path = root.path().to_string_lossy().to_string();
         let _guard = env_lock::lock_env([("GOSLING_PATH_ROOT", Some(root_path.as_str()))]);
 
-        TokenCache::new().clear();
+        TokenCache::new().clear().unwrap();
         assert!(!TokenCache::new().has_token());
 
         TokenCache::new()

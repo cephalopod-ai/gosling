@@ -2,7 +2,7 @@ use anyhow::Result;
 use image::{DynamicImage, ImageFormat, ImageOutputFormat};
 use office_oxide::{Document, DocumentFormat};
 use std::fs;
-use std::io::Cursor;
+use std::io::{Cursor, Read};
 use std::path::Path;
 
 const MAX_OFFICE_ARCHIVE_ENTRIES: usize = 4_096;
@@ -144,8 +144,7 @@ fn extension_mime_type(extension: &str) -> Option<&'static str> {
 
 fn validate_linked_file(path: &Path, mime_type: &str) -> Result<()> {
     if let Some(expected) = office_format_for_mime(mime_type) {
-        validate_office_archive(path, expected)?;
-        let document = Document::open(path)?;
+        let document = open_bounded_office_document(path, expected)?;
         anyhow::ensure!(
             document.format() == expected,
             "office document type changed"
@@ -163,8 +162,7 @@ fn validate_linked_file(path: &Path, mime_type: &str) -> Result<()> {
 fn extract_office_text(path: &Path, mime_type: &str) -> Result<String> {
     let expected = office_format_for_mime(mime_type)
         .ok_or_else(|| anyhow::anyhow!("unsupported office document type"))?;
-    validate_office_archive(path, expected)?;
-    let document = Document::open(path)?;
+    let document = open_bounded_office_document(path, expected)?;
     anyhow::ensure!(
         document.format() == expected,
         "office document type changed"
@@ -172,24 +170,52 @@ fn extract_office_text(path: &Path, mime_type: &str) -> Result<String> {
     Ok(document.plain_text())
 }
 
-fn validate_office_archive(path: &Path, format: DocumentFormat) -> Result<()> {
+fn open_bounded_office_document(path: &Path, format: DocumentFormat) -> Result<Document> {
+    let limit = super::shell_handlers::SHELL_LIBRARY_FILE_LIMIT;
+    let mut bytes = Vec::new();
+    fs::File::open(path)?
+        .take(limit + 1)
+        .read_to_end(&mut bytes)?;
+    anyhow::ensure!(
+        bytes.len() as u64 <= limit,
+        "office document exceeds the input limit"
+    );
     if format.is_legacy() {
-        return Ok(());
+        return Ok(Document::from_reader(Cursor::new(bytes), format)?);
     }
-    let mut archive = zip::ZipArchive::new(fs::File::open(path)?)?;
+    let bounded = bounded_office_archive(bytes, MAX_OFFICE_ARCHIVE_UNCOMPRESSED_BYTES)?;
+    Ok(Document::from_reader(Cursor::new(bounded), format)?)
+}
+
+/// Normalize the same input snapshot into stored entries before the Office parser
+/// reads it. Its allocator trusts declared ZIP sizes; both sizes and actual bytes
+/// must be bounded, and reopening the source would lose that guarantee.
+fn bounded_office_archive(bytes: Vec<u8>, byte_limit: u64) -> Result<Vec<u8>> {
+    let mut archive = zip::ZipArchive::new(Cursor::new(bytes))?;
     anyhow::ensure!(
         archive.len() <= MAX_OFFICE_ARCHIVE_ENTRIES,
         "office document has too many archive entries"
     );
     let mut total = 0u64;
+    let mut output = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let options =
+        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
     for index in 0..archive.len() {
-        total = total.saturating_add(archive.by_index(index)?.size());
+        let entry = archive.by_index(index)?;
+        let remaining = byte_limit - total;
         anyhow::ensure!(
-            total <= MAX_OFFICE_ARCHIVE_UNCOMPRESSED_BYTES,
+            entry.size() <= remaining,
             "office document expands beyond the extraction limit"
         );
+        output.start_file(entry.name(), options)?;
+        let copied = std::io::copy(&mut entry.take(remaining + 1), &mut output)?;
+        anyhow::ensure!(
+            copied <= remaining,
+            "office document expands beyond the extraction limit"
+        );
+        total += copied;
     }
-    Ok(())
+    Ok(output.finish()?.into_inner())
 }
 
 fn office_format_for_mime(mime_type: &str) -> Option<DocumentFormat> {
@@ -331,6 +357,53 @@ fn ensure_pdf_complexity(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn office_expansion_budget_checks_actual_bytes_not_only_declared_sizes() {
+        use std::io::Write;
+        let mut source = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        source
+            .start_file(
+                "word/document.xml",
+                zip::write::SimpleFileOptions::default()
+                    .compression_method(zip::CompressionMethod::Deflated),
+            )
+            .unwrap();
+        source.write_all(&vec![b'x'; 4096]).unwrap();
+        let bytes = source.finish().unwrap().into_inner();
+        assert!(bounded_office_archive(bytes.clone(), 64).is_err());
+        let mut forged = bytes;
+        let central = forged
+            .windows(4)
+            .position(|bytes| bytes == b"PK\x01\x02")
+            .unwrap();
+        forged[22..26].copy_from_slice(&1u32.to_le_bytes());
+        forged[central + 24..central + 28].copy_from_slice(&1u32.to_le_bytes());
+        let error = bounded_office_archive(forged, 64).unwrap_err();
+        assert!(error.to_string().contains("extraction limit"), "{error}");
+    }
+
+    #[test]
+    fn bounded_office_archive_preserves_entry_contents() {
+        use std::io::Write;
+        let mut source = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        source
+            .start_file(
+                "word/document.xml",
+                zip::write::SimpleFileOptions::default(),
+            )
+            .unwrap();
+        source.write_all(b"evidence").unwrap();
+        let bytes = bounded_office_archive(source.finish().unwrap().into_inner(), 8).unwrap();
+        let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
+        let mut content = String::new();
+        archive
+            .by_name("word/document.xml")
+            .unwrap()
+            .read_to_string(&mut content)
+            .unwrap();
+        assert_eq!(content, "evidence");
+    }
 
     fn write_image(path: &Path, format: ImageOutputFormat) {
         let image = DynamicImage::new_rgba8(2, 2);

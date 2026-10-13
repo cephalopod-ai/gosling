@@ -2297,9 +2297,7 @@ async fn remove_provider() -> anyhow::Result<()> {
         .interact()?;
 
     // Clean up provider-specific cache files (e.g., OAuth tokens) before removing config
-    if let Err(e) = gosling::providers::cleanup_provider(selected_id).await {
-        tracing::warn!("Failed to clean up provider cache: {}", e);
-    }
+    gosling::providers::cleanup_provider(selected_id).await?;
 
     remove_custom_provider(selected_id)?;
     cliclack::outro(format!("Removed custom provider: {}", selected_id))?;

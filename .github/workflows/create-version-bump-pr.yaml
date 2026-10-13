@@ -2,19 +2,6 @@ name: Create Version Bump PR
 
 on:
   workflow_call:
-    secrets:
-      ANTHROPIC_API_KEY:
-        required: false
-      OPENAI_API_KEY:
-        required: false
-      GOOGLE_API_KEY:
-        required: false
-      OPENROUTER_API_KEY:
-        required: false
-      XAI_API_KEY:
-        required: false
-      TETRATE_API_KEY:
-        required: false
 
 permissions: {}
 
@@ -40,13 +27,6 @@ jobs:
           sudo apt install -y libdbus-1-dev gnome-keyring libxcb1-dev
 
       - name: Compute version and create bump branch
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
-          TETRATE_API_KEY: ${{ secrets.TETRATE_API_KEY }}
         run: |
           VERSION=$(just get-next-minor-version)
           echo "version=$VERSION" >> $GITHUB_ENV

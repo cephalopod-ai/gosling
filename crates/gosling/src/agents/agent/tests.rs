@@ -3292,6 +3292,28 @@ async fn planning_turn_suppresses_session_prompt_steer_and_stop_hooks() -> Resul
         "planning tool arguments must not trigger subdirectory hint reads"
     );
 
+    agent.emit_stop_hook(&session.id, "finished").await;
+    assert_eq!(
+        agent.emit_stop_hook_blocking(&session.id, "finished").await,
+        crate::hooks::HookDecision::Allow
+    );
+    agent
+        .emit_steer_prompt_hook(&session.id, &Message::user().with_text("steer"))
+        .await;
+    agent
+        .emit_pre_tool_extended_hooks(
+            "developer__shell",
+            Some(&serde_json::json!({"command": "echo test"})),
+            &session,
+        )
+        .await;
+    let deferred = agent.with_post_tool_hook(
+        ToolCallResult::from(Ok(CallToolResult::success(vec![]))),
+        &CallToolRequestParams::new("developer__shell")
+            .with_arguments(rmcp::object!({"command": "echo test"})),
+        &session,
+    );
+    deferred.result.await?;
     assert_eq!(provider.call_count(), 1);
     assert_eq!(
         env.hook_invocations(),

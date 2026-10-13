@@ -256,8 +256,12 @@ impl TokenCache {
         Ok(())
     }
 
-    fn clear(&self) {
-        let _ = std::fs::remove_file(&self.cache_path);
+    fn clear(&self) -> Result<()> {
+        match std::fs::remove_file(&self.cache_path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error.into()),
+        }
     }
 }
 
@@ -752,7 +756,7 @@ impl XaiOAuthAuthProvider {
                 }
                 Err(e) => {
                     tracing::warn!("xAI token refresh failed, will re-authenticate: {}", e);
-                    self.cache.clear();
+                    self.cache.clear()?;
                 }
             }
         }
@@ -798,8 +802,7 @@ pub struct XaiOAuthProvider {
 
 impl XaiOAuthProvider {
     pub async fn cleanup() -> Result<()> {
-        TokenCache::new().clear();
-        Ok(())
+        TokenCache::new().clear()
     }
 }
 
@@ -833,7 +836,10 @@ impl Provider for XaiOAuthProvider {
         // Preserve the previous token so a partially-completed sign-in
         // attempt (e.g. user closes the browser) doesn't sign them out.
         let previous_token = self.auth_provider.cache.load();
-        self.auth_provider.cache.clear();
+        self.auth_provider
+            .cache
+            .clear()
+            .map_err(|error| ProviderError::Authentication(error.to_string()))?;
 
         let flow_result = match perform_loopback_oauth_flow(self.auth_provider.state.as_ref()).await
         {
@@ -958,6 +964,21 @@ impl AuthProvider for SharedAuthProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn token_removal_reports_failure_and_is_idempotent() {
+        let root = tempfile::tempdir().unwrap();
+        let cache = TokenCache {
+            cache_path: root.path().join("token.json"),
+        };
+        cache.clear().unwrap();
+        std::fs::write(&cache.cache_path, "test-token").unwrap();
+        cache.clear().unwrap();
+        assert!(!cache.cache_path.exists());
+        std::fs::create_dir(&cache.cache_path).unwrap();
+        assert!(cache.clear().is_err());
+        assert!(cache.cache_path.is_dir());
+    }
 
     #[test]
     fn pkce_challenge_is_url_safe_base64_of_sha256_of_verifier() {

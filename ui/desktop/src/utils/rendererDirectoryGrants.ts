@@ -70,6 +70,34 @@ export function isOverlyBroadRoot(root: string): boolean {
   );
 }
 
+export function isSensitiveDirectory(root: string): boolean {
+  const candidate = withoutDataVolumeAlias(root);
+  const home = withoutDataVolumeAlias(fs.realpathSync.native(os.homedir()));
+  const protectedRoots = [
+    ...[
+      '.ssh',
+      '.aws',
+      '.gnupg',
+      '.azure',
+      '.kube',
+      '.docker',
+      '.config',
+      'Library',
+      'AppData',
+    ].map((directory) => path.join(home, directory)),
+    ...(process.platform === 'win32'
+      ? [
+          path.join(path.parse(home).root, 'Windows'),
+          path.join(path.parse(home).root, 'ProgramData'),
+        ]
+      : ['/etc', '/private/etc', '/usr', '/System', '/Library', '/var/lib', '/private/var/db']),
+  ];
+  return protectedRoots.some(
+    (protectedRoot) =>
+      containsOrEquals(protectedRoot, candidate) || containsOrEquals(candidate, protectedRoot)
+  );
+}
+
 export class RendererDirectoryGrantRegistry {
   private readonly persistedRoots = new Set<string>();
   private readonly transientRoots = new Map<number, Set<string>>();

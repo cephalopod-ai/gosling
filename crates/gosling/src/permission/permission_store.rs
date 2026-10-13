@@ -20,6 +20,7 @@ pub struct ToolPermissionRecord {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+/// Legacy public store retained for compatibility; live tool policy uses PermissionManager.
 pub struct ToolPermissionStore {
     permissions: HashMap<String, Vec<ToolPermissionRecord>>,
     version: u32, // For future schema migrations
@@ -64,14 +65,8 @@ impl ToolPermissionStore {
         std::fs::create_dir_all(&self.permissions_dir)?;
 
         let path = self.permissions_dir.join("tool_permissions.json");
-        let temp_path = path.with_extension("tmp");
-
-        // Write complete content to temporary file
         let content = serde_json::to_string_pretty(self)?;
-        std::fs::write(&temp_path, &content)?;
-
-        // Atomically rename temp file to target file
-        std::fs::rename(temp_path, path)?;
+        crate::config::base::write_secrets_file(&path, &content)?;
 
         Ok(())
     }

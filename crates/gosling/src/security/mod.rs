@@ -173,7 +173,6 @@ impl SecurityManager {
                     .await?;
 
                 let config_threshold = scanner.get_threshold_from_config();
-                let sanitized_explanation = analysis_result.explanation.replace('\n', " | ");
                 let finding_id = format!("SEC-{}", Uuid::new_v4().simple());
 
                 if analysis_result.degraded {
@@ -188,7 +187,6 @@ impl SecurityManager {
                         security.above_threshold = false,
                         security.threat_type = "scanner_degraded",
                         security.finding_id = %finding_id,
-                        security.explanation = %sanitized_explanation,
                         tool.name = %tool_call.name,
                         tool.request_id = %tool_request.id,
                         tool.arg_keys = %tool_call_json,
@@ -220,7 +218,6 @@ impl SecurityManager {
                         security.above_threshold = above_threshold,
                         security.threat_type = "command_injection",
                         security.finding_id = %finding_id,
-                        security.explanation = %sanitized_explanation,
                         tool.name = %tool_call.name,
                         tool.request_id = %tool_request.id,
                         tool.arg_keys = %tool_call_json,

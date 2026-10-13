@@ -5,15 +5,17 @@ use crate::website_logins;
 use anyhow::Result;
 use async_trait::async_trait;
 
-/// Asks before a call that will receive a saved website password, naming the
-/// login's site and username. Like other advisory prompts it follows the
-/// session's approval mode, so Auto mode signs in without asking.
+/// Requires approval for origin-bound password use, including in Auto mode.
 pub struct WebsiteLoginInspector;
 
 #[async_trait]
 impl ToolInspector for WebsiteLoginInspector {
     fn name(&self) -> &'static str {
         "website_login"
+    }
+
+    fn auto_downgrades_require_approval(&self) -> bool {
+        false
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -51,13 +53,33 @@ impl ToolInspector for WebsiteLoginInspector {
                 })
                 .collect::<Vec<_>>()
                 .join(", ");
-            let reason = format!(
-                "`{}` will receive the saved password for {described}. Approve only if this call should sign in to that site.",
-                tool_call.name
+            let destination = website_logins::checked_destination(
+                &tool_call.name,
+                tool_call
+                    .arguments
+                    .as_ref()
+                    .expect("placeholder has arguments"),
+                logins,
             );
+            let (action, reason) = match destination {
+                Ok(origin) => {
+                    let reason = format!(
+                        "`{}` will receive the saved password for {described}. Declared destination: {origin}. Approve only if this tool will sign in to that destination.",
+                        tool_call.name
+                    );
+                    (
+                        InspectionAction::RequireApproval(Some(reason.clone())),
+                        reason,
+                    )
+                }
+                Err(error) => (
+                    InspectionAction::Deny,
+                    format!("Saved website password refused for {described}: {error}"),
+                ),
+            };
             results.push(InspectionResult {
                 tool_request_id: request.id.clone(),
-                action: InspectionAction::RequireApproval(Some(reason.clone())),
+                action,
                 reason,
                 confidence: 1.0,
                 inspector_name: self.name().to_string(),
@@ -101,13 +123,10 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(inspector.auto_downgrades_require_approval());
+        assert!(!inspector.auto_downgrades_require_approval());
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].tool_request_id, "login");
-        assert!(matches!(
-            &results[0].action,
-            InspectionAction::RequireApproval(Some(message))
-                if message.contains("Nonexistent Test Login")
-        ));
+        assert!(matches!(&results[0].action, InspectionAction::Deny));
+        assert!(results[0].reason.contains("Nonexistent Test Login"));
     }
 }
