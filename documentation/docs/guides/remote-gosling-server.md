@@ -76,8 +76,9 @@ Confirm that the process is listening:
 lsof -nP -iTCP:3284 -sTCP:LISTEN
 ```
 
-Then check the readiness route. `/health` and `/status` do not require a token; they disclose
-liveness and database readiness. Keep these routes behind your network boundary when using a
+Then check the readiness route. `/health` reports process liveness without checking the
+database; `/status` checks session database readiness. Neither route requires a token.
+Keep these routes behind your network boundary when using a
 non-loopback listener. Add `-k` only when using the generated self-signed TLS
 certificate:
 

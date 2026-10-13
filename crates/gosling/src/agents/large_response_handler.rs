@@ -61,11 +61,11 @@ pub fn process_tool_response(
                                     )));
                                 }
                                 Err(e) => {
-                                    // If file writing fails, include original content with warning
+                                    result.is_error = Some(true);
                                     let warning = format!(
-                                        "Warning: Failed to write large response to file: {}. Showing full content instead.\n\n{}",
-                                        e,
-                                        text_content.text
+                                        "Tool response omitted ({} characters): failed to store it in the bounded response cache: {}. Request a smaller response.",
+                                        text_content.text.chars().count(),
+                                        e
                                     );
                                     processed_contents.push(Content::text(with_warning(
                                         injection_warning,
@@ -234,6 +234,17 @@ fn open_owner_only(path: &std::path::Path) -> std::io::Result<File> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn refused_spill_does_not_inline_the_body() {
+        let body = "x".repeat(MAX_RESPONSE_CACHE_BYTES as usize + 1);
+        let result =
+            process_tool_response(Ok(CallToolResult::success(vec![Content::text(body)]))).unwrap();
+        assert_eq!(result.is_error, Some(true));
+        let text = &result.content[0].as_text().unwrap().text;
+        assert!(text.len() < 2000);
+        assert!(!text.contains(&"x".repeat(100)));
+    }
+
     use super::*;
     use rmcp::model::{Content, ErrorCode, ErrorData};
     use std::borrow::Cow;

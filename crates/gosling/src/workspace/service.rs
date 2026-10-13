@@ -15,6 +15,29 @@ use tracing::warn;
 use unicode_normalization::UnicodeNormalization;
 use uuid::Uuid;
 
+#[derive(Debug)]
+pub(crate) enum WorkspaceRequestError {
+    NotFound(&'static str),
+    Invalid(String),
+}
+
+impl WorkspaceRequestError {
+    fn invalid(error: impl std::fmt::Display) -> Self {
+        Self::Invalid(error.to_string())
+    }
+}
+
+impl std::fmt::Display for WorkspaceRequestError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotFound(resource) => write!(formatter, "{resource} not found"),
+            Self::Invalid(message) => formatter.write_str(message),
+        }
+    }
+}
+
+impl std::error::Error for WorkspaceRequestError {}
+
 const MAX_INSTRUCTIONS_WORDS: usize = 100;
 const MAX_FOLDER_DESCRIPTION_CHARS: usize = 280;
 const MAX_LABEL_CHARS: usize = 100;
@@ -161,7 +184,7 @@ impl WorkspaceService {
             .workspaces
             .into_iter()
             .find(|workspace| workspace.id == workspace_id)
-            .ok_or_else(|| anyhow!("workspace not found"))
+            .ok_or_else(|| anyhow::Error::from(WorkspaceRequestError::NotFound("workspace")))
     }
 
     pub fn validate(&self, workspace: &WorkspaceMutation) -> Result<WorkspaceValidationReport> {
@@ -175,7 +198,7 @@ impl WorkspaceService {
     pub async fn create(&self, mutation: WorkspaceMutation) -> Result<Workspace> {
         let _guard = self.operation_lock.lock().await;
         let _credential_transaction = self.store.lock_credential_transaction()?;
-        validate_workspace_boundary(&mutation)?;
+        validate_workspace_boundary(&mutation).map_err(WorkspaceRequestError::invalid)?;
         let now = Utc::now().to_rfc3339();
         self.store.mutate(|document| {
             reject_duplicate_name(document, None, &mutation.name)?;
@@ -199,7 +222,7 @@ impl WorkspaceService {
     ) -> Result<Workspace> {
         let _guard = self.operation_lock.lock().await;
         let _credential_transaction = self.store.lock_credential_transaction()?;
-        validate_workspace_boundary(&mutation)?;
+        validate_workspace_boundary(&mutation).map_err(WorkspaceRequestError::invalid)?;
         let now = Utc::now().to_rfc3339();
         self.store.mutate(|document| {
             reject_duplicate_name(document, Some(workspace_id), &mutation.name)?;
@@ -207,7 +230,7 @@ impl WorkspaceService {
                 .workspaces
                 .iter()
                 .position(|workspace| workspace.id == workspace_id)
-                .ok_or_else(|| anyhow!("workspace not found"))?;
+                .ok_or_else(|| anyhow::Error::from(WorkspaceRequestError::NotFound("workspace")))?;
             let existing = &document.workspaces[index];
             let workspace = workspace_from_mutation(
                 existing.id.clone(),
@@ -232,7 +255,7 @@ impl WorkspaceService {
                 .iter()
                 .find(|workspace| workspace.id == workspace_id)
                 .cloned()
-                .ok_or_else(|| anyhow!("workspace not found"))?;
+                .ok_or_else(|| anyhow::Error::from(WorkspaceRequestError::NotFound("workspace")))?;
             let name = unique_copy_name(document, &source.name);
             let mut mutation = WorkspaceMutation::from(&source);
             mutation.name = name;
@@ -318,7 +341,7 @@ impl WorkspaceService {
                 .workspaces
                 .iter_mut()
                 .find(|item| item.id == workspace_id)
-                .ok_or_else(|| anyhow!("workspace not found"))?;
+                .ok_or_else(|| anyhow::Error::from(WorkspaceRequestError::NotFound("workspace")))?;
             workspace.authentication.provider_disconnected = profile.is_none();
             for binding in &mut workspace.credential_bindings {
                 binding.is_default = false;
@@ -377,7 +400,7 @@ impl WorkspaceService {
                 .workspaces
                 .iter_mut()
                 .find(|item| item.id == workspace_id)
-                .ok_or_else(|| anyhow!("workspace not found"))?;
+                .ok_or_else(|| anyhow::Error::from(WorkspaceRequestError::NotFound("workspace")))?;
             if !binding.disconnected {
                 if let Some(extensions) = &mut workspace.default_extensions {
                     if !extensions
@@ -403,13 +426,21 @@ impl WorkspaceService {
                 .iter()
                 .position(|workspace| workspace.id == workspace_id)
             else {
-                bail!("workspace not found");
+                return Err(anyhow::Error::from(WorkspaceRequestError::NotFound(
+                    "workspace",
+                )));
             };
             if document.workspaces.len() == 1 {
-                bail!("the only workspace cannot be deleted");
+                return Err(WorkspaceRequestError::Invalid(
+                    "the only workspace cannot be deleted".into(),
+                )
+                .into());
             }
             if workspace_id == document.default_workspace_id {
-                bail!("the default workspace cannot be deleted");
+                return Err(WorkspaceRequestError::Invalid(
+                    "the default workspace cannot be deleted".into(),
+                )
+                .into());
             }
             document.workspaces.remove(index);
             if document.active_workspace_id == workspace_id {
@@ -430,7 +461,7 @@ impl WorkspaceService {
                 .workspaces
                 .iter_mut()
                 .find(|workspace| workspace.id == workspace_id)
-                .ok_or_else(|| anyhow!("workspace not found"))?;
+                .ok_or_else(|| anyhow::Error::from(WorkspaceRequestError::NotFound("workspace")))?;
             workspace.last_opened_at = now;
             document.active_workspace_id = workspace_id.to_string();
             Ok(workspace.clone())
@@ -454,12 +485,15 @@ impl WorkspaceService {
 
     pub async fn import(&self, document: &str) -> Result<Workspace> {
         let value: Value =
-            serde_json::from_str(document).context("workspace import is malformed")?;
-        reject_secret_shaped_value(&value)?;
+            serde_json::from_str(document).map_err(WorkspaceRequestError::invalid)?;
+        reject_secret_shaped_value(&value).map_err(WorkspaceRequestError::invalid)?;
         let imported: Workspace =
-            serde_json::from_value(value).context("invalid workspace import")?;
+            serde_json::from_value(value).map_err(WorkspaceRequestError::invalid)?;
         if imported.schema_version > WORKSPACE_SCHEMA_VERSION {
-            bail!("workspace schema is newer than this version of Gosling");
+            return Err(WorkspaceRequestError::Invalid(
+                "workspace schema is newer than this version of Gosling".into(),
+            )
+            .into());
         }
         let mut mutation = WorkspaceMutation::from(&imported);
         for binding in mutation.authentication.extensions.values_mut() {
@@ -482,15 +516,22 @@ impl WorkspaceService {
             .product_output_folders
             .iter()
             .find(|output| output.id == output_folder_id)
-            .ok_or_else(|| anyhow!("output folder not found"))?;
+            .ok_or_else(|| anyhow::Error::from(WorkspaceRequestError::NotFound("output folder")))?;
         if !output.create_if_missing {
-            bail!("output folder is not configured for explicit creation");
+            return Err(WorkspaceRequestError::Invalid(
+                "output folder is not configured for explicit creation".into(),
+            )
+            .into());
         }
         let path = PathBuf::from(
-            super::normalize_workspace_path(&output.path).map_err(anyhow::Error::msg)?,
+            super::normalize_workspace_path(&output.path)
+                .map_err(WorkspaceRequestError::invalid)?,
         );
         if !super::validation::is_native_workspace_path(&path.to_string_lossy()) {
-            bail!("output folder is unavailable on this platform");
+            return Err(WorkspaceRequestError::Invalid(
+                "output folder is unavailable on this platform".into(),
+            )
+            .into());
         }
         std::fs::create_dir_all(&path)?;
         ensure_gitignored_if_in_repo(&path).await;
@@ -518,7 +559,7 @@ impl WorkspaceService {
             .workspaces
             .iter()
             .find(|workspace| workspace.id == workspace_id)
-            .ok_or_else(|| anyhow!("workspace not found"))?;
+            .ok_or_else(|| anyhow::Error::from(WorkspaceRequestError::NotFound("workspace")))?;
         let report = validate_workspace_mutation(&WorkspaceMutation::from(workspace), &profiles);
         if !report.valid_for_session {
             let message = report
@@ -854,7 +895,7 @@ pub(super) fn validate_workspace_boundary(mutation: &WorkspaceMutation) -> Resul
         validate_text(&output.id, "output folder identifier", MAX_IDENTIFIER_CHARS)?;
         validate_text(&output.label, "output folder label", MAX_LABEL_CHARS)?;
         validate_text(&output.path, "output folder path", MAX_PATH_CHARS)?;
-        super::normalize_workspace_path(&output.path).map_err(anyhow::Error::msg)?;
+        super::normalize_workspace_path(&output.path).map_err(WorkspaceRequestError::invalid)?;
     }
     for binding in &mutation.credential_bindings {
         validate_text(
@@ -1185,7 +1226,9 @@ fn reject_duplicate_name(
     if document.workspaces.iter().any(|workspace| {
         Some(workspace.id.as_str()) != current_id && name_key(&workspace.name) == key
     }) {
-        bail!("workspace name is already in use");
+        return Err(
+            WorkspaceRequestError::Invalid("workspace name is already in use".into()).into(),
+        );
     }
     Ok(())
 }

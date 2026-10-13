@@ -415,14 +415,25 @@ impl GithubCopilotProvider {
     /// the next request then starts a fresh GitHub sign-in instead of
     /// replaying the dead token.
     async fn forget_rejected_sign_in(&self, status: reqwest::StatusCode) -> ProviderError {
-        if let Err(error) = Config::global().delete_secret(&self.token_secret_key) {
-            tracing::warn!("could not remove the rejected GitHub Copilot sign-in: {error}");
-        }
-        if let Err(error) = self.cache.clear().await {
-            tracing::warn!("could not clear the GitHub Copilot token cache: {error}");
-        }
+        let removed = Config::global().delete_secret(&self.token_secret_key);
+        let cleared = self.cache.clear().await;
+        let recovery = match (removed, cleared) {
+            (Ok(()), Ok(())) => {
+                "The saved sign-in was removed; the next request will start GitHub sign-in again."
+                    .to_string()
+            }
+            (removed, cleared) => {
+                if let Err(error) = removed {
+                    tracing::warn!(%error, "could not remove the rejected GitHub Copilot sign-in");
+                }
+                if let Err(error) = cleared {
+                    tracing::warn!(%error, "could not clear the GitHub Copilot token cache");
+                }
+                "Automatic sign-in cleanup did not complete. Remove the saved GitHub Copilot sign-in and sign in again using `gosling configure`.".to_string()
+            }
+        };
         ProviderError::Authentication(format!(
-            "GitHub Copilot rejected the saved GitHub sign-in ({status}), so it was removed; the next request will start GitHub sign-in again, or run `gosling configure` and select GitHub Copilot to sign in now"
+            "GitHub Copilot rejected the saved GitHub sign-in ({status}). {recovery}"
         ))
     }
 
@@ -1152,7 +1163,7 @@ mod tests {
             assert_eq!(
                 error,
                 ProviderError::Authentication(format!(
-                    "GitHub Copilot rejected the saved GitHub sign-in ({reason}), so it was removed; the next request will start GitHub sign-in again, or run `gosling configure` and select GitHub Copilot to sign in now"
+                    "GitHub Copilot rejected the saved GitHub sign-in ({reason}). The saved sign-in was removed; the next request will start GitHub sign-in again."
                 ))
             );
             assert!(

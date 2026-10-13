@@ -405,6 +405,10 @@ impl ToolInspector for EgressInspector {
         "egress"
     }
 
+    fn auto_downgrades_require_approval(&self) -> bool {
+        false
+    }
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -453,7 +457,7 @@ impl ToolInspector for EgressInspector {
                     security.action = "ALLOW",
                     network.destinations = destinations
                         .iter()
-                        .map(|destination| destination.destination.as_str())
+                        .map(|destination| destination.domain.as_str())
                         .collect::<Vec<_>>()
                         .join(", "),
                     tool.name = tool_name,
@@ -469,7 +473,7 @@ impl ToolInspector for EgressInspector {
                     security.event_type = "egress",
                     security.action = "LOG",
                     security.threat_type = "data_exfiltration",
-                    network.destination = destination.destination.as_str(),
+                    network.destination = destination.domain.as_str(),
                     network.domain = destination.domain.as_str(),
                     network.egress_kind = destination.kind.as_str(),
                     network.direction = direction.as_str(),
@@ -482,7 +486,7 @@ impl ToolInspector for EgressInspector {
                 "Egress destinations detected: {}",
                 destinations
                     .iter()
-                    .map(|destination| destination.destination.as_str())
+                    .map(|destination| destination.domain.as_str())
                     .collect::<Vec<_>>()
                     .join(", ")
             );
@@ -513,12 +517,7 @@ impl ToolInspector for EgressInspector {
             {
                 InspectionAction::Allow
             } else {
-                match direction {
-                    EgressDirection::Inbound => InspectionAction::Allow,
-                    EgressDirection::Outbound | EgressDirection::Unknown => {
-                        InspectionAction::RequireApproval(Some(reason.clone()))
-                    }
-                }
+                InspectionAction::RequireApproval(Some(reason.clone()))
             };
             // Approval responses consume domain metadata, not the human-readable reason.
             let metadata = if matches!(action, InspectionAction::RequireApproval(_)) {
@@ -903,7 +902,7 @@ PY"#;
     }
 
     #[tokio::test]
-    async fn python_download_egress_is_allowed() {
+    async fn python_download_egress_requires_approval() {
         let inspector = EgressInspector::new(test_permission_manager());
         let tool_requests = vec![ToolRequest {
             id: "req-1".to_string(),
@@ -920,7 +919,10 @@ PY"#;
             .unwrap();
 
         assert_eq!(results.len(), 1);
-        assert_eq!(results[0].action, InspectionAction::Allow);
+        assert!(matches!(
+            results[0].action,
+            InspectionAction::RequireApproval(_)
+        ));
     }
 
     #[tokio::test]
@@ -943,10 +945,8 @@ PY"#;
         assert!(results.is_empty());
     }
 
-    /// Autonomous mode does not stop for egress approvals; the other modes
-    /// still ask (see `outbound_egress_requires_approval`).
     #[tokio::test]
-    async fn external_egress_is_allowed_in_auto_mode() {
+    async fn external_egress_requires_approval_in_auto_mode() {
         let mut manager = ToolInspectionManager::new();
         manager.add_inspector(Box::new(EgressInspector::new(test_permission_manager())));
         let tool_requests = vec![ToolRequest {
@@ -964,7 +964,10 @@ PY"#;
             .unwrap();
 
         assert_eq!(results.len(), 1);
-        assert_eq!(results[0].action, InspectionAction::Allow);
+        assert!(matches!(
+            results[0].action,
+            InspectionAction::RequireApproval(_)
+        ));
     }
 
     #[tokio::test]

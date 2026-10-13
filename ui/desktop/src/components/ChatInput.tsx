@@ -552,7 +552,7 @@ export default function ChatInput({
       if (shouldAutoSubmit && newValue.trim()) {
         trackVoiceDictation('auto_submit');
         setTimeout(() => {
-          performSubmit(newValue);
+          performSubmitRef.current(newValue);
         }, 100);
       } else {
         textAreaRef.current?.focus();
@@ -1109,8 +1109,28 @@ export default function ChatInput({
     }
   };
 
+  const hasSubmittableContent =
+    displayValue.trim() ||
+    pastedImages.some((img) => img.dataUrl && !img.error && !img.isLoading) ||
+    allDroppedFiles.some((file) => !file.error && !file.isLoading) ||
+    allowEmptySubmit;
+  const isAnyImageLoading = pastedImages.some((img) => img.isLoading);
+  const isAnyDroppedFileLoading = allDroppedFiles.some((file) => file.isLoading);
+
+  const submitBlocked =
+    submitDisabled ||
+    isAnyImageLoading ||
+    isAnyDroppedFileLoading ||
+    isRecording ||
+    isTranscribing ||
+    queueProcessingBlocked ||
+    chatState === ChatState.RestartingAgent;
+  const isSubmitButtonDisabled = !hasSubmittableContent || submitBlocked;
+  const submissionGuardRef = useRef(submitBlocked);
+  submissionGuardRef.current = submitBlocked;
+
   const handleInterruptionAndQueue = () => {
-    if (!isLoading || !hasSubmittableContent) {
+    if (isSubmitButtonDisabled || !isLoading) {
       return false;
     }
 
@@ -1159,18 +1179,11 @@ export default function ChatInput({
     return true;
   };
 
-  const canSubmit =
-    !isLoading &&
-    !submitDisabled &&
-    !queueProcessingBlocked &&
-    (displayValue.trim() ||
-      pastedImages.some((img) => img.dataUrl && !img.error && !img.isLoading) ||
-      allDroppedFiles.some((file) => !file.error && !file.isLoading) ||
-      allowEmptySubmit);
+  const canSubmit = !isLoading && !isSubmitButtonDisabled;
 
   const performSubmit = useCallback(
     async (text?: string) => {
-      if (submitDisabled) return;
+      if (isLoadingRef.current || submissionGuardRef.current) return;
 
       const imageData = convertImagesToImageData();
       const textToSend = appendDroppedFilePaths(text ?? displayValue.trim());
@@ -1220,10 +1233,12 @@ export default function ChatInput({
       lastInterruption,
       clearInputState,
       buildUserInput,
-      submitDisabled,
       allowEmptySubmit,
     ]
   );
+
+  const performSubmitRef = useRef(performSubmit);
+  performSubmitRef.current = performSubmit;
 
   const handleKeyDown = (evt: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (mentionPopover.isOpen && mentionPopoverRef.current) {
@@ -1295,20 +1310,13 @@ export default function ChatInput({
 
   const onFormSubmit = (e: React.FormEvent | React.MouseEvent) => {
     e.preventDefault();
-    if (submitDisabled || queueProcessingBlocked) {
+    if (isSubmitButtonDisabled) {
       return;
     }
     if (isLoading && hasSubmittableContent) {
       handleInterruptionAndQueue();
       return;
     }
-    const canSubmit =
-      !isLoading &&
-      !queueProcessingBlocked &&
-      (displayValue.trim() ||
-        pastedImages.some((img) => img.dataUrl && !img.error && !img.isLoading) ||
-        allDroppedFiles.some((file) => !file.error && !file.isLoading) ||
-        allowEmptySubmit);
     if (canSubmit) {
       performSubmit();
     }
@@ -1410,24 +1418,6 @@ export default function ChatInput({
       }
     }, 0);
   };
-
-  const hasSubmittableContent =
-    displayValue.trim() ||
-    pastedImages.some((img) => img.dataUrl && !img.error && !img.isLoading) ||
-    allDroppedFiles.some((file) => !file.error && !file.isLoading) ||
-    allowEmptySubmit;
-  const isAnyImageLoading = pastedImages.some((img) => img.isLoading);
-  const isAnyDroppedFileLoading = allDroppedFiles.some((file) => file.isLoading);
-
-  const isSubmitButtonDisabled =
-    !hasSubmittableContent ||
-    submitDisabled ||
-    isAnyImageLoading ||
-    isAnyDroppedFileLoading ||
-    isRecording ||
-    isTranscribing ||
-    queueProcessingBlocked ||
-    chatState === ChatState.RestartingAgent;
 
   const getSubmitButtonTooltip = (): string => {
     if (submitDisabled && submitDisabledReason) return submitDisabledReason;

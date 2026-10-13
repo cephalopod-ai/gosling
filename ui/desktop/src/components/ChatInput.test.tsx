@@ -5,6 +5,10 @@ import { ChatState } from '../types/chatState';
 import { TooltipProvider } from './ui/Tooltip';
 import ChatInput from './ChatInput';
 
+vi.mock('../utils/conversionUtils', () => ({
+  compressImageDataUrl: vi.fn(async (data: string) => data),
+}));
+
 vi.mock('./bottom_menu/DirSwitcher', () => ({ DirSwitcher: () => null }));
 vi.mock('./bottom_menu/GitBranchIndicator', () => ({ GitBranchIndicator: () => null }));
 vi.mock('./bottom_menu/ModeSwitcher', () => ({ ModeSwitcher: () => null }));
@@ -27,15 +31,23 @@ vi.mock('./ModelAndProviderContext', () => ({
 vi.mock('../acp/providers', () => ({
   acpListProviderDetails: vi.fn(async () => []),
 }));
+const audio = vi.hoisted(() => ({
+  isRecording: false,
+  isTranscribing: false,
+  onTranscription: undefined as ((text: string) => void) | undefined,
+}));
+
 vi.mock('../hooks/useAudioRecorder', () => ({
-  useAudioRecorder: () => ({
-    isEnabled: false,
-    dictationProvider: null,
-    isRecording: false,
-    isTranscribing: false,
-    startRecording: vi.fn(),
-    stopRecording: vi.fn(),
-  }),
+  useAudioRecorder: (options: { onTranscription: (text: string) => void }) => {
+    audio.onTranscription = options.onTranscription;
+    return {
+      isEnabled: false,
+      dictationProvider: null,
+      ...audio,
+      startRecording: vi.fn(),
+      stopRecording: vi.fn(),
+    };
+  },
 }));
 
 describe('ChatInput attach button', () => {
@@ -140,4 +152,144 @@ describe('ChatInput restored draft', () => {
     rerender(renderInput(undefined));
     expect(textbox.value).toBe('TAB-B');
   });
+});
+
+describe('ChatInput submit guards', () => {
+  beforeEach(() => {
+    audio.isRecording = false;
+    audio.isTranscribing = false;
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      }
+    );
+  });
+  afterEach(() => {
+    audio.isRecording = false;
+    audio.isTranscribing = false;
+    vi.unstubAllGlobals();
+  });
+
+  it('submits completed dictation from an empty composer after transcription ends', async () => {
+    const handleSubmit = vi.fn();
+    const input = () => (
+      <TooltipProvider>
+        <ChatInput
+          sessionId="voice"
+          handleSubmit={handleSubmit}
+          chatState={ChatState.Idle}
+          setView={vi.fn()}
+        />
+      </TooltipProvider>
+    );
+    audio.isTranscribing = true;
+    const { rerender } = render(input(), { wrapper: IntlTestWrapper });
+    act(() => audio.onTranscription!('voice draft submit'));
+    audio.isTranscribing = false;
+    rerender(input());
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 150)));
+    expect(handleSubmit).toHaveBeenCalledWith({ msg: 'voice draft', images: [] });
+  });
+
+  it('still queues complete input while streaming and sends it after the turn', async () => {
+    const handleSubmit = vi.fn();
+    const input = (state: ChatState) => (
+      <TooltipProvider>
+        <ChatInput
+          sessionId="queue"
+          handleSubmit={handleSubmit}
+          chatState={state}
+          setView={vi.fn()}
+          initialPrompt="queue this"
+        />
+      </TooltipProvider>
+    );
+    const { rerender } = render(input(ChatState.Streaming), { wrapper: IntlTestWrapper });
+    const textbox = screen.getByRole('textbox');
+    fireEvent.submit(textbox.closest('form')!);
+    expect(handleSubmit).not.toHaveBeenCalled();
+    expect(textbox).toHaveValue('');
+    rerender(input(ChatState.Idle));
+    await act(async () => {});
+    expect(handleSubmit).toHaveBeenCalledWith({ msg: 'queue this', images: [] });
+  });
+
+  it.each(['recording', 'transcribing', 'restarting', 'image', 'file'])(
+    'preserves the draft across keyboard and form submission while %s is pending',
+    async (pending) => {
+      audio.isRecording = pending === 'recording';
+      audio.isTranscribing = pending === 'transcribing';
+      const handleSubmit = vi.fn();
+      const imageReader = {
+        onload: undefined as ((event: { target: { result: string } }) => Promise<void>) | undefined,
+        readAsDataURL: vi.fn(),
+      };
+      if (pending === 'image') {
+        vi.stubGlobal(
+          'FileReader',
+          class {
+            constructor() {
+              return imageReader;
+            }
+          }
+        );
+      }
+      render(
+        <TooltipProvider>
+          <ChatInput
+            sessionId="guard"
+            handleSubmit={handleSubmit}
+            chatState={pending === 'restarting' ? ChatState.RestartingAgent : ChatState.Idle}
+            setView={vi.fn()}
+            droppedFiles={
+              pending === 'file'
+                ? [
+                    {
+                      id: 'loading',
+                      name: 'file.txt',
+                      path: '/fixture/file.txt',
+                      type: 'text/plain',
+                      isImage: false,
+                      isLoading: true,
+                    },
+                  ]
+                : []
+            }
+            initialPrompt="keep this draft"
+          />
+        </TooltipProvider>,
+        { wrapper: IntlTestWrapper }
+      );
+      const textbox = screen.getByRole('textbox');
+      if (pending === 'image') {
+        fireEvent.paste(textbox, {
+          clipboardData: {
+            files: [new File(['image'], 'image.png', { type: 'image/png' })],
+            getData: () => '',
+          },
+        });
+      }
+      for (let count = 0; count < 3; count++) fireEvent.keyDown(textbox, { key: 'Enter' });
+      fireEvent.keyDown(textbox, { key: 'Enter', ctrlKey: true, metaKey: true });
+      fireEvent.submit(textbox.closest('form')!);
+      await act(async () => {});
+      expect(handleSubmit).not.toHaveBeenCalled();
+      expect(textbox).toHaveValue('keep this draft');
+      if (pending === 'image') {
+        await act(async () => {
+          await imageReader!.onload!({ target: { result: 'data:image/png;base64,aW1hZ2U=' } });
+        });
+        expect(screen.getByRole('button', { name: 'Remove image' })).toBeInTheDocument();
+        fireEvent.submit(textbox.closest('form')!);
+        await act(async () => {});
+        expect(handleSubmit).toHaveBeenCalledWith({
+          msg: 'keep this draft',
+          images: [{ data: 'aW1hZ2U=', mimeType: 'image/png' }],
+        });
+      }
+    }
+  );
 });

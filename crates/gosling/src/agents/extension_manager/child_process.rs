@@ -131,32 +131,6 @@ pub(super) fn write_docker_env_file(
     }
 }
 
-/// Kills an extension's whole process group if its startup is abandoned.
-///
-/// rmcp only kills the direct child, and does so from a spawned task that never
-/// runs when the CLI exits on Ctrl-C during startup, which orphaned the server
-/// (and anything it launched, e.g. `npx` -> `node`). Extension processes lead
-/// their own group (see `configure_subprocess`), so the group id is the pid.
-struct StartupProcessGroup(Option<u32>);
-
-impl StartupProcessGroup {
-    fn disarm(mut self) {
-        self.0 = None;
-    }
-}
-
-impl Drop for StartupProcessGroup {
-    fn drop(&mut self) {
-        #[cfg(unix)]
-        if let Some(pgid) = self.0 {
-            // SAFETY: killpg only sends a signal; the group was created for this child.
-            unsafe {
-                libc::killpg(pgid as libc::pid_t, libc::SIGKILL);
-            }
-        }
-    }
-}
-
 /// rmcp owns and reaps the child, so the exit status of a server that dies
 /// during startup is only observable by wrapping the child it waits on.
 #[derive(Debug)]
@@ -256,7 +230,8 @@ pub(super) async fn child_process_client(
     let (transport, mut stderr) = TokioChildProcess::builder(command)
         .stderr(Stdio::piped())
         .spawn()?;
-    let startup_process_group = StartupProcessGroup(transport.id());
+    let startup_process_group =
+        crate::agents::mcp_client::ExtensionProcessGroup::new(transport.id());
     let mut stderr = stderr.take().ok_or_else(|| {
         ExtensionError::SetupError("failed to attach child process stderr".to_owned())
     })?;
@@ -297,8 +272,8 @@ pub(super) async fn child_process_client(
     .await;
 
     match client_result {
-        Ok(client) => {
-            startup_process_group.disarm();
+        Ok(mut client) => {
+            client.own_process_group(startup_process_group);
             Ok(client)
         }
         Err(error) => {

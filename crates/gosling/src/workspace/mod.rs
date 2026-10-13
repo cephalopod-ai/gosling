@@ -8,6 +8,7 @@ mod validation;
 pub(crate) use credentials::is_profile_secret_key;
 pub use credentials::ProfileResolution;
 pub use gosling_sdk_types::workspace::*;
+pub(crate) use service::WorkspaceRequestError;
 pub use service::{
     PreparedWorkspaceSession, WorkspaceNames, WorkspaceService, WorkspaceSessionLaunchOverrides,
 };

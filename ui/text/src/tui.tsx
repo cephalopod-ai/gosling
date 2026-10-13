@@ -1531,7 +1531,7 @@ async function runTextMode(
   } catch (e: unknown) {
     const errMsg = e instanceof Error ? e.message : String(e);
     console.error(`Error: ${errMsg}`);
-    process.exit(1);
+    await shutdown(1);
   }
 }
 
@@ -1558,7 +1558,7 @@ async function main() {
 
     serverProcess.on("error", (err) => {
       console.error(`Failed to start gosling acp: ${err.message}`);
-      process.exit(1);
+      void shutdown(1);
     });
 
     const output = Writable.toWeb(
@@ -1573,7 +1573,7 @@ async function main() {
   // Text mode: bypass TUI and stream directly to stdout
   if (cli.flags.text) {
     await runTextMode(serverConnection, cli.flags.text, cli.flags.yes);
-    cleanup();
+    await shutdown(0);
     return;
   }
 
@@ -1584,7 +1584,7 @@ async function main() {
   );
 
   await waitUntilExit();
-  cleanup();
+  await shutdown(0);
 }
 
 /// How long the ACP child is given to exit on its own before it is killed
@@ -1597,35 +1597,35 @@ function cleanup() {
   }
 }
 
-/// Terminate the ACP child, then exit.
-///
-/// This used to be `cleanup(); process.exit(0)`, which sent SIGTERM and then
-/// tore down the parent in the same tick — the child got no window to shut
-/// down and, if it ignored or was slow to handle SIGTERM, was left orphaned
-/// holding its port and session lock. The child is now given a bounded grace
-/// period and escalated to SIGKILL if it does not exit. (RES-GSL-002)
-function shutdown(code: number): void {
-  if (
-    !serverProcess ||
-    serverProcess.killed ||
-    serverProcess.exitCode !== null
-  ) {
-    process.exit(code);
-  }
+let shutdownPromise: Promise<void> | undefined;
+let shutdownCode = 0;
 
-  const child = serverProcess;
-  const force = setTimeout(() => {
-    child.kill("SIGKILL");
-    process.exit(code);
-  }, SHUTDOWN_GRACE_MS);
-  force.unref?.();
-
-  child.once("exit", () => {
-    clearTimeout(force);
-    process.exit(code);
-  });
-
-  child.kill();
+/// All exit paths share the child's grace period; signalling a child is not
+/// evidence that it has exited.
+function shutdown(code: number): Promise<void> {
+  shutdownCode = Math.max(shutdownCode, code);
+  shutdownPromise ??= (async () => {
+    const child = serverProcess;
+    if (child && child.exitCode === null && child.signalCode === null) {
+      await new Promise<void>((resolve) => {
+        const force = setTimeout(
+          () => child.kill("SIGKILL"),
+          SHUTDOWN_GRACE_MS,
+        );
+        child.once("exit", () => {
+          clearTimeout(force);
+          resolve();
+        });
+        child.once("error", () => {
+          clearTimeout(force);
+          resolve();
+        });
+        child.kill("SIGTERM");
+      });
+    }
+    process.exit(shutdownCode);
+  })();
+  return shutdownPromise;
 }
 
 process.on("exit", cleanup);

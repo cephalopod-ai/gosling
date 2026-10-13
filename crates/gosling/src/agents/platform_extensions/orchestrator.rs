@@ -758,8 +758,13 @@ async fn drain_managed_agent_reply<'a>(
                     }
                     Some(Ok(_)) => {}
                     Some(Err(e)) => {
-                        response_parts.push(format!("Error during agent processing: {}", e));
-                        break;
+                        cancel_token.cancel();
+                        let partial = if response_parts.is_empty() {
+                            String::new()
+                        } else {
+                            format!("\n\nPartial response (agent did not complete):\n{}", response_parts.join("\n\n"))
+                        };
+                        return Err(format!("Error during agent processing: {e}{partial}"));
                     }
                     None => break,
                 }
@@ -776,6 +781,26 @@ mod tests {
     use futures::stream;
     use std::time::Duration;
     use tokio::time::timeout;
+
+    #[tokio::test]
+    async fn stream_failure_preserves_partial_output_as_an_error() {
+        let cancel = CancellationToken::new();
+        let parent = CancellationToken::new();
+        let mut events = stream::iter(vec![
+            Ok(AgentEvent::Message(
+                Message::assistant().with_text("partial work"),
+            )),
+            Err(anyhow::anyhow!("provider failed")),
+        ])
+        .boxed();
+        let error = drain_managed_agent_reply("child", &mut events, &cancel, &parent)
+            .await
+            .unwrap_err();
+        assert!(error.contains("provider failed"));
+        assert!(error.contains("Partial response"));
+        assert!(error.contains("partial work"));
+        assert!(cancel.is_cancelled());
+    }
 
     #[tokio::test]
     async fn start_agent_rejects_unapproved_parents_and_outside_directories() {

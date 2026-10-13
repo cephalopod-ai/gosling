@@ -1,6 +1,19 @@
 use super::*;
 use crate::workspace::WorkspaceMutation;
 
+fn workspace_request_error(error: anyhow::Error) -> agent_client_protocol::Error {
+    match error.downcast_ref::<crate::workspace::WorkspaceRequestError>() {
+        Some(crate::workspace::WorkspaceRequestError::NotFound(_)) => {
+            agent_client_protocol::Error::resource_not_found(None)
+        }
+        Some(crate::workspace::WorkspaceRequestError::Invalid(message)) => {
+            agent_client_protocol::Error::invalid_params().data(message.clone())
+        }
+        None => agent_client_protocol::Error::internal_error()
+            .data("Workspace storage operation failed"),
+    }
+}
+
 impl GoslingAcpAgent {
     async fn workspace_response(
         &self,
@@ -41,7 +54,7 @@ impl GoslingAcpAgent {
             .workspace_service
             .create(request.workspace)
             .await
-            .invalid_params_err()?;
+            .map_err(workspace_request_error)?;
         self.workspace_response(workspace).await
     }
 
@@ -55,7 +68,7 @@ impl GoslingAcpAgent {
             .workspace_service
             .update(&request.workspace_id, request.workspace)
             .await
-            .invalid_params_err()?;
+            .map_err(workspace_request_error)?;
         self.workspace_response(workspace).await
     }
 
@@ -66,14 +79,14 @@ impl GoslingAcpAgent {
         let source = self
             .workspace_service
             .get(&request.workspace_id)
-            .invalid_params_err()?;
+            .map_err(workspace_request_error)?;
         self.validate_workspace_provider_model(&WorkspaceMutation::from(&source))
             .await?;
         let workspace = self
             .workspace_service
             .duplicate(&request.workspace_id)
             .await
-            .invalid_params_err()?;
+            .map_err(workspace_request_error)?;
         self.workspace_response(workspace).await
     }
 
@@ -85,7 +98,7 @@ impl GoslingAcpAgent {
             .workspace_service
             .delete(&request.workspace_id)
             .await
-            .invalid_params_err()?;
+            .map_err(workspace_request_error)?;
         Ok(WorkspaceDeleteResponse {
             active_workspace_id,
             default_workspace_id,
@@ -100,7 +113,7 @@ impl GoslingAcpAgent {
             .workspace_service
             .set_active(&request.workspace_id)
             .await
-            .invalid_params_err()?;
+            .map_err(workspace_request_error)?;
         self.workspace_response(workspace).await
     }
 
@@ -113,7 +126,7 @@ impl GoslingAcpAgent {
         let validation = self
             .workspace_service
             .validate(&request.workspace)
-            .invalid_params_err()?;
+            .map_err(workspace_request_error)?;
         Ok(WorkspaceValidationResponse { validation })
     }
 
@@ -124,7 +137,7 @@ impl GoslingAcpAgent {
         let document = self
             .workspace_service
             .export(&request.workspace_id)
-            .invalid_params_err()?;
+            .map_err(workspace_request_error)?;
         Ok(WorkspaceExportResponse { document })
     }
 
@@ -140,7 +153,7 @@ impl GoslingAcpAgent {
             .workspace_service
             .import(&request.document)
             .await
-            .invalid_params_err()?;
+            .map_err(workspace_request_error)?;
         self.workspace_response(workspace).await
     }
 
@@ -166,7 +179,7 @@ impl GoslingAcpAgent {
             .workspace_service
             .create_output_folder(&request.workspace_id, &request.output_folder_id)
             .await
-            .invalid_params_err()?;
+            .map_err(workspace_request_error)?;
         Ok(WorkspaceValidationResponse { validation })
     }
 
@@ -272,5 +285,69 @@ impl GoslingAcpAgent {
             status: profile.status,
             supported: false,
         })
+    }
+}
+
+#[cfg(test)]
+mod workspace_error_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn workspace_service_preserves_error_classes_at_the_handler_boundary() {
+        let root = tempfile::tempdir().unwrap();
+        let working = root.path().join("working");
+        std::fs::create_dir(&working).unwrap();
+        let service = crate::workspace::WorkspaceService::initialize(root.path(), &working)
+            .await
+            .unwrap();
+        let missing = workspace_request_error(service.get("missing").unwrap_err());
+        assert_eq!(
+            missing.code,
+            agent_client_protocol::Error::resource_not_found(None).code
+        );
+        let invalid = workspace_request_error(
+            service
+                .create(WorkspaceMutation::default())
+                .await
+                .unwrap_err(),
+        );
+        assert_eq!(
+            invalid.code,
+            agent_client_protocol::Error::invalid_params().code
+        );
+        std::fs::remove_file(root.path().join("workspaces/.workspaces.lock")).unwrap();
+        std::fs::create_dir(root.path().join("workspaces/.workspaces.lock")).unwrap();
+        let storage = workspace_request_error(service.get("missing").unwrap_err());
+        assert_eq!(
+            storage.code,
+            agent_client_protocol::Error::internal_error().code
+        );
+        assert_ne!(missing.code, storage.code);
+    }
+
+    #[test]
+    fn missing_validation_and_storage_errors_keep_distinct_codes() {
+        let missing = workspace_request_error(
+            crate::workspace::WorkspaceRequestError::NotFound("workspace").into(),
+        );
+        let invalid = workspace_request_error(
+            crate::workspace::WorkspaceRequestError::Invalid("name cannot be empty".into()).into(),
+        );
+        let storage = workspace_request_error(anyhow::anyhow!("private storage/lock detail"));
+        assert_eq!(
+            missing.code,
+            agent_client_protocol::Error::resource_not_found(None).code
+        );
+        assert_eq!(
+            invalid.code,
+            agent_client_protocol::Error::invalid_params().code
+        );
+        assert_eq!(
+            storage.code,
+            agent_client_protocol::Error::internal_error().code
+        );
+        assert!(!serde_json::to_string(&storage)
+            .unwrap()
+            .contains("private storage"));
     }
 }

@@ -217,6 +217,10 @@ impl ActivePromptRun {
     pub(super) fn was_cancelled(&self) -> bool {
         self.cancel_token.is_cancelled()
     }
+
+    pub(super) fn cancel_token(&self) -> CancellationToken {
+        self.cancel_token.clone()
+    }
 }
 
 pub(super) async fn register_active_prompt_run(

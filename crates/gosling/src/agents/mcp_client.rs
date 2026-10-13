@@ -602,6 +602,35 @@ pub struct McpClientTimeouts {
     pub request: std::time::Duration,
 }
 
+/// Owns the group created for a stdio extension, including descendants that
+/// rmcp's direct-child cleanup cannot reach.
+pub(crate) struct ExtensionProcessGroup(std::sync::atomic::AtomicU32);
+
+impl ExtensionProcessGroup {
+    pub(crate) fn new(pid: Option<u32>) -> Self {
+        Self(std::sync::atomic::AtomicU32::new(pid.unwrap_or(0)))
+    }
+
+    fn terminate(&self) {
+        let pgid = self.0.swap(0, std::sync::atomic::Ordering::AcqRel);
+        #[cfg(unix)]
+        if pgid != 0 {
+            // SAFETY: this group was created for the owned stdio child.
+            unsafe {
+                libc::killpg(pgid as libc::pid_t, libc::SIGKILL);
+            }
+        }
+        #[cfg(not(unix))]
+        let _ = pgid;
+    }
+}
+
+impl Drop for ExtensionProcessGroup {
+    fn drop(&mut self) {
+        self.terminate();
+    }
+}
+
 /// The MCP client is the interface for MCP operations.
 pub struct McpClient {
     client: Mutex<RunningService<RoleClient, GoslingClient>>,
@@ -609,6 +638,7 @@ pub struct McpClient {
     server_info: Option<InitializeResult>,
     timeout: std::time::Duration,
     docker_container: Option<String>,
+    process_group: Option<ExtensionProcessGroup>,
 }
 
 impl McpClient {
@@ -681,7 +711,12 @@ impl McpClient {
             server_info,
             timeout: timeouts.request,
             docker_container,
+            process_group: None,
         })
+    }
+
+    pub(crate) fn own_process_group(&mut self, group: ExtensionProcessGroup) {
+        self.process_group = Some(group);
     }
 
     pub fn docker_container(&self) -> Option<&str> {
@@ -804,6 +839,9 @@ impl McpClientTrait for McpClient {
             Err(e) => {
                 tracing::warn!("MCP client shutdown task panicked: {}", e);
             }
+        }
+        if let Some(group) = &self.process_group {
+            group.terminate();
         }
     }
 

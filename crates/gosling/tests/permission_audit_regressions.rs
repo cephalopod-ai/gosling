@@ -718,7 +718,8 @@ async fn egress_checks_later_upload_to_the_same_destination() {
             assert!(!results.iter().any(|r| r.tool_request_id == "first"));
         } else if !first.contains("POST") {
             assert!(results.iter().any(|r| {
-                r.tool_request_id == "first" && matches!(r.action, InspectionAction::Allow)
+                r.tool_request_id == "first"
+                    && matches!(r.action, InspectionAction::RequireApproval(_))
             }));
         } else {
             assert!(results.iter().any(|r| {
@@ -892,4 +893,138 @@ async fn a_missing_session_does_not_skip_its_workspace_inspection() {
         )
         .await
         .is_err());
+}
+
+#[tokio::test]
+async fn auto_preserves_unknown_host_approval_and_redacts_url_credentials() {
+    let root = tempfile::tempdir().unwrap();
+    let mut manager = ToolInspectionManager::new();
+    manager.add_inspector(Box::new(EgressInspector::new(Arc::new(
+        PermissionManager::new(root.path().into()),
+    ))));
+    let results = manager
+        .inspect_tools(
+            "audit",
+            &[shell_request(
+                "download",
+                "curl https://user:secret@audit.invalid/path?token=secret",
+            )],
+            &[],
+            GoslingMode::Auto,
+        )
+        .await
+        .unwrap();
+    assert!(matches!(
+        results[0].action,
+        InspectionAction::RequireApproval(_)
+    ));
+    assert!(results[0].reason.contains("audit.invalid"));
+    assert!(!results[0].reason.contains("secret"));
+    assert!(!results[0].reason.contains("/path"));
+}
+
+#[tokio::test]
+async fn each_unscoped_shell_mutation_requires_approval() {
+    let root = tempfile::tempdir().unwrap();
+    let (sessions, session) = workspace(&root, WorkspaceFolderAccess::ReadWrite).await;
+    sessions
+        .update(&session.id)
+        .restrict_tools_to_working_dirs(true)
+        .apply()
+        .await
+        .unwrap();
+    let inspector = WorkingDirScopeInspector::new(sessions);
+    for command in [
+        "python3 -c 'pass'".to_string(),
+        format!(
+            "cat '{}' ; python3 -c 'pass'",
+            session.working_dir.join("input.txt").display()
+        ),
+    ] {
+        let results = inspector
+            .inspect(
+                &session.id,
+                &[shell_request("unscoped", &command)],
+                &[],
+                GoslingMode::Auto,
+            )
+            .await
+            .unwrap();
+        assert!(matches!(
+            results[0].action,
+            InspectionAction::RequireApproval(_)
+        ));
+    }
+    let results = inspector
+        .inspect(
+            &session.id,
+            &[shell_request(
+                "read",
+                &format!("cat '{}'", session.working_dir.join("input.txt").display()),
+            )],
+            &[],
+            GoslingMode::Auto,
+        )
+        .await
+        .unwrap();
+    assert!(results.is_empty());
+}
+
+#[derive(Clone)]
+struct CapturedSecurityLog(Arc<std::sync::Mutex<Vec<u8>>>);
+
+impl std::io::Write for CapturedSecurityLog {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn security_info_logs_keep_ids_and_hosts_without_command_bodies() {
+    use tracing::instrument::WithSubscriber;
+    let bytes = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let captured = bytes.clone();
+    let subscriber = tracing_subscriber::fmt()
+        .without_time()
+        .with_ansi(false)
+        .with_max_level(tracing::Level::INFO)
+        .with_writer(move || CapturedSecurityLog(captured.clone()))
+        .finish();
+    async {
+        let root = tempfile::tempdir().unwrap();
+        let request = shell_request(
+            "logged",
+            "curl https://user:log-secret@audit.invalid/path?token=log-secret",
+        );
+        let inspector = EgressInspector::new(Arc::new(PermissionManager::new(root.path().into())));
+        let results = inspector
+            .inspect("audit", &[request.clone()], &[], GoslingMode::Auto)
+            .await
+            .unwrap();
+        let mut scan_result = results[0].clone();
+        scan_result.inspector_name = "security".into();
+        scan_result.finding_id = Some("SEC-GROK-001".into());
+        scan_result.confidence = 0.99;
+        scan_result.reason = "flagged command body log-secret".into();
+        gosling::tool_inspection::apply_inspection_results_to_permissions(
+            gosling::permission::permission_judge::PermissionCheckResult {
+                approved: vec![request],
+                needs_approval: vec![],
+                denied: vec![],
+            },
+            &[scan_result],
+        );
+    }
+    .with_subscriber(subscriber)
+    .await;
+    let logged = String::from_utf8(bytes.lock().unwrap().clone()).unwrap();
+    assert!(logged.contains("audit.invalid"));
+    assert!(logged.contains("SEC-GROK-001"));
+    assert!(!logged.contains("log-secret"));
+    assert!(!logged.contains("flagged command body"));
+    assert!(!logged.contains("/path"));
 }

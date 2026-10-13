@@ -959,9 +959,8 @@ impl Agent {
                                     }
 
                                     if all_install_successful && !enable_extension_request_ids.is_empty() {
-                                        if let Err(e) = self.save_extension_state(&session_config).await {
-                                            warn!("Failed to save extension state after runtime changes: {}", e);
-                                        }
+                                        self.save_extension_state(&session_config).await
+                                            .context("Runtime extensions changed, but the session extension state could not be saved")?;
                                         tools_updated = true;
                                     }
                                 }

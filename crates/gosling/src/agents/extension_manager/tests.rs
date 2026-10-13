@@ -2214,6 +2214,45 @@ async fn stdio_process_that_exits_silently_reports_its_exit_status() {
 
 #[cfg(unix)]
 #[tokio::test]
+async fn successful_stdio_client_close_and_drop_kill_the_extension_group() {
+    for explicit_close in [true, false] {
+        let temp_dir = tempdir().unwrap();
+        let pid_file = temp_dir.path().join("grandchild.pid");
+        let script = r#"sleep 60 & echo $! > "$1"
+read -r request
+id=$(printf '%s' "$request" | sed 's/.*"id":\([0-9]*\).*/\1/')
+printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2025-03-26","capabilities":{},"serverInfo":{"name":"healthy","version":"1.0.0"}}}\n' "$id"
+wait"#;
+        let mut command = Command::new("sh");
+        command.args(["-c", script, "sh"]).arg(&pid_file);
+        let client = child_process_client(
+            command,
+            ExtensionTimeouts::new(5, 30),
+            Arc::new(Mutex::new(None)),
+            &temp_dir.path().to_path_buf(),
+            None,
+            "gosling-test".into(),
+            GoslingMcpClientCapabilities {
+                mcpui: false,
+                host_info: None,
+            },
+        )
+        .await
+        .unwrap();
+        let grandchild = read_pid_file(&pid_file).await;
+        if explicit_close {
+            client.close().await;
+        }
+        drop(client);
+        assert!(
+            wait_until_exited(grandchild).await,
+            "extension descendant survived close/drop"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test]
 async fn stdio_server_that_completes_initialize_still_connects() {
     let script = r#"read -r request
 id=$(printf '%s' "$request" | sed 's/.*"id":\([0-9]*\).*/\1/')

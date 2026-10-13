@@ -397,7 +397,7 @@ impl GoslingAcpAgent {
             .lock()
             .await
             .get(session_id)
-            .map(|run| run.cancel_token.clone())
+            .map(|run| run.cancel_token())
         {
             token.cancel();
         }

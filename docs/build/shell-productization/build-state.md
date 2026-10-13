@@ -342,7 +342,7 @@ Requirements discovery may proceed in project repositories, but no named profile
 ## Verify-don't-trust resume commands
 
 ```bash
-cd /Users/eric/Work/vscode/forked/gosling
+# Run from the root of your gosling checkout.
 git status --short --branch
 git log -10 --oneline --decorate
 sed -n '1,220p' AGENTS.md

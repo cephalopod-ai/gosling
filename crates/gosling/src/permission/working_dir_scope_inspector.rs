@@ -121,6 +121,28 @@ impl ToolInspector for WorkingDirScopeInspector {
                 });
                 continue;
             }
+            if is_shell_tool(tool_call)
+                && tool_call
+                    .arguments
+                    .as_ref()
+                    .and_then(|args| args.get("command"))
+                    .and_then(|value| value.as_str())
+                    .is_some_and(|command| {
+                        has_unscoped_shell_mutation(command, &session.working_dir)
+                    })
+            {
+                let reason = "This shell command has filesystem effects that cannot be scoped to the session's folders. Use explicit paths or approve this call once.".to_string();
+                results.push(InspectionResult {
+                    tool_request_id: request.id.clone(),
+                    action: InspectionAction::RequireApproval(Some(reason.clone())),
+                    reason,
+                    confidence: 1.0,
+                    inspector_name: self.name().to_string(),
+                    finding_id: Some("LLM-GROK-001".to_string()),
+                    metadata: None,
+                });
+                continue;
+            }
             let candidates = if session.restrict_tools_to_working_dirs {
                 ScopedPaths {
                     targets: referenced_paths(tool_call, &session.working_dir),
@@ -827,6 +849,17 @@ struct ScopedPaths {
     navigation: Vec<PathBuf>,
 }
 
+fn has_unscoped_shell_mutation(command: &str, working_dir: &Path) -> bool {
+    analyze_shell(command).segments.iter().any(|segment| {
+        if segment.read_only {
+            return false;
+        }
+        let mut paths = Vec::new();
+        collect_shell_segment_paths(&segment.words, working_dir, &mut paths);
+        paths.is_empty()
+    })
+}
+
 fn scoped_mutation_paths(tool_call: &CallToolRequestParams, working_dir: &Path) -> ScopedPaths {
     let mut paths = ScopedPaths {
         targets: Vec::new(),
@@ -1008,8 +1041,8 @@ fn shell_segment_is_read_only(segment: &[String]) -> bool {
 
 /// Returns the first out-of-scope path among the given resolved paths, if
 /// any. Callers only pass explicit `path` arguments, explicit absolute or
-/// relative shell paths and `cd` destinations; ambiguous path-free calls are
-/// left alone rather than guessed at.
+/// relative shell paths and `cd` destinations. Unscoped shell mutations are
+/// gated separately rather than treated as in scope.
 fn out_of_scope_path(
     paths: &[PathBuf],
     allowed_dirs: &[PathBuf],

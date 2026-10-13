@@ -174,7 +174,9 @@ const commandLineForPid = (pid: number): Promise<string | null> => {
 
 const isRecordedGoslingServeProcess = async (record: BackendProcessRecord): Promise<boolean> => {
   if (!isProcessRunning(record.pid)) {
-    return false;
+    // A vanished leader cannot have been replaced by an unrelated process;
+    // descendants may still own its recorded group.
+    return process.platform !== 'win32' && isProcessRunning(-record.pid);
   }
 
   if (process.platform === 'win32') {
@@ -206,7 +208,8 @@ const waitForProcessExit = async (pid: number, timeoutMs: number): Promise<boole
 };
 
 const terminateProcess = async (pid: number): Promise<void> => {
-  if (!isProcessRunning(pid)) {
+  const target = process.platform === 'win32' ? pid : -pid;
+  if (!isProcessRunning(target)) {
     return;
   }
 
@@ -222,21 +225,21 @@ const terminateProcess = async (pid: number): Promise<void> => {
   }
 
   try {
-    process.kill(pid, 'SIGTERM');
+    process.kill(target, 'SIGTERM');
   } catch {
     return;
   }
 
-  if (await waitForProcessExit(pid, TERMINATE_GRACE_MS)) {
+  if (await waitForProcessExit(target, TERMINATE_GRACE_MS)) {
     return;
   }
 
   try {
-    process.kill(pid, 'SIGKILL');
+    process.kill(target, 'SIGKILL');
   } catch {
     return;
   }
-  await waitForProcessExit(pid, TERMINATE_GRACE_MS);
+  await waitForProcessExit(target, TERMINATE_GRACE_MS);
 };
 
 export const cleanupRecordedBackendProcesses = async (
@@ -270,7 +273,7 @@ export const cleanupRecordedBackendProcesses = async (
 
     logger.info(`Cleaning up stale gosling serve process ${record.pid}`);
     await terminateProcess(record.pid);
-    if (isProcessRunning(record.pid)) {
+    if (isProcessRunning(process.platform === 'win32' ? record.pid : -record.pid)) {
       logger.error(`Stale gosling serve process ${record.pid} is still running after cleanup`);
       stillRunning.push(record);
     }

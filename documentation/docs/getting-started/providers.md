@@ -30,8 +30,6 @@ gosling is compatible with a wide range of LLM providers, allowing you to choose
 | [ChatGPT Codex](https://chatgpt.com/codex) | Access GPT-6 Astra and GPT-5 models through an eligible ChatGPT account. **Requires a ChatGPT Plus/Pro subscription.** | No manual key. Uses browser-based OAuth authentication for both CLI and Desktop. |
 | [Databricks](https://www.databricks.com/)                                   | Unified data analytics and AI platform for building and deploying models.                                                                                                                                                 | `DATABRICKS_HOST`, `DATABRICKS_TOKEN` |
 | [Docker Model Runner](https://docs.docker.com/ai/model-runner/)                             | Local models running in Docker Desktop or Docker CE with OpenAI-compatible API endpoints. **Because this provider runs locally, you must first [download a model](#local-llms).**                     | `OPENAI_HOST`, `OPENAI_BASE_PATH`   |
-| [EmpirioLabs AI](https://empiriolabs.ai/)                                      | Frontier open and proprietary chat models (Qwen, DeepSeek, GLM, Kimi, MiniMax) through one OpenAI-compatible API with streaming. Catalog available at `https://api.empiriolabs.ai/v1/models`.        | `EMPIRIOLABS_API_KEY`                                                                                                                                                              |
-| [FuturMix](https://futurmix.ai/)                                            | Unified AI gateway providing access to models from Anthropic, Google, OpenAI, and DeepSeek through an OpenAI-compatible API.                                                                          | `FUTURMIX_API_KEY`                                                                                                                                                                  |
 | [Gemini](https://ai.google.dev/gemini-api/docs)                             | Advanced LLMs by Google with multimodal capabilities (text, images). Gemini 3 models support configurable [thinking levels](#gemini-3-thinking-levels).                                                                                                | `GOOGLE_API_KEY`, `GEMINI3_THINKING_LEVEL` (optional)                                                                                                                              |
 | [GCP Vertex AI](https://cloud.google.com/vertex-ai)                         | Google Cloud's Vertex AI platform, supporting Gemini and Claude models. **Credentials must be [configured in advance](https://cloud.google.com/vertex-ai/docs/authentication).** Filters for allowed models by organization policy (if configured). | `GCP_PROJECT_ID`, `GCP_LOCATION` and optionally `GCP_MAX_RATE_LIMIT_RETRIES` (5), `GCP_MAX_OVERLOADED_RETRIES` (5), `GCP_INITIAL_RETRY_INTERVAL_MS` (5000), `GCP_BACKOFF_MULTIPLIER` (2.0), `GCP_MAX_RETRY_INTERVAL_MS` (320_000). |
 | [GitHub Copilot](https://docs.github.com/en/copilot/using-github-copilot/ai-models) | Access to AI models from OpenAI, Anthropic, Google, and other providers through GitHub's Copilot infrastructure. **GitHub account with Copilot access required.** | No manual key. Uses [device flow authentication](#github-copilot-authentication) for both CLI and Desktop. |
@@ -51,7 +49,6 @@ gosling is compatible with a wide range of LLM providers, allowing you to choose
 | [Perplexity](https://www.perplexity.ai/)                                    | Chat models with built-in real-time web search grounding. OpenAI-compatible chat completions API at `https://api.perplexity.ai`.                                                                                          | `PERPLEXITY_API_KEY`                                                                                                                                                                |
 | [OVHcloud AI](https://www.ovhcloud.com/en/public-cloud/ai-endpoints/)       | Provides access to open-source models including Qwen, Llama, Mistral, and DeepSeek through AI Endpoints service.                                                       | `OVHCLOUD_API_KEY`                                                                                                                                                                  |
 | [Ramalama](https://ramalama.ai/)                                            | Local model using native [OCI](https://opencontainers.org/) container runtimes, [CNCF](https://www.cncf.io/) tools, and supporting models as OCI artifacts. Ramalama API is a compatible alternative to Ollama and can be used with the gosling Ollama provider. Supports Qwen, Llama, DeepSeek, and other open-source models. **Because this provider runs locally, you must first [download and run a model](#local-llms).**  | `OLLAMA_HOST`                                                                                                                                                                       |
-| [Routstr](https://routstr.com/)                                             | OpenAI-compatible aggregator that fronts dozens of upstream providers (Anthropic, OpenAI, Google, DeepSeek, Llama, …) behind a single API. Authenticate with an `sk-...` bearer issued by your Routstr instance — payment is handled outside gosling.                                                                                                                                                                       | `ROUTSTR_API_KEY`, `ROUTSTR_HOST` (optional, default `https://api.routstr.com`)                                                                                                     |
 | [SaladCloud AI Gateway](https://salad.com/)                                 | OpenAI-compatible access to SaladCloud-hosted open-source models, including Qwen, Gemma, and others.                                                                                                          | `SALAD_CLOUD_API_KEY`                                                                                                                                                              |
 | [Scaleway](https://www.scaleway.com/en/generative-apis/)                    | European cloud offering OpenAI-compatible access to models like Mistral, Qwen, and open-source weights. Ensures data residency and GDPR compliance.                                                                                                                                                                                                                                                                | `SCW_SECRET_KEY`      |
 | [Snowflake](https://docs.snowflake.com/user-guide/snowflake-cortex/aisql#choosing-a-model) | Access the latest models using Snowflake Cortex services, including Claude models. **Requires a Snowflake account and programmatic access token (PAT)**.                                                     | `SNOWFLAKE_HOST`, `SNOWFLAKE_TOKEN`                                                                                                                                                                 |
@@ -712,84 +709,11 @@ To set up Groq with gosling, follow these steps:
 </Tabs>
 
 ### EmpirioLabs AI
-[EmpirioLabs AI](https://empiriolabs.ai/) provides access to frontier open and proprietary chat models through a single OpenAI-compatible API with streaming. To use EmpirioLabs with gosling, you need an API key from [EmpirioLabs](https://platform.empiriolabs.ai/dashboard/api-keys).
 
-EmpirioLabs offers models that support tool calling, including:
-- **qwen3-7-plus** - Qwen3.7 Plus with a 1M context window
-- **qwen3-7-max** - Qwen3.7 Max with a 1M context window
-- **deepseek-v4-pro** - DeepSeek V4 Pro with a 1M context window
-- **deepseek-v4-flash** - DeepSeek V4 Flash with a 1M context window
-- **glm-5-1** - GLM-5.1 with a 202K context window
-- **kimi-k2-7-code** - Kimi K2.7 Code with a 256K context window
-- **minimax-m3** - MiniMax M3 with a 524K context window
-
-The full live catalog is available at `https://api.empiriolabs.ai/v1/models`. For the complete list of EmpirioLabs models configured in gosling, see [empiriolabs.json](https://github.com/cephalopod-ai/gosling/blob/main/crates/gosling/src/providers/declarative/empiriolabs.json). For more details, see the [EmpirioLabs documentation](https://docs.empiriolabs.ai).
-
-To set up EmpirioLabs with gosling, follow these steps:
-
-<Tabs groupId="interface">
-  <TabItem value="ui" label="gosling Desktop" default>
-  **To update your LLM provider and API key:** 
-
-    1. Click the <PanelLeft className="inline" size={16} /> button in the top-left to open the sidebar.
-    2. Click the `Settings` button on the sidebar.
-    3. Click the `Models` tab.
-    4. Click `Configure Providers`
-    5. Choose `EmpirioLabs AI` as provider from the list.
-    6. Click `Configure`, enter your API key, and click `Submit`.
-    7. Select the EmpirioLabs model of your choice.
-
-  </TabItem>
-  <TabItem value="cli" label="gosling CLI">
-    1. Run: 
-    ```sh
-    gosling configure
-    ```
-    2. Select `Configure Providers` from the menu.
-    3. Follow the prompts to choose `EmpirioLabs AI` as the provider.
-    4. Enter your API key when prompted.
-    5. Select the EmpirioLabs model of your choice.
-  </TabItem>
-</Tabs>
-
-### FuturMix
-[FuturMix](https://futurmix.ai/) is a unified AI gateway providing access to models from Anthropic, Google, OpenAI, and DeepSeek through an OpenAI-compatible API. To use FuturMix with gosling, you need an API key from [FuturMix](https://futurmix.ai/).
-
-FuturMix offers models that support tool calling, including:
-- **claude-sonnet-4-20250514** - Anthropic Claude Sonnet 4 with 200K context
-- **gpt-4o** - OpenAI GPT-4o with 128K context
-- **gemini-2.5-pro** - Google Gemini 2.5 Pro with 1M context
-- **deepseek-chat** - DeepSeek V3 with 131K context
-- **claude-haiku-4-20250514** - Anthropic Claude Haiku 4 with 200K context
-
-For the complete list of supported FuturMix models, see [futurmix.json](https://github.com/cephalopod-ai/gosling/blob/main/crates/gosling/src/providers/declarative/futurmix.json).
-
-To set up FuturMix with gosling, follow these steps:
-
-<Tabs groupId="interface">
-  <TabItem value="ui" label="gosling Desktop" default>
-  **To update your LLM provider and API key:** 
-
-    1. Click the <PanelLeft className="inline" size={16} /> button in the top-left to open the sidebar.
-    2. Click the `Settings` button on the sidebar.
-    3. Click the `Models` tab.
-    4. Click `Configure Providers`
-    5. Choose `FuturMix` as provider from the list.
-    6. Click `Configure`, enter your API key, and click `Submit`.
-    7. Select the FuturMix model of your choice.
-
-  </TabItem>
-  <TabItem value="cli" label="gosling CLI">
-    1. Run: 
-    ```sh
-    gosling configure
-    ```
-    2. Select `Configure Providers` from the menu.
-    3. Follow the prompts to choose `FuturMix` as the provider.
-    4. Enter your API key when prompted.
-    5. Select the FuturMix model of your choice.
-  </TabItem>
-</Tabs>
+EmpirioLabs is listed in the custom-provider catalog, but this source does not ship an
+EmpirioLabs declarative provider. Add it through [Configure Custom Provider](#configure-custom-provider)
+rather than selecting it from the built-in provider list. Supply your account's API URL,
+API key and model identifiers when configuring the provider.
 
 ### Novita AI
 [Novita AI](https://novita.ai/) provides access to 90+ open-source models via an OpenAI-compatible API with competitive pricing. To use Novita AI with gosling, you need an API key from [Novita AI](https://novita.ai/settings#key-management).
@@ -827,43 +751,6 @@ To set up Novita AI with gosling, follow these steps:
     3. Follow the prompts to choose `Novita AI` as the provider.
     4. Enter your API key when prompted.
     5. Select the Novita AI model of your choice.
-  </TabItem>
-</Tabs>
-
-### Routstr
-[Routstr](https://routstr.com/) is an OpenAI-compatible aggregator that fronts dozens of upstream providers behind a single API. Payment is handled by the Routstr instance itself, so all gosling needs is the `sk-...` bearer that instance issues you. To use Routstr with gosling, pick an instance (the default is `https://api.routstr.com`) and obtain an API key from its payment flow.
-
-Routstr aggregates models from many upstream providers, including:
-- **claude-opus-4.7** — Anthropic's Claude opus 4.7
-- **deepseek-v4-pro** — DeepSeek V4 Pro
-- **gemini-3.1-pro-preview** — gemini-3.1 Pro Preview
-
-`/v1/models` is queried at configure time, so the full catalogue your Routstr instance exposes is available in the model picker. For the static defaults shipped with gosling, see [routstr.json](https://github.com/cephalopod-ai/gosling/blob/main/crates/gosling/src/providers/declarative/routstr.json).
-
-To set up Routstr with gosling, follow these steps:
-
-<Tabs groupId="interface">
-  <TabItem value="ui" label="gosling Desktop" default>
-  **To update your LLM provider and API key:**
-
-    1. Click the <PanelLeft className="inline" size={16} /> button in the top-left to open the sidebar.
-    2. Click the `Settings` button on the sidebar.
-    3. Click the `Models` tab.
-    4. Click `Configure Providers`
-    5. Choose `Routstr` as provider from the list.
-    6. Click `Configure`, enter your `ROUTSTR_API_KEY` (and optionally override `ROUTSTR_HOST` to point at a different Routstr instance), and click `Submit`.
-    7. Select the Routstr model of your choice.
-
-  </TabItem>
-  <TabItem value="cli" label="gosling CLI">
-    1. Run:
-    ```sh
-    gosling configure
-    ```
-    2. Select `Configure Providers` from the menu.
-    3. Follow the prompts to choose `Routstr` as the provider.
-    4. Enter your API key when prompted (and optionally override `ROUTSTR_HOST`).
-    5. Select the Routstr model of your choice.
   </TabItem>
 </Tabs>
 

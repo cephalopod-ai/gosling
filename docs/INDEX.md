@@ -38,6 +38,7 @@ for the relationship to cephalopod-ai/gosling.
 - [logs/](logs/) — retained session evidence and logging conventions
 - [logs/session/2026-10-12-mistral-comprehensive-audit.md](logs/session/2026-10-12-mistral-comprehensive-audit.md) — comprehensive read-only screening audit (13 lenses + 21 standalones; playtest excluded); 45 findings (3 High) and validation limits; full report at repo root `mistral-audit-comprehensive-12OCT2026.md`
 - [logs/session/2026-10-12-mistral-findings-repair.md](logs/session/2026-10-12-mistral-findings-repair.md) — staged repairs, independent critique, contract-based dispositions and static-only validation limits
+- [logs/session/2026-10-13-grok-comprehensive-audit.md](logs/session/2026-10-13-grok-comprehensive-audit.md) — comprehensive read-only audit of applicable skills (13 lenses plus standalone triage; playtest not executed); 20 findings (3 High) and validation limits; full report at repo root `grok-comprehensive-audit-13oct2026.md`
 - [logs/session/2026-10-12-provider-lifecycle-refresh-audit.md](logs/session/2026-10-12-provider-lifecycle-refresh-audit.md) — provider API compatibility, steering and shutdown races, process supervision and refresh repairs; validation and remaining state/native-platform gaps
 - [logs/session/2026-10-06-supabase-disable-during-restore.md](logs/session/2026-10-06-supabase-disable-during-restore.md) — saved-chat extension removal during pending login, startup cancellation and busy-chat feedback; runtime/deployment verification limits
 - [logs/session/2026-10-02-scoped-authentication.md](logs/session/2026-10-02-scoped-authentication.md) — session/workspace auth controls, future-chat defaults, scoped MCP stores, and validation limits
@@ -90,10 +91,13 @@ for the relationship to cephalopod-ai/gosling.
 - [cloud/2026-08-15-live-all-scenarios-playtest.md](cloud/2026-08-15-live-all-scenarios-playtest.md) — live playtest ledger for that pass
 - [test_scenarios/](test_scenarios/) — test scenario definitions
 
+- [logs/session/2026-10-13-grok-findings-repair.md](logs/session/2026-10-13-grok-findings-repair.md) — repairs and validation dispositions for the 20 Grok findings
+
 ## Repo entry points
 
 - [../README.md](../README.md) — project overview
-- [../documentation/docs/release-notes/v1.4.0.md](../documentation/docs/release-notes/v1.4.0.md) — current source and local build notes
+- [../documentation/docs/release-notes/v1.5.0.md](../documentation/docs/release-notes/v1.5.0.md) — current source notes
+- [../documentation/docs/release-notes/v1.4.0.md](../documentation/docs/release-notes/v1.4.0.md) — September 29 verified local installation evidence
 - [../ui/desktop/README.md](../ui/desktop/README.md) — Desktop development, packaging, and installed-bundle checks
 - [../AGENTS.md](../AGENTS.md) — canonical agent operating contract
 - [../BUILDING_LINUX.md](../BUILDING_LINUX.md) — Linux build instructions

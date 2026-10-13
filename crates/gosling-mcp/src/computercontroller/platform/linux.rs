@@ -118,8 +118,14 @@ impl LinuxAutomation {
         if write_result.is_err() {
             let _ = child.kill();
         }
-        child.wait()?;
-        write_result
+        let status = child.wait()?;
+        write_result?;
+        if !status.success() {
+            return Err(std::io::Error::other(format!(
+                "Clipboard process exited with {status}"
+            )));
+        }
+        Ok(())
     }
 
     fn execute_input_command(&self, cmd: &str) -> Result<String> {
@@ -132,24 +138,20 @@ impl LinuxAutomation {
 
     fn execute_x11_command(&self, cmd: &str) -> Result<String> {
         if cmd.starts_with("click") {
-            Command::new("xdotool").arg("click").arg("1").output()?;
-            Ok(String::new())
+            super::checked_output(Command::new("xdotool").arg("click").arg("1").output()?)
         } else if let Some(text) = cmd.strip_prefix("type ") {
-            Command::new("xdotool").arg("type").arg(text).output()?;
-            Ok(String::new())
+            super::checked_output(Command::new("xdotool").arg("type").arg(text).output()?)
         } else if let Some(key) = cmd.strip_prefix("key ") {
-            Command::new("xdotool").arg("key").arg(key).output()?;
-            Ok(String::new())
+            super::checked_output(Command::new("xdotool").arg("key").arg(key).output()?)
         } else if let Some(window) = cmd.strip_prefix("activate ") {
-            Command::new("wmctrl").arg("-a").arg(window).output()?;
-            Ok(String::new())
+            super::checked_output(Command::new("wmctrl").arg("-a").arg(window).output()?)
         } else if cmd == "get clipboard" {
             let output = Command::new("xclip")
                 .arg("-o")
                 .arg("-selection")
                 .arg("clipboard")
                 .output()?;
-            Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+            super::checked_output(output)
         } else if let Some(text) = cmd.strip_prefix("set clipboard ") {
             let mut child = Command::new("xclip")
                 .arg("-selection")
@@ -159,20 +161,21 @@ impl LinuxAutomation {
             Self::write_stdin_and_reap(&mut child, text)?;
             Ok(String::new())
         } else {
-            Ok(String::new())
+            Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Unrecognized X11 automation command",
+            ))
         }
     }
 
     fn execute_wayland_command(&self, cmd: &str) -> Result<String> {
         if let Some(text) = cmd.strip_prefix("type ") {
-            Command::new("wtype").arg(text).output()?;
-            Ok(String::new())
+            super::checked_output(Command::new("wtype").arg(text).output()?)
         } else if let Some(key) = cmd.strip_prefix("key ") {
-            Command::new("wtype").arg(key).output()?;
-            Ok(String::new())
+            super::checked_output(Command::new("wtype").arg(key).output()?)
         } else if cmd == "get clipboard" {
             let output = Command::new("wl-paste").output()?;
-            Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+            super::checked_output(output)
         } else if let Some(text) = cmd.strip_prefix("set clipboard ") {
             let mut child = Command::new("wl-copy")
                 .stdin(std::process::Stdio::piped())
@@ -180,8 +183,10 @@ impl LinuxAutomation {
             Self::write_stdin_and_reap(&mut child, text)?;
             Ok(String::new())
         } else {
-            // Some commands might not be available in Wayland
-            Ok(String::new())
+            Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Unsupported Wayland automation command",
+            ))
         }
     }
 
@@ -195,11 +200,11 @@ import time
 
 def run_command(cmd):
     try:
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
         return result.stdout
     except Exception as e:
         print(f"Error executing {cmd}: {e}", file=sys.stderr)
-        return ""
+        sys.exit(1)
 
 "#,
         );
@@ -252,7 +257,7 @@ impl SystemAutomation for LinuxAutomation {
             std::fs::remove_file(temp_path)?;
 
             if output.status.success() {
-                Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+                super::checked_output(output)
             } else {
                 Err(std::io::Error::other(
                     String::from_utf8_lossy(&output.stderr).into_owned(),
@@ -282,6 +287,34 @@ impl SystemAutomation for LinuxAutomation {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unsupported_commands_fail_without_accessing_the_desktop() {
+        for display_server in [DisplayServer::X11, DisplayServer::Wayland] {
+            let automation = LinuxAutomation { display_server };
+            assert!(automation
+                .execute_input_command("unsupported-command")
+                .is_err());
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn nonzero_exit_is_an_error_and_success_keeps_stdout() {
+        let failed = Command::new("sh")
+            .args(["-c", "printf failed >&2; exit 7"])
+            .output()
+            .unwrap();
+        assert!(super::super::checked_output(failed)
+            .unwrap_err()
+            .to_string()
+            .contains("failed"));
+        let success = Command::new("sh")
+            .args(["-c", "printf success"])
+            .output()
+            .unwrap();
+        assert_eq!(super::super::checked_output(success).unwrap(), "success");
+    }
 
     #[test]
     fn create_python_script_escapes_embedded_single_quotes() {

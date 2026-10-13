@@ -115,3 +115,8 @@ Baseline: `ed8dbc2d8b90fb1a0cb378b1620f950b7e0181ef` on `work`; clean checkout a
 - [OpenRouter reasoning continuity](https://openrouter.ai/docs/guides/best-practices/reasoning-tokens)
 - [OpenAI GPT-6 model and effort rules](https://developers.openai.com/api/docs/guides/latest-model)
 - [OpenAI stateless reasoning replay](https://developers.openai.com/api/docs/guides/reasoning)
+
+
+## 2026-10-13 R04 repair pointer
+
+R04's terminal shutdown defects now have local repairs in [2026-10-13-grok-findings-repair.md](2026-10-13-grok-findings-repair.md), tracked as FSR-GROK-003. Normal Ink exit and text completion/failure share an idempotent grace/kill/reap operation with signals; child.killed no longer implies exit. Terminal typecheck and three TUI tests pass, including successful/failed text runs with a TERM-ignoring ACP fixture. Interactive /exit and repeated-signal replay remain unverified. The original R04 observation above is historical; the linked record is the current qualified disposition.

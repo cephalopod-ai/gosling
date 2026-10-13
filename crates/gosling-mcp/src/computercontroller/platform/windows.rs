@@ -17,7 +17,7 @@ impl SystemAutomation for WindowsAutomation {
             .set_no_window()
             .output()?;
 
-        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+        super::checked_output(output)
     }
 
     fn get_shell_command(&self) -> (&'static str, &'static str) {

@@ -1011,7 +1011,11 @@ impl ComputerControllerServer {
             self.register_as_resource(&cache_path, "text")?;
         }
 
-        Ok(CallToolResult::success(vec![Content::text(result)]))
+        Ok(if status.success() {
+            CallToolResult::success(vec![Content::text(result)])
+        } else {
+            CallToolResult::error(vec![Content::text(result)])
+        })
     }
 
     /// Control the computer using system automation
@@ -1119,16 +1123,14 @@ impl ComputerControllerServer {
         let save_output = params.save_output;
 
         // Use platform-specific automation
-        let output = self
-            .system_automation
-            .execute_system_script(script)
-            .map_err(|e| {
-                ErrorData::new(
-                    ErrorCode::INTERNAL_ERROR,
-                    format!("Failed to execute script: {}", e),
-                    None,
-                )
-            })?;
+        let output = match self.system_automation.execute_system_script(script) {
+            Ok(output) => output,
+            Err(error) => {
+                return Ok(CallToolResult::error(vec![Content::text(format!(
+                    "Failed to execute script: {error}"
+                ))]))
+            }
+        };
 
         let mut result = format!("Script completed successfully.\n\nOutput:\n{}", output);
 
@@ -2154,6 +2156,30 @@ mod tool_annotation_tests {
 mod subprocess_timeout_tests {
     use super::{output_capped_with_timeout, Command};
     use std::time::Duration;
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn automation_script_status_controls_the_tool_error_flag() {
+        let server = super::ComputerControllerServer::new();
+        for (script, failed) in [
+            ("printf success", false),
+            ("printf failed >&2; exit 7", true),
+        ] {
+            let result = server
+                .automation_script_impl(rmcp::handler::server::wrapper::Parameters(
+                    super::AutomationScriptParams {
+                        language: super::ScriptLanguage::Shell,
+                        script: script.into(),
+                        save_output: false,
+                    },
+                ))
+                .await
+                .unwrap();
+            assert_eq!(result.is_error.unwrap_or(false), failed);
+            let text = &result.content[0].as_text().unwrap().text;
+            assert_eq!(text.contains("completed successfully"), !failed);
+        }
+    }
 
     #[tokio::test]
     async fn automation_script_process_has_a_host_timeout() {

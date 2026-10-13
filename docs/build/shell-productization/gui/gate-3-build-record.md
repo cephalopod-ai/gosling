@@ -197,7 +197,7 @@ intentional generated changes are committed.
 ## 7. Operator commands to reproduce §4 locally
 
 ```bash
-cd /Users/eric/Work/vscode/forked/gosling
+# Run from the root of your gosling checkout.
 source bin/activate-hermit
 pnpm --dir ui install --frozen-lockfile
 pnpm --dir ui/desktop run typecheck

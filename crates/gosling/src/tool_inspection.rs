@@ -141,7 +141,6 @@ impl ToolInspectionManager {
                                     security.event_type = "inspection_result",
                                     security.action = "ALLOW",
                                     inspector.name = result.inspector_name.as_str(),
-                                    inspector.reason = %result.reason,
                                     "auto mode: approval requirement downgraded to allow"
                                 );
                                 result.action = InspectionAction::Allow;
@@ -303,7 +302,6 @@ pub fn apply_inspection_results_to_permissions(
             security.finding_id = ?result.finding_id,
             tool.request_id = %request_id,
             inspector.name = result.inspector_name,
-            inspector.reason = %result.reason,
             "inspection result applied"
         );
 

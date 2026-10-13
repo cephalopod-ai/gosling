@@ -116,11 +116,55 @@ const GOSLING_SERVE_SHAPE_ARGS = [
 ];
 
 describe.skipIf(process.platform === 'win32')('cleanupRecordedBackendProcesses', () => {
+  it.each([false, true])(
+    'reaps same-group descendants when leader already exited=%s',
+    async (leaderExited) => {
+      const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'gosling-process-registry-'));
+      temporaryDirectories.push(directory);
+      const registryPath = path.join(directory, 'backend-processes.json');
+      const script = `const { spawn } = require('node:child_process');
+      const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+      child.unref();
+      console.log(child.pid);
+      ${leaderExited ? 'process.exit(0)' : 'setInterval(() => {}, 1000)'};`;
+      const backend = spawn(
+        process.execPath,
+        ['-e', script, '--', 'serve', '--platform', 'desktop'],
+        {
+          detached: true,
+          stdio: ['ignore', 'pipe', 'ignore'],
+        }
+      );
+      spawnedProcesses.push(backend);
+      const descendant = await new Promise<number>((resolve) =>
+        backend.stdout!.once('data', (data) => resolve(Number(data.toString().trim())))
+      );
+      try {
+        if (leaderExited) await pollUntil(() => backend.exitCode !== null);
+        await registerBackendProcess(registryPath, {
+          ...processRecord,
+          pid: backend.pid!,
+          parentPid: process.pid,
+          binaryPath: process.execPath,
+        });
+        await cleanupRecordedBackendProcesses(registryPath, silentLogger);
+        expect(await pollUntil(() => !isAlive(descendant))).toBe(true);
+        expect(JSON.parse(await fs.readFile(registryPath, 'utf8')).processes).toEqual([]);
+      } finally {
+        try {
+          process.kill(-backend.pid!, 'SIGKILL');
+        } catch {
+          /* Group already exited. */
+        }
+      }
+    }
+  );
+
   it('preserves a backend registered while stale-process cleanup is in flight', async () => {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'gosling-process-registry-'));
     temporaryDirectories.push(directory);
     const registryPath = path.join(directory, 'backend-processes.json');
-    const backend = spawn(process.execPath, GOSLING_SERVE_SHAPE_ARGS);
+    const backend = spawn(process.execPath, GOSLING_SERVE_SHAPE_ARGS, { detached: true });
     spawnedProcesses.push(backend);
     await registerBackendProcess(registryPath, {
       ...processRecord,
@@ -147,7 +191,7 @@ describe.skipIf(process.platform === 'win32')('cleanupRecordedBackendProcesses',
     const registryPath = path.join(directory, 'backend-processes.json');
 
     const owner = spawnSleeper();
-    const backend = spawn(process.execPath, GOSLING_SERVE_SHAPE_ARGS);
+    const backend = spawn(process.execPath, GOSLING_SERVE_SHAPE_ARGS, { detached: true });
     spawnedProcesses.push(backend);
     await pollUntil(() => isAlive(owner.pid!) && isAlive(backend.pid!));
 
@@ -183,7 +227,7 @@ describe.skipIf(process.platform === 'win32')('cleanupRecordedBackendProcesses',
     await waitForExit(owner);
     expect(isAlive(owner.pid!)).toBe(false);
 
-    const backend = spawn(process.execPath, GOSLING_SERVE_SHAPE_ARGS);
+    const backend = spawn(process.execPath, GOSLING_SERVE_SHAPE_ARGS, { detached: true });
     spawnedProcesses.push(backend);
     await pollUntil(() => isAlive(backend.pid!));
 
@@ -211,7 +255,7 @@ describe.skipIf(process.platform === 'win32')('cleanupRecordedBackendProcesses',
     temporaryDirectories.push(directory);
     const registryPath = path.join(directory, 'backend-processes.json');
 
-    const backend = spawn(process.execPath, GOSLING_SERVE_SHAPE_ARGS);
+    const backend = spawn(process.execPath, GOSLING_SERVE_SHAPE_ARGS, { detached: true });
     spawnedProcesses.push(backend);
     await pollUntil(() => isAlive(backend.pid!));
 

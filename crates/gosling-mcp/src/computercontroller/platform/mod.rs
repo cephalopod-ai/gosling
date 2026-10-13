@@ -1,4 +1,4 @@
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", all(test, unix)))]
 mod linux;
 #[cfg(target_os = "macos")]
 mod macos;
@@ -45,5 +45,18 @@ pub fn create_system_automation() -> Box<dyn SystemAutomation + Send + Sync> {
     #[cfg(any(target_os = "ios", target_os = "none"))]
     {
         unimplemented!("Unsupported operating system")
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "windows", test))]
+fn checked_output(output: std::process::Output) -> std::io::Result<String> {
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    } else {
+        Err(std::io::Error::other(format!(
+            "Automation process exited with {}: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr)
+        )))
     }
 }
