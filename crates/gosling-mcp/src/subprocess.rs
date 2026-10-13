@@ -69,20 +69,124 @@ fn resolve_login_shell_path() -> Option<String> {
     // cannot steal the terminal foreground from the parent gosling process.
     cmd.wrap(ProcessSession);
 
-    let child = cmd.spawn().ok()?;
-    let output = child.wait_with_output().ok()?;
-    if !output.status.success() {
-        return None;
+    let mut child = cmd.spawn().ok()?;
+    capture_login_path(&mut *child, std::time::Duration::from_secs(5))
+}
+
+#[cfg(not(windows))]
+fn capture_login_path(
+    child: &mut dyn process_wrap::std::ChildWrapper,
+    timeout: std::time::Duration,
+) -> Option<String> {
+    use std::io::Read;
+    use std::sync::mpsc::TryRecvError;
+    use std::time::{Duration, Instant};
+
+    const MAX_PATH_OUTPUT_BYTES: usize = 64 * 1024;
+    let deadline = Instant::now() + timeout;
+    let result = (|| {
+        let stdout = child.stdout().take()?;
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let mut bytes = Vec::new();
+            let result = stdout
+                .take((MAX_PATH_OUTPUT_BYTES + 1) as u64)
+                .read_to_end(&mut bytes)
+                .map(|_| bytes);
+            let _ = tx.send(result);
+        });
+
+        let mut captured = None;
+        loop {
+            let status = child.try_wait().ok()?;
+            if status.is_some_and(|status| !status.success()) {
+                return None;
+            }
+            if captured.is_none() {
+                match rx.try_recv() {
+                    Ok(Ok(bytes)) if bytes.len() <= MAX_PATH_OUTPUT_BYTES => captured = Some(bytes),
+                    Ok(_) | Err(TryRecvError::Disconnected) => return None,
+                    Err(TryRecvError::Empty) => {}
+                }
+            }
+            // EOF alone is insufficient: profiles may close stdout and then hang.
+            if status.is_some() {
+                if let Some(bytes) = captured {
+                    return Some(bytes);
+                }
+            }
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return None;
+            }
+            std::thread::sleep(remaining.min(Duration::from_millis(20)));
+        }
+    })();
+
+    if result.is_none() {
+        let _ = child.start_kill();
+        let _ = child.wait();
     }
+    let output = result?;
 
     // Take the last non-empty line — interactive shells may emit
     // extra output from profile scripts before our echo.
-    String::from_utf8_lossy(&output.stdout)
+    String::from_utf8_lossy(&output)
         .lines()
         .rev()
         .find(|line| !line.trim().is_empty())
         .map(|line| line.trim().to_string())
         .filter(|path| !path.is_empty())
+}
+
+#[cfg(all(test, not(windows)))]
+mod tests {
+    use super::*;
+    use process_wrap::std::{CommandWrap, ProcessSession};
+    use std::process::Stdio;
+    use std::time::{Duration, Instant};
+
+    fn probe(script: &str, timeout: Duration) -> Option<String> {
+        let mut command = std::process::Command::new("/bin/sh");
+        command
+            .args(["-c", script])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped());
+        let mut wrapped = CommandWrap::from(command);
+        wrapped.wrap(ProcessSession);
+        let mut child = wrapped.spawn().unwrap();
+        let result = capture_login_path(&mut *child, timeout);
+        assert!(
+            child.try_wait().unwrap().is_some(),
+            "probe child must be reaped"
+        );
+        result
+    }
+
+    #[test]
+    fn login_path_probe_keeps_the_last_nonempty_profile_line() {
+        assert_eq!(
+            probe(
+                "printf 'profile greeting\\n/usr/bin:/bin\\n\\n'",
+                Duration::from_secs(1)
+            )
+            .as_deref(),
+            Some("/usr/bin:/bin")
+        );
+        assert!(probe("printf '/usr/bin\\n'; exit 1", Duration::from_secs(1)).is_none());
+    }
+
+    #[test]
+    fn login_path_probe_times_out_even_after_stdout_closes() {
+        let started = Instant::now();
+        assert!(probe("exec 1>&-; exec sleep 30", Duration::from_millis(100)).is_none());
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn login_path_probe_rejects_excessive_output() {
+        assert!(probe("head -c 1048576 /dev/zero", Duration::from_secs(1)).is_none());
+    }
 }
 
 /// Returns the user's full login shell PATH, resolved once and cached.

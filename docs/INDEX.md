@@ -92,6 +92,8 @@ for the relationship to cephalopod-ai/gosling.
 - [test_scenarios/](test_scenarios/) — test scenario definitions
 
 - [logs/session/2026-10-13-grok-findings-repair.md](logs/session/2026-10-13-grok-findings-repair.md) — repairs and validation dispositions for the 20 Grok findings
+- [cloud/2026-10-13-resource-handoff-audit.md](cloud/2026-10-13-resource-handoff-audit.md) — broad lifecycle/handoff screening, nine source repairs, rejected race candidate, coverage matrix and explicit unreviewed frontier
+- [logs/session/2026-10-13-resource-handoff-audit.md](logs/session/2026-10-13-resource-handoff-audit.md) — process/output bounds, cancellation ownership, status/notifier repairs and targeted validation
 
 ## Repo entry points
 

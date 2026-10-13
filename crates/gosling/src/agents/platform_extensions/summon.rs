@@ -1193,6 +1193,52 @@ You review code."#;
     }
 
     #[tokio::test]
+    async fn dropped_task_load_cancels_the_child_and_keeps_its_slot_until_teardown() {
+        let client =
+            Arc::new(SummonClient::with_background_task_limit(create_test_context(), 1).unwrap());
+        let token = CancellationToken::new();
+        let finished = CancellationToken::new();
+        let child_finished = finished.clone();
+        let slot = Arc::new(client.try_reserve_background_task_slot().unwrap());
+        let child_slot = slot.clone();
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let handle = tokio::spawn(async move {
+            let _slot = child_slot;
+            let _finished = child_finished.drop_guard();
+            started_tx.send(()).unwrap();
+            std::future::pending::<Result<String>>().await
+        });
+        started_rx.await.unwrap();
+        client.background_tasks.lock().await.insert(
+            "20261013_1".into(),
+            BackgroundTask {
+                id: "20261013_1".into(),
+                description: "pending child".into(),
+                started_at: Instant::now(),
+                turns: Arc::new(AtomicU32::new(0)),
+                last_activity: Arc::new(AtomicU64::new(current_epoch_millis())),
+                handle,
+                cancellation_token: token.clone(),
+                notification_buffer: Arc::new(Mutex::new(Vec::new())),
+                _slot: slot,
+            },
+        );
+        let mut load = Box::pin(client.handle_load_task_result("20261013_1", false, false));
+        tokio::select! {
+            result = &mut load => panic!("pending child completed unexpectedly: {result:?}"),
+            _ = tokio::task::yield_now() => {}
+        }
+        assert!(client.background_tasks.lock().await.is_empty());
+        assert!(client.try_reserve_background_task_slot().is_err());
+        drop(load);
+        assert!(token.is_cancelled());
+        tokio::time::timeout(Duration::from_secs(1), finished.cancelled())
+            .await
+            .expect("abandoned child must be dropped");
+        assert!(client.try_reserve_background_task_slot().is_ok());
+    }
+
+    #[tokio::test]
     async fn test_async_task_result_lifecycle() {
         let client = SummonClient::new(create_test_context()).unwrap();
         let temp_dir = TempDir::new().unwrap();

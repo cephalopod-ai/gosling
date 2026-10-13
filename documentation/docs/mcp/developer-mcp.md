@@ -169,6 +169,22 @@ gosling Desktop or launcher-based starts may use a different environment and may
 Environment variables may contain sensitive values like API keys and tokens (e.g., `GITHUB_TOKEN`, `AWS_ACCESS_KEY_ID`).
 :::
 
+## Shell Timeouts and Output Capture
+
+Shell commands have a 300-second default timeout. A positive `timeout_secs`
+overrides it; zero uses the default. Cancellation or timeout stops the owned
+command process group.
+
+Capture retains at most 10 MiB or 50,000 lines, excluding truncation notices,
+with a separate 1 MiB limit per line. gosling continues draining the command's pipes after reaching a capture
+limit so output cannot block the command. The structured `output_truncated`
+flag and a visible notice identify incomplete capture, including a drain
+deadline reached after process exit.
+
+Large retained output can be saved to a temporary file for later reads. Output
+discarded by the capture limits is unavailable in that file; redirect extensive
+output to a file in your working directory when you need to preserve it all.
+
 ## Configuring Access Controls
 
 By default, gosling can run system commands with your user privileges and edit any accessible file **without your approval**. This is because gosling runs in Autonomous permission mode by default and has access to the Developer extension's shell and file editing tools. While this configuration allows gosling to work quickly and independently, there's potential for unexpected outcomes. Understanding the available access control features can help you configure gosling to match your comfort level and specific needs.

@@ -1002,7 +1002,12 @@ async fn security_info_logs_keep_ids_and_hosts_without_command_bodies() {
         );
         let inspector = EgressInspector::new(Arc::new(PermissionManager::new(root.path().into())));
         let results = inspector
-            .inspect("audit", &[request.clone()], &[], GoslingMode::Auto)
+            .inspect(
+                "audit",
+                std::slice::from_ref(&request),
+                &[],
+                GoslingMode::Auto,
+            )
             .await
             .unwrap();
         let mut scan_result = results[0].clone();

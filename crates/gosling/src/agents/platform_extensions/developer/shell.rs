@@ -245,39 +245,68 @@ pub(crate) fn resolve_login_shell_path() -> Option<String> {
     cmd.wrap(ProcessSession);
 
     let mut child = cmd.spawn().ok()?;
+    capture_login_shell_path(&mut *child, Duration::from_secs(5))
+}
 
-    let mut stdout = child.stdout().take()?;
-    let (tx, rx) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        use std::io::Read;
-        if stdout.read_to_end(&mut buf).is_ok() {
-            let _ = tx.send(buf);
-        }
-    });
+#[cfg(not(windows))]
+fn capture_login_shell_path(
+    child: &mut dyn process_wrap::std::ChildWrapper,
+    timeout: Duration,
+) -> Option<String> {
+    use std::io::Read;
+    use std::sync::mpsc::TryRecvError;
+    use std::time::Instant;
 
-    match rx.recv_timeout(Duration::from_secs(5)) {
-        Ok(buf)
-            if child
-                .wait()
-                .is_ok_and(|s: std::process::ExitStatus| s.success()) =>
-        {
-            // Take the last non-empty line — interactive shells may emit
-            // extra output from profile scripts before our echo.
-            String::from_utf8_lossy(&buf)
-                .lines()
-                .rev()
-                .find(|line| !line.trim().is_empty())
-                .map(|line| line.trim().to_string())
-                .filter(|path| !path.is_empty())
+    const MAX_PATH_OUTPUT_BYTES: usize = 64 * 1024;
+    let deadline = Instant::now() + timeout;
+    let result = (|| {
+        let stdout = child.stdout().take()?;
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let mut bytes = Vec::new();
+            let result = stdout
+                .take((MAX_PATH_OUTPUT_BYTES + 1) as u64)
+                .read_to_end(&mut bytes)
+                .map(|_| bytes);
+            let _ = tx.send(result);
+        });
+        let mut captured = None;
+        loop {
+            let status = child.try_wait().ok()?;
+            if status.is_some_and(|status| !status.success()) {
+                return None;
+            }
+            if captured.is_none() {
+                match rx.try_recv() {
+                    Ok(Ok(bytes)) if bytes.len() <= MAX_PATH_OUTPUT_BYTES => captured = Some(bytes),
+                    Ok(_) | Err(TryRecvError::Disconnected) => return None,
+                    Err(TryRecvError::Empty) => {}
+                }
+            }
+            // A profile that closes stdout can still keep the shell alive.
+            if status.is_some() {
+                if let Some(bytes) = captured {
+                    return Some(bytes);
+                }
+            }
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return None;
+            }
+            std::thread::sleep(remaining.min(Duration::from_millis(20)));
         }
-        _ => {
-            let _ = child.kill();
-            // Reap the killed process so it doesn't linger as a zombie.
-            let _ = child.wait();
-            None
-        }
+    })();
+    if result.is_none() {
+        let _ = child.start_kill();
+        let _ = child.wait();
     }
+    let output = result?;
+    String::from_utf8_lossy(&output)
+        .lines()
+        .rev()
+        .find(|line| !line.trim().is_empty())
+        .map(|line| line.trim().to_string())
+        .filter(|path| !path.is_empty())
 }
 
 /// Resolves the user's login-shell PATH in the background.
@@ -761,7 +790,7 @@ fn split_lines(lines: &[(bool, String)]) -> (String, String, String) {
 fn bounded_line_stream<R>(
     reader: R,
     is_stderr: bool,
-) -> impl futures::Stream<Item = Result<(bool, Vec<u8>), std::io::Error>>
+) -> impl futures::Stream<Item = Result<(bool, Vec<u8>, bool), std::io::Error>>
 where
     R: tokio::io::AsyncRead + Unpin,
 {
@@ -779,11 +808,12 @@ where
         }
     }
 
-    fn finish_line(line: &mut Vec<u8>, truncated: &mut bool) -> Vec<u8> {
-        if std::mem::take(truncated) {
+    fn finish_line(line: &mut Vec<u8>, truncated: &mut bool) -> (Vec<u8>, bool) {
+        let truncated = std::mem::take(truncated);
+        if truncated {
             line.extend_from_slice(LINE_TRUNCATION_MARKER);
         }
-        std::mem::take(line)
+        (std::mem::take(line), truncated)
     }
 
     async_stream::stream! {
@@ -804,7 +834,8 @@ where
                     for i in 0..n {
                         if buf[i] == b'\n' {
                             truncated |= append_capped(&mut line, &buf[start..i]);
-                            yield Ok((is_stderr, finish_line(&mut line, &mut truncated)));
+                            let (line, line_truncated) = finish_line(&mut line, &mut truncated);
+                            yield Ok((is_stderr, line, line_truncated));
                             start = i + 1;
                         }
                     }
@@ -813,7 +844,8 @@ where
             }
         }
         if !line.is_empty() || truncated {
-            yield Ok((is_stderr, finish_line(&mut line, &mut truncated)));
+            let (line, line_truncated) = finish_line(&mut line, &mut truncated);
+            yield Ok((is_stderr, line, line_truncated));
         }
     }
 }
@@ -844,8 +876,10 @@ where
     let mut collected_bytes: usize = 0;
     let mut collected_lines: usize = 0;
     let mut capped = false;
+    let mut line_was_truncated = false;
     while let Some(item) = merged.next().await {
-        let (is_stderr, line) = item?;
+        let (is_stderr, line, truncated) = item?;
+        line_was_truncated |= truncated;
         if capped {
             continue;
         }
@@ -866,10 +900,10 @@ where
         collected_bytes += line.len() + 1;
         collected_lines += 1;
         if tx.send((is_stderr, line)).is_err() {
-            return Ok(capped);
+            return Ok(capped || line_was_truncated);
         }
     }
-    Ok(capped)
+    Ok(capped || line_was_truncated)
 }
 
 /// Build a human-readable truncation notice with platform-appropriate commands.
@@ -1133,6 +1167,37 @@ mod tests {
         assert!(notice.contains("Full output saved to"));
     }
 
+    #[cfg(not(windows))]
+    #[test]
+    fn login_shell_capture_bounds_output_and_waits_for_exit_within_one_deadline() {
+        use process_wrap::std::{CommandWrap, ProcessSession};
+        fn probe(script: &str, timeout: Duration) -> Option<String> {
+            let mut command = std::process::Command::new("/bin/sh");
+            command
+                .args(["-c", script])
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped());
+            let mut wrapped = CommandWrap::from(command);
+            wrapped.wrap(ProcessSession);
+            let mut child = wrapped.spawn().unwrap();
+            let result = capture_login_shell_path(&mut *child, timeout);
+            assert!(child.try_wait().unwrap().is_some());
+            result
+        }
+        assert_eq!(
+            probe(
+                "printf 'greeting\\n/usr/bin:/bin\\n'",
+                Duration::from_secs(1)
+            )
+            .as_deref(),
+            Some("/usr/bin:/bin")
+        );
+        assert!(probe("head -c 1048576 /dev/zero", Duration::from_secs(1)).is_none());
+        let started = std::time::Instant::now();
+        assert!(probe("exec 1>&-; exec sleep 30", Duration::from_millis(100)).is_none());
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
     #[tokio::test]
     async fn capture_bounds_blank_lines_and_still_drains_the_input() {
         let output = vec![b'\n'; MAX_COLLECTED_LINES + 100];
@@ -1152,6 +1217,26 @@ mod tests {
             }
         }
         assert_eq!(lines, MAX_COLLECTED_LINES + 1);
+    }
+
+    #[tokio::test]
+    async fn capture_reports_line_truncation_and_preserves_following_output() {
+        let mut output = vec![b'x'; 2 * 1024 * 1024];
+        output.extend_from_slice(b"\nafter\n");
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        assert!(
+            collect_tagged_lines(output.as_slice(), tokio::io::empty(), tx)
+                .await
+                .unwrap()
+        );
+        assert!(rx
+            .recv()
+            .await
+            .unwrap()
+            .1
+            .ends_with("[line truncated: exceeded 1 MiB]"));
+        assert_eq!(rx.recv().await.unwrap().1, "after");
+        assert!(rx.recv().await.is_none());
     }
 
     #[tokio::test]

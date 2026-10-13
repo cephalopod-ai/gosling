@@ -257,6 +257,22 @@ mod tests {
     use std::fs;
     use tempfile::TempDir;
 
+    #[tokio::test]
+    async fn already_exited_adapter_is_reported_without_another_watch_update() {
+        use crate::agents::extension_manager::OperatorProcessExit;
+        let (process_exit, _) = tokio::sync::watch::channel(OperatorProcessExit::Exited);
+        let (status, _) = tokio::sync::watch::channel(DomainAdapterStatus::Ready);
+        tokio::time::timeout(
+            Duration::from_secs(1),
+            McpDomainAdapter::forward_process_status(process_exit.subscribe(), status.clone()),
+        )
+        .await
+        .expect("an already-known exit must not wait for a future change");
+        assert_eq!(*status.borrow(), DomainAdapterStatus::Crashed);
+        McpDomainAdapter::mark_hung(&status);
+        assert_eq!(*status.borrow(), DomainAdapterStatus::Crashed);
+    }
+
     fn descriptor() -> DomainAdapterDescriptor {
         DomainAdapterDescriptor {
             domain_id: "neutral-fixture".to_string(),

@@ -25,6 +25,75 @@ fn config_with_yaml(yaml: &str) -> (Config, NamedTempFile, NamedTempFile) {
     (config, config_file, secrets_file)
 }
 
+#[tokio::test]
+async fn notification_tasks_are_started_once_and_stopped_with_the_connection() {
+    use crate::acp::server_factory::{AcpServer, AcpServerFactoryConfig};
+    use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
+
+    let temp = tempfile::tempdir().unwrap();
+    let server = AcpServer::new(AcpServerFactoryConfig {
+        builtins: vec![],
+        state_dir: temp.path().join("state"),
+        data_dir: temp.path().join("data"),
+        platform_data_dir: temp.path().join("data"),
+        config_dir: temp.path().join("config"),
+        gosling_platform: GoslingPlatform::GoslingCli,
+        additional_source_roots: vec![],
+        shell_runtime: Default::default(),
+    });
+    let agent = server.create_agent().await.unwrap();
+    let (client_read, server_write) = tokio::io::duplex(64 * 1024);
+    let (server_read, client_write) = tokio::io::duplex(64 * 1024);
+    let serving = tokio::spawn(serve(
+        agent.clone(),
+        server_read.compat(),
+        server_write.compat_write(),
+    ));
+    let inspected_agent = agent.clone();
+    agent_client_protocol::Client
+        .builder()
+        .connect_with(
+            ByteStreams::new(client_write.compat_write(), client_read.compat()),
+            async move |cx: ConnectionTo<SacpAgent>| {
+                for _ in 0..3 {
+                    let meta: serde_json::Map<String, serde_json::Value> =
+                        serde_json::from_value(serde_json::json!({
+                            "gosling": { "customNotifications": true }
+                        }))
+                        .unwrap();
+                    cx.send_request(
+                        InitializeRequest::new(ProtocolVersion::LATEST).client_capabilities(
+                            agent_client_protocol::schema::v1::ClientCapabilities::new().meta(meta),
+                        ),
+                    )
+                    .block_task()
+                    .await?;
+                    let tasks = inspected_agent.notification_tasks.get().unwrap();
+                    assert_eq!(tasks.len(), 1);
+                    assert!(!tasks[0].is_finished());
+                }
+                Ok(())
+            },
+        )
+        .await
+        .unwrap();
+    let task = agent.notification_tasks.get().unwrap()[0].abort_handle();
+    tokio::time::timeout(std::time::Duration::from_secs(2), serving)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    drop(agent);
+    tokio::time::timeout(std::time::Duration::from_secs(1), async {
+        while !task.is_finished() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("connection teardown must drop its idle notification task");
+    server.shutdown().await;
+}
+
 fn has_developer(extensions: &[ExtensionConfig]) -> bool {
     extensions.iter().any(|ext| ext.name() == "developer")
 }
@@ -41,8 +110,28 @@ async fn acp_active_run_pins_the_agent_manager_lru_entry() {
         GoslingPlatform::GoslingDesktop,
     );
     let manager = AgentManager::new(agent_config, Some(2)).await.unwrap();
-    manager.get_or_create_agent("active".into()).await.unwrap();
-    manager.get_or_create_agent("idle".into()).await.unwrap();
+    let mut session_ids = Vec::new();
+    for name in ["active", "idle", "new"] {
+        let session = manager
+            .session_manager()
+            .create_session(
+                temp.path().to_path_buf(),
+                name.into(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        session_ids.push(session.id);
+    }
+    let active_id = &session_ids[0];
+    let idle_id = &session_ids[1];
+    let new_id = &session_ids[2];
+    manager
+        .get_or_create_agent(active_id.clone())
+        .await
+        .unwrap();
+    manager.get_or_create_agent(idle_id.clone()).await.unwrap();
     let active_prompt_runs = Mutex::new(HashMap::new());
     let operation_gate = Arc::new(SessionOperationGate::default());
     let operation_guard = operation_gate.begin_prompt("run-1").await.unwrap();
@@ -50,24 +139,25 @@ async fn acp_active_run_pins_the_agent_manager_lru_entry() {
     register_active_prompt_run(
         &active_prompt_runs,
         &manager,
-        "active",
+        active_id,
         "run-1".into(),
         CancellationToken::new(),
         operation_guard,
     )
     .await
     .unwrap();
-    manager.get_or_create_agent("new".into()).await.unwrap();
+    manager.get_or_create_agent(new_id.clone()).await.unwrap();
 
-    assert!(manager.has_session("active").await);
-    assert!(!manager.has_session("idle").await);
-    assert!(manager.is_session_busy("active").await);
-    let active_run = unregister_active_prompt_run(&active_prompt_runs, &manager, "active", "run-1")
-        .await
-        .unwrap();
+    assert!(manager.has_session(active_id).await);
+    assert!(!manager.has_session(idle_id).await);
+    assert!(manager.is_session_busy(active_id).await);
+    let active_run =
+        unregister_active_prompt_run(&active_prompt_runs, &manager, active_id, "run-1")
+            .await
+            .unwrap();
     assert!(!active_run.was_cancelled());
     drop(active_run);
-    assert!(!manager.is_session_busy("active").await);
+    assert!(!manager.is_session_busy(active_id).await);
 }
 
 #[tokio::test]

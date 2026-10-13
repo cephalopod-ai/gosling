@@ -12,6 +12,18 @@
 
 See [the repair and verification record](logs/session/2026-10-06-supabase-disable-during-restore.md).
 
+## 2026-10-13 resource lifecycle and handoffs
+
+- [~] Nine lifecycle/output/status defects have source repairs and targeted
+      regression coverage. Native Windows/Flatpak, installed-bundle and long-soak
+      verification remain open; this is not exhaustive runtime qualification.
+- [ ] Reconcile durable failed-turn steering and background-load result recovery;
+      bound orphan frontend results without dropping valid early handoffs; measure
+      auxiliary model work and large-session checkpoint costs.
+
+See the [audit, dispositions and coverage limits](cloud/2026-10-13-resource-handoff-audit.md)
+and [validation record](logs/session/2026-10-13-resource-handoff-audit.md).
+
 ## 2026-10-02 working-folder memory
 
 - [~] **WS-FOLDER-001** — Added folders now reach the model without hint files, refresh the live
