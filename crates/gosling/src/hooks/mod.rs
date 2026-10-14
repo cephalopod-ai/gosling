@@ -26,7 +26,6 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::OnceLock;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -533,7 +532,7 @@ async fn run_command_hook(
     use_login_shell_path: bool,
 ) -> Result<std::process::Output> {
     let path = if use_login_shell_path {
-        hook_path().await
+        resolve_hook_path().await
     } else {
         None
     };
@@ -602,29 +601,6 @@ fn hook_command(command: &str, plugin_root: &Path, path: Option<&str>) -> Comman
     process
 }
 
-async fn hook_path() -> Option<String> {
-    static HOOK_PATH: OnceLock<tokio::sync::watch::Receiver<Option<String>>> = OnceLock::new();
-    let mut rx = HOOK_PATH
-        .get_or_init(|| {
-            let (tx, rx) = tokio::sync::watch::channel(None);
-            tokio::spawn(async move {
-                let path = resolve_hook_path().await;
-                let _ = tx.send(path);
-            });
-            rx
-        })
-        .clone();
-
-    if rx.borrow().is_some() {
-        return rx.borrow().clone();
-    }
-    if rx.changed().await.is_ok() {
-        rx.borrow().clone()
-    } else {
-        None
-    }
-}
-
 async fn resolve_hook_path() -> Option<String> {
     #[cfg(not(windows))]
     {
@@ -672,6 +648,91 @@ mod tests {
 
     fn make_manager(plugins: Vec<DiscoveredPlugin>) -> HookManager {
         HookManager::from_plugins(plugins, false)
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn login_path_consumers_share_one_probe() {
+        use crate::agents::platform_extensions::developer::shell::ShellTool;
+        use std::os::unix::fs::PermissionsExt;
+
+        const MARKER_ENV: &str = "GOSLING_TEST_LOGIN_PROBES";
+        if let Ok(marker) = std::env::var(MARKER_ENV) {
+            let root = Path::new(&marker).parent().unwrap();
+            let disabled = ShellTool::new(false).unwrap();
+            let output =
+                run_command_hook("printf disabled", root, "", Duration::from_secs(1), false)
+                    .await
+                    .unwrap();
+            assert_eq!(output.stdout, b"disabled");
+            assert!(!Path::new(&marker).exists());
+
+            if std::env::var("GOSLING_TEST_MCP_FIRST").is_ok() {
+                let merged = tokio::task::spawn_blocking(gosling_mcp::subprocess::merged_path)
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert!(merged.starts_with("/usr/bin:/bin"));
+            }
+            let parent = ShellTool::new(true).unwrap();
+            let delegate = ShellTool::new(true).unwrap();
+            let output = run_command_hook(
+                "printf '%s' \"$PATH\"",
+                root,
+                "",
+                Duration::from_secs(1),
+                true,
+            )
+            .await
+            .unwrap();
+            assert!(output.status.success());
+            assert!(String::from_utf8(output.stdout)
+                .unwrap()
+                .starts_with("/usr/bin:/bin"));
+            let merged = tokio::task::spawn_blocking(gosling_mcp::subprocess::merged_path)
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(merged.starts_with("/usr/bin:/bin"));
+            drop((disabled, parent, delegate));
+            let next_session = ShellTool::new(true).unwrap();
+            assert!(gosling_mcp::subprocess::merged_path().is_some());
+            assert_eq!(std::fs::read_to_string(marker).unwrap(), "probe\n");
+            drop(next_session);
+            return;
+        }
+
+        // A fresh process prevents another test's OnceLock or environment from
+        // determining this fixture's first probe.
+        let fixture = tempfile::tempdir().unwrap();
+        let shell = fixture.path().join("login-shell");
+        std::fs::write(&shell, "#!/bin/sh\nprintf 'probe\\n' >> \"$GOSLING_TEST_LOGIN_PROBES\"\nprintf '/usr/bin:/bin\\n'\n").unwrap();
+        std::fs::set_permissions(&shell, std::fs::Permissions::from_mode(0o755)).unwrap();
+        for mcp_first in [false, true] {
+            let marker = fixture.path().join(format!("probes-{mcp_first}"));
+            let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+            command
+                .args([
+                    "--exact",
+                    "hooks::tests::login_path_consumers_share_one_probe",
+                    "--nocapture",
+                ])
+                .env(MARKER_ENV, marker)
+                .env("GOSLING_SHELL", &shell)
+                .env("SHELL", "/bin/sh");
+            if mcp_first {
+                command.env("GOSLING_TEST_MCP_FIRST", "1");
+            } else {
+                command.env_remove("GOSLING_TEST_MCP_FIRST");
+            }
+            let output = command.output().unwrap();
+            assert!(
+                output.status.success(),
+                "{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
     }
 
     #[test]

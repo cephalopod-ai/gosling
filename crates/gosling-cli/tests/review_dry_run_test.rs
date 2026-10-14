@@ -121,3 +121,86 @@ fn no_orchestrate_dry_run_still_prints_the_single_prompt() {
     assert!(out.contains(INSTRUCTIONS_MARKER), "{out}");
     assert!(!out.contains("# orchestrator:"), "{out}");
 }
+
+#[cfg(unix)]
+#[test]
+fn review_collects_git_once_and_summary_skips_the_patch() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = fixture_repo();
+    let repo = dir.path().join("repo");
+    std::fs::write(repo.join("new.txt"), "untracked content\n").unwrap();
+    let real_git = Command::new("sh")
+        .args(["-c", "command -v git"])
+        .output()
+        .unwrap();
+    assert!(real_git.status.success());
+    let real_git = String::from_utf8(real_git.stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+    let bin = dir.path().join("bin");
+    std::fs::create_dir(&bin).unwrap();
+    let wrapper = bin.join("git");
+    std::fs::write(&wrapper, "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$GOSLING_TEST_GIT_CALLS\"\nexec \"$GOSLING_TEST_REAL_GIT\" \"$@\"\n").unwrap();
+    std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let path = std::env::join_paths(
+        std::iter::once(bin).chain(std::env::split_paths(&std::env::var_os("PATH").unwrap())),
+    )
+    .unwrap();
+    let expected_summary = Command::new(&real_git)
+        .args(["-c", "core.quotePath=off", "diff", "--stat", "HEAD"])
+        .current_dir(&repo)
+        .env("HOME", dir.path())
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .output()
+        .unwrap()
+        .stdout;
+
+    for summary in [false, true] {
+        for explicit_range in [false, true] {
+            let log = dir.path().join(format!("calls-{summary}-{explicit_range}"));
+            let mut command = Command::new(env!("CARGO_BIN_EXE_gosling"));
+            command.args(["review", "--dry-run", "--quiet"]);
+            if summary {
+                command.arg("--summary-only");
+            }
+            if explicit_range {
+                command.arg("HEAD");
+            }
+            let output = command
+                .current_dir(&repo)
+                .env("PATH", &path)
+                .env("GOSLING_TEST_GIT_CALLS", &log)
+                .env("GOSLING_TEST_REAL_GIT", &real_git)
+                .env("HOME", dir.path())
+                .env("GOSLING_PATH_ROOT", dir.path().join("root"))
+                .env("GOSLING_DISABLE_KEYRING", "1")
+                .env("GIT_CONFIG_NOSYSTEM", "1")
+                .stdin(std::process::Stdio::null())
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let calls = std::fs::read_to_string(log).unwrap();
+            assert_eq!(
+                calls.lines().count(),
+                if explicit_range { 2 } else { 3 },
+                "{calls}"
+            );
+            assert!(!calls.contains("--name-only"), "{calls}");
+            if summary {
+                assert!(!calls.contains("--patch"), "{calls}");
+                assert!(calls.contains("--stat"), "{calls}");
+                assert_eq!(output.stdout, expected_summary);
+            } else {
+                assert!(calls.contains("--raw -z --patch"), "{calls}");
+                let prompt = String::from_utf8(output.stdout).unwrap();
+                assert_eq!(prompt.contains("untracked content"), !explicit_range);
+            }
+        }
+    }
+}

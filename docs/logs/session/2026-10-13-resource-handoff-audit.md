@@ -90,3 +90,32 @@ Historic unrelated full-library failures have not been declared cleared.
 The synchronous PATH reader threads depend on owned-process-group termination
 closing their pipes; a deliberately escaped descendant holding a pipe remains
 an untested resource-retention case. No zero-leak claim is made.
+
+## Authorized build and reinstall follow-up
+
+The operator subsequently requested "build and reinstall". Built the clean
+`4eb5297757d5b6790dde0d563adb3cc12bc3c63e` checkout using
+`DEVELOPER_DIR=/Library/Developer/CommandLineTools just package-ui` with the
+Hermit environment. The full default-feature Rust release build, production
+Desktop packaging and local ad-hoc signing passed; version remains 1.5.0.
+pnpm emitted other-platform binary/bin-link warnings but packaging exited zero.
+
+Installed the verified bundle at `/Applications/Gosling.app` and atomically
+replaced `/Users/eric/.local/bin/gosling`. Deep strict signature verification
+passed before and after installation. The release, staged, embedded and
+installed CLI/backend SHA-256 hashes match:
+`9bdee68d5c040917ac9ef71c3985aa40dd6f7236c929cf72baa6252e1e0ba704`.
+The old app quit through its native menu, and no processes from its installed
+bundle remained before replacement. Existing user configuration and session
+stores were preserved.
+
+Both installed binaries passed `--version`; the standalone CLI passed `--help`.
+The relaunched installed Desktop completed loading and native accessibility
+readback showed restored history, navigation, composer and Outputs. Screenshot
+capture failed in ScreenCaptureKit; no new model request or lifecycle stress
+drill was submitted, so this is startup validation only. The earlier residual
+test gaps remain open. `cargo fmt --all -- --check` passed.
+
+Verified rollback copies and the install receipt are retained locally at
+`/Users/eric/.local/share/gosling/install-backups/build-reinstall-20261013-22l559tj/`.
+No merge, publication, commit or unrelated process termination was performed.

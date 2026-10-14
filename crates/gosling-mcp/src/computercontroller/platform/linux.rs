@@ -94,15 +94,7 @@ impl LinuxAutomation {
     }
 
     fn check_dependencies(&self, deps: &[&str]) -> Result<()> {
-        for dep in deps {
-            if !Command::new("which").arg(dep).output()?.status.success() {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    format!("Required dependency '{}' not found", dep),
-                ));
-            }
-        }
-        Ok(())
+        check_dependencies_with(deps, |dep| which::which(dep).is_ok())
     }
 
     /// Writes to the child's stdin, making sure the child is reaped even when
@@ -226,6 +218,18 @@ def run_command(cmd):
     }
 }
 
+fn check_dependencies_with(deps: &[&str], mut available: impl FnMut(&str) -> bool) -> Result<()> {
+    for dep in deps {
+        if !available(dep) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("Required dependency '{}' not found", dep),
+            ));
+        }
+    }
+    Ok(())
+}
+
 impl SystemAutomation for LinuxAutomation {
     fn execute_system_script(&self, script: &str) -> Result<String> {
         // Parse the script into individual commands
@@ -287,6 +291,45 @@ impl SystemAutomation for LinuxAutomation {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn dependency_lookup_needs_no_which_executable_and_stops_at_first_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        for (name, mode) in [("bash", 0o755), ("python3", 0o644)] {
+            let path = dir.path().join(name);
+            std::fs::write(&path, "#!/bin/sh\nexit 99\n").unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode)).unwrap();
+        }
+        let mut visited = Vec::new();
+        let error = check_dependencies_with(&["bash", "python3", "xdotool"], |dep| {
+            visited.push(dep.to_string());
+            which::which_in(dep, Some(dir.path()), dir.path()).is_ok()
+        })
+        .unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
+        assert_eq!(error.to_string(), "Required dependency 'python3' not found");
+        assert_eq!(visited, ["bash", "python3"]);
+        std::fs::set_permissions(
+            dir.path().join("python3"),
+            std::fs::Permissions::from_mode(0o755),
+        )
+        .unwrap();
+        assert!(
+            check_dependencies_with(&["bash", "python3"], |dep| which::which_in(
+                dep,
+                Some(dir.path()),
+                dir.path()
+            )
+            .is_ok())
+            .is_ok()
+        );
+        let error = check_dependencies_with(&["xdotool"], |dep| {
+            which::which_in(dep, Some(dir.path()), dir.path()).is_ok()
+        })
+        .unwrap_err();
+        assert_eq!(error.to_string(), "Required dependency 'xdotool' not found");
+    }
 
     #[test]
     fn unsupported_commands_fail_without_accessing_the_desktop() {

@@ -30,26 +30,78 @@ impl SubprocessExt for std::process::Command {
     }
 }
 
+#[cfg(not(windows))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum UnixShellFlavor {
+    Posix,
+    Nushell,
+    Fish,
+}
+
+#[cfg(not(windows))]
+fn unix_shell_flavor(shell: &str) -> UnixShellFlavor {
+    let name = std::path::Path::new(shell)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or(shell)
+        .to_ascii_lowercase();
+
+    match name.as_str() {
+        "nu" | "nushell" => UnixShellFlavor::Nushell,
+        "fish" => UnixShellFlavor::Fish,
+        _ => UnixShellFlavor::Posix,
+    }
+}
+
+#[cfg(not(windows))]
+fn unix_login_shell_command_args(shell: &str) -> [&'static str; 4] {
+    let probe = match unix_shell_flavor(shell) {
+        UnixShellFlavor::Nushell => "print ($env.PATH | str join (char esep))",
+        UnixShellFlavor::Fish => "printf '%s\\n' \"$PATH\"",
+        UnixShellFlavor::Posix => "echo $PATH",
+    };
+
+    ["-l", "-i", "-c", probe]
+}
+
+#[cfg(not(windows))]
+fn login_probe_shell_name(shell: &str, explicit: bool, flatpak: bool) -> Option<String> {
+    if flatpak && !explicit {
+        // Sandbox paths may not exist on the host; explicit overrides remain verbatim.
+        Some(
+            std::path::Path::new(shell)
+                .file_name()?
+                .to_str()?
+                .to_string(),
+        )
+    } else {
+        Some(shell.to_string())
+    }
+}
+
 /// Resolve the user's full PATH by running a login shell.
 ///
-/// When goslingd is launched from a desktop app (e.g. Electron), it may inherit
+/// When gosling is launched from a desktop app (e.g. Electron), it may inherit
 /// a minimal PATH like `/usr/bin:/bin`. This function spawns a login shell to
 /// source the user's profile and recover the full PATH.
 ///
-/// Ported from `crates/gosling/src/agents/platform_extensions/developer/shell.rs`
-/// where it was introduced in #5774 for the developer extension. This makes the
-/// same fix available to all MCP extensions in gosling-mcp.
+/// Shared by Developer, hooks and computer control. Honor GOSLING_SHELL first,
+/// otherwise source the user's login profile; Flatpak probes run on the host.
 #[cfg(not(windows))]
 fn resolve_login_shell_path() -> Option<String> {
     use process_wrap::std::{CommandWrap, ProcessSession};
     use std::path::PathBuf;
     use std::process::Stdio;
 
-    // Prefer the user's configured shell so we source the right profile files.
-    // Fall back to /bin/bash (common default) then sh as last resort.
-    let shell = std::env::var("SHELL")
-        .ok()
-        .filter(|s| PathBuf::from(s).is_file())
+    let configured_shell = std::env::var("GOSLING_SHELL").ok();
+    let is_flatpak = std::path::Path::new("/.flatpak-info").exists();
+    let shell = configured_shell
+        .clone()
+        .or_else(|| {
+            std::env::var("SHELL")
+                .ok()
+                .filter(|shell| PathBuf::from(shell).is_file())
+        })
         .unwrap_or_else(|| {
             if PathBuf::from("/bin/bash").is_file() {
                 "/bin/bash".to_string()
@@ -58,9 +110,17 @@ fn resolve_login_shell_path() -> Option<String> {
             }
         });
 
-    let mut cmd = CommandWrap::from(std::process::Command::new(&shell));
+    let shell = login_probe_shell_name(&shell, configured_shell.is_some(), is_flatpak)?;
+    let mut command = if is_flatpak {
+        let mut command = std::process::Command::new("flatpak-spawn");
+        command.args(["--host", "--watch-bus"]).arg(&shell);
+        command
+    } else {
+        std::process::Command::new(&shell)
+    };
+    command.args(unix_login_shell_command_args(&shell));
+    let mut cmd = CommandWrap::from(command);
     cmd.command_mut()
-        .args(["-l", "-i", "-c", "echo $PATH"])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
@@ -73,8 +133,9 @@ fn resolve_login_shell_path() -> Option<String> {
     capture_login_path(&mut *child, std::time::Duration::from_secs(5))
 }
 
+/// Capture a bounded login-PATH probe, killing and reaping it on failure or timeout.
 #[cfg(not(windows))]
-fn capture_login_path(
+pub fn capture_login_path(
     child: &mut dyn process_wrap::std::ChildWrapper,
     timeout: std::time::Duration,
 ) -> Option<String> {
@@ -146,6 +207,51 @@ mod tests {
     use std::process::Stdio;
     use std::time::{Duration, Instant};
 
+    #[cfg(not(windows))]
+    #[test]
+    fn unix_shell_flavor_detects_nushell_names() {
+        assert_eq!(unix_shell_flavor("nu"), UnixShellFlavor::Nushell);
+        assert_eq!(unix_shell_flavor("nushell"), UnixShellFlavor::Nushell);
+        assert_eq!(
+            unix_shell_flavor("/etc/profiles/per-user/can/bin/nu"),
+            UnixShellFlavor::Nushell
+        );
+        assert_eq!(unix_shell_flavor("/bin/bash"), UnixShellFlavor::Posix);
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn unix_login_shell_command_args_use_nushell_probe() {
+        assert_eq!(
+            unix_login_shell_command_args("nu"),
+            ["-l", "-i", "-c", "print ($env.PATH | str join (char esep))"]
+        );
+        assert_eq!(
+            unix_login_shell_command_args("/bin/bash"),
+            ["-l", "-i", "-c", "echo $PATH"]
+        );
+        assert_eq!(
+            unix_login_shell_command_args("/usr/bin/fish"),
+            ["-l", "-i", "-c", "printf '%s\\n' \"$PATH\""]
+        );
+    }
+
+    #[test]
+    fn flatpak_auto_shell_uses_host_lookup_and_explicit_shell_stays_verbatim() {
+        assert_eq!(
+            login_probe_shell_name("/app/bin/bash", false, true).as_deref(),
+            Some("bash")
+        );
+        assert_eq!(
+            login_probe_shell_name("/custom/bin/nu", true, true).as_deref(),
+            Some("/custom/bin/nu")
+        );
+        assert_eq!(
+            login_probe_shell_name("/usr/bin/fish", false, false).as_deref(),
+            Some("/usr/bin/fish")
+        );
+    }
+
     fn probe(script: &str, timeout: Duration) -> Option<String> {
         let mut command = std::process::Command::new("/bin/sh");
         command
@@ -195,6 +301,7 @@ mod tests {
 /// full PATH rather than the restricted one from the desktop app launcher.
 #[cfg(not(windows))]
 pub fn user_login_path() -> Option<&'static str> {
+    // Cache failure as well so a hung profile is not retried by each consumer.
     static CACHED: OnceLock<Option<String>> = OnceLock::new();
     CACHED.get_or_init(resolve_login_shell_path).as_deref()
 }

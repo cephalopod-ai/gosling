@@ -306,7 +306,12 @@ These variables control how gosling handles [tool execution](/docs/guides/managi
 | `GOSLING_SKILL_CATALOGS` | Loads compiled external skill catalogs without bundling them into gosling | JSON array of catalog index paths | `[]` |
 | `GOSLING_TRUSTED_DIRS` | Folders that tools may read and write in every session without an approval prompt. Also editable in Settings → Chat → Trusted folders. A workspace folder marked read-only still blocks writes. | JSON array of paths (for example, `["~/Downloads", "~/Documents"]`) | `[]` |
 | `GOSLING_MAX_TOOL_RESPONSE_SIZE` | Maximum character count for a single tool response before it is written to a temporary file instead of being included inline in the conversation | Positive integer (e.g., 100000, 200000) | 200000 |
-| `GOSLING_SHELL` | Overrides the shell used for Developer extension shell commands | Shell executable path or name (for example, `/bin/zsh`, `pwsh`, `C:\cygwin64\bin\bash.exe`) | Unix: `/bin/bash` if present, otherwise `$SHELL`, otherwise `sh`. Windows: `cmd` |
+| `GOSLING_SHELL` | Overrides Developer shell commands and the shared Unix login-PATH probe | Shell executable path or name (for example, `/bin/zsh`, `pwsh`, `C:\cygwin64\bin\bash.exe`) | Developer commands on Unix: `bash` on PATH, otherwise `sh`. Windows: `cmd` |
+
+On Unix, login-PATH recovery runs once per process and shares the result across Developer,
+command hooks and computer control. The probe uses `GOSLING_SHELL` when set, otherwise
+an existing `$SHELL` executable, then `/bin/bash` or `sh`. Developer command execution
+keeps the default shown above. Flatpak recovery runs on the host.
 
 **Examples**
 

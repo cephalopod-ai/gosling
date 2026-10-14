@@ -43,44 +43,6 @@ pub(crate) fn flatpak_spawn_command() -> tokio::process::Command {
 }
 
 #[cfg(not(windows))]
-fn flatpak_spawn_process() -> std::process::Command {
-    let mut command = std::process::Command::new("flatpak-spawn");
-    command.args(FLATPAK_HOST_ARGS);
-    command
-}
-
-#[cfg(not(windows))]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum UnixShellFlavor {
-    Posix,
-    Nushell,
-}
-
-#[cfg(not(windows))]
-fn unix_shell_flavor(shell: &str) -> UnixShellFlavor {
-    let name = std::path::Path::new(shell)
-        .file_stem()
-        .and_then(|stem| stem.to_str())
-        .unwrap_or(shell)
-        .to_ascii_lowercase();
-
-    match name.as_str() {
-        "nu" | "nushell" => UnixShellFlavor::Nushell,
-        _ => UnixShellFlavor::Posix,
-    }
-}
-
-#[cfg(not(windows))]
-fn unix_login_shell_command_args(shell: &str) -> [&'static str; 4] {
-    let probe = match unix_shell_flavor(shell) {
-        UnixShellFlavor::Nushell => "print ($env.PATH | str join (char esep))",
-        UnixShellFlavor::Posix => "echo $PATH",
-    };
-
-    ["-l", "-i", "-c", probe]
-}
-
-#[cfg(not(windows))]
 fn unix_shell_command_args(command_line: &str) -> [&str; 2] {
     ["-c", command_line]
 }
@@ -211,102 +173,10 @@ pub struct ShellOutput {
     pub output_collection_error: Option<String>,
 }
 
-/// Resolve the user's full PATH by running a login shell.
-///
-/// When goslingd is launched from a desktop app (e.g. Electron), it may inherit
-/// a minimal PATH like `/usr/bin:/bin`. This function spawns a login shell to
-/// source the user's profile and recover the full PATH.
+/// Return the process-wide login-PATH capture for desktop-launched tool calls.
 #[cfg(not(windows))]
 pub(crate) fn resolve_login_shell_path() -> Option<String> {
-    use process_wrap::std::{CommandWrap, ProcessSession};
-
-    let shell = unix_shell();
-    let login_args = unix_login_shell_command_args(&shell);
-
-    // Build the command, varying only the flatpak vs direct invocation.
-    let mut cmd = if is_flatpak() {
-        let mut c = flatpak_spawn_process();
-        c.arg(&shell).args(login_args);
-        CommandWrap::from(c)
-    } else {
-        let mut c = std::process::Command::new(&shell);
-        c.args(login_args);
-        CommandWrap::from(c)
-    };
-
-    cmd.command_mut()
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null());
-
-    // Spawn in a new session so that bash's interactive job-control setup
-    // (TIOCSPGRP) cannot steal the terminal foreground from gosling, which
-    // would cause gosling to receive SIGTTIN and be suspended on startup.
-    cmd.wrap(ProcessSession);
-
-    let mut child = cmd.spawn().ok()?;
-    capture_login_shell_path(&mut *child, Duration::from_secs(5))
-}
-
-#[cfg(not(windows))]
-fn capture_login_shell_path(
-    child: &mut dyn process_wrap::std::ChildWrapper,
-    timeout: Duration,
-) -> Option<String> {
-    use std::io::Read;
-    use std::sync::mpsc::TryRecvError;
-    use std::time::Instant;
-
-    const MAX_PATH_OUTPUT_BYTES: usize = 64 * 1024;
-    let deadline = Instant::now() + timeout;
-    let result = (|| {
-        let stdout = child.stdout().take()?;
-        let (tx, rx) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
-            let mut bytes = Vec::new();
-            let result = stdout
-                .take((MAX_PATH_OUTPUT_BYTES + 1) as u64)
-                .read_to_end(&mut bytes)
-                .map(|_| bytes);
-            let _ = tx.send(result);
-        });
-        let mut captured = None;
-        loop {
-            let status = child.try_wait().ok()?;
-            if status.is_some_and(|status| !status.success()) {
-                return None;
-            }
-            if captured.is_none() {
-                match rx.try_recv() {
-                    Ok(Ok(bytes)) if bytes.len() <= MAX_PATH_OUTPUT_BYTES => captured = Some(bytes),
-                    Ok(_) | Err(TryRecvError::Disconnected) => return None,
-                    Err(TryRecvError::Empty) => {}
-                }
-            }
-            // A profile that closes stdout can still keep the shell alive.
-            if status.is_some() {
-                if let Some(bytes) = captured {
-                    return Some(bytes);
-                }
-            }
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            if remaining.is_zero() {
-                return None;
-            }
-            std::thread::sleep(remaining.min(Duration::from_millis(20)));
-        }
-    })();
-    if result.is_none() {
-        let _ = child.start_kill();
-        let _ = child.wait();
-    }
-    let output = result?;
-    String::from_utf8_lossy(&output)
-        .lines()
-        .rev()
-        .find(|line| !line.trim().is_empty())
-        .map(|line| line.trim().to_string())
-        .filter(|path| !path.is_empty())
+    gosling_mcp::subprocess::user_login_path().map(str::to_owned)
 }
 
 /// Resolves the user's login-shell PATH in the background.
@@ -1091,31 +961,6 @@ mod tests {
 
     #[cfg(not(windows))]
     #[test]
-    fn unix_shell_flavor_detects_nushell_names() {
-        assert_eq!(unix_shell_flavor("nu"), UnixShellFlavor::Nushell);
-        assert_eq!(unix_shell_flavor("nushell"), UnixShellFlavor::Nushell);
-        assert_eq!(
-            unix_shell_flavor("/etc/profiles/per-user/can/bin/nu"),
-            UnixShellFlavor::Nushell
-        );
-        assert_eq!(unix_shell_flavor("/bin/bash"), UnixShellFlavor::Posix);
-    }
-
-    #[cfg(not(windows))]
-    #[test]
-    fn unix_login_shell_command_args_use_nushell_probe() {
-        assert_eq!(
-            unix_login_shell_command_args("nu"),
-            ["-l", "-i", "-c", "print ($env.PATH | str join (char esep))"]
-        );
-        assert_eq!(
-            unix_login_shell_command_args("/bin/bash"),
-            ["-l", "-i", "-c", "echo $PATH"]
-        );
-    }
-
-    #[cfg(not(windows))]
-    #[test]
     fn unix_shell_command_args_wrap_commands_for_execution() {
         assert_eq!(unix_shell_command_args("ls -la"), ["-c", "ls -la"]);
     }
@@ -1180,7 +1025,7 @@ mod tests {
             let mut wrapped = CommandWrap::from(command);
             wrapped.wrap(ProcessSession);
             let mut child = wrapped.spawn().unwrap();
-            let result = capture_login_shell_path(&mut *child, timeout);
+            let result = gosling_mcp::subprocess::capture_login_path(&mut *child, timeout);
             assert!(child.try_wait().unwrap().is_some());
             result
         }

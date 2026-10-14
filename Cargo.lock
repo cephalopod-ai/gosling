@@ -4268,6 +4268,7 @@ dependencies = [
  "tracing-subscriber",
  "umya-spreadsheet",
  "url",
+ "which 8.0.3",
 ]
 
 [[package]]

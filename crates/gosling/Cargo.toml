@@ -200,6 +200,7 @@ zip.workspace = true
 tree-sitter = "0.26"
 tree-sitter-bash = "0.25"
 unicode-normalization = { version = "0.1.22", default-features = false, features = ["std"] }
+gosling-mcp = { version = "1.5.0", path = "../gosling-mcp", default-features = false }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winapi = { workspace = true }
@@ -230,7 +231,6 @@ opentelemetry_sdk = { workspace = true, features = ["testing"] }
 gosling-test-support = { path = "../gosling-test-support", default-features = false }
 bytes = { workspace = true }
 http = { workspace = true }
-gosling-mcp = { path = "../gosling-mcp", default-features = false }
 insta = { version = "1", default-features = false }
 dtor = { version = "1.0.5", default-features = false, features = ["proc_macro"] }
 tower = { version = "0.5.2", default-features = false, features = ["util"] }

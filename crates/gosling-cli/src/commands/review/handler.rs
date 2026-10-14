@@ -86,8 +86,23 @@ pub async fn handle_review(opts: ReviewOptions) -> Result<()> {
         .parse()
         .map_err(|e: String| anyhow!("--severity: {e}"))?;
 
-    let mut touched = touched_files(&repo_root, opts.range.as_deref(), &opts.files)?;
-    let mut diff = collect_diff(&repo_root, opts.range.as_deref(), &opts.files)?;
+    if opts.summary_only {
+        let summary = collect_diff_stat(&repo_root, opts.range.as_deref(), &opts.files)?;
+        let has_untracked_text = if opts.range.is_none() {
+            let untracked = untracked_files(&repo_root, &opts.files)?;
+            has_readable_untracked_file(&repo_root, &untracked)
+        } else {
+            false
+        };
+        if summary.trim().is_empty() && !has_untracked_text {
+            eprintln!("gosling review: no changes to review");
+        } else {
+            print!("{}", summary);
+        }
+        return Ok(());
+    }
+
+    let (mut touched, mut diff) = collect_diff(&repo_root, opts.range.as_deref(), &opts.files)?;
 
     // Without an explicit `--range`, `git diff HEAD` excludes untracked
     // files entirely — brand-new files would silently miss the review.
@@ -108,15 +123,6 @@ pub async fn handle_review(opts: ReviewOptions) -> Result<()> {
 
     if diff.trim().is_empty() {
         eprintln!("gosling review: no changes to review");
-        return Ok(());
-    }
-
-    // `--summary-only` short-circuits everything else: print `git
-    // diff --stat` and return without calling the agent. Mirrors
-    // `amp review --summary-only`.
-    if opts.summary_only {
-        let summary = collect_diff_stat(&repo_root, opts.range.as_deref(), &opts.files)?;
-        print!("{}", summary);
         return Ok(());
     }
 
@@ -376,40 +382,13 @@ fn git_command(repo_root: &Path) -> Command {
     cmd
 }
 
-fn touched_files(repo_root: &Path, range: Option<&str>, files: &[String]) -> Result<Vec<String>> {
+fn collect_diff(
+    repo_root: &Path,
+    range: Option<&str>,
+    files: &[String],
+) -> Result<(Vec<String>, String)> {
     let mut cmd = git_command(repo_root);
-    cmd.arg("diff").arg("--name-only");
-    match range {
-        Some(r) => {
-            cmd.arg(r);
-        }
-        None => {
-            cmd.arg("HEAD");
-        }
-    }
-    if !files.is_empty() {
-        cmd.arg("--");
-        for f in files {
-            cmd.arg(f);
-        }
-    }
-    let out = cmd.output().context("git diff --name-only failed")?;
-    if !out.status.success() {
-        bail!(
-            "git diff --name-only failed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-    }
-    Ok(String::from_utf8(out.stdout)?
-        .lines()
-        .filter(|l| !l.trim().is_empty())
-        .map(|l| l.to_string())
-        .collect())
-}
-
-fn collect_diff(repo_root: &Path, range: Option<&str>, files: &[String]) -> Result<String> {
-    let mut cmd = git_command(repo_root);
-    cmd.arg("diff");
+    cmd.args(["diff", "--raw", "-z", "--patch"]);
     match range {
         Some(r) => {
             cmd.arg(r);
@@ -428,7 +407,73 @@ fn collect_diff(repo_root: &Path, range: Option<&str>, files: &[String]) -> Resu
     if !out.status.success() {
         bail!("git diff failed: {}", String::from_utf8_lossy(&out.stderr));
     }
-    String::from_utf8(out.stdout).map_err(|e| anyhow!("git diff returned non-UTF8 output: {e}"))
+    let output = String::from_utf8(out.stdout)
+        .map_err(|e| anyhow!("git diff returned non-UTF8 output: {e}"))?;
+    split_raw_diff(&output)
+}
+
+/// Git emits NUL-delimited raw records, then an empty record before the patch.
+/// Rename/copy records carry two paths; name-only reports their destination.
+fn split_raw_diff(mut output: &str) -> Result<(Vec<String>, String)> {
+    let mut touched = Vec::new();
+    while !output.is_empty() && !output.starts_with('\0') {
+        let (header, rest) = output
+            .split_once('\0')
+            .context("missing raw diff header terminator")?;
+        let status = header
+            .split_whitespace()
+            .last()
+            .context("missing raw diff status")?;
+        if !header.starts_with(':') {
+            bail!("invalid raw diff header");
+        }
+        let (source, rest) = rest
+            .split_once('\0')
+            .context("missing raw diff path terminator")?;
+        let (path, rest) = if status.starts_with(['R', 'C']) {
+            rest.split_once('\0')
+                .context("missing raw diff destination terminator")?
+        } else {
+            (source, rest)
+        };
+        touched.push(path.to_string());
+        output = rest;
+    }
+    Ok((
+        touched,
+        output.strip_prefix('\0').unwrap_or(output).to_string(),
+    ))
+}
+
+/// Match untracked synthesis eligibility without allocating the file or its patch.
+fn has_readable_untracked_file(repo_root: &Path, paths: &[String]) -> bool {
+    use std::io::Read;
+    paths.iter().any(|path| {
+        let Ok(mut file) = fs::File::open(repo_root.join(path)) else {
+            return false;
+        };
+        // Hold incomplete UTF-8 between chunks; read_to_string rejects invalid UTF-8.
+        let mut buffer = [0u8; 8192];
+        let mut pending = 0;
+        loop {
+            let count = match file.read(&mut buffer[pending..8192]) {
+                Ok(0) => return pending == 0,
+                Ok(count) => count,
+                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(_) => return false,
+            };
+            let length = pending + count;
+            pending = match std::str::from_utf8(&buffer[..length]) {
+                Ok(_) => 0,
+                Err(error) if error.error_len().is_none() => {
+                    let pending = length - error.valid_up_to();
+                    buffer.copy_within(error.valid_up_to()..length, 0);
+                    pending
+                }
+                Err(_) => return false,
+            };
+        }
+    })
 }
 
 fn collect_diff_stat(repo_root: &Path, range: Option<&str>, files: &[String]) -> Result<String> {
@@ -571,6 +616,117 @@ mod tests {
             scope_dir: String::new(),
             body: "body".into(),
         }
+    }
+
+    #[cfg(unix)]
+    fn fixture_git(root: &Path, args: &[&str]) -> Vec<u8> {
+        let output = git_command(root)
+            .args([
+                "-c",
+                "user.name=Fixture",
+                "-c",
+                "user.email=fixture@example.invalid",
+                "-c",
+                "commit.gpgsign=false",
+            ])
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        output.stdout
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn collected_diff_matches_git_paths_and_patch_for_renames_and_copies() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fixture_git(root, &["init", "-q"]);
+        fixture_git(root, &["config", "diff.renames", "copies"]);
+        for (name, content) in [
+            ("old.txt", "rename content\n"),
+            ("source.txt", "copy content\n"),
+            ("delete.txt", "deleted\n"),
+            ("tab\tand\n雪.txt", "before\n"),
+        ] {
+            fs::write(root.join(name), content).unwrap();
+        }
+        fixture_git(root, &["add", "."]);
+        fixture_git(root, &["commit", "-qm", "base"]);
+        fs::rename(root.join("old.txt"), root.join("renamed.txt")).unwrap();
+        fs::copy(root.join("source.txt"), root.join("copy.txt")).unwrap();
+        fs::write(root.join("source.txt"), "copy content\nchanged\n").unwrap();
+        fs::write(root.join("tab\tand\n雪.txt"), "after\n").unwrap();
+        fs::remove_file(root.join("delete.txt")).unwrap();
+        fs::write(root.join("binary.bin"), [0, 255]).unwrap();
+        fixture_git(root, &["add", "."]);
+        fs::write(root.join("untracked.txt"), "new\n").unwrap();
+
+        for files in [
+            vec![],
+            vec!["renamed.txt".to_string()],
+            vec!["missing.txt".to_string()],
+        ] {
+            for range in [None, Some("HEAD")] {
+                let (touched, patch) = collect_diff(root, range, &files).unwrap();
+                let mut names = vec!["diff", "--name-only", "-z", "HEAD", "--"];
+                names.extend(files.iter().map(String::as_str));
+                let expected: Vec<String> = String::from_utf8(fixture_git(root, &names))
+                    .unwrap()
+                    .split('\0')
+                    .filter(|path| !path.is_empty())
+                    .map(str::to_string)
+                    .collect();
+                assert_eq!(touched, expected);
+                let mut args = vec!["diff", "HEAD", "--"];
+                args.extend(files.iter().map(String::as_str));
+                assert_eq!(patch, String::from_utf8(fixture_git(root, &args)).unwrap());
+            }
+        }
+        let raw = fixture_git(root, &["diff", "--raw", "-z", "HEAD"]);
+        let raw = String::from_utf8(raw).unwrap();
+        assert!(raw.contains("R100\0old.txt\0renamed.txt\0"));
+        assert!(raw.contains("C100\0source.txt\0copy.txt\0"));
+        let untracked = untracked_files(root, &[]).unwrap();
+        assert_eq!(untracked, ["untracked.txt"]);
+        assert!(synthesize_untracked_diff(root, &untracked)
+            .unwrap()
+            .contains("+new\n"));
+    }
+
+    #[test]
+    fn untracked_summary_eligibility_matches_text_synthesis() {
+        let dir = tempfile::tempdir().unwrap();
+        for (name, content) in [
+            ("empty", vec![]),
+            ("text", b"new\n".to_vec()),
+            ("invalid", vec![255]),
+            ("incomplete", vec![0xe2, 0x82]),
+        ] {
+            fs::write(dir.path().join(name), content).unwrap();
+            let paths = vec![name.to_string()];
+            assert_eq!(
+                has_readable_untracked_file(dir.path(), &paths),
+                !synthesize_untracked_diff(dir.path(), &paths)
+                    .unwrap()
+                    .is_empty()
+            );
+        }
+        let mut content = vec![b'a'; 8191];
+        content.extend_from_slice("雪".as_bytes());
+        fs::write(dir.path().join("split-utf8"), content).unwrap();
+        assert!(has_readable_untracked_file(
+            dir.path(),
+            &["split-utf8".to_string()]
+        ));
+        assert!(!has_readable_untracked_file(
+            dir.path(),
+            &["missing".to_string()]
+        ));
     }
 
     #[test]
