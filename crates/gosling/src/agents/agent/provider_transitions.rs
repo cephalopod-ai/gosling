@@ -627,7 +627,8 @@ impl Agent {
             match primary_result {
                 Some(Ok(p)) => (p, provider_name.clone(), model_config, false),
                 Some(Err(error))
-                    if session.credential_profile_id.is_some()
+                    if crate::session::client_tool_policy::is_bounded(session)
+                        || session.credential_profile_id.is_some()
                         || !authentication.extensions.is_empty() =>
                 {
                     return Err(anyhow!(
@@ -636,7 +637,8 @@ impl Agent {
                         error
                     ));
                 }
-                None if session.credential_profile_id.is_some()
+                None if crate::session::client_tool_policy::is_bounded(session)
+                    || session.credential_profile_id.is_some()
                     || !authentication.extensions.is_empty() =>
                 {
                     return Err(anyhow!(
@@ -837,7 +839,9 @@ impl Agent {
         primary_provider: &dyn Provider,
         primary_model_config: &ModelConfig,
     ) -> Result<ProviderFailoverConfig> {
-        if session.credential_profile_id.is_some() {
+        if crate::session::client_tool_policy::is_bounded(session)
+            || session.credential_profile_id.is_some()
+        {
             bail!("automatic failover is disabled for credential-pinned sessions");
         }
         if primary_provider.capabilities().context_ownership

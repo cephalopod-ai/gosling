@@ -15,3 +15,5 @@ pub use permission_store::ToolPermissionStore;
 pub use skill_authority_inspector::SkillAuthorityInspector;
 pub use website_login_inspector::WebsiteLoginInspector;
 pub use working_dir_scope_inspector::WorkingDirScopeInspector;
+
+pub mod client_tool_inspector;

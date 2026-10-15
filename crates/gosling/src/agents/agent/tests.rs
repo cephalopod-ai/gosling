@@ -2413,6 +2413,14 @@ impl crate::tool_inspection::ToolInspector for DenyAutoToolInspector {
 async fn dispatch_app_tool_call_runs_inspectors_in_auto_mode() -> Result<()> {
     let temp_dir = tempfile::tempdir()?;
     let session_manager = Arc::new(SessionManager::new(temp_dir.path().to_path_buf()));
+    let session = session_manager
+        .create_session(
+            temp_dir.path().into(),
+            "app tool inspector fixture".into(),
+            crate::session::SessionType::User,
+            GoslingMode::Auto,
+        )
+        .await?;
     let permission_manager = Arc::new(PermissionManager::new(temp_dir.path().to_path_buf()));
     let provider = Arc::new(Mutex::new(None));
     let mut agent = Agent::with_config(AgentConfig::new(
@@ -2433,7 +2441,7 @@ async fn dispatch_app_tool_call_runs_inspectors_in_auto_mode() -> Result<()> {
 
     let result = agent
         .dispatch_app_tool_call(
-            "session",
+            &session.id,
             CallToolRequestParams::new("test_tool"),
             CancellationToken::new(),
         )

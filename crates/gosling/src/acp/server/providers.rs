@@ -45,10 +45,44 @@ fn provider_type_to_dto(provider_type: ProviderType) -> ProviderTypeDto {
     }
 }
 
+fn endpoint_location(keys: &[crate::providers::base::ConfigKey]) -> String {
+    let mut locations = Vec::new();
+    for key in keys.iter().filter(|key| !key.secret) {
+        let name = key.name.to_uppercase();
+        if !(name.contains("HOST") || name.contains("URL") || name.contains("ENDPOINT")) {
+            continue;
+        }
+        let value = Config::global()
+            .get_param::<String>(&key.name)
+            .ok()
+            .or_else(|| key.default.clone());
+        if let Some(url) = value.and_then(|value| reqwest::Url::parse(&value).ok()) {
+            if let Some(host) = url.host_str() {
+                let local = host == "localhost"
+                    || host
+                        .trim_matches(['[', ']'])
+                        .parse::<std::net::IpAddr>()
+                        .is_ok_and(|address| address.is_loopback());
+                locations.push(if local { "local" } else { "external" });
+            }
+        }
+    }
+    if locations.contains(&"external") {
+        "external"
+    } else if !locations.is_empty() {
+        "local"
+    } else {
+        "unknown"
+    }
+    .into()
+}
+
 fn inventory_entry_to_dto(entry: ProviderInventoryEntry) -> ProviderInventoryEntryDto {
     let stale = ProviderInventoryService::is_stale(&entry);
     let provider_id = entry.provider_id.clone();
     ProviderInventoryEntryDto {
+        executes_tools_outside_gosling: false,
+        endpoint_location: endpoint_location(&entry.config_keys),
         provider_id: entry.provider_id,
         provider_name: entry.provider_name,
         description: entry.description,
@@ -536,17 +570,27 @@ impl GoslingAcpAgent {
             entries
                 .into_iter()
                 .filter(|entry| {
-                    !crate::providers::catalog::hide_from_automatic_provider_setup(
-                        &entry.provider_id,
-                    )
+                    (req.include_hidden_configured && entry.configured)
+                        || !crate::providers::catalog::hide_from_automatic_provider_setup(
+                            &entry.provider_id,
+                        )
                 })
                 .collect()
         } else {
             entries
         };
-        Ok(ListProvidersResponse {
-            entries: entries.into_iter().map(inventory_entry_to_dto).collect(),
-        })
+        let mut dtos = Vec::new();
+        for entry in entries {
+            let executes_tools_outside_gosling =
+                crate::providers::get_from_registry(&entry.provider_id)
+                    .await
+                    .internal_err()?
+                    .executes_tools_outside_gosling();
+            let mut dto = inventory_entry_to_dto(entry);
+            dto.executes_tools_outside_gosling = executes_tools_outside_gosling;
+            dtos.push(dto);
+        }
+        Ok(ListProvidersResponse { entries: dtos })
     }
 
     pub(super) async fn on_list_provider_supported_models(

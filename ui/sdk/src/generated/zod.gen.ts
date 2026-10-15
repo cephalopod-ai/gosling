@@ -1324,6 +1324,7 @@ export const zGetSessionExtensionsResponse_unstable = z.object({
  * List providers with setup metadata and the current model inventory snapshot.
  */
 export const zListProvidersRequest_unstable = z.object({
+    includeHiddenConfigured: z.boolean().optional().default(false),
     providerIds: z.array(z.string()).optional().default([])
 });
 
@@ -1404,6 +1405,8 @@ export const zProviderCapabilitiesDto = z.object({
  * Provider inventory entry.
  */
 export const zProviderInventoryEntryDto = z.object({
+    executesToolsOutsideGosling: z.boolean().optional().default(false),
+    endpointLocation: z.string().optional().default(''),
     providerId: z.string(),
     providerName: z.string(),
     description: z.string(),
@@ -3048,7 +3051,7 @@ export const zExtensionAuthentication = z.object({
     disconnected: z.boolean().optional().default(false),
     credentialNamespace: z.string().nullish(),
     destination: z.string().nullish(),
-    secretFields: z.array(z.string()).optional().default([])
+    secretFields: z.array(z.string()).optional()
 });
 
 /**

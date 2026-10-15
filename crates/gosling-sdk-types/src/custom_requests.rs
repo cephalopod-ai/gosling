@@ -2700,6 +2700,9 @@ pub struct DictationConfigResponse {
 #[request(method = "_gosling/unstable/providers/list", response = ListProvidersResponse)]
 #[serde(rename_all = "camelCase")]
 pub struct ListProvidersRequest {
+    /// Include configured routes hidden from automatic setup, for gateway clients.
+    #[serde(default)]
+    pub include_hidden_configured: bool,
     /// Only return entries for these providers. Empty means all.
     #[serde(default)]
     pub provider_ids: Vec<String>,
@@ -2817,6 +2820,12 @@ pub struct ProviderInventoryModelDto {
 #[derive(Debug, Default, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderInventoryEntryDto {
+    /// Whether the provider can execute tools outside Gosling's approval pipeline.
+    #[serde(default)]
+    pub executes_tools_outside_gosling: bool,
+    /// Endpoint locality inferred only from non-secret endpoint configuration.
+    #[serde(default)]
+    pub endpoint_location: String,
     /// Provider identifier.
     pub provider_id: String,
     /// Human-readable provider name.

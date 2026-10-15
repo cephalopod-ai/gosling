@@ -321,6 +321,27 @@ pub async fn authorize_tool_execution(
     identity: Option<&HostToolIdentity>,
     public_tool_name: &str,
 ) -> Result<ExecutionAuthorization, ErrorData> {
+    let session = session_manager
+        .get_session(session_id, false)
+        .await
+        .map_err(|_| {
+            ErrorData::new(
+                ErrorCode::INTERNAL_ERROR,
+                "Could not verify client tool policy",
+                None,
+            )
+        })?;
+    if crate::session::client_tool_policy::is_bounded(&session)
+        && !identity.is_some_and(|identity| {
+            crate::session::client_tool_policy::allows_extension(&session, &identity.extension_name)
+        })
+    {
+        return Err(ErrorData::new(
+            ErrorCode::INVALID_REQUEST,
+            "Tool is outside the client's selected extensions",
+            None,
+        ));
+    }
     let durable = session_manager
         .plans()
         .snapshot(session_id)
@@ -403,6 +424,58 @@ mod tests {
             extension_name: extension.to_string(),
             tool_name: tool.to_string(),
         }
+    }
+
+    #[tokio::test]
+    async fn bounded_client_checks_concrete_identity_before_dispatch() {
+        let root = tempfile::tempdir().unwrap();
+        let manager = SessionManager::new(root.path().into());
+        let session = manager
+            .create_session(
+                root.path().into(),
+                "synthetic".into(),
+                crate::session::SessionType::Acp,
+                crate::config::GoslingMode::Approve,
+            )
+            .await
+            .unwrap();
+        let mut data = session.extension_data.clone();
+        data.extension_states.insert(
+            crate::session::client_tool_policy::KEY.into(),
+            serde_json::json!({"allowedExtensions": ["trilium"]}),
+        );
+        manager
+            .update(&session.id)
+            .extension_data(data)
+            .apply()
+            .await
+            .unwrap();
+        let selected = identity(HostExtensionKind::StreamableHttp, "trilium", "get_note");
+        let unselected = identity(HostExtensionKind::Builtin, "developer", "shell");
+        for candidate in [None, Some(&unselected)] {
+            assert!(authorize_tool_execution(
+                &manager,
+                None,
+                &session.id,
+                &InteractionPolicy::Normal,
+                DispatchOrigin::ModelNative,
+                candidate,
+                "trilium__get_note"
+            )
+            .await
+            .is_err());
+        }
+        assert!(authorize_tool_execution(
+            &manager,
+            None,
+            &session.id,
+            &InteractionPolicy::Normal,
+            DispatchOrigin::ModelNative,
+            Some(&selected),
+            "trilium__get_note"
+        )
+        .await
+        .is_ok());
     }
 
     #[test]

@@ -37,17 +37,16 @@ impl GoslingAcpAgent {
             // Client servers are added alongside gosling's own extensions; on a
             // name collision gosling keeps its own configuration (documented in
             // guides/acp-clients.md).
-            for mcp_server in mcp_servers {
-                let extension = mcp_server_to_extension_config(mcp_server).map_err(|message| {
-                    agent_client_protocol::Error::invalid_params().data(message)
-                })?;
-                if !extensions
-                    .iter()
-                    .any(|existing| existing.name() == extension.name())
-                {
-                    config_keys.remove(&extension.key());
-                    extensions.push(extension);
-                }
+        }
+        for mcp_server in mcp_servers {
+            let extension = mcp_server_to_extension_config(mcp_server)
+                .map_err(|message| agent_client_protocol::Error::invalid_params().data(message))?;
+            if !extensions
+                .iter()
+                .any(|existing| existing.name() == extension.name())
+            {
+                config_keys.remove(&extension.key());
+                extensions.push(extension);
             }
         }
 
@@ -257,7 +256,36 @@ impl GoslingAcpAgent {
             session_needs_update = true;
         }
 
-        if self.shell_runtime.is_shell_product()
+        if crate::session::client_tool_policy::is_bounded(&session) {
+            if executes_tools_outside_gosling {
+                return Err(agent_client_protocol::Error::invalid_params()
+                    .data("Provider cannot enforce bounded client tools"));
+            }
+            let state = EnabledExtensionsState::from_extension_data(&session.extension_data)
+                .ok_or_else(|| {
+                    agent_client_protocol::Error::invalid_params()
+                        .data("Missing bounded extension selection")
+                })?;
+            let mut extensions = state.extensions.clone();
+            for server in mcp_servers {
+                let extension = mcp_server_to_extension_config(server).map_err(|message| {
+                    agent_client_protocol::Error::invalid_params().data(message)
+                })?;
+                if !crate::session::client_tool_policy::allows_extension(&session, &extension.key())
+                {
+                    return Err(agent_client_protocol::Error::invalid_params()
+                        .data("Cannot widen bounded session extensions on load"));
+                }
+                push_or_replace_extension(&mut extensions, extension);
+            }
+            let mut extension_data = session.extension_data.clone();
+            EnabledExtensionsState::new(extensions)
+                .with_config_keys(state.config_keys)
+                .to_extension_data(&mut extension_data)
+                .internal_err()?;
+            builder = builder.extension_data(extension_data);
+            session_needs_update = true;
+        } else if self.shell_runtime.is_shell_product()
             || !mcp_servers.is_empty()
             || EnabledExtensionsState::from_extension_data(&session.extension_data).is_none()
         {

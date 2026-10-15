@@ -1530,6 +1530,10 @@ export type GetSessionExtensionsResponse_unstable = {
  */
 export type ListProvidersRequest_unstable = {
     /**
+     * Include configured routes hidden from automatic setup, for gateway clients.
+     */
+    includeHiddenConfigured?: boolean;
+    /**
      * Only return entries for these providers. Empty means all.
      */
     providerIds?: Array<string>;
@@ -1546,6 +1550,14 @@ export type ListProvidersResponse_unstable = {
  * Provider inventory entry.
  */
 export type ProviderInventoryEntryDto = {
+    /**
+     * Whether the provider can execute tools outside Gosling's approval pipeline.
+     */
+    executesToolsOutsideGosling?: boolean;
+    /**
+     * Endpoint locality inferred only from non-secret endpoint configuration.
+     */
+    endpointLocation?: string;
     /**
      * Provider identifier.
      */

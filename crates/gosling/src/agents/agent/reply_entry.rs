@@ -95,6 +95,16 @@ impl Agent {
         turn_policy: &crate::session::InteractionPolicy,
     ) -> Result<()> {
         let provider = self.provider().await?;
+        let session = self
+            .config
+            .session_manager
+            .get_session(session_id, false)
+            .await?;
+        if crate::session::client_tool_policy::is_bounded(&session)
+            && provider.executes_tools_outside_gosling()
+        {
+            anyhow::bail!("This provider executes tools outside Gosling and cannot enforce the bounded client policy");
+        }
         let plan_snapshot = self
             .config
             .session_manager

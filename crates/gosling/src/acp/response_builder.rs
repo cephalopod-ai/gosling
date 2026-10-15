@@ -140,6 +140,15 @@ pub(super) fn session_response_meta(
     extension_results: &[ExtensionLoadResult],
 ) -> serde_json::Map<String, serde_json::Value> {
     let mut meta = serde_json::Map::new();
+    if crate::session::client_tool_policy::is_bounded(session) {
+        meta.insert(
+            "clientToolPolicy".into(),
+            serde_json::json!({
+                "version": 1, "providerId": session.provider_name,
+                "modelId": session.model_config.as_ref().map(|model| &model.model_name),
+            }),
+        );
+    }
     if let Ok(v) = serde_json::to_value(extension_results) {
         meta.insert("extensionResults".to_string(), v);
     }

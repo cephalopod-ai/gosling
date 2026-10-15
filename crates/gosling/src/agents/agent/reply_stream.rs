@@ -79,11 +79,18 @@ impl Agent {
             &interaction_policy,
             crate::session::InteractionPolicy::Planning { .. }
         );
+        let bounded_client = crate::session::client_tool_policy::is_bounded(
+            &self
+                .config
+                .session_manager
+                .get_session(&session_config.id, false)
+                .await?,
+        );
         let configured_context_side_channels_allowed =
-            configured_context_side_channels_allowed(&interaction_policy);
+            !bounded_client && configured_context_side_channels_allowed(&interaction_policy);
         // A planning turn is bound to the provider captured in its durable
         // generation. A fallback route must never inherit that authority.
-        let failover_target = if planning_turn {
+        let failover_target = if planning_turn || bounded_client {
             None
         } else {
             self.provider_failover_target()

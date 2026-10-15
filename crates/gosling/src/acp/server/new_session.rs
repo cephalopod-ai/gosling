@@ -281,8 +281,33 @@ impl GoslingAcpAgent {
             .await
             .internal_err_ctx("Failed to read provider capabilities")?
             .executes_tools_outside_gosling();
-        let gosling_mode =
-            super::compatible_mode(session.gosling_mode, executes_tools_outside_gosling);
+        let bounded = setup
+            .args
+            .meta
+            .as_ref()
+            .and_then(|meta| meta.get("clientToolPolicy"));
+        if let Some(policy) = bounded {
+            if !self.builtins.is_empty()
+                || self.shell_runtime.is_shell_product()
+                || policy != &serde_json::json!({"version": 1})
+                || setup.workspace.is_some()
+                || setup.args.meta.as_ref().is_none_or(|meta| {
+                    !meta
+                        .get("enabledExtensions")
+                        .is_some_and(serde_json::Value::is_array)
+                })
+                || executes_tools_outside_gosling
+            {
+                return Err(agent_client_protocol::Error::invalid_params().data(
+                    "Bounded client sessions require policy v1, explicit extensions, no workspace, and a provider whose tools Gosling can enforce"));
+            }
+        }
+        let gosling_mode = if bounded.is_some() {
+            GoslingMode::Approve
+        } else {
+            super::compatible_mode(session.gosling_mode, executes_tools_outside_gosling)
+        };
+        let bounded = bounded.is_some();
         let NewSessionSetup {
             args,
             project_id,
@@ -339,6 +364,21 @@ impl GoslingAcpAgent {
             state
                 .to_extension_data(&mut extension_data)
                 .internal_err_ctx("Failed to initialize Deep Research state")?;
+        }
+
+        if bounded {
+            let allowed_extensions =
+                EnabledExtensionsState::extensions_or_default(Some(&extension_data), config)
+                    .iter()
+                    .map(|extension| extension.key())
+                    .collect();
+            extension_data.extension_states.insert(
+                crate::session::client_tool_policy::KEY.into(),
+                serde_json::to_value(crate::session::client_tool_policy::ClientToolPolicy {
+                    allowed_extensions,
+                })
+                .internal_err()?,
+            );
         }
 
         self.apply_initial_session_config(

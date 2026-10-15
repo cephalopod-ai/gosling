@@ -237,6 +237,10 @@ impl GoslingAcpAgent {
         self.client_initialized
             .store(true, std::sync::atomic::Ordering::Release);
         Ok(InitializeResponse::new(protocol_version)
+            .meta(serde_json::Map::from_iter([(
+                "goslingClientToolPolicyVersion".into(),
+                serde_json::json!(1),
+            )]))
             .agent_info(Implementation::new("gosling", env!("CARGO_PKG_VERSION")))
             .agent_capabilities(capabilities)
             .auth_methods(vec![AuthMethod::Agent(

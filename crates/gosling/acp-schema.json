@@ -4045,6 +4045,11 @@
     "ListProvidersRequest_unstable": {
       "type": "object",
       "properties": {
+        "includeHiddenConfigured": {
+          "type": "boolean",
+          "description": "Include configured routes hidden from automatic setup, for gateway clients.",
+          "default": false
+        },
         "providerIds": {
           "type": "array",
           "items": {
@@ -4078,6 +4083,16 @@
     "ProviderInventoryEntryDto": {
       "type": "object",
       "properties": {
+        "executesToolsOutsideGosling": {
+          "type": "boolean",
+          "description": "Whether the provider can execute tools outside Gosling's approval pipeline.",
+          "default": false
+        },
+        "endpointLocation": {
+          "type": "string",
+          "description": "Endpoint locality inferred only from non-secret endpoint configuration.",
+          "default": ""
+        },
         "providerId": {
           "type": "string",
           "description": "Provider identifier."
@@ -9545,8 +9560,7 @@
           "type": "array",
           "items": {
             "type": "string"
-          },
-          "default": []
+          }
         }
       }
     },

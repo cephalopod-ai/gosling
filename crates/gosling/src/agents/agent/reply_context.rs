@@ -14,6 +14,9 @@ impl Agent {
         extension_manager: &Arc<ExtensionManager>,
     ) -> ToolInspectionManager {
         let mut tool_inspection_manager = ToolInspectionManager::new();
+        tool_inspection_manager.add_inspector(Box::new(
+            crate::permission::client_tool_inspector::ClientToolInspector(session_manager.clone()),
+        ));
 
         // Add security inspector (highest priority - runs first)
         tool_inspection_manager.add_inspector(Box::new(SecurityInspector::new()));
