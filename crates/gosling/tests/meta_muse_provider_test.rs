@@ -112,12 +112,13 @@ async fn api_sends_authenticated_chat_requests_with_gosling_tools_and_usage() {
                 if streaming {
                     assert_eq!(body["stream"], true);
                     ResponseTemplate::new(200).set_body_string(concat!(
-                        "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hello\"},\"finish_reason\":null}]}\n\n",
-                        "data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":2,\"total_tokens\":12}}\n\n",
+                        "data: {\"model\":\"muse-spark-1.3\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hello\"},\"finish_reason\":null}]}\n\n",
+                        "data: {\"model\":\"muse-spark-1.3\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":2,\"total_tokens\":12}}\n\n",
                         "data: [DONE]\n\n"
                     ))
                 } else {
                     ResponseTemplate::new(200).set_body_json(json!({
+                        "model": "muse-spark-1.3",
                         "choices": [{"message":{"role":"assistant", "content":"Hello"}, "finish_reason":"stop"}],
                         "usage": {"prompt_tokens":10,"completion_tokens":2,"total_tokens":12}
                     }))
@@ -410,21 +411,21 @@ cat events.jsonl
             )
             .await
             .unwrap();
-        assert!(
-            tokio::time::timeout(Duration::from_millis(250), stream.next())
-                .await
-                .is_err()
-        );
-        let pid: u32 = std::fs::read_to_string(root.path().join("pid"))
-            .unwrap()
-            .trim()
-            .parse()
-            .unwrap();
-        let descendant: u32 = std::fs::read_to_string(root.path().join("descendant-pid"))
-            .unwrap()
-            .trim()
-            .parse()
-            .unwrap();
+        let (pid, descendant) = tokio::time::timeout(Duration::from_secs(5), async {
+            tokio::select! {
+                result = stream.next() => panic!("Muse fixture exited before cancellation: {result:?}"),
+                pids = async {
+                    loop {
+                        let read_pid = |name| std::fs::read_to_string(root.path().join(name))
+                            .ok().and_then(|text| text.trim().parse::<u32>().ok());
+                        if let (Some(pid), Some(descendant)) = (read_pid("pid"), read_pid("descendant-pid")) {
+                            break (pid, descendant);
+                        }
+                        tokio::time::sleep(Duration::from_millis(20)).await;
+                    }
+                } => pids,
+            }
+        }).await.expect("Muse fixture did not become ready for cancellation");
         drop(stream);
         tokio::time::timeout(Duration::from_secs(3), async {
             while gosling::subprocess::process_is_alive(pid).await

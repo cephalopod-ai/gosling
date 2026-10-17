@@ -92,3 +92,68 @@ journeys remain unverified. Next qualification command, when requested:
 The wrapper returns the final answer after successful completion, does not forward
 Gosling extensions, and cannot guarantee subscription billing if Muse has a stored
 API key. These limits are documented in its setup instructions and user guide.
+
+## Authorized build and reinstall continuation
+
+The operator subsequently requested: “build and reinstall gosling”. This grants
+the local build/test/install work previously left unrun. Baseline is clean `main`
+at `340efa6d0` (the committed Muse providers), source version 1.5.0.
+
+Checkpoint: build and local reinstall complete. Preflight, backups, clean GUI
+shutdown, eight targeted runtime tests, Desktop TypeScript validation, and Clippy
+for `gosling` and `gosling-providers` (`--all-targets -- -D warnings`) passed.
+Rust validation and release compilation are sequential because they share Cargo's
+target directory and build locks; independent frontend checks ran concurrently.
+
+Local receipt and rollback artifacts:
+`/Users/eric/.local/share/gosling/install-backups/reinstall-20261017-1vbpb12g/`.
+The previous `/Applications/Gosling.app`, running packaged build, and standalone
+`~/.local/bin/gosling` have been copied there with recorded backend hashes. User
+configuration, credentials and session storage are outside these replacement paths.
+
+The active GUI was running from `ui/desktop/out/Gosling-darwin-arm64/Gosling.app`.
+It will be closed before packaging replaces that output, then the installed app
+will be reopened and checked. The local package procedure uses the existing
+`just package-ui` recipe and ad-hoc signing, with the Command Line Tools developer
+directory. No version bump or publication is part of this reinstall.
+
+Runtime validation exposed two test-fixture defects, corrected before packaging:
+the streaming API fixture lacked a model identifier required to attribute usage,
+and the cancellation fixture assumed both child PIDs would be written within a
+fixed 250 ms. The fixture now includes the response model, and cancellation waits
+for both processes to report readiness. All eight tests then passed, including
+API usage and termination of the CLI process group. Production provider code is
+unchanged by these corrections.
+
+### Build and installation results
+
+- `source bin/activate-hermit && DEVELOPER_DIR=/Library/Developer/CommandLineTools RUSTUP_AUTO_INSTALL=0 CARGO_BUILD_JOBS=4 CARGO_NET_OFFLINE=true just package-ui`
+  — passed. Release Rust compilation took 9m 29s; SDK/i18n, Vite production
+  bundles, Electron Forge arm64 packaging and ad-hoc signing passed afterward.
+- Packaged and installed apps passed `codesign --verify --deep --strict`.
+- `target/release/gosling`, the staged backend, the packaged/installed backend,
+  and `~/.local/bin/gosling` share SHA-256
+  `a1980797b8cb6ff695a12aae99f97a06ea3cb4d4a55c1c623647f9a6fbee4815`.
+  Standalone CLI, embedded backend and bundle version are all 1.5.0.
+- Reinstalled `/Applications/Gosling.app` and `~/.local/bin/gosling`. The previous
+  installed app was also retained by rename under `previous-installed-original/`
+  in the rollback directory. No configuration, credential, session, or Research
+  Library files were replaced by the installer.
+- A real, isolated ACP stdio probe passed against the release and installed CLI:
+  initialize succeeded, and the setup catalog exposed `meta` as a model provider
+  with `MODEL_API_KEY` and `muse-code` as an agent with the `muse` executable.
+  The first probe's output formatter expected `displayName`; source inspection
+  confirmed the DTO uses `name`, and correcting the verifier produced the passing
+  readbacks. No production change was needed.
+- Opened `/Applications/Gosling.app`. Native accessibility readback confirmed
+  the installed renderer path, existing navigation/chat/Outputs surfaces, and
+  subsequently the **Configure Meta Muse (API)** dialog. The installed app is
+  left open. This is launch/setup-surface evidence, not an authenticated chat run.
+- Lockfile fingerprints remained unchanged. Final formatting and diff-whitespace
+  checks passed. Only the two test-fixture corrections and this log are uncommitted.
+
+The machine-local `receipt.json` records `installed_and_launched`, artifact hashes,
+stage outcomes and installed process paths; `package-ui.log` retains the full build
+output. Authenticated Meta inference, subscription billing and cross-platform
+installation remain unverified. The prior source-only validation limit is now
+superseded for these local build/install checks, not for those account-level checks.
