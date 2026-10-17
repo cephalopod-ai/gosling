@@ -3815,6 +3815,9 @@
   "switchModelModal.seamlessResume": {
     "defaultMessage": "Seamless resume"
   },
+  "switchModelModal.searchModels": {
+    "defaultMessage": "Search models"
+  },
   "switchModelModal.selectEffortLevel": {
     "defaultMessage": "Select effort level"
   },

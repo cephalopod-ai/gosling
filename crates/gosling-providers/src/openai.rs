@@ -468,9 +468,13 @@ impl OpenAiProvider {
             return Err(ProviderError::from_models_error_payload(kind, msg));
         }
 
-        let data = match json.get("data").and_then(|v| v.as_array()) {
+        // Together uses a top-level array rather than OpenAI's `data` envelope.
+        let data = match json
+            .as_array()
+            .or_else(|| json.get("data").and_then(|v| v.as_array()))
+        {
             Some(data) => data,
-            // No `data` array — not a models payload. Check for a top-level
+            // Neither catalog shape matched. Check for a top-level
             // `message` field as an error indicator (some providers return
             // {"message": "invalid api key"} instead of the standard
             // {"error": {"message": "..."}} shape). Only treat it as an
@@ -488,6 +492,13 @@ impl OpenAiProvider {
         };
         let mut models: Vec<String> = data
             .iter()
+            .filter(|model| {
+                self.canonical_provider_id() != "togetherai"
+                    || model
+                        .get("type")
+                        .and_then(|kind| kind.as_str())
+                        .is_none_or(|kind| matches!(kind, "chat" | "language" | "code"))
+            })
             .filter_map(|m| m.get("id").and_then(|v| v.as_str()).map(str::to_string))
             .collect();
         models.sort();

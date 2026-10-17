@@ -364,6 +364,10 @@ pub fn heuristic_model_family(_provider_name: &str, model_name: &str) -> Option<
         return Some("glm".to_string());
     }
 
+    if contains_model_token(&model, "muse-") {
+        return Some("muse".to_string());
+    }
+
     None
 }
 

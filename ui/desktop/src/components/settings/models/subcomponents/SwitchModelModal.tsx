@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { AlertTriangle, Bot, CheckCircle2, ExternalLink, LoaderCircle } from 'lucide-react';
+import { AlertTriangle, Bot, CheckCircle2, ExternalLink, LoaderCircle, Search } from 'lucide-react';
 import { defineMessages, useIntl } from '../../../../i18n';
 
 import {
@@ -140,6 +140,10 @@ const i18n = defineMessages({
   selectModelPlaceholder: {
     id: 'switchModelModal.selectModelPlaceholder',
     defaultMessage: 'Select a model, type to search',
+  },
+  searchModels: {
+    id: 'switchModelModal.searchModels',
+    defaultMessage: 'Search models',
   },
   customModelName: {
     id: 'switchModelModal.customModelName',
@@ -367,6 +371,7 @@ export const SwitchModelModal = ({
     reasoning?: boolean;
   };
   const [modelOptions, setModelOptions] = useState<{ options: ModelOption[] }[]>([]);
+  const [modelSearch, setModelSearch] = useState('');
   const [provider, setProvider] = useState<string | null>(
     initialProvider || currentProvider || null
   );
@@ -746,7 +751,6 @@ export const SwitchModelModal = ({
         });
 
         setModelOptions((prev) => [...prev, ...newGroupedOptions]);
-        setOriginalModelOptions((prev) => [...prev, ...newGroupedOptions]);
         fetchedProviders.current.add(provider);
       } catch (error: unknown) {
         console.error(`Failed to fetch models for ${provider}:`, error);
@@ -763,9 +767,25 @@ export const SwitchModelModal = ({
     };
   }, [provider, activeProvidersList, usePredefinedModels, intl]);
 
-  const filteredModelOptions = provider
+  const providerModelOptions = provider
     ? modelOptions.filter((group) => group.options[0]?.provider === provider)
     : [];
+  const trimmedSearch = modelSearch.trim();
+  const matchingModelOptions = providerModelOptions
+    .map((group) => ({
+      options: group.options.filter(
+        (option) =>
+          option.value !== 'custom' &&
+          (option.value.toLowerCase().includes(trimmedSearch.toLowerCase()) ||
+            option.label.toLowerCase().includes(trimmedSearch.toLowerCase()))
+      ),
+    }))
+    .filter((group) => group.options.length > 0);
+  const filteredModelOptions = !trimmedSearch
+    ? providerModelOptions
+    : matchingModelOptions.length > 0
+      ? matchingModelOptions
+      : [{ options: [{ value: trimmedSearch, label: `Use: "${trimmedSearch}"`, provider }] }];
 
   useEffect(() => {
     // Don't auto-select if user explicitly cleared the model
@@ -837,52 +857,6 @@ export const SwitchModelModal = ({
         setSelectedModelReasoning(selectedOption?.reasoning ?? null);
       }
       setUserClearedModel(false);
-    }
-  };
-
-  // Store the original model options in state, initialized from modelOptions
-  const [originalModelOptions, setOriginalModelOptions] =
-    useState<{ options: ModelOption[] }[]>(modelOptions);
-
-  const handleInputChange = (inputValue: string) => {
-    if (!provider) return;
-
-    const trimmedInput = inputValue.trim();
-
-    if (trimmedInput === '') {
-      // Reset to original model options when input is cleared
-      setModelOptions([...originalModelOptions]); // Create new array to ensure state update
-      return;
-    }
-
-    // Filter through the original model options to find matches
-    const matchingOptions = originalModelOptions
-      .map((group) => ({
-        options: group.options.filter(
-          (option) =>
-            option.value.toLowerCase().includes(trimmedInput.toLowerCase()) &&
-            option.value !== 'custom' // Exclude the "Use custom model" option from search
-        ),
-      }))
-      .filter((group) => group.options.length > 0);
-
-    if (matchingOptions.length > 0) {
-      // If we found matches in the existing options, show those
-      setModelOptions(matchingOptions);
-    } else {
-      // If no matches, show the "Use: " option
-      const customOption = [
-        {
-          options: [
-            {
-              value: trimmedInput,
-              label: `Use: "${trimmedInput}"`,
-              provider: provider,
-            },
-          ],
-        },
-      ];
-      setModelOptions(customOption);
     }
   };
 
@@ -1004,11 +978,13 @@ export const SwitchModelModal = ({
                     } else {
                       setProvider(option?.value || null);
                       setModel('');
+                      setModelSearch('');
                       setIsCustomModel(false);
                       setUserClearedModel(false);
                     }
                   }}
                   placeholder={intl.formatMessage(i18n.providerPlaceholder)}
+                  aria-label={intl.formatMessage(i18n.providerPlaceholder)}
                   isClearable
                 />
                 {attemptedSubmit && validationErrors.provider && (
@@ -1050,7 +1026,24 @@ export const SwitchModelModal = ({
                       )}
                     </div>
                   ) : !isCustomModel ? (
-                    <div>
+                    <div className="space-y-2">
+                      <div className="relative">
+                        <Search
+                          className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-text-secondary"
+                          aria-hidden="true"
+                        />
+                        <Input
+                          type="search"
+                          className="pl-9"
+                          aria-label={intl.formatMessage(i18n.searchModels)}
+                          placeholder={intl.formatMessage(i18n.searchModels)}
+                          value={modelSearch}
+                          onChange={(event) => setModelSearch(event.target.value)}
+                          disabled={loadingModels}
+                          autoComplete="off"
+                          spellCheck={false}
+                        />
+                      </div>
                       <Select
                         options={
                           loadingModels
@@ -1060,7 +1053,6 @@ export const SwitchModelModal = ({
                               : []
                         }
                         onChange={handleModelChange}
-                        onInputChange={handleInputChange}
                         value={
                           loadingModels
                             ? {
@@ -1072,7 +1064,9 @@ export const SwitchModelModal = ({
                               ? { value: model, label: model }
                               : null
                         }
-                        placeholder={intl.formatMessage(i18n.selectModelPlaceholder)}
+                        placeholder={intl.formatMessage(i18n.selectModelButton)}
+                        aria-label={intl.formatMessage(i18n.selectModelButton)}
+                        isSearchable={false}
                         isClearable
                         isDisabled={loadingModels}
                       />

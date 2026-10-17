@@ -152,7 +152,7 @@ To configure your chosen provider, see available options, or select a model, vis
   3. Click the `Models` tab
   4. Click `Switch models`
   5. Choose from your configured providers in the dropdown, or select `Use other provider` to configure a new one
-  6. Select a model from the available options, or choose `Use custom model` to enter a specific model name
+  6. Use **Search models** to filter the selected provider's models, then select a model from the dropdown. Search works with built-in and custom providers and resets when changing providers. To enter an unlisted ID, choose `Enter a model not listed...` or search for the full ID and select `Use: "..."` when no model matches.
   7. Click `Select model` to confirm your choice
 
   :::tip Shortcut

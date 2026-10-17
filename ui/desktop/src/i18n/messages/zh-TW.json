@@ -4279,5 +4279,11 @@
   },
   "credentialProfileSelector.sessionExplanation": {
     "defaultMessage": "Change provider and MCP authentication for this chat. Other chats keep their accounts."
+  },
+  "securityToggle.classifierContentScope": {
+    "defaultMessage": "Enabling ML scanning sends complete tool arguments and recent user messages to the configured endpoint. These may contain secrets or personal data. Use an endpoint you trust."
+  },
+  "switchModelModal.searchModels": {
+    "defaultMessage": "Search models"
   }
 }
