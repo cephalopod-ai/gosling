@@ -126,3 +126,83 @@ replaced in this patch-only continuation; packaged/native visual testing, full
 workspace tests and authenticated generation were not performed. These results
 do not claim a published release, deployed GUI, cross-platform qualification or
 future promotional pricing.
+
+## Authorized rebuild and reinstall
+
+The operator subsequently requested “rebuild and reinstall”. Source baseline:
+clean `main` at `55e829719`, including the preceding patch and its tests. The
+existing Rust application workflow and local macOS arm64 package procedure apply.
+
+Checkpoint: previous installed app and standalone CLI backed up under
+`/Users/eric/.local/share/gosling/install-backups/reinstall-20261017-together-jl0y8zdb/`.
+No Gosling GUI process was running at preflight. Formatting passed. Release
+packaging is running through `just package-ui`, with Command Line Tools,
+`RUSTUP_AUTO_INSTALL=0`, four Cargo jobs and Cargo offline mode. The receipt records
+the source revision, prior binary hashes and lockfile fingerprints; the build log
+is retained in the same directory. The package recipe uses existing Cargo/pnpm
+inputs and ad-hoc signing. No version bump, publication or user-data migration is
+part of this reinstall.
+
+### Rebuild and installation results
+
+- `just package-ui` passed: optimized Rust build, SDK/i18n generation, Vite,
+  Electron arm64 packaging and ad-hoc signing. Cargo and pnpm lockfiles stayed
+  unchanged. Runtime sources stayed at the preflight revision.
+- Packaged, staged-for-install and installed apps passed
+  `codesign --verify --deep --strict`; the rollback copy also passed.
+- Release, staged, packaged/installed embedded backend and standalone CLI share
+  SHA-256 `aab44a298b369370bb96aec4dc67c8fc4084b69d020f13b837b35aef8ee177fc`.
+  This differs from the previous `a1980797...` build. Bundle, embedded backend
+  and CLI all remain version 1.5.0.
+- Replaced `/Applications/Gosling.app` and `~/.local/bin/gosling`. The previous
+  installed app was also retained by rename under `previous-installed-original/`
+  in the rollback directory. User configuration, credentials, sessions and
+  Research Library were outside these replacement paths.
+- Packaged ASAR inspection found the new search control in
+  `.vite/renderer/main_window/assets/App-06TUX9Fu.js`. The initial verifier looked
+  only in an `index-*.js` asset and failed; inspecting the actual packaged chunks
+  and correcting that verifier passed. Production code/package needed no change.
+- Installed embedded backend, fresh ACP process and temporary config/data/state:
+  the authenticated Together catalog returned 191 supported chat/text models,
+  including Muse Glimmer, Muse Spark Open and the exact promo ID. Refreshed
+  recommendations contained 166 models and retained the promo ID. No completion,
+  paid inference or user default-model change was performed. Sanitized results:
+  `installed-provider-verification.json` in the rollback directory.
+
+### GUI startup qualification
+
+Launched the installed app through computer use. Its process runs from
+`/Applications/Gosling.app/Contents/MacOS/Gosling`, but no main window/backend
+appeared and native window inspection timed out. A one-second process sample
+records its main thread waiting in `SecItemCopyMatching` /
+`SecKeychainItemCopyContent` and Security IPC before the application startup log.
+SecurityAgent is running. The computer-use tool explicitly refuses access to
+`com.apple.SecurityAgent` for safety reasons; no security setting was bypassed.
+
+The operator has been asked to review/unlock any expected macOS Keychain prompt
+directly, without sharing a password. Current receipt status:
+`installed_gui_keychain_pending`. Build, signatures, local replacement, packaged
+search and live provider verification are complete. Native GUI rendering/search
+inspection remains pending that Keychain interaction. Diagnostic sample,
+verification artifacts, build log and rollback copies are retained in the same
+backup directory.
+
+### GUI verification after Keychain unlock
+
+The operator resolved the macOS prompt. The installed app then opened normally;
+native inspection identified its renderer at
+`file:///Applications/Gosling.app/Contents/Resources/app.asar/.vite/renderer/main_window/index.html`.
+The restored chat, navigation and Outputs pane rendered successfully.
+
+Opened Switch models, selected Together AI locally in the dialog and entered
+`mUsE` in the visible Search models field. The model dropdown contained exactly
+three results: `meta-models/Muse-Glimmer-30B`,
+`meta-models/Muse-Spark-Open-816B-A42B` and
+`meta-models/Muse-Spark-Open-816B-A42B-promo`. This verifies case-insensitive
+filtering and the live promo catalog in the installed GUI. Cancelled the dialog;
+the original chat still shows `qwen3.8:27b`. No model change or inference was
+submitted.
+
+Reinstall status is now `installed_and_launched`, with native window and search
+verification complete. The original Keychain diagnostic remains historical
+evidence; the receipt records the operator resolution and successful GUI check.
