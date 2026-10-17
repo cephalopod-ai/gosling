@@ -1,0 +1,25 @@
+{
+  "name": "meta",
+  "engine": "openai",
+  "display_name": "Meta Muse (API)",
+  "description": "Muse Wonder and Muse Spark through the pay-as-you-go Meta Model API",
+  "api_key_env": "MODEL_API_KEY",
+  "base_url": "https://api.meta.ai/v1/chat/completions",
+  "model_doc_link": "https://dev.meta.ai/docs/overview",
+  "setup_steps": [
+    "Create a Meta Model API key at https://dev.meta.ai and configure MODEL_API_KEY",
+    "API usage is billed separately from a Muse Code subscription; select Meta Muse Code (Subscription/CLI) to use the signed-in CLI"
+  ],
+  "models": [
+    {"name": "muse-spark-1.3", "context_limit": 1048576, "reasoning": true},
+    {"name": "muse-wonder-1.0", "context_limit": 1048576, "reasoning": true},
+    {"name": "muse-spark-1.2", "context_limit": 1048576, "reasoning": true},
+    {"name": "muse-spark-1.1", "context_limit": 1048576, "reasoning": true},
+    {"name": "muse-spark-1.3-contributor", "context_limit": 1048576, "reasoning": true},
+    {"name": "muse-spark-1.2-contributor", "context_limit": 1048576, "reasoning": true}
+  ],
+  "supports_streaming": true,
+  "dynamic_models": false,
+  "skip_canonical_filtering": true,
+  "preserves_thinking": false
+}

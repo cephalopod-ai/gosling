@@ -744,10 +744,10 @@ impl Provider for OpenAiProvider {
                 },
             )?;
             let payload = self.sanitize_request_for_compat(payload);
-            let payload = if self.name == "mistral" {
-                crate::formats::mistral::prepare_request(payload, model_config)
-            } else {
-                payload
+            let payload = match self.name.as_str() {
+                "meta" => crate::formats::meta::prepare_request(payload, model_config),
+                "mistral" => crate::formats::mistral::prepare_request(payload, model_config),
+                _ => payload,
             };
 
             if self.supports_streaming {

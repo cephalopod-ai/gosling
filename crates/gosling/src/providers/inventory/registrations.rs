@@ -10,6 +10,7 @@ use crate::providers::codex_acp::CODEX_ACP_PROVIDER_NAME;
 use crate::providers::copilot_acp::{COPILOT_ACP_BINARY, COPILOT_ACP_PROVIDER_NAME};
 use crate::providers::formats::anthropic::ANTHROPIC_PROVIDER_NAME;
 use crate::providers::google::{GOOGLE_API_HOST, GOOGLE_PROVIDER_NAME};
+use crate::providers::muse_code::{resolved_muse_command, MUSE_CODE_PROVIDER_NAME};
 use crate::providers::ollama::OLLAMA_PROVIDER_NAME;
 use crate::providers::openai::{OPEN_AI_DEFAULT_BASE_PATH, OPEN_AI_PROVIDER_NAME};
 use crate::providers::pi_acp::{PI_ACP_BINARY, PI_ACP_PROVIDER_NAME};
@@ -188,4 +189,15 @@ pub fn pi_acp_inventory() -> InventoryRegistration {
 
 pub fn vibe_acp_inventory() -> InventoryRegistration {
     acp_inventory(VIBE_ACP_PROVIDER_NAME, VIBE_ACP_BINARY, false)
+}
+
+pub fn muse_code_inventory() -> InventoryRegistration {
+    InventoryRegistration::new(false, || {
+        let command = resolved_muse_command()?;
+        Ok(
+            InventoryIdentityInput::new(MUSE_CODE_PROVIDER_NAME, MUSE_CODE_PROVIDER_NAME)
+                .with_public("command", command.display().to_string()),
+        )
+    })
+    .with_configured(|| resolved_muse_command().is_ok())
 }

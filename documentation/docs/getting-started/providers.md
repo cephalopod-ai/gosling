@@ -20,6 +20,9 @@ gosling is compatible with a wide range of LLM providers, allowing you to choose
 
 ## Available Providers
 
+Meta Muse supports both [API keys and Muse Code subscriptions](/docs/guides/meta-muse).
+Choose `meta` for Gosling-managed tools or `muse-code` for the signed-in CLI in Auto mode.
+
 | Provider                                                                    | Description                                                                                                                                                                                                               | Parameters                                                                                                                                                                          |
 |-----------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | [Amazon Bedrock](https://aws.amazon.com/bedrock/)                           | Offers a variety of foundation models, including Claude, Jurassic-2, and others. **AWS environment variables must be set in advance, not configured through `gosling configure`**                                           | Credential auth: `AWS_PROFILE`, or `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`<br /><br />Bearer token auth: `AWS_BEARER_TOKEN_BEDROCK` and `AWS_REGION`, `AWS_DEFAULT_REGION`, or `AWS_PROFILE` |

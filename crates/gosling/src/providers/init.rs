@@ -24,6 +24,7 @@ use super::{
     google::GoogleProvider,
     kimicode::KimiCodeProvider,
     litellm::LiteLLMProvider,
+    muse_code::MuseCodeProvider,
     nanogpt::NanoGptProvider,
     openrouter::OpenRouterProvider,
     pi_acp::PiAcpProvider,
@@ -101,6 +102,10 @@ async fn init_registry() -> RwLock<ProviderRegistry> {
         );
         registry.register::<KimiCodeProvider>(true);
         registry.register::<LiteLLMProvider>(false);
+        registry.register_with_inventory::<MuseCodeProvider>(
+            false,
+            Some(registrations::muse_code_inventory()),
+        );
         registry.register::<NanoGptProvider>(true);
         registry.register_with_inventory::<OllamaProviderDef>(
             true,

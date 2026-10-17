@@ -5,6 +5,9 @@ for the relationship to cephalopod-ai/gosling.
 
 ## Standard sections
 
+- [../documentation/docs/guides/meta-muse.md](../documentation/docs/guides/meta-muse.md) — Meta Muse API and Muse Code subscription setup, permissions, billing and wrapper limits
+- [logs/session/2026-10-17-meta-muse-provider.md](logs/session/2026-10-17-meta-muse-provider.md) — provider implementation and validation evidence
+
 - [logs/session/2026-10-15-trilium-bounded-acp-integration.md](logs/session/2026-10-15-trilium-bounded-acp-integration.md) — opt-in bounded ACP policy for Trilium notes chat, generic inventory, focused validation and live credential-store limit
 
 - [specs/native-export-bundle.md](specs/native-export-bundle.md) — bounded, resumable native session acquisition; scoped CLI validation and installed large-session capture qualified

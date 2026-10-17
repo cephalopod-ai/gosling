@@ -1,4 +1,5 @@
 pub mod anthropic;
+pub mod meta;
 pub mod mistral;
 pub mod ollama;
 pub mod openai;

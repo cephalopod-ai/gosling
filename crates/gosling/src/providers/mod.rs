@@ -45,6 +45,7 @@ mod init;
 pub mod inventory;
 pub mod kimicode;
 pub mod litellm;
+pub mod muse_code;
 pub mod nanogpt;
 pub mod oauth;
 pub mod oauth_device_flow;
