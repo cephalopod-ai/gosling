@@ -17,9 +17,11 @@ import { Select } from '../../../ui/Select';
 import {
   acpListProviderDetails,
   acpPreviewSessionHandoff,
+  acpReadDefaults,
   acpReadThinkingEffort,
   acpSaveThinkingEffort,
 } from '../../../../acp/providers';
+import { acpChatSessionStore } from '../../../../acp/chatSessionStore';
 import { useModelAndProvider } from '../../../ModelAndProviderContext';
 import type { View } from '../../../../utils/navigationUtils';
 import Model, {
@@ -144,6 +146,29 @@ const i18n = defineMessages({
   searchModels: {
     id: 'switchModelModal.searchModels',
     defaultMessage: 'Search models',
+  },
+  contextWindow: {
+    id: 'switchModelModal.contextWindow',
+    defaultMessage: 'Context window (tokens)',
+  },
+  automaticContext: {
+    id: 'switchModelModal.automaticContext',
+    defaultMessage: 'Automatic: {tokens, number} tokens',
+  },
+  unknownContext: {
+    id: 'switchModelModal.unknownContext',
+    defaultMessage:
+      'The context window could not be discovered for this model. Gosling will use 128,000 tokens unless you enter the limit supported by your provider.',
+  },
+  contextWarning: {
+    id: 'switchModelModal.contextWarning',
+    defaultMessage:
+      'Use the limit supported by this provider. A value that is too high can cause context-length errors; a value that is too low causes earlier compaction. This setting does not increase the model’s capacity.',
+  },
+  invalidContext: {
+    id: 'switchModelModal.invalidContext',
+    defaultMessage:
+      'Enter a whole number of tokens greater than 0 and no larger than {maximum, number}.',
   },
   customModelName: {
     id: 'switchModelModal.customModelName',
@@ -369,6 +394,7 @@ export const SwitchModelModal = ({
     provider: string;
     isDisabled?: boolean;
     reasoning?: boolean;
+    contextLimit?: number;
   };
   const [modelOptions, setModelOptions] = useState<{ options: ModelOption[] }[]>([]);
   const [modelSearch, setModelSearch] = useState('');
@@ -380,6 +406,8 @@ export const SwitchModelModal = ({
       (initialProvider && initialProvider !== currentProvider ? '' : currentModel || '')
   );
   const [isCustomModel, setIsCustomModel] = useState(false);
+  const [contextOverride, setContextOverride] = useState('');
+  const contextEditedKey = useRef<string | null>(null);
   const [validationErrors, setValidationErrors] = useState({
     provider: '',
     model: '',
@@ -409,6 +437,59 @@ export const SwitchModelModal = ({
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [isSwitching, setIsSwitching] = useState(false);
   const [transitionActivated, setTransitionActivated] = useState(false);
+
+  const selectedProviderId = usePredefinedModels ? selectedPredefinedModel?.provider : provider;
+  const selectedModelId = usePredefinedModels ? selectedPredefinedModel?.name : model;
+  const contextTargetKey = `${selectedProviderId ?? ''}\u0000${selectedModelId ?? ''}`;
+  const selectedOption = modelOptions
+    .flatMap((group) => group.options)
+    .find((option) => option.provider === selectedProviderId && option.value === selectedModelId);
+  const discoveredContextLimit = usePredefinedModels
+    ? selectedPredefinedModel?.context_limit
+    : selectedOption?.contextLimit;
+  const hasContextOverride = contextOverride.trim() !== '';
+  const invalidContextOverride =
+    hasContextOverride &&
+    (!/^\d+$/.test(contextOverride.trim()) ||
+      !Number.isSafeInteger(Number(contextOverride)) ||
+      Number(contextOverride) <= 0);
+  const selectedContextLimit = hasContextOverride
+    ? Number(contextOverride)
+    : discoveredContextLimit || undefined;
+
+  useEffect(() => {
+    setContextOverride('');
+    contextEditedKey.current = null;
+    if (!selectedProviderId || !selectedModelId) return;
+    if (sessionId) {
+      const session = acpChatSessionStore.getSnapshot(sessionId)?.session;
+      if (
+        session?.provider_name === selectedProviderId &&
+        session.model_config?.model_name === selectedModelId &&
+        session.model_config.context_limit
+      ) {
+        setContextOverride(String(session.model_config.context_limit));
+      }
+      return;
+    }
+    let cancelled = false;
+    acpReadDefaults()
+      .then((defaults) => {
+        if (
+          !cancelled &&
+          contextEditedKey.current !== contextTargetKey &&
+          defaults.providerId === selectedProviderId &&
+          defaults.modelId === selectedModelId &&
+          defaults.contextLimit
+        ) {
+          setContextOverride(String(defaults.contextLimit));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [contextTargetKey, selectedProviderId, selectedModelId, sessionId]);
 
   const modelReasoning = selectedModelReasoning ?? selectedPredefinedModel?.reasoning;
   const showThinkingControl = modelReasoning === true;
@@ -462,7 +543,7 @@ export const SwitchModelModal = ({
       provider: '',
       model: '',
     };
-    let formIsValid = true;
+    let formIsValid = !invalidContextOverride;
 
     if (usePredefinedModels) {
       if (!selectedPredefinedModel) {
@@ -484,7 +565,7 @@ export const SwitchModelModal = ({
     setValidationErrors(errors);
     setIsValid(formIsValid);
     return formIsValid;
-  }, [model, provider, usePredefinedModels, selectedPredefinedModel, intl]);
+  }, [model, provider, usePredefinedModels, selectedPredefinedModel, intl, invalidContextOverride]);
 
   const handleClose = () => {
     if (isSwitching) return;
@@ -511,6 +592,7 @@ export const SwitchModelModal = ({
       }
       modelObj = {
         ...modelObj,
+        context_limit: selectedContextLimit,
         reasoning: selectedModelReasoning ?? modelObj.reasoning,
       };
 
@@ -522,7 +604,7 @@ export const SwitchModelModal = ({
         };
       }
 
-      const targetKey = `${modelObj.provider}\u0000${modelObj.name}\u0000${modelObj.request_params?.thinking_effort ?? ''}`;
+      const targetKey = `${modelObj.provider}\u0000${modelObj.name}\u0000${modelObj.request_params?.thinking_effort ?? ''}\u0000${modelObj.context_limit ?? ''}`;
       if (sessionId && handoffPreview?.targetKey !== targetKey) {
         setIsPreviewing(true);
         try {
@@ -574,7 +656,7 @@ export const SwitchModelModal = ({
   };
 
   const handleSubmit = async () => {
-    if (isPreviewing || isSwitching || submitInFlight.current) return;
+    if (loadingModels || isPreviewing || isSwitching || submitInFlight.current) return;
     submitInFlight.current = true;
     try {
       await performSubmit();
@@ -584,8 +666,6 @@ export const SwitchModelModal = ({
     }
   };
 
-  const selectedProviderId = usePredefinedModels ? selectedPredefinedModel?.provider : provider;
-  const selectedModelId = usePredefinedModels ? selectedPredefinedModel?.name : model;
   const selectedProviderDetails = activeProvidersList.find(
     (details) => details.name === selectedProviderId
   );
@@ -595,7 +675,7 @@ export const SwitchModelModal = ({
     : (selectedPredefinedModel?.request_params?.thinking_effort ?? '');
   const selectedTargetKey = `${selectedProviderId ?? ''}\u0000${selectedModelId ?? ''}\u0000${
     selectedThinkingEffort
-  }`;
+  }\u0000${selectedContextLimit ?? ''}`;
 
   useEffect(() => {
     if (handoffPreview && handoffPreview.targetKey !== selectedTargetKey) {
@@ -717,12 +797,14 @@ export const SwitchModelModal = ({
             provider: string;
             providerType: ProviderType;
             reasoning?: boolean;
+            contextLimit?: number;
           }[] = modelList.map((m) => ({
             value: m.name,
             label: m.name,
             provider: p.name,
             providerType: p.provider_type,
             reasoning: m.reasoning,
+            contextLimit: m.context_limit,
           }));
 
           if (p.provider_type !== 'Custom') {
@@ -1113,6 +1195,44 @@ export const SwitchModelModal = ({
             </div>
           )}
 
+          {selectedProviderId &&
+            selectedModelId &&
+            !selectedProviderDetails?.manages_own_context && (
+              <div className="space-y-2">
+                <label htmlFor="model-context-window" className="text-sm text-text-secondary">
+                  {intl.formatMessage(i18n.contextWindow)}
+                </label>
+                <Input
+                  id="model-context-window"
+                  inputMode="numeric"
+                  value={contextOverride}
+                  placeholder={intl.formatMessage(i18n.automaticContext, {
+                    tokens: discoveredContextLimit || 128_000,
+                  })}
+                  onChange={(event) => {
+                    contextEditedKey.current = contextTargetKey;
+                    setContextOverride(event.target.value);
+                  }}
+                  disabled={isPreviewing || isSwitching}
+                  aria-invalid={invalidContextOverride}
+                  aria-describedby="model-context-warning model-context-error"
+                />
+                {!loadingModels && !discoveredContextLimit && (
+                  <p role="status" className="text-sm text-amber-700 dark:text-amber-300">
+                    {intl.formatMessage(i18n.unknownContext)}
+                  </p>
+                )}
+                <p id="model-context-warning" className="text-xs text-text-secondary">
+                  {intl.formatMessage(i18n.contextWarning)}
+                </p>
+                {invalidContextOverride && (
+                  <p id="model-context-error" role="alert" className="text-sm text-red-500">
+                    {intl.formatMessage(i18n.invalidContext, { maximum: Number.MAX_SAFE_INTEGER })}
+                  </p>
+                )}
+              </div>
+            )}
+
           {sessionId && selectedProviderId && selectedModelId && (
             <div className="rounded-lg border border-border-primary bg-background-secondary p-3 text-sm">
               <div className="flex items-center justify-between gap-3">
@@ -1220,7 +1340,12 @@ export const SwitchModelModal = ({
             <Button variant="outline" onClick={handleClose} type="button" disabled={isSwitching}>
               {intl.formatMessage(i18n.cancel)}
             </Button>
-            <Button onClick={handleSubmit} disabled={!isValid || isPreviewing || isSwitching}>
+            <Button
+              onClick={handleSubmit}
+              disabled={
+                !isValid || invalidContextOverride || loadingModels || isPreviewing || isSwitching
+              }
+            >
               {isPreviewing
                 ? intl.formatMessage(i18n.preparingPreview)
                 : isSwitching

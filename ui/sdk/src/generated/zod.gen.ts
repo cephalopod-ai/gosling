@@ -1452,7 +1452,8 @@ export const zProviderSupportedModelsListRequest_unstable = z.object({
 
 export const zProviderSupportedModelsListResponse_unstable = z.object({
     providerId: z.string(),
-    models: z.array(z.string())
+    models: z.array(z.string()),
+    contextLimits: z.record(z.number().int().gte(0)).optional()
 });
 
 /**
@@ -1947,7 +1948,8 @@ export const zDefaultsReadRequest_unstable = z.record(z.unknown());
 
 export const zDefaultsReadResponse_unstable = z.object({
     providerId: z.string().nullish(),
-    modelId: z.string().nullish()
+    modelId: z.string().nullish(),
+    contextLimit: z.number().int().gte(0).nullish()
 });
 
 /**
@@ -1955,7 +1957,8 @@ export const zDefaultsReadResponse_unstable = z.object({
  */
 export const zDefaultsSaveRequest_unstable = z.object({
     providerId: z.string(),
-    modelId: z.string().nullish()
+    modelId: z.string().nullish(),
+    contextLimit: z.number().int().gte(0).nullish()
 });
 
 /**

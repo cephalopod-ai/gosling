@@ -170,6 +170,9 @@ export async function acpListProviderModels(providerId: string) {
     return supportedModelsResult.value.models.map((id) => ({
       id,
       ...inventoryById.get(id),
+      ...(supportedModelsResult.value.contextLimits?.[id]
+        ? { contextLimit: supportedModelsResult.value.contextLimits[id] }
+        : {}),
     }));
   }
 
@@ -336,18 +339,28 @@ export async function acpGetCanonicalModelInfo(
 export async function acpReadDefaults(): Promise<{
   providerId: string | null;
   modelId: string | null;
+  contextLimit?: number | null;
 }> {
   const client = await getAcpClient();
   const response = await client.gosling.defaultsRead_unstable({});
   return {
     providerId: response.providerId ?? null,
     modelId: response.modelId ?? null,
+    contextLimit: response.contextLimit ?? null,
   };
 }
 
-export async function acpSaveDefaults(providerId: string, modelId?: string | null): Promise<void> {
+export async function acpSaveDefaults(
+  providerId: string,
+  modelId?: string | null,
+  contextLimit?: number | null
+): Promise<void> {
   const client = await getAcpClient();
-  await client.gosling.defaultsSave_unstable({ providerId, modelId: modelId ?? null });
+  await client.gosling.defaultsSave_unstable({
+    providerId,
+    modelId: modelId ?? null,
+    contextLimit: contextLimit ?? null,
+  });
 }
 
 export async function acpClearDefaults(): Promise<void> {
@@ -375,6 +388,7 @@ export type AppliedSessionProviderModel = {
   thinkingEffort?: ThinkingEffort;
   providerId?: string;
   modelId?: string;
+  contextLimit?: number;
   snapshot?: SessionHandoffSnapshotV1Dto;
 };
 
@@ -414,6 +428,7 @@ export async function acpSetSessionProviderModel(
   return {
     providerId: response.activeProvider,
     modelId: response.activeModel,
+    contextLimit: options?.targetContextLimit ?? undefined,
     thinkingEffort: thinkingEffort ?? undefined,
     snapshot: response.snapshot,
   };

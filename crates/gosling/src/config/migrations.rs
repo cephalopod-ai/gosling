@@ -238,6 +238,7 @@ fn migrate_provider_config(config: &mut Mapping) -> bool {
         let entry = ProviderEntry {
             enabled: true,
             model,
+            context_limit: None,
             configured: true,
         };
         if let Ok(value) = serde_yaml::to_value(&entry) {
@@ -501,6 +502,7 @@ mod tests {
         if let Ok(value) = serde_yaml::to_value(&ProviderEntry {
             enabled: true,
             model: "current".to_string(),
+            context_limit: None,
             configured: true,
         }) {
             providers_map.insert(serde_yaml::Value::String("claude-acp".to_string()), value);

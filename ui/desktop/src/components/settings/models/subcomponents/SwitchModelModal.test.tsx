@@ -1,7 +1,12 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { acpListProviderDetails, acpListProviderModels } from '../../../../acp/providers';
+import {
+  acpListProviderDetails,
+  acpListProviderModels,
+  acpPreviewSessionHandoff,
+  acpReadDefaults,
+} from '../../../../acp/providers';
 import { IntlTestWrapper } from '../../../../i18n/test-utils';
 import type { ProviderDetails } from '../../../../types/providers';
 import { SwitchModelModal } from './SwitchModelModal';
@@ -24,6 +29,7 @@ vi.mock('../../../../acp/providers', () => ({
   acpReadThinkingEffort: vi.fn().mockResolvedValue(null),
   acpSaveThinkingEffort: vi.fn().mockResolvedValue(undefined),
   acpPreviewSessionHandoff: vi.fn(),
+  acpReadDefaults: vi.fn(),
 }));
 
 vi.mock('../predefinedModelsUtils', () => ({
@@ -59,6 +65,7 @@ describe('SwitchModelModal model search', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     changeModel.mockResolvedValue(false);
+    vi.mocked(acpReadDefaults).mockResolvedValue({ providerId: 'together', modelId: llama });
     vi.mocked(acpListProviderDetails).mockResolvedValue([
       provider('together', 'Together AI'),
       provider('openai', 'OpenAI'),
@@ -167,5 +174,114 @@ describe('SwitchModelModal model search', () => {
         expect.any(Object)
       )
     );
+  });
+
+  it('warns when the context window is unknown and submits a manual limit', async () => {
+    const user = userEvent.setup();
+    openModal();
+    await screen.findByText(/context window could not be discovered/);
+    const context = screen.getByRole('textbox', { name: 'Context window (tokens)' });
+    await user.type(context, '1048576');
+    await user.click(screen.getByRole('button', { name: 'Select model' }));
+    await waitFor(() =>
+      expect(changeModel).toHaveBeenCalledWith(
+        null,
+        expect.objectContaining({ context_limit: 1_048_576 }),
+        expect.any(Object)
+      )
+    );
+  });
+
+  it.each(['0', '-1', '1.5', 'abc', '9007199254740992'])(
+    'rejects invalid context window %s with an actionable error',
+    async (value) => {
+      const user = userEvent.setup();
+      openModal();
+      const context = await screen.findByRole('textbox', { name: 'Context window (tokens)' });
+      await user.type(context, value);
+      expect(screen.getByRole('alert')).toHaveTextContent('Enter a whole number of tokens');
+      expect(screen.getByRole('button', { name: 'Select model' })).toBeDisabled();
+      expect(changeModel).not.toHaveBeenCalled();
+      await user.clear(context);
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Select model' })).toBeEnabled();
+    }
+  );
+
+  it('uses discovered context metadata and clears overrides when the model changes', async () => {
+    vi.mocked(acpListProviderModels).mockResolvedValue([
+      { id: llama, contextLimit: 128_000 },
+      { id: promo, contextLimit: 1_048_576 },
+    ]);
+    const user = userEvent.setup();
+    openModal();
+    const search = await screen.findByRole('searchbox', { name: 'Search models' });
+    await waitFor(() => expect(search).toBeEnabled());
+    const context = screen.getByRole('textbox', { name: 'Context window (tokens)' });
+    await user.type(context, '64000');
+    await user.click(screen.getByRole('combobox', { name: 'Select model' }));
+    await user.click(screen.getByRole('option', { name: promo }));
+    expect(context).toHaveValue('');
+    expect(context).toHaveAttribute('placeholder', 'Automatic: 1,048,576 tokens');
+    expect(screen.queryByText(/context window could not be discovered/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Select model' }));
+    await waitFor(() =>
+      expect(changeModel).toHaveBeenCalledWith(
+        null,
+        expect.objectContaining({ name: promo, context_limit: 1_048_576 }),
+        expect.any(Object)
+      )
+    );
+  });
+
+  it('reloads a saved default override', async () => {
+    vi.mocked(acpReadDefaults).mockResolvedValue({
+      providerId: 'together',
+      modelId: llama,
+      contextLimit: 64_000,
+    });
+    openModal();
+    await waitFor(() =>
+      expect(screen.getByRole('textbox', { name: 'Context window (tokens)' })).toHaveValue('64000')
+    );
+  });
+
+  it('requires a fresh checkpoint preview after editing the context window', async () => {
+    vi.mocked(acpPreviewSessionHandoff).mockResolvedValue({
+      snapshot: {
+        continuityClass: 'summarized_handoff',
+        coverage: { coveredMessageCount: 0, totalMessageCount: 0, sourceHash: 'hash' },
+        omissions: [],
+        truncations: [],
+        redactions: [],
+        redactionReport: { redactionCount: 0, truncatedItemCount: 0 },
+        interruptedOperations: [],
+        pendingApprovals: [],
+      },
+      expectedCurrentGeneration: 0,
+      toolContinuity: { enabledExtensions: [], tools: [], goslingMode: 'auto' },
+    } as unknown as Awaited<ReturnType<typeof acpPreviewSessionHandoff>>);
+    const user = userEvent.setup();
+    render(<SwitchModelModal sessionId="session-1" onClose={vi.fn()} setView={vi.fn()} />, {
+      wrapper: IntlTestWrapper,
+    });
+    const context = await screen.findByRole('textbox', { name: 'Context window (tokens)' });
+    await user.type(context, '64000');
+    await user.click(screen.getByRole('button', { name: 'Review checkpoint' }));
+    await waitFor(() =>
+      expect(acpPreviewSessionHandoff).toHaveBeenCalledWith('session-1', 'together', llama, 64_000)
+    );
+    await user.clear(context);
+    await user.type(context, '32000');
+    await user.click(screen.getByRole('button', { name: 'Review checkpoint' }));
+    await waitFor(() =>
+      expect(acpPreviewSessionHandoff).toHaveBeenLastCalledWith(
+        'session-1',
+        'together',
+        llama,
+        32_000
+      )
+    );
+    expect(changeModel).not.toHaveBeenCalled();
   });
 });

@@ -14,6 +14,8 @@ pub struct ProviderEntry {
     pub enabled: bool,
     #[serde(default)]
     pub model: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_limit: Option<usize>,
     #[serde(default)]
     pub configured: bool,
 }
@@ -126,10 +128,28 @@ pub fn ignored_legacy_provider_settings(config: &Config) -> Vec<String> {
 }
 
 pub fn set_active_provider(config: &Config, name: &str, model: &str) -> Result<(), ConfigError> {
+    let context_limit = get_provider_entry(config, name)
+        .filter(|entry| entry.model == model)
+        .and_then(|entry| entry.context_limit);
+    set_active_provider_with_context_limit(config, name, model, context_limit)
+}
+
+pub fn set_active_provider_with_context_limit(
+    config: &Config,
+    name: &str,
+    model: &str,
+    context_limit: Option<usize>,
+) -> Result<(), ConfigError> {
+    if context_limit == Some(0) {
+        return Err(ConfigError::DeserializeError(
+            "Context window must be a whole number greater than 0".to_string(),
+        ));
+    }
     config.set_param(ACTIVE_PROVIDER_KEY, name)?;
     let entry = ProviderEntry {
         enabled: true,
         model: model.to_string(),
+        context_limit,
         configured: true,
     };
     set_provider_entry(config, name, &entry)
@@ -162,6 +182,7 @@ mod tests {
         let entry = ProviderEntry {
             enabled: true,
             model: "gpt-4o".to_string(),
+            context_limit: None,
             configured: true,
         };
         set_provider_entry(&config, "openai", &entry).unwrap();
@@ -170,6 +191,42 @@ mod tests {
         assert!(loaded.enabled);
         assert_eq!(loaded.model, "gpt-4o");
         assert!(loaded.configured);
+    }
+
+    #[test]
+    fn context_limit_is_scoped_to_the_saved_provider_and_model() {
+        let config = new_test_config();
+        set_active_provider_with_context_limit(&config, "together", "spark", Some(1_048_576))
+            .unwrap();
+        set_active_provider(&config, "openai", "gpt-4o").unwrap();
+        assert_eq!(
+            get_provider_entry(&config, "openai").unwrap().context_limit,
+            None
+        );
+        set_active_provider(&config, "together", "spark").unwrap();
+        assert_eq!(
+            get_provider_entry(&config, "together")
+                .unwrap()
+                .context_limit,
+            Some(1_048_576)
+        );
+        set_active_provider(&config, "together", "other-model").unwrap();
+        assert_eq!(
+            get_provider_entry(&config, "together")
+                .unwrap()
+                .context_limit,
+            None
+        );
+    }
+
+    #[test]
+    fn zero_context_limit_does_not_change_defaults() {
+        let config = new_test_config();
+        set_active_provider(&config, "openai", "gpt-4o").unwrap();
+        assert!(
+            set_active_provider_with_context_limit(&config, "together", "spark", Some(0)).is_err()
+        );
+        assert_eq!(get_active_provider(&config).as_deref(), Some("openai"));
     }
 
     #[test]

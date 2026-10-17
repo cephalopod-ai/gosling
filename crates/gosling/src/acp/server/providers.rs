@@ -602,13 +602,33 @@ impl GoslingAcpAgent {
             .await
             .internal_err_ctx("Failed to initialize provider")?;
         let models = provider
-            .fetch_supported_models()
+            .fetch_supported_model_info()
             .await
             .internal_err_ctx("Failed to fetch provider supported models")?;
+        let entry = crate::providers::get_from_registry(&req.provider_id)
+            .await
+            .internal_err_ctx("Failed to read provider model configuration")?;
 
         Ok(ProviderSupportedModelsListResponse {
             provider_id: req.provider_id,
-            models,
+            context_limits: models
+                .iter()
+                .filter_map(|model| {
+                    let configured_limit = if entry.provider_type() == ProviderType::Custom {
+                        entry
+                            .metadata()
+                            .known_models
+                            .iter()
+                            .find(|known| known.name == model.name && known.context_limit > 0)
+                            .map(|known| known.context_limit)
+                    } else {
+                        None
+                    };
+                    let limit = configured_limit.unwrap_or(model.context_limit);
+                    (limit > 0).then(|| (model.name.clone(), limit))
+                })
+                .collect(),
+            models: models.into_iter().map(|model| model.name).collect(),
         })
     }
 

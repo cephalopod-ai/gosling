@@ -2,7 +2,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getAcpClient } from '../acpConnection';
 import {
+  acpListProviderModels,
   acpPreviewSessionHandoff,
+  acpSaveDefaults,
   acpSetSessionProviderModel,
   parseProviderType,
 } from '../providers';
@@ -81,6 +83,40 @@ describe('ACP providers', () => {
       targetProvider: 'anthropic',
       targetModel: 'claude-sonnet-4-5',
       targetContextLimit: 200_000,
+    });
+  });
+
+  it('prefers live context metadata over cached inventory metadata', async () => {
+    const client = {
+      gosling: {
+        providersSupportedModelsList_unstable: vi.fn().mockResolvedValue({
+          models: ['spark', 'unknown'],
+          contextLimits: { spark: 1_048_576 },
+        }),
+        providersList_unstable: vi.fn().mockResolvedValue({
+          entries: [{ providerId: 'together', models: [{ id: 'spark', contextLimit: 128_000 }] }],
+        }),
+      },
+    };
+    vi.mocked(getAcpClient).mockResolvedValue(
+      client as unknown as Awaited<ReturnType<typeof getAcpClient>>
+    );
+    expect(await acpListProviderModels('together')).toEqual([
+      expect.objectContaining({ id: 'spark', contextLimit: 1_048_576 }),
+      { id: 'unknown', contextLimit: undefined },
+    ]);
+  });
+
+  it('persists the selected default model context limit', async () => {
+    const save = vi.fn().mockResolvedValue({});
+    vi.mocked(getAcpClient).mockResolvedValue({
+      gosling: { defaultsSave_unstable: save },
+    } as unknown as Awaited<ReturnType<typeof getAcpClient>>);
+    await acpSaveDefaults('together', 'spark', 1_048_576);
+    expect(save).toHaveBeenCalledWith({
+      providerId: 'together',
+      modelId: 'spark',
+      contextLimit: 1_048_576,
     });
   });
 });

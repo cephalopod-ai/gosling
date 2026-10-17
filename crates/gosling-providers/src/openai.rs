@@ -490,6 +490,13 @@ impl OpenAiProvider {
                 ));
             }
         };
+        if let Ok(mut cache) = self.n_ctx_cache.lock() {
+            for entry in data {
+                if let Some(id) = entry.get("id").and_then(|value| value.as_str()) {
+                    cache.insert(id.to_string(), model_context_limit(entry));
+                }
+            }
+        }
         let mut models: Vec<String> = data
             .iter()
             .filter(|model| {
@@ -505,9 +512,7 @@ impl OpenAiProvider {
         Ok(models)
     }
 
-    /// llama.cpp and Ollama expose the actual allocated context window in the
-    /// non-standard `meta.n_ctx` field of `/v1/models`. Returns `None` when absent
-    /// (e.g. real OpenAI).
+    /// Read the route's context window when its model catalog exposes one.
     async fn fetch_n_ctx_from_api(&self, model_name: &str) -> Option<usize> {
         let models_path =
             Self::map_base_path(&self.base_path, "models", OPEN_AI_DEFAULT_MODELS_PATH);
@@ -522,30 +527,35 @@ impl OpenAiProvider {
     }
 }
 
-/// Extract `meta.n_ctx` for `model_name` from a `/v1/models` response body.
-fn parse_n_ctx_from_models(json: &serde_json::Value, model_name: &str) -> Option<usize> {
-    let data = json.get("data")?.as_array()?;
+fn model_context_limit(entry: &serde_json::Value) -> Option<usize> {
+    entry
+        .pointer("/meta/n_ctx")
+        .or_else(|| entry.get("context_length"))
+        .and_then(|value| value.as_u64())
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|value| *value > 0)
+}
 
-    let n_ctx = |entry: &serde_json::Value| -> Option<usize> {
-        entry
-            .get("meta")?
-            .get("n_ctx")?
-            .as_u64()
-            .map(|v| v as usize)
-    };
+/// A single unmatched local server entry can identify its loaded model by file path.
+fn parse_n_ctx_from_models(json: &serde_json::Value, model_name: &str) -> Option<usize> {
+    let data = json.as_array().or_else(|| json.get("data")?.as_array())?;
 
     if let Some(entry) = data
         .iter()
         .find(|e| e.get("id").and_then(|v| v.as_str()) == Some(model_name))
     {
-        return n_ctx(entry);
+        return model_context_limit(entry);
     }
 
     // For single-model servers without --alias, llama.cpp reports the loaded model
     // file path as id rather than the client's alias, so no entry matches above.
     // Fall back to the sole entry's n_ctx.
     match data.as_slice() {
-        [only] => n_ctx(only),
+        [only] => only
+            .pointer("/meta/n_ctx")
+            .and_then(|value| value.as_u64())
+            .and_then(|value| usize::try_from(value).ok())
+            .filter(|value| *value > 0),
         _ => None,
     }
 }
@@ -611,11 +621,9 @@ impl Provider for OpenAiProvider {
 
     /// Resolve the effective context limit. When the config carries an explicit
     /// limit (GOSLING_CONTEXT_LIMIT, a session override, or a known/canonical
-    /// value) it is used as-is. Otherwise probe `/v1/models`: llama.cpp and
-    /// Ollama report the real allocated window via the non-standard
-    /// `meta.n_ctx` field, which fixes auto-compaction for local servers that
-    /// would otherwise fall back to DEFAULT_CONTEXT_LIMIT. The probe is bounded
-    /// by a short timeout so a hung endpoint can't stall the caller.
+    /// value) it is used as-is. Otherwise use the cached catalog or probe
+    /// `/v1/models` for `context_length` or the allocated local `meta.n_ctx`.
+    /// The probe is bounded so a hung endpoint cannot stall the caller.
     async fn get_context_limit(&self, model_config: &ModelConfig) -> Result<usize, ProviderError> {
         if let Some(limit) = model_config.context_limit {
             return Ok(limit);
@@ -666,6 +674,27 @@ impl Provider for OpenAiProvider {
         }
 
         self.fetch_models_from_api().await
+    }
+
+    async fn fetch_supported_model_info(&self) -> Result<Vec<ModelInfo>, ProviderError> {
+        let models = self.fetch_supported_models().await?;
+        let cache = self.n_ctx_cache.lock().ok();
+        Ok(models
+            .iter()
+            .map(|name| {
+                let mut info =
+                    super::base::model_info_for_provider_model(self.canonical_provider_id(), name);
+                if let Some(limit) = cache
+                    .as_ref()
+                    .and_then(|cache| cache.get(name))
+                    .copied()
+                    .flatten()
+                {
+                    info.context_limit = limit;
+                }
+                info
+            })
+            .collect())
     }
 
     async fn stream(

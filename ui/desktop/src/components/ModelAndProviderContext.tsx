@@ -92,7 +92,7 @@ export { i18n as modelAndProviderMessages };
 
 function patchAcpSessionProviderModel(
   sessionId: string,
-  { providerId, modelId, thinkingEffort }: AppliedSessionProviderModel
+  { providerId, modelId, thinkingEffort, contextLimit }: AppliedSessionProviderModel
 ) {
   if (!providerId && !modelId && !thinkingEffort) return;
 
@@ -109,6 +109,7 @@ function patchAcpSessionProviderModel(
   if (nextModelConfig) {
     if (modelId) {
       nextModelConfig.model_name = modelId;
+      nextModelConfig.context_limit = contextLimit ?? null;
     }
     if (thinkingEffort) {
       nextModelConfig.request_params = {
@@ -251,7 +252,7 @@ export const ModelAndProviderProvider: React.FC<ModelAndProviderProviderProps> =
         // (i.e. changing from settings, not from within an existing chat)
         if (!sessionId) {
           phase = 'config';
-          await acpSaveDefaults(providerName, modelName);
+          await acpSaveDefaults(providerName, modelName, model.context_limit);
         }
 
         if (!sessionId) {

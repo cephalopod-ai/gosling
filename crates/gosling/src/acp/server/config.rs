@@ -206,9 +206,17 @@ impl GoslingAcpAgent {
         _req: DefaultsReadRequest,
     ) -> Result<DefaultsReadResponse, agent_client_protocol::Error> {
         let config = self.config()?;
+        let provider_id = config.get_gosling_provider().ok();
+        let model_id = config.get_gosling_model().ok();
+        let context_limit = provider_id
+            .as_deref()
+            .and_then(|provider| crate::config::get_provider_entry(config, provider))
+            .filter(|entry| Some(&entry.model) == model_id.as_ref())
+            .and_then(|entry| entry.context_limit);
         Ok(DefaultsReadResponse {
-            provider_id: config.get_gosling_provider().ok(),
-            model_id: config.get_gosling_model().ok(),
+            provider_id,
+            model_id,
+            context_limit,
         })
     }
 
@@ -216,6 +224,10 @@ impl GoslingAcpAgent {
         &self,
         req: DefaultsSaveRequest,
     ) -> Result<DefaultsReadResponse, agent_client_protocol::Error> {
+        if req.context_limit == Some(0) {
+            return Err(agent_client_protocol::Error::invalid_params()
+                .data("Context window must be a whole number greater than 0"));
+        }
         let provider_id = req.provider_id.trim().to_string();
         if provider_id.is_empty() {
             return Err(
@@ -257,12 +269,18 @@ impl GoslingAcpAgent {
                 .map(|e| e.model)
                 .unwrap_or_default()
         });
-        crate::config::set_active_provider(config, &provider_id, &model)
-            .internal_err_ctx("Failed to save default provider")?;
+        crate::config::providers::set_active_provider_with_context_limit(
+            config,
+            &provider_id,
+            &model,
+            req.context_limit,
+        )
+        .internal_err_ctx("Failed to save default provider")?;
 
         Ok(DefaultsReadResponse {
             provider_id: Some(provider_id),
             model_id,
+            context_limit: req.context_limit,
         })
     }
 
@@ -277,6 +295,7 @@ impl GoslingAcpAgent {
         Ok(DefaultsReadResponse {
             provider_id: None,
             model_id: None,
+            context_limit: None,
         })
     }
 }

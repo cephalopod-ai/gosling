@@ -347,6 +347,7 @@ fn apply_gosling_config_candidate(
         result.provider_defaults = DefaultsReadResponse {
             provider_id: provider.clone(),
             model_id: model,
+            context_limit: None,
         };
         result.imported.providers = 1;
     }

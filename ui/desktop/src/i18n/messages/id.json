@@ -4285,5 +4285,20 @@
   },
   "switchModelModal.searchModels": {
     "defaultMessage": "Search models"
+  },
+  "switchModelModal.automaticContext": {
+    "defaultMessage": "Automatic: {tokens, number} tokens"
+  },
+  "switchModelModal.contextWarning": {
+    "defaultMessage": "Use the limit supported by this provider. A value that is too high can cause context-length errors; a value that is too low causes earlier compaction. This setting does not increase the model’s capacity."
+  },
+  "switchModelModal.contextWindow": {
+    "defaultMessage": "Context window (tokens)"
+  },
+  "switchModelModal.invalidContext": {
+    "defaultMessage": "Enter a whole number of tokens greater than 0 and no larger than {maximum, number}."
+  },
+  "switchModelModal.unknownContext": {
+    "defaultMessage": "The context window could not be discovered for this model. Gosling will use 128,000 tokens unless you enter the limit supported by your provider."
   }
 }

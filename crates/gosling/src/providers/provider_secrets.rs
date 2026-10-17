@@ -733,6 +733,7 @@ mod tests {
             &ProviderEntry {
                 enabled: true,
                 model: "test-model".to_string(),
+                context_limit: None,
                 configured: true,
             },
         )

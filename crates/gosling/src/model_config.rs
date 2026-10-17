@@ -25,6 +25,11 @@ pub fn model_config_from_user_config_with_session_settings(
     request_params: Option<HashMap<String, Value>>,
     context_limit: Option<usize>,
 ) -> Result<ModelConfig> {
+    if context_limit == Some(0) {
+        return Err(anyhow!(
+            "Context window must be a whole number greater than 0"
+        ));
+    }
     let config = Config::global();
     let model = base_model_config_from_user_config(model_name.as_ref())?;
     let model = materialize_model_config_inner(model, provider_name, false)?
@@ -55,8 +60,13 @@ fn materialize_model_config_inner(
         model = model.with_toolshim_model(get_gosling_toolshim_model(config)?);
     }
 
+    let saved_context_limit = crate::config::get_provider_entry(config, provider_name)
+        .filter(|entry| entry.model == model.model_name)
+        .and_then(|entry| entry.context_limit)
+        .filter(|limit| *limit > 0);
     model = model
         .with_default_context_limit(config.get_gosling_context_limit()?)
+        .with_default_context_limit(saved_context_limit)
         .with_default_max_tokens(config.get_gosling_max_tokens()?);
 
     if matches!(provider_name, "chatgpt_codex" | "codex") {

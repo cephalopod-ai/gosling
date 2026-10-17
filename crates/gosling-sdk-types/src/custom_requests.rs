@@ -595,6 +595,8 @@ pub struct DefaultsReadRequest {}
 pub struct DefaultsReadResponse {
     pub provider_id: Option<String>,
     pub model_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_limit: Option<usize>,
 }
 
 /// Save Gosling default provider and model configuration.
@@ -605,6 +607,8 @@ pub struct DefaultsSaveRequest {
     pub provider_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_limit: Option<usize>,
 }
 
 /// Clear Gosling default provider and model configuration.
@@ -2730,6 +2734,8 @@ pub struct ProviderSupportedModelsListRequest {
 pub struct ProviderSupportedModelsListResponse {
     pub provider_id: String,
     pub models: Vec<String>,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub context_limits: HashMap<String, usize>,
 }
 
 /// List the raw model identifiers from an ad hoc OpenAI-compatible endpoint

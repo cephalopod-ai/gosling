@@ -1723,6 +1723,9 @@ export type ProviderSupportedModelsListRequest_unstable = {
 export type ProviderSupportedModelsListResponse_unstable = {
     providerId: string;
     models: Array<string>;
+    contextLimits?: {
+        [key: string]: number;
+    };
 };
 
 /**
@@ -2222,6 +2225,7 @@ export type DefaultsReadRequest_unstable = {
 export type DefaultsReadResponse_unstable = {
     providerId?: string | null;
     modelId?: string | null;
+    contextLimit?: number | null;
 };
 
 /**
@@ -2230,6 +2234,7 @@ export type DefaultsReadResponse_unstable = {
 export type DefaultsSaveRequest_unstable = {
     providerId: string;
     modelId?: string | null;
+    contextLimit?: number | null;
 };
 
 /**

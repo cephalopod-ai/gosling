@@ -374,7 +374,9 @@ After sending your first message, gosling Desktop and gosling CLI display token 
 
 ## Model Context Limit Overrides
 
-Context limits are automatically detected based on your model name, but gosling provides settings to override the default limits:
+Context limits are discovered from provider model metadata where available, with
+bundled model information and a 128,000-token fallback when no limit is known.
+You can override the limit in Desktop or through configuration:
 
 | Model | Description | Best For | Setting |
 |-------|-------------|----------|---------|
@@ -395,10 +397,11 @@ This feature is particularly useful with:
 
 gosling resolves context limits with the following precedence (highest to lowest):
 
-1. Explicit context_limit in model configuration (if set programmatically)
+1. Explicit context limit in the session model configuration, including Desktop overrides
 2. Global environment variable (`GOSLING_CONTEXT_LIMIT`)
-3. Model-specific default based on name pattern matching
-4. Global default (128,000 tokens)
+3. Saved context limit for the provider's selected default model
+4. Provider metadata or model-specific defaults
+5. Global default (128,000 tokens)
 
 A session saves the limit it resolved. When you resume a session from the CLI with
 `GOSLING_CONTEXT_LIMIT` set, that value replaces the saved one; without it, the session keeps the
@@ -414,12 +417,27 @@ context. See [Creating Plans](/docs/guides/context-engineering/creating-plans).
 <Tabs groupId="interface">
   <TabItem value="ui" label="gosling Desktop" default>
 
-     Model context limit overrides are not yet available in the gosling Desktop app.
+     Open **Switch models** and edit **Context window (tokens)**. Leave the field
+     blank to use the automatic value. If the context window cannot be discovered,
+     the dialog warns that the automatic fallback is 128,000 tokens. Invalid values
+     show an error and prevent submission.
+
+     Use the context limit supported by your provider's deployment. A value that is
+     too high can cause context-length errors; a lower value causes earlier
+     compaction. Changing this setting does not expand the model's capacity.
+
+     Within a chat, the limit is saved with that session and used for its context
+     meter and compaction budget. From Settings, it is saved with the selected
+     provider and default model for future chats. Selecting another model clears
+     the previous model's override. Providers that manage their own context do not
+     expose this control.
 
   </TabItem>
   <TabItem value="cli" label="gosling CLI">
 
-    Context limit overrides only work as [environment variables](/docs/guides/environment-variables#model-context-limit-overrides), not in the config file.
+    Set `GOSLING_CONTEXT_LIMIT` through an
+    [environment variable](/docs/guides/environment-variables#model-context-limit-overrides)
+    or the same key in `config.yaml`.
 
     ```bash
     export GOSLING_CONTEXT_LIMIT=1000

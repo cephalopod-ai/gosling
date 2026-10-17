@@ -1,5 +1,6 @@
 use gosling_providers::api_client::{ApiClient, AuthMethod};
 use gosling_providers::base::Provider;
+use gosling_providers::model::{ModelConfig, DEFAULT_CONTEXT_LIMIT};
 use gosling_providers::openai::{OpenAiProvider, OpenAiProviderBuilder};
 use serde_json::json;
 use wiremock::matchers::{method, path};
@@ -89,5 +90,89 @@ async fn openai_envelope_and_untyped_together_entries_are_preserved() -> anyhow:
             vec!["gpt-4o", "muse-spark-1.3"]
         );
     }
+    Ok(())
+}
+
+#[tokio::test]
+async fn discovered_context_limits_reach_model_info_and_runtime() -> anyhow::Result<()> {
+    let spark = "meta-models/Muse-Spark-Open-816B-A42B-promo";
+    for payload in [
+        json!([{ "id": spark, "context_length": 1048576 }]),
+        json!({"data": [{ "id": spark, "context_length": 1048576 }]}),
+    ] {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(payload))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let provider = provider(&server, "togetherai");
+        let models = provider.fetch_supported_model_info().await?;
+        assert_eq!(models[0].context_limit, 1_048_576);
+        assert_eq!(
+            provider.get_context_limit(&ModelConfig::new(spark)).await?,
+            1_048_576
+        );
+        assert_eq!(
+            provider
+                .get_context_limit(&ModelConfig::new(spark).with_context_limit(Some(64_000)))
+                .await?,
+            64_000
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn unknown_or_invalid_context_metadata_stays_unknown() -> anyhow::Result<()> {
+    for metadata in [
+        json!({}),
+        json!({"context_length": 0}),
+        json!({"context_length": -1}),
+        json!({"context_length": "1048576"}),
+    ] {
+        let server = MockServer::start().await;
+        let mut record = json!({"id": "unknown-context-model"});
+        record
+            .as_object_mut()
+            .unwrap()
+            .extend(metadata.as_object().unwrap().clone());
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([record])))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let provider = provider(&server, "togetherai");
+        let models = provider.fetch_supported_model_info().await?;
+        assert_eq!(models[0].context_limit, 0);
+        assert_eq!(
+            provider
+                .get_context_limit(&ModelConfig::new("unknown-context-model"))
+                .await?,
+            DEFAULT_CONTEXT_LIMIT
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn runtime_probe_reads_together_context_without_prior_discovery() -> anyhow::Result<()> {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([
+            {"id": "unknown-spark-model", "context_length": 1048576}
+        ])))
+        .expect(1)
+        .mount(&server)
+        .await;
+    assert_eq!(
+        provider(&server, "togetherai")
+            .get_context_limit(&ModelConfig::new("unknown-spark-model"))
+            .await?,
+        1_048_576
+    );
     Ok(())
 }
