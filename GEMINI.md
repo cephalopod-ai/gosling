@@ -2,7 +2,6 @@
 
 Gemini-specific execution guidance for this repository.
 
-<!-- GILES:GEMINI-DOCS-GOVERNANCE:START -->
 ## Authority
 
 `AGENTS.md` is the canonical repo-local operating contract. This file is an
@@ -22,4 +21,3 @@ Record a deviation here only when Gemini's behaviour genuinely differs from the
 contract in `AGENTS.md`. Do not restate rules that already live there: a second
 copy drifts from the original and creates exactly the ambiguity this adapter
 exists to prevent.
-<!-- GILES:GEMINI-DOCS-GOVERNANCE:END -->

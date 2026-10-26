@@ -1,8 +1,16 @@
+## Tool-independent agent work
+
+Dory and Giles are not prerequisites for agent work in this repository.
+Do not require their CLIs, MCP tools, checkpoints, scans, sidecars, or feature
+ledgers. Use current source, Git history, repository-native logs, and the
+relevant tests for evidence; report skipped or unavailable checks honestly.
+
 # AGENTS Instructions
 
 gosling is an AI agent framework in Rust with CLI and Electron desktop interfaces.
 
 ## Setup
+
 ```bash
 source bin/activate-hermit
 cargo build
@@ -11,6 +19,7 @@ cargo build
 ## Commands
 
 ### Build
+
 ```bash
 cargo build                   # debug
 cargo build --release         # release  
@@ -18,6 +27,7 @@ just release-binary           # release binary
 ```
 
 ### Test
+
 ```bash
 cargo test                   # all tests
 cargo test -p gosling          # specific crate
@@ -26,12 +36,14 @@ just record-mcp-tests        # record MCP
 ```
 
 ### Lint/Format
+
 ```bash
 cargo fmt
 cargo clippy --all-targets -- -D warnings
 ```
 
 ### UI
+
 ```bash
 just run-ui                  # start desktop
 cd ui/desktop && pnpm run typecheck
@@ -39,6 +51,7 @@ cd ui/desktop && pnpm test   # test UI
 ```
 
 ## Structure
+
 ```
 crates/
 ├── gosling              # core logic
@@ -56,6 +69,7 @@ ui/text/               # Ink terminal UI
 ```
 
 ## Development Loop
+
 ```bash
 # 1. source bin/activate-hermit
 # 2. Make changes
@@ -63,6 +77,7 @@ ui/text/               # Ink terminal UI
 ```
 
 ### Run these only if the user has asked you to build/test your changes:
+
 ```
 # 1. cargo build
 # 2. cargo test -p <crate>
@@ -120,13 +135,9 @@ remaining space for dynamic text.
 - UI: ui/desktop/src/main.ts
 - Agent: crates/gosling/src/agents/agent.rs
 
-
 ---
 
 ## Required execution clauses
-
-These clauses are load-bearing for the Giles `repo_docs_agent_watcher`
-contract (GDOC-058) and must remain literally present in AGENTS.md.
 
 - **Read existing code before edits.** Inspect before modifying any file;
   do not edit by analogy or assumption.
@@ -147,11 +158,10 @@ contract (GDOC-058) and must remain literally present in AGENTS.md.
 - **No fake success/stub completion.** MUST NOT present stubs,
   placeholders, or canned responses as working behaviour.
 
-
-<!-- GILES:DOCS-GOVERNANCE:START -->
 ## Documentation and agent operating contract
 
-This repository carries its own local operating instructions. Fleet-wide documentation governance may be scanned or enforced by Giles, but agents must not assume external memory or external policy is available while working in this repo.
+This repository carries its own operating instructions; no external policy or
+memory service is required.
 
 ### Required read order
 
@@ -162,16 +172,14 @@ Before making code, documentation, configuration, schema, or test changes, read 
 3. `README.md`
 4. `docs/INDEX.md`
 5. architecture, development, usage, ADR, and governance docs referenced by `docs/INDEX.md`
-6. `.giles/repo.yaml` and other `.giles/*.yaml` advisory metadata
-7. recent `docs/logs/session/` entries relevant to the task
+6. recent `docs/logs/session/` entries relevant to the task
 
 ### Authority rules
 
 - **Read AGENTS.md first.** AGENTS.md is the canonical repo-local operating contract; every agent must start by reading AGENTS.md before consulting any other instruction file. Adapter files (GEMINI.md, CLAUDE.md, etc.) defer to AGENTS.md.
 - `GEMINI.md` contains Gemini-specific execution guidance and must defer to `AGENTS.md` for repo authority.
-- `.giles/*.yaml` files are advisory mirrors unless a fresh Giles scan or explicit repo policy marks them as promoted evidence.
 - Agents record evidence; they do not declare fleet compliance.
-- If code, docs, and Giles metadata disagree, preserve the conflict explicitly and log it as a follow-up unless the requested task is to resolve that conflict.
+- If code, docs, and recorded evidence disagree, preserve the conflict explicitly and log it as a follow-up unless the requested task is to resolve that conflict.
 
 ### Documentation patch rules
 
@@ -190,7 +198,7 @@ Not allowed without explicit request:
 - architecture changes disguised as documentation
 - invented behavior
 - deleting repo-specific constraints because they appear redundant
-- converting advisory Giles metadata into compliance claims
+- converting advisory metadata into compliance claims
 - broad reorganization of docs
 
 ### Validation expectations
@@ -199,11 +207,9 @@ For documentation-only tasks, run the lightest available validation that proves 
 
 ```sh
 git diff -- AGENTS.md GEMINI.md docs README.md
-grep -R "GILES:DOCS-GOVERNANCE:START" -n AGENTS.md
-grep -R "GILES:GEMINI-DOCS-GOVERNANCE:START" -n GEMINI.md
 ```
 
-If the repo has doc linting, markdown linting, tests, or a Giles scan command documented locally, run the relevant targeted command and record the result.
+If the repo has doc linting, markdown linting, tests, or other checks documented locally, run the relevant targeted command and record the result.
 
 ### Logging
 
@@ -214,4 +220,3 @@ For non-trivial documentation or governance changes, create or update a session 
 * files changed
 * validation run
 * risks or follow-ups
-<!-- GILES:DOCS-GOVERNANCE:END -->

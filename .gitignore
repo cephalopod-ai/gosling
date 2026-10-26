@@ -130,3 +130,12 @@ goslingselftest/
 
 # Local pre-install binary backups
 install-backups/
+
+# Retired agent-tool state (not required for development).
+/.dory/
+/.dory.example/
+/.giles/
+/.gilesignore
+/governance/logs/giles_compliance_todo.*
+/governance/logs/giles_effective_watchers.*
+/state/sqlite/giles_state.db*
