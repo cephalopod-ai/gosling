@@ -10,6 +10,10 @@ import ResetProviderSection from '../reset_provider/ResetProviderSection';
 import { defineMessages, useIntl } from '../../../i18n';
 
 const i18n = defineMessages({
+  noProvider: {
+    id: 'modelsSection.noProvider',
+    defaultMessage: 'No provider configured',
+  },
   resetTitle: {
     id: 'modelsSection.resetTitle',
     defaultMessage: 'Reset Provider and Model',
@@ -29,6 +33,7 @@ export default function ModelsSection({ setView }: ModelsSectionProps) {
   const [provider, setProvider] = useState<string | null>(null);
   const [displayModelName, setDisplayModelName] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const warnedProviderRef = useRef<string | null>(null);
   const {
     getCurrentModelDisplayName,
     getCurrentProviderDisplayName,
@@ -48,21 +53,35 @@ export default function ModelsSection({ setView }: ModelsSectionProps) {
       const providerDisplayName = await getCurrentProviderDisplayName();
       if (providerDisplayName) {
         setProvider(providerDisplayName);
+        warnedProviderRef.current = null;
       } else {
         // Fallback to original provider lookup
         const { providerId: goslingProvider } = await acpReadDefaults();
+        if (!goslingProvider) {
+          setDisplayModelName(intl.formatMessage(i18n.noProvider));
+          setProvider(null);
+          warnedProviderRef.current = null;
+          return;
+        }
         const providers = await acpListProviderDetails();
-        const providerDetailsList = providers.filter((provider) => provider.name === goslingProvider);
+        const providerDetailsList = providers.filter(
+          (provider) => provider.name === goslingProvider
+        );
 
         if (providerDetailsList.length != 1) {
-          toastError({
-            title: intl.formatMessage(modelAndProviderMessages.unknownProviderTitle),
-            msg: intl.formatMessage(modelAndProviderMessages.unknownProviderMsg),
-          });
+          // Effect replay can resolve the same unknown provider more than once.
+          if (warnedProviderRef.current !== goslingProvider) {
+            warnedProviderRef.current = goslingProvider;
+            toastError({
+              title: intl.formatMessage(modelAndProviderMessages.unknownProviderTitle),
+              msg: intl.formatMessage(modelAndProviderMessages.unknownProviderMsg),
+            });
+          }
           setProvider(goslingProvider);
         } else {
           const fallbackProviderDisplayName = providerDetailsList[0].metadata.display_name;
           setProvider(fallbackProviderDisplayName);
+          warnedProviderRef.current = null;
         }
       }
     } catch (error) {

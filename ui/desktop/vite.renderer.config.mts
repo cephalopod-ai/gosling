@@ -14,6 +14,8 @@ export default defineConfig({
   // Excluding it makes Vite always read the latest ui/sdk/dist build.
   // Dev-server only — release builds ignore optimizeDeps.
   optimizeDeps: {
+    // shell.html belongs to the separate consumer config that resolves its virtual entry.
+    entries: ['index.html'],
     exclude: ['@repo-makeover/gosling-sdk'],
   },
 

@@ -2168,6 +2168,9 @@
   "modelsBottomBar.selectModel": {
     "defaultMessage": "Select Model"
   },
+  "modelsSection.noProvider": {
+    "defaultMessage": "No provider configured"
+  },
   "modelsSection.resetDescription": {
     "defaultMessage": "Clear your selected model and provider settings to start fresh"
   },

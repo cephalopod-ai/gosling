@@ -4300,5 +4300,8 @@
   },
   "switchModelModal.unknownContext": {
     "defaultMessage": "The context window could not be discovered for this model. Gosling will use 128,000 tokens unless you enter the limit supported by your provider."
+  },
+  "modelsSection.noProvider": {
+    "defaultMessage": "No provider configured"
   }
 }
