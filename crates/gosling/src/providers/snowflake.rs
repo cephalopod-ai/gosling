@@ -23,15 +23,14 @@ use rmcp::model::Tool;
 const SNOWFLAKE_PROVIDER_NAME: &str = "snowflake";
 pub const SNOWFLAKE_DEFAULT_MODEL: &str = "claude-sonnet-4-5";
 pub const SNOWFLAKE_KNOWN_MODELS: &[&str] = &[
-    // Claude 4.5 series
+    // Claude Sonnet 4.5 series
     "claude-sonnet-4-5",
     "claude-haiku-4-5",
-    // Claude 4 series
-    "claude-4-sonnet",
-    "claude-4-opus",
-    // Claude 3 series
-    "claude-3-7-sonnet",
-    "claude-3-5-sonnet",
+    // Claude Sonnet 5 / Opus 4 series
+    "claude-sonnet-4-6",
+    "claude-opus-4-5",
+    "claude-sonnet-5",
+    "claude-opus-4-6",
 ];
 
 pub const SNOWFLAKE_DOC_URL: &str =

@@ -62,7 +62,9 @@ static DATABRICKS_ENDPOINT_INFO_CACHE: LazyLock<
 pub const DATABRICKS_DEFAULT_MODEL: &str = "databricks-claude-sonnet-4";
 pub const DATABRICKS_DEFAULT_FAST_MODEL: &str = "databricks-claude-haiku-4-5";
 pub const DATABRICKS_KNOWN_MODELS: &[&str] = &[
+    "databricks-claude-sonnet-4",
     "databricks-claude-sonnet-4-5",
+    "databricks-claude-haiku-4-5",
     "databricks-meta-llama-3-3-70b-instruct",
     "databricks-meta-llama-3-1-405b-instruct",
 ];

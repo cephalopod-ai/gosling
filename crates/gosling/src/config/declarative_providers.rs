@@ -670,7 +670,7 @@ mod tests {
         assert_eq!(config.catalog_provider_id.as_deref(), Some("mistralai"));
         let names: Vec<&str> = config.models.iter().map(|m| m.name.as_str()).collect();
         assert!(names.contains(&"mistral-large-4"));
-        assert!(names.contains(&"zai-glm-5-3"));
+        assert!(names.contains(&"zai-glm-5.3"));
         // The first entry is the provider's default model.
         assert_eq!(names.first(), Some(&"mistral-medium-latest"));
     }
