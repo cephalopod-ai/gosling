@@ -62,3 +62,28 @@ clean; `cargo test -p gosling --lib mail` (9 passed); `cargo test -p gosling-cli
 desktop_email_test` (1 passed); ESLint and Prettier on the changed Desktop files; `pnpm run
 typecheck`; vitest for the email IPC and settings tests (3 passed). Live mail servers, the
 keychain, and a packaged Desktop launch remain unverified.
+
+## Mistral security audit repairs
+
+Rechecked the supplied findings from `441a6245e` against `main` at `f3f6ac642`.
+The audit report was already present as an untracked file and was left intact.
+
+- **SEC-MAIL-001** — `Cargo.lock` now resolves rustls 0.23.46 for lettre, tokio-rustls,
+  and the other workspace consumers. Cargo also updated the rustls cryptography and certificate
+  validation dependencies required by that release. The
+  [upstream advisory](https://github.com/rustls/rustls/security/advisories/GHSA-2mjx-qc3c-rqvc)
+  confirms the handshake encryption-level check and states that handshake transcript
+  authentication was preserved.
+- **SEC-MAIL-002** — Electron builds the email worker environment from explicit keys. The
+  list preserves app paths, keyring policy, proxy and CA settings, and known model destinations.
+  Provider API keys and unrelated parent tokens are omitted. Provider credentials can come
+  from the saved gosling configuration. The IPC test covers both the exclusion and the
+  preserved inputs, including the resolved mail data root and unattended keyring behavior.
+- **SEC-MAIL-003** — Informational. The guide now names the data sent to a remote model
+  endpoint and the local Ollama option. The classification path retains its existing scope.
+
+The locked rustls build passed 9 mail tests, 4 ACP TLS tests, and the supervised CLI smoke test
+with the `rustls-tls,system-keyring` features. The reverse dependency tree confirmed rustls
+0.23.46 for the mail transports. `cargo fmt --check` and `git diff --check` passed.
+Desktop typecheck, scoped ESLint and Prettier, and all 3 focused Desktop tests passed.
+Live mail providers, the desktop keyring, and packaged Windows and Linux runs remain unverified.

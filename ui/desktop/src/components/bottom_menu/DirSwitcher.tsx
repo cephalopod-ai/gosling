@@ -71,7 +71,7 @@ export const DirSwitcher: React.FC<DirSwitcherProps> = ({
   const [worktreeDirs, setWorktreeDirs] = useState<string[]>([]);
   const refreshVersionRef = useRef(0);
   const chatInfoTriggerRef = useRef<HTMLButtonElement>(null);
-  const chatInfoPanelRef = useRef<HTMLDivElement>(null);
+  const chatInfoPointerDown = useRef<globalThis.PointerEvent | null>(null);
   const [chatInfoPosition, setChatInfoPosition] = useState<{
     left: number;
     bottom: number;
@@ -118,12 +118,10 @@ export const DirSwitcher: React.FC<DirSwitcherProps> = ({
     updateChatInfoPosition();
 
     const dismissOnPointerDown = (event: globalThis.PointerEvent) => {
+      if (chatInfoPointerDown.current === event) return;
       const target = event.target;
       if (!(target instanceof window.Node)) return;
-      if (
-        !chatInfoTriggerRef.current?.contains(target) &&
-        !chatInfoPanelRef.current?.contains(target)
-      ) {
+      if (!chatInfoTriggerRef.current?.contains(target)) {
         setIsMenuOpen(false);
       }
     };
@@ -258,7 +256,10 @@ export const DirSwitcher: React.FC<DirSwitcherProps> = ({
           createPortal(
             <div
               id="chat-info-panel"
-              ref={chatInfoPanelRef}
+              onPointerDownCapture={(event) => {
+                // React follows the panel's child menus through their portals.
+                chatInfoPointerDown.current = event.nativeEvent;
+              }}
               className="fixed z-[200] w-max max-w-[calc(100vw-2rem)]"
               style={{ left: chatInfoPosition.left, bottom: chatInfoPosition.bottom }}
             >

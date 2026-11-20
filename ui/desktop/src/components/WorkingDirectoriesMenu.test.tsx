@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { IntlTestWrapper } from '../i18n/test-utils';
 import type { Session } from '../types/session';
+import { DirSwitcher } from './bottom_menu/DirSwitcher';
 import WorkingDirectoriesMenu from './WorkingDirectoriesMenu';
 
 const addSessionWorkingDir = vi.fn();
@@ -60,33 +61,56 @@ describe('WorkingDirectoriesMenu workspace session grants', () => {
     });
   });
 
-  it('adds a directory and refreshes remembered workspace folders', async () => {
-    const user = userEvent.setup();
-    const onSessionChange = vi.fn();
-    render(
-      <WorkingDirectoriesMenu session={workspaceSession} onSessionChange={onSessionChange} />,
-      { wrapper: IntlTestWrapper }
-    );
+  it.each(['header', 'chat info'])(
+    'adds a directory from %s and refreshes remembered workspace folders',
+    async (surface) => {
+      const user = userEvent.setup();
+      const onSessionChange = vi.fn();
+      const menu = (
+        <WorkingDirectoriesMenu session={workspaceSession} onSessionChange={onSessionChange} />
+      );
+      render(
+        surface === 'header' ? (
+          menu
+        ) : (
+          <DirSwitcher
+            className=""
+            sessionId={workspaceSession.id}
+            workingDir="/workspace/project"
+            renderChatInfo={() => <section aria-label="Chat information">{menu}</section>}
+          />
+        ),
+        { wrapper: IntlTestWrapper }
+      );
 
-    await user.click(screen.getByRole('button', { name: /Add Dir/ }));
-    expect(
-      await screen.findByText(/Directories added here are saved for this chat and future chats/)
-    ).toBeInTheDocument();
-    await user.click(screen.getByText('Add directory…'));
+      if (surface === 'chat info') {
+        await user.click(screen.getByRole('button', { name: 'Open chat information for project' }));
+      }
+      await user.click(screen.getByRole('button', { name: /Add Dir/ }));
+      expect(
+        await screen.findByText(/Directories added here are saved for this chat and future chats/)
+      ).toBeInTheDocument();
+      await user.click(screen.getByText('Add directory…'));
 
-    await waitFor(() =>
-      expect(addSessionWorkingDir).toHaveBeenCalledWith('session-a', '/private/workshop')
-    );
-    const update = onSessionChange.mock.calls[0][0] as (session: Session) => Session;
-    expect(update(workspaceSession).additional_working_dirs).toEqual(['/private/workshop']);
-    const current = {
-      ...workspaceSession,
-      workspace_folder_roots: [{ path: '/reference', access: 'read' as const }],
-    };
-    expect(update(current).workspace_folder_roots).toEqual(current.workspace_folder_roots);
-    expect(window.electron.broadcastWorkspaceChange).toHaveBeenCalledOnce();
-    expect(refreshWorkspaces).toHaveBeenCalledOnce();
-  });
+      await waitFor(() =>
+        expect(addSessionWorkingDir).toHaveBeenCalledWith('session-a', '/private/workshop')
+      );
+      const update = onSessionChange.mock.calls[0][0] as (session: Session) => Session;
+      expect(update(workspaceSession).additional_working_dirs).toEqual(['/private/workshop']);
+      const current = {
+        ...workspaceSession,
+        workspace_folder_roots: [{ path: '/reference', access: 'read' as const }],
+      };
+      expect(update(current).workspace_folder_roots).toEqual(current.workspace_folder_roots);
+      expect(window.electron.broadcastWorkspaceChange).toHaveBeenCalledOnce();
+      expect(refreshWorkspaces).toHaveBeenCalledOnce();
+      if (surface === 'chat info') {
+        expect(screen.getByRole('region', { name: 'Chat information' })).toBeInTheDocument();
+        await user.click(document.body);
+        expect(screen.queryByRole('region', { name: 'Chat information' })).not.toBeInTheDocument();
+      }
+    }
+  );
 
   it('hides recent entries that are already working directories, whatever their spelling', async () => {
     const user = userEvent.setup();

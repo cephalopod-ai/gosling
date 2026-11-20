@@ -15,8 +15,10 @@ gosling checks the inbox about once a minute. You can also process mail from Set
    POP server copy in place.
 3. Open **Advanced → Allowed recipients**. Enter each address that can receive replies on its
    own line. You can also choose the model and configure filing folders. The selected model
-   receives the message text needed to classify the mail. Use a direct model provider such as
-   Ollama or an API provider.
+   receives the sender, subject, and bounded message text needed to classify the mail.
+   A remote API provider receives this content at its endpoint. Use a local Ollama instance
+   to keep classification on this computer. For a provider that uses an API key, save its
+   credentials under **Settings → Auth** so the email worker can use them.
 4. Select **Save email settings**, then **Test connection**, then **Enable email**. The
    connection test signs in to the incoming and outgoing servers. **Process now** triggers an
    inbox check. On the first check, gosling starts with new mail unless you selected

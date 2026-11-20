@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import type { IpcMain, IpcMainInvokeEvent, WebContents } from 'electron';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { EmailRequest, EmailSnapshot } from '../types/email';
 import { DesktopEmailWorker } from './emailIpc';
 
@@ -25,9 +25,27 @@ const unconfigured: EmailSnapshot = {
 };
 
 describe('Desktop email IPC', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it('cancels queued polling ahead of a settings change and rejects child frames', async () => {
+    vi.stubEnv('HOME', '/test/home');
+    vi.stubEnv('XDG_CONFIG_HOME', '/test/config');
+    vi.stubEnv('SSL_CERT_FILE', '/test/ca.pem');
+    vi.stubEnv('HTTPS_PROXY', 'http://proxy.example.test:8080');
+    vi.stubEnv('OLLAMA_HOST', 'http://localhost:11434');
+    vi.stubEnv('OPENAI_BASE_URL', 'https://models.example.test/v1');
+    vi.stubEnv('GOSLING_PATH_ROOT', '/test/inherited-root');
+    vi.stubEnv('GOSLING_DISABLE_KEYRING', '1');
+    vi.stubEnv('GOSLING_KEYRING_NONINTERACTIVE', undefined);
+    vi.stubEnv('OPENAI_API_KEY', 'test-provider-key');
+    vi.stubEnv('GOSLING_SERVER__SECRET_KEY', 'test-backend-key');
+    vi.stubEnv('UNRELATED_SERVICE_TOKEN', 'test-unrelated-token');
+    vi.stubEnv('NODE_V8_COVERAGE', '/test/coverage');
     const commands: EmailRequest[] = [];
     const children: Array<{ finish: () => void }> = [];
+    spawn.mockClear();
     spawn.mockImplementation(() => {
       const child = Object.assign(new EventEmitter(), {
         stdin: new PassThrough(),
@@ -46,7 +64,11 @@ describe('Desktop email IPC', () => {
 
     type Handle = (event: IpcMainInvokeEvent, request: EmailRequest) => Promise<EmailSnapshot>;
     const register = vi.fn<(_channel: string, handler: Handle) => void>();
-    const worker = new DesktopEmailWorker({ isPackaged: false, resourcesPath: '' });
+    const worker = new DesktopEmailWorker({
+      isPackaged: false,
+      resourcesPath: '',
+      pathRoot: '/test/mail-root',
+    });
     worker.register({ handle: register } as unknown as IpcMain);
     const handle = register.mock.calls[0][1];
     const frame = {};
@@ -61,10 +83,27 @@ describe('Desktop email IPC', () => {
     const poll = expect(handle(event, { op: 'poll' })).rejects.toThrow('cancelled');
     const paused = handle(event, { op: 'pause', revision: 0 });
     await vi.waitFor(() => expect(commands.map(({ op }) => op)).toEqual(['status']));
+    const statusEnv: NodeJS.ProcessEnv = spawn.mock.calls[0][2].env;
+    expect(statusEnv.HOME).toBe('/test/home');
+    expect(statusEnv.XDG_CONFIG_HOME).toBe('/test/config');
+    expect(statusEnv.SSL_CERT_FILE).toBe('/test/ca.pem');
+    expect(statusEnv.HTTPS_PROXY).toBe('http://proxy.example.test:8080');
+    expect(statusEnv.OLLAMA_HOST).toBe('http://localhost:11434');
+    expect(statusEnv.OPENAI_BASE_URL).toBe('https://models.example.test/v1');
+    expect(statusEnv.GOSLING_PATH_ROOT).toBe('/test/mail-root');
+    expect(statusEnv.GOSLING_DISABLE_KEYRING).toBe('1');
+    expect(statusEnv.GOSLING_KEYRING_NONINTERACTIVE).toBe('true');
+    expect(statusEnv.OPENAI_API_KEY).toBeUndefined();
+    expect(statusEnv.GOSLING_SERVER__SECRET_KEY).toBeUndefined();
+    expect(statusEnv.UNRELATED_SERVICE_TOKEN).toBeUndefined();
+    expect(Object.keys(statusEnv).includes('NODE_V8_COVERAGE')).toBe(true);
+    expect(statusEnv.NODE_V8_COVERAGE).toBeUndefined();
     children[0].finish();
     await loaded;
     await poll;
     await vi.waitFor(() => expect(commands.map(({ op }) => op)).toEqual(['status', 'pause']));
+    const pauseEnv: NodeJS.ProcessEnv = spawn.mock.calls[1][2].env;
+    expect(pauseEnv.GOSLING_KEYRING_NONINTERACTIVE).toBeUndefined();
     children[1].finish();
     await paused;
     await worker.stop();

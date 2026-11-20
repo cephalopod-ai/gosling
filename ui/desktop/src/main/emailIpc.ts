@@ -10,6 +10,58 @@ const POLL_INTERVAL = 60_000;
 const WORKER_TIMEOUT = 10 * 60_000;
 const MAX_REQUEST = 65_536;
 const MAX_RESPONSE = 10 * 1024 * 1024;
+const WORKER_ENV_KEYS = [
+  'HOME',
+  'USERPROFILE',
+  'APPDATA',
+  'LOCALAPPDATA',
+  'PROGRAMDATA',
+  'SystemRoot',
+  'PATH',
+  'TMPDIR',
+  'TMP',
+  'TEMP',
+  'XDG_CONFIG_HOME',
+  'XDG_DATA_HOME',
+  'XDG_STATE_HOME',
+  'XDG_CACHE_HOME',
+  'XDG_RUNTIME_DIR',
+  'DBUS_SESSION_BUS_ADDRESS',
+  'GOSLING_ADDITIONAL_CONFIG_FILES',
+  'GOSLING_DISABLE_KEYRING',
+  'GOSLING_KEYRING_NONINTERACTIVE',
+  // Preserve explicit destinations so scrubbing credentials cannot reroute mail content.
+  'ANTHROPIC_HOST',
+  'AWS_REGION',
+  'AZURE_OPENAI_ENDPOINT',
+  'AZURE_OPENAI_DEPLOYMENT_NAME',
+  'AZURE_OPENAI_API_VERSION',
+  'DATABRICKS_HOST',
+  'GCP_PROJECT_ID',
+  'GCP_LOCATION',
+  'GOOGLE_HOST',
+  'LITELLM_HOST',
+  'LITELLM_BASE_PATH',
+  'OLLAMA_HOST',
+  'OPENAI_BASE_URL',
+  'OPENAI_HOST',
+  'OPENAI_BASE_PATH',
+  'OPENROUTER_HOST',
+  'SAGEMAKER_ENDPOINT_NAME',
+  'SNOWFLAKE_HOST',
+  'TETRATE_HOST',
+  'XAI_HOST',
+  'SSL_CERT_FILE',
+  'SSL_CERT_DIR',
+  'HTTPS_PROXY',
+  'HTTP_PROXY',
+  'ALL_PROXY',
+  'NO_PROXY',
+  'https_proxy',
+  'http_proxy',
+  'all_proxy',
+  'no_proxy',
+] as const;
 const OPERATIONS = new Set([
   'status',
   'save',
@@ -138,7 +190,12 @@ export class DesktopEmailWorker {
     if (Buffer.byteLength(payload) >= MAX_REQUEST) throw new Error('Email request is too large');
     const binary = findGoslingBinaryPath(this.options);
     return await new Promise((resolve, reject) => {
-      const env = { ...process.env };
+      // Node otherwise copies this variable even when spawn receives an explicit environment.
+      const env: NodeJS.ProcessEnv = { NODE_V8_COVERAGE: undefined };
+      for (const key of WORKER_ENV_KEYS) {
+        const value = process.env[key];
+        if (value !== undefined) env[key] = value;
+      }
       if (this.options.pathRoot) env.GOSLING_PATH_ROOT = this.options.pathRoot;
       if (request.op === 'poll' || request.op === 'status')
         env.GOSLING_KEYRING_NONINTERACTIVE = 'true';
