@@ -6,6 +6,8 @@ import {
   acpListProviderModels,
   acpPreviewSessionHandoff,
   acpReadDefaults,
+  acpReadThinkingEffort,
+  acpSaveThinkingEffort,
 } from '../../../../acp/providers';
 import { IntlTestWrapper } from '../../../../i18n/test-utils';
 import type { ProviderDetails } from '../../../../types/providers';
@@ -101,6 +103,50 @@ describe('SwitchModelModal model search', () => {
         expect.any(Object)
       )
     );
+  });
+
+  it('selects a direct provider for email without changing chat defaults', async () => {
+    vi.mocked(acpListProviderDetails).mockResolvedValue([
+      provider('openai', 'OpenAI'),
+      { ...provider('antigravity', 'Antigravity'), executes_tools_outside_gosling: true },
+      { ...provider('managed', 'Managed context'), manages_own_context: true },
+    ]);
+    const user = userEvent.setup();
+    const onModelSelected = vi.fn();
+    const onClose = vi.fn();
+    render(
+      <SwitchModelModal
+        forEmail
+        sessionId={null}
+        initialProvider="antigravity"
+        initialModel="previously-saved-model"
+        onClose={onClose}
+        onModelSelected={onModelSelected}
+        setView={vi.fn()}
+      />,
+      { wrapper: IntlTestWrapper }
+    );
+
+    expect(screen.getByRole('button', { name: 'Select model' })).toBeDisabled();
+    await user.click(screen.getByRole('combobox', { name: 'Provider, type to search' }));
+    const openai = await screen.findByRole('option', { name: 'OpenAI' });
+    expect(screen.queryByRole('option', { name: 'Antigravity' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Managed context' })).not.toBeInTheDocument();
+    await user.click(openai);
+    await user.click(await screen.findByRole('combobox', { name: 'Select model' }));
+    await user.click(await screen.findByRole('option', { name: 'gpt-5.5' }));
+    expect(
+      screen.queryByRole('textbox', { name: 'Context window (tokens)' })
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Select model' }));
+
+    expect(onModelSelected).toHaveBeenCalledExactlyOnceWith('gpt-5.5', 'openai');
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(changeModel).not.toHaveBeenCalled();
+    expect(acpReadDefaults).not.toHaveBeenCalled();
+    expect(acpReadThinkingEffort).not.toHaveBeenCalled();
+    expect(acpSaveThinkingEffort).not.toHaveBeenCalled();
+    expect(acpPreviewSessionHandoff).not.toHaveBeenCalled();
   });
 
   it('restores the full list when cleared and resets search across cached provider changes', async () => {

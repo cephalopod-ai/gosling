@@ -8,7 +8,7 @@ const POLL_INTERVAL = 60_000;
 // The worker bounds every network step itself; this only reaps a hung child. A three-message
 // IMAP poll can legitimately spend several minutes across login, classification, moves and SMTP.
 const WORKER_TIMEOUT = 10 * 60_000;
-const MAX_REQUEST = 65_536;
+const MAX_REQUEST = 128 * 1024;
 const MAX_RESPONSE = 10 * 1024 * 1024;
 const WORKER_ENV_KEYS = [
   'HOME',
@@ -72,8 +72,6 @@ const OPERATIONS = new Set([
   'forget',
   'poll',
   'reset',
-  'createReplyCode',
-  'clearReplyCodes',
   'send',
   'restore',
   'discard',
@@ -159,11 +157,7 @@ export class DesktopEmailWorker {
       });
       if (decision.response !== 1) return snapshot;
     }
-    if (
-      ['save', 'pause', 'disconnect', 'forget', 'clearReplyCodes', 'createReplyCode'].includes(
-        request.op
-      )
-    ) {
+    if (['save', 'pause', 'disconnect', 'forget'].includes(request.op)) {
       this.pollGeneration += 1;
       if (this.childOperation === 'poll') this.child?.kill();
     }

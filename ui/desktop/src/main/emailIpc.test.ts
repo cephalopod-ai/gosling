@@ -21,7 +21,6 @@ const unconfigured: EmailSnapshot = {
   account: null,
   activity: [],
   lastStatus: null,
-  replyCodeRecipients: [],
 };
 
 describe('Desktop email IPC', () => {

@@ -17,6 +17,8 @@ fn settings() -> Settings {
         outgoing: endpoint,
         provider: "ollama".into(),
         model: "local".into(),
+        instructions: String::new(),
+        senders: vec!["owner@example.com".into(), "sender@example.org".into()],
         recipients: vec!["owner@example.com".into()],
         folders: vec!["Receipts".into()],
         archive: String::new(),
@@ -24,6 +26,31 @@ fn settings() -> Settings {
         include_existing: false,
         local_archive: false,
     }
+}
+
+#[test]
+fn mail_instructions_default_to_empty_and_are_validated_when_saved() {
+    let mut old_settings = serde_json::to_value(settings()).unwrap();
+    old_settings.as_object_mut().unwrap().remove("instructions");
+    let mut settings: Settings = serde_json::from_value(old_settings).unwrap();
+    assert!(settings.instructions.is_empty());
+    assert_eq!(classification_prompt("\n\t "), classification_prompt(""));
+
+    settings.instructions = "Move receipts to Receipts.\nKeep replies brief.".into();
+    settings.validate().unwrap();
+    let restored: Settings =
+        serde_json::from_value(serde_json::to_value(&settings).unwrap()).unwrap();
+    assert_eq!(restored.instructions, settings.instructions);
+    let prompt = classification_prompt(&restored.instructions);
+    assert!(prompt.starts_with(&classification_prompt("")));
+    assert!(prompt.ends_with(&settings.instructions));
+
+    settings.instructions = "é".repeat(MAX_INSTRUCTIONS / 2);
+    settings.validate().unwrap();
+    settings.instructions.push('é');
+    assert!(settings.validate().is_err());
+    settings.instructions = "Instruction\0text".into();
+    assert!(settings.validate().is_err());
 }
 
 fn draft_item(recipient: &str) -> Activity {
@@ -201,6 +228,7 @@ async fn pop_local_trash_can_be_restored_without_a_server_operation() {
         secret_id: None,
         enabled: false,
         tested: false,
+        smtp_tested: Some(false),
     });
     let message =
         IncomingMessage::parse(b"From: sender@example.org\r\nSubject: Junk\r\n\r\nBody").unwrap();
@@ -270,6 +298,7 @@ fn stale_policy_revision_and_secret_references_never_leave_storage() {
         secret_id: Some(secret_id.clone()),
         enabled: false,
         tested: false,
+        smtp_tested: Some(false),
     });
     ledger.changed(&store).unwrap();
     assert!(ledger.check_revision(0).is_err());
@@ -278,52 +307,158 @@ fn stale_policy_revision_and_secret_references_never_leave_storage() {
 }
 
 #[tokio::test]
-async fn one_time_code_authorizes_one_reply_and_stays_out_of_model_input() {
+async fn a_reply_can_send_automatically_only_when_both_lists_allow_it() {
     let root = tempfile::tempdir().unwrap();
     let (store, mut ledger) = MailStore::open(root.path().to_path_buf()).unwrap();
-    let policy = settings();
+    let mut policy = settings();
+    policy.recipients.push("send-only@example.net".into());
+    policy.provider = "invalid-provider-for-filter-test".into();
     ledger.account = Some(store::Account {
         settings: policy.clone(),
         secret_id: None,
         enabled: true,
         tested: true,
+        smtp_tested: Some(true),
     });
-    ledger.cursor = Some(Cursor::Imap {
-        validity: 3,
-        seen_through: 9,
-    });
-    let code = ledger
-        .create_reply_code(&store, "owner@example.com")
-        .unwrap();
-    let secret = code.split_ascii_whitespace().last().unwrap();
-    assert!(!ledger.snapshot().unwrap().to_string().contains(secret));
-    assert!(!std::fs::read_to_string(root.path().join("mail.json"))
-        .unwrap()
-        .contains(secret));
-    assert!(ledger
-        .create_reply_code(&store, "outsider@example.net")
-        .is_err());
-
-    let raw = format!("From: owner@example.com\r\nSubject: Repeat {secret}\r\n\r\n{code}\r\nCan you help? {secret}");
-    let mail = IncomingMessage::parse(raw.as_bytes()).unwrap();
-    assert!(!mail.subject.contains(secret));
-    assert!(!mail.body.contains(secret));
-    assert!(mail.body.contains("Can you help?"));
     let reply = || Proposal::Reply {
         text: "Yes.".into(),
     };
-    let authorization = record_action(&store, &mut ledger, &policy, Some((mail, reply())), None)
+
+    let raw = b"From: send-only@example.net\r\nSubject: Send only\r\n\r\nCan you help?";
+    let rejected = decide(&store, &mut ledger, &policy, "pop:send-only", Some(raw))
         .await
         .unwrap();
-    assert!(authorization.is_some());
+    assert!(matches!(rejected, Some((_, Proposal::Keep))));
+    let mail = IncomingMessage::parse(raw).unwrap();
+    assert!(record_action(
+        &store,
+        &mut ledger,
+        &policy,
+        Some((mail, Proposal::Trash)),
+        None
+    )
+    .await
+    .unwrap()
+    .is_none());
+    assert!(ledger.activity.is_empty());
 
-    drop(store);
-    let (store, mut ledger) = MailStore::open(root.path().to_path_buf()).unwrap();
-    let replay = IncomingMessage::parse(raw.as_bytes()).unwrap();
+    let mail = IncomingMessage::parse(b"From: sender@example.org\r\n\r\nReceive only").unwrap();
+    assert_eq!(allowed_sender(&policy, &mail), Some("sender@example.org"));
     assert!(
-        record_action(&store, &mut ledger, &policy, Some((replay, reply())), None)
+        record_action(&store, &mut ledger, &policy, Some((mail, reply())), None)
             .await
             .unwrap()
             .is_none()
     );
+    assert!(ledger.activity[0].draft.is_none());
+
+    let mail = IncomingMessage::parse(b"From: owner@example.com\r\n\r\nCan you help?").unwrap();
+    let id = record_action(&store, &mut ledger, &policy, Some((mail, reply())), None)
+        .await
+        .unwrap()
+        .unwrap();
+    let persisted = store.read().unwrap();
+    assert_eq!(persisted.activity[0].id, id);
+    assert_eq!(
+        persisted.activity[0].draft.as_ref().unwrap().recipient,
+        "owner@example.com"
+    );
+}
+
+#[tokio::test]
+async fn legacy_mailbox_keeps_send_allowlist_and_waits_for_allowed_senders() {
+    let root = tempfile::tempdir().unwrap();
+    let (store, mut ledger) = MailStore::open(root.path().to_path_buf()).unwrap();
+    ledger.account = Some(store::Account {
+        settings: settings(),
+        secret_id: None,
+        enabled: true,
+        tested: true,
+        smtp_tested: Some(true),
+    });
+    let mut old = serde_json::to_value(&ledger).unwrap();
+    old["account"]["settings"]
+        .as_object_mut()
+        .unwrap()
+        .remove("senders");
+    old["reply_codes"] =
+        serde_json::json!([{ "recipient": "owner@example.com", "digest": "legacy", "expires": 0 }]);
+    let mut ledger: Ledger = serde_json::from_value(old).unwrap();
+    assert!(ledger.account().unwrap().settings.senders.is_empty());
+    assert_eq!(
+        ledger.account().unwrap().settings.recipients,
+        ["owner@example.com"]
+    );
+    poll(&store, &mut ledger).await.unwrap();
+    assert!(ledger.cursor.is_none());
+    assert!(serde_json::to_value(&ledger)
+        .unwrap()
+        .get("reply_codes")
+        .is_none());
+}
+
+#[test]
+fn previously_issued_codes_stay_out_of_model_input() {
+    let secret = "0123456789abcdef0123456789abcdef";
+    let raw = format!("From: owner@example.com\r\nSubject: Repeat {secret}\r\n\r\nGosling reply code: {secret}\r\nCan you help? {secret}");
+    let mail = IncomingMessage::parse(raw.as_bytes()).unwrap();
+    assert!(!mail.subject.contains(secret));
+    assert!(!mail.body.contains(secret));
+    assert!(mail.body.contains("Can you help?"));
+}
+
+#[tokio::test]
+async fn failed_smtp_test_keeps_inbox_active_but_blocks_sending() {
+    let root = tempfile::tempdir().unwrap();
+    let (store, mut ledger) = MailStore::open(root.path().to_path_buf()).unwrap();
+    let policy = settings();
+    let mut legacy = serde_json::json!({
+        "settings": policy,
+        "secret_id": null,
+        "enabled": true,
+        "tested": true,
+    });
+    ledger.account = Some(serde_json::from_value(legacy.clone()).unwrap());
+    legacy["tested"] = false.into();
+    assert!(!serde_json::from_value::<store::Account>(legacy)
+        .unwrap()
+        .smtp_tested());
+    ledger
+        .record_connection_test(&store, Ok(()), Err(anyhow::anyhow!("SMTP timed out")))
+        .unwrap();
+
+    let mut ledger = store.read().unwrap();
+    assert!(ledger.account().unwrap().enabled);
+    assert!(ledger.account().unwrap().tested);
+    assert!(!ledger.account().unwrap().smtp_tested());
+    let snapshot = ledger.snapshot().unwrap();
+    assert_eq!(snapshot["account"]["smtpTested"], false);
+    assert_eq!(
+        snapshot["lastStatus"],
+        "Inbox connection verified. SMTP timed out."
+    );
+    let mail =
+        IncomingMessage::parse(b"From: owner@example.com\r\nSubject: Test\r\n\r\nCan you help?")
+            .unwrap();
+    let draft = Proposal::Reply {
+        text: "Yes.".into(),
+    };
+    assert!(
+        record_action(&store, &mut ledger, &policy, Some((mail, draft)), None)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let id = ledger.activity[0].id.clone();
+    assert!(send_reply(&store, &mut ledger, &id)
+        .await
+        .unwrap_err()
+        .to_string()
+        .contains("Verify SMTP"));
+    assert!(ledger.activity[0].draft.is_some());
+
+    ledger
+        .record_connection_test(&store, Ok(()), Ok(()))
+        .unwrap();
+    assert!(ledger.account().unwrap().can_send());
 }

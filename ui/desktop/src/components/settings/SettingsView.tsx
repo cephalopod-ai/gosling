@@ -274,7 +274,7 @@ export default function SettingsView({
                   <div className="space-y-4">
                     <WebsiteLoginsSection />
                     <AuthSettingsSection />
-                    <EmailSettingsSection />
+                    <EmailSettingsSection setView={setView} />
                   </div>
                 </TabsContent>
 

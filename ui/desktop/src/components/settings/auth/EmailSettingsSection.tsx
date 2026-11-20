@@ -10,10 +10,21 @@ import type {
 } from '../../../types/email';
 import { applyEmailPreset } from '../../../types/email';
 import { errorMessage } from '../../../utils/conversionUtils';
-import { useModelAndProvider } from '../../ModelAndProviderContext';
+import type { View } from '../../../utils/navigationUtils';
 import { Button } from '../../ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../../ui/dialog';
 import { Input } from '../../ui/input';
+import { SwitchModelModal } from '../models/subcomponents/SwitchModelModal';
+
+const MAX_INSTRUCTION_BYTES = 8_000;
 
 const initialSettings: EmailSettings = {
   address: '',
@@ -22,6 +33,8 @@ const initialSettings: EmailSettings = {
   outgoing: { host: 'smtp.purelymail.com', port: 465, startTls: false, username: '' },
   provider: '',
   model: '',
+  instructions: '',
+  senders: [],
   recipients: [],
   folders: [],
   archive: '',
@@ -102,12 +115,12 @@ function EndpointFields({
 function ActivityList({
   activity,
   busy,
-  enabled,
+  canSend,
   onAction,
 }: {
   activity: EmailActivity[];
   busy: boolean;
-  enabled: boolean;
+  canSend: boolean;
   onAction: (action: 'send' | 'restore' | 'discard', id: string) => void;
 }) {
   return (
@@ -128,7 +141,7 @@ function ActivityList({
                 <Button
                   size="sm"
                   variant="outline"
-                  disabled={busy || !enabled}
+                  disabled={busy || !canSend}
                   onClick={() => onAction('send', item.id)}
                 >
                   Send reply
@@ -170,11 +183,11 @@ function ActivityList({
   );
 }
 
-export default function EmailSettingsSection() {
-  const { currentProvider, currentModel } = useModelAndProvider();
+export default function EmailSettingsSection({ setView }: { setView: (view: View) => void }) {
   const [snapshot, setSnapshot] = useState<EmailSnapshot>();
   const [settings, setSettings] = useState(initialSettings);
   const [preset, setPreset] = useState<EmailPreset>('purelymail');
+  const [senders, setSenders] = useState('');
   const [recipients, setRecipients] = useState('');
   const [folders, setFolders] = useState('');
   const [incomingPassword, setIncomingPassword] = useState('');
@@ -183,14 +196,14 @@ export default function EmailSettingsSection() {
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState('');
-  const [codeRecipient, setCodeRecipient] = useState('');
-  const [replyCode, setReplyCode] = useState('');
-  const [copiedCode, setCopiedCode] = useState(false);
+  const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  const [instructionsDraft, setInstructionsDraft] = useState<string | null>(null);
 
   function applySaved(next: EmailSnapshot) {
     setSnapshot(next);
     const saved = next.account?.settings ?? initialSettings;
-    setSettings(saved);
+    setSettings({ ...saved, instructions: saved.instructions ?? '' });
+    setSenders((saved.senders ?? []).join('\n'));
     setRecipients(saved.recipients.join('\n'));
     setFolders(saved.folders.join('\n'));
     setPreset(inferPreset(saved));
@@ -216,14 +229,7 @@ export default function EmailSettingsSection() {
     setBusy(true);
     setError('');
     try {
-      const { newReplyCode, ...next } = await window.electron.emailRequest(request);
-      if (newReplyCode) {
-        setReplyCode(newReplyCode);
-        setCopiedCode(false);
-      }
-      if (['save', 'pause', 'disconnect', 'forget', 'clearReplyCodes'].includes(request.op)) {
-        setReplyCode('');
-      }
+      const next = await window.electron.emailRequest(request);
       if (request.op === 'save' || request.op === 'status' || request.op === 'reset') {
         applySaved(next);
       } else {
@@ -250,14 +256,14 @@ export default function EmailSettingsSection() {
   }
 
   const account = snapshot?.account;
+  const hasAllowedSenders = Boolean(account?.settings.senders?.length);
+  const smtpTested = account?.smtpTested ?? account?.tested ?? false;
+  const canSend = Boolean(account?.enabled && account.tested && smtpTested);
   const revision = snapshot?.revision ?? 0;
   const disabled = busy || !snapshot;
-  const allowedRecipients = account?.settings.recipients ?? [];
-  const allowedCodeRecipient = allowedRecipients.includes(codeRecipient)
-    ? codeRecipient
-    : allowedRecipients[0] || '';
-  const provider = settings.provider || currentProvider || '';
-  const model = settings.model || currentModel || '';
+  const instructionsTooLong =
+    instructionsDraft !== null &&
+    new TextEncoder().encode(instructionsDraft).length > MAX_INSTRUCTION_BYTES;
 
   return (
     <Card>
@@ -288,8 +294,6 @@ export default function EmailSettingsSection() {
               settings: {
                 ...settings,
                 address,
-                provider,
-                model,
                 incoming: {
                   ...settings.incoming,
                   username: settings.incoming.username.trim() || address,
@@ -298,6 +302,7 @@ export default function EmailSettingsSection() {
                   ...settings.outgoing,
                   username: settings.outgoing.username.trim() || address,
                 },
+                senders: lines(senders),
                 recipients: lines(recipients),
                 folders: lines(folders),
               },
@@ -429,8 +434,43 @@ export default function EmailSettingsSection() {
                 </label>
               )}
             </details>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button type="button" variant="outline" onClick={() => setModelPickerOpen(true)}>
+                {settings.model ? 'Change email model' : 'Choose email model'}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setInstructionsDraft(settings.instructions)}
+              >
+                Instructions
+              </Button>
+              {settings.model && (
+                <span className="break-all text-sm text-muted-foreground">
+                  {settings.provider} / {settings.model}
+                </span>
+              )}
+            </div>
             <details className="space-y-3 rounded-md border p-3">
-              <summary className="cursor-pointer text-sm font-medium">Advanced</summary>
+              <summary className="cursor-pointer text-sm font-medium">Receive allowlist</summary>
+              <label className={fieldsClass}>
+                Allowed senders
+                <textarea
+                  className="min-h-20 rounded-md border border-input bg-background p-2"
+                  placeholder="One address per line"
+                  value={senders}
+                  onChange={(event) => {
+                    setSenders(event.target.value);
+                    setDirty(true);
+                  }}
+                />
+              </label>
+              <p className="text-sm text-muted-foreground">
+                Gosling processes mail only from these addresses. An empty list stops processing.
+              </p>
+            </details>
+            <details className="space-y-3 rounded-md border p-3">
+              <summary className="cursor-pointer text-sm font-medium">Send allowlist</summary>
               <label className={fieldsClass}>
                 Allowed recipients
                 <textarea
@@ -443,109 +483,32 @@ export default function EmailSettingsSection() {
                   }}
                 />
               </label>
-              <p className="text-sm text-muted-foreground">An empty list disables all replies.</p>
-              {account?.enabled && account.settings.recipients.length > 0 && (
-                <div className="space-y-2 rounded-md border p-3 text-sm">
+              <p className="text-sm text-muted-foreground">
+                Gosling can send email only to these addresses. An empty list blocks all sends.
+              </p>
+            </details>
+            <details className="space-y-3 rounded-md border p-3">
+              <summary className="cursor-pointer text-sm font-medium">Advanced</summary>
+              {settings.protocol === 'imap' && (
+                <div className="grid gap-3 sm:grid-cols-2">
                   <label className={fieldsClass}>
-                    Automatic reply recipient
-                    <select
-                      className={selectClass}
-                      value={allowedCodeRecipient}
-                      onChange={(event) => setCodeRecipient(event.target.value)}
-                    >
-                      {account.settings.recipients.map((recipient) => (
-                        <option key={recipient} value={recipient}>
-                          {recipient}
-                        </option>
-                      ))}
-                    </select>
+                    Archive folder
+                    <Input
+                      value={settings.archive}
+                      placeholder="Detect from server"
+                      onChange={(event) => update({ archive: event.target.value })}
+                    />
                   </label>
-                  <p className="text-muted-foreground">
-                    Put the one-time code on the first line of the email body. It expires after 24
-                    hours.
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={dirty || busy}
-                      onClick={() =>
-                        void run({
-                          op: 'createReplyCode',
-                          recipient: allowedCodeRecipient,
-                          revision,
-                        })
-                      }
-                    >
-                      Create reply code
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      disabled={busy || !snapshot?.replyCodeRecipients.length}
-                      onClick={() => void run({ op: 'clearReplyCodes', revision })}
-                    >
-                      Revoke reply codes
-                    </Button>
-                  </div>
-                  {replyCode && (
-                    <div className="flex flex-wrap items-center gap-2">
-                      <code className="break-all">{replyCode}</code>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          void window.electron
-                            .writeClipboardText(replyCode)
-                            .then(() => setCopiedCode(true))
-                            .catch(() => setError('Could not copy the reply code'));
-                        }}
-                      >
-                        {copiedCode ? 'Copied' : 'Copy code'}
-                      </Button>
-                    </div>
-                  )}
+                  <label className={fieldsClass}>
+                    Trash folder
+                    <Input
+                      value={settings.trash}
+                      placeholder="Detect from server"
+                      onChange={(event) => update({ trash: event.target.value })}
+                    />
+                  </label>
                 </div>
               )}
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className={fieldsClass}>
-                  AI provider ID
-                  <Input
-                    value={provider}
-                    onChange={(event) => update({ provider: event.target.value })}
-                  />
-                </label>
-                <label className={fieldsClass}>
-                  AI model ID
-                  <Input
-                    value={model}
-                    onChange={(event) => update({ model: event.target.value })}
-                  />
-                </label>
-                {settings.protocol === 'imap' && (
-                  <>
-                    <label className={fieldsClass}>
-                      Archive folder
-                      <Input
-                        value={settings.archive}
-                        placeholder="Detect from server"
-                        onChange={(event) => update({ archive: event.target.value })}
-                      />
-                    </label>
-                    <label className={fieldsClass}>
-                      Trash folder
-                      <Input
-                        value={settings.trash}
-                        placeholder="Detect from server"
-                        onChange={(event) => update({ trash: event.target.value })}
-                      />
-                    </label>
-                  </>
-                )}
-              </div>
               <label className={fieldsClass}>
                 Filing folders
                 <textarea
@@ -579,11 +542,71 @@ export default function EmailSettingsSection() {
                 </label>
               )}
             </details>
-            <Button type="submit" disabled={!dirty && Boolean(account?.hasCredentials)}>
+            <Button
+              type="submit"
+              disabled={
+                !settings.provider ||
+                !settings.model ||
+                (!dirty && Boolean(account?.hasCredentials))
+              }
+            >
               Save email settings
             </Button>
           </fieldset>
         </form>
+        {modelPickerOpen && (
+          <SwitchModelModal
+            forEmail
+            sessionId={null}
+            titleOverride="Choose email model"
+            descriptionOverride="Select a direct model provider and model to process email."
+            initialProvider={settings.provider}
+            initialModel={settings.model}
+            onModelSelected={(model, provider) => update({ model, provider })}
+            onClose={() => setModelPickerOpen(false)}
+            setView={setView}
+          />
+        )}
+        {instructionsDraft !== null && (
+          <Dialog open onOpenChange={(open) => !open && setInstructionsDraft(null)}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Email instructions</DialogTitle>
+                <DialogDescription>
+                  Tell Gosling how to sort mail and draft replies for this mailbox.
+                </DialogDescription>
+              </DialogHeader>
+              <textarea
+                aria-label="Email instructions"
+                aria-invalid={instructionsTooLong}
+                aria-describedby={instructionsTooLong ? 'email-instructions-error' : undefined}
+                className="min-h-40 rounded-md border border-input bg-background p-3 text-sm"
+                value={instructionsDraft}
+                onChange={(event) => setInstructionsDraft(event.target.value)}
+              />
+              {instructionsTooLong && (
+                <p id="email-instructions-error" role="alert" className="text-sm text-destructive">
+                  Email instructions must be 8,000 bytes or fewer.
+                </p>
+              )}
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setInstructionsDraft(null)}>
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  disabled={instructionsTooLong}
+                  onClick={() => {
+                    update({ instructions: instructionsDraft });
+                    setInstructionsDraft(null);
+                  }}
+                >
+                  Apply
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
         {account && (
           <>
             <p className="text-sm">
@@ -591,9 +614,19 @@ export default function EmailSettingsSection() {
               {account.settings.model}
             </p>
             <p className="text-sm text-muted-foreground">
-              Enabling email shares message text with the model above. Replies require review unless
-              you included a valid one-time reply code.
+              Gosling shares accepted message text with the model above. When SMTP is verified,
+              replies to addresses on both allowlists can be sent automatically.
             </p>
+            {!hasAllowedSenders && (
+              <p className="text-sm text-muted-foreground">
+                Add a sender to the Receive allowlist to start processing mail.
+              </p>
+            )}
+            {account.tested && !smtpTested && (
+              <p className="text-sm text-muted-foreground">
+                Sending is unavailable until SMTP passes its connection test.
+              </p>
+            )}
             <div className="flex flex-wrap gap-2">
               <Button
                 variant="outline"
@@ -607,11 +640,11 @@ export default function EmailSettingsSection() {
                 disabled={disabled || (!account.enabled && (dirty || !account.tested))}
                 onClick={() => void run({ op: account.enabled ? 'pause' : 'enable', revision })}
               >
-                {account.enabled ? 'Pause' : 'Enable email'}
+                {account.enabled ? 'Disable email' : 'Enable email'}
               </Button>
               <Button
                 variant="outline"
-                disabled={disabled || !account.enabled || dirty}
+                disabled={disabled || !account.enabled || dirty || !hasAllowedSenders}
                 onClick={() => void run({ op: 'poll' })}
               >
                 Process now
@@ -629,7 +662,7 @@ export default function EmailSettingsSection() {
               <div className="flex flex-wrap gap-2">
                 <Button
                   variant="outline"
-                  disabled={disabled || !account.tested}
+                  disabled={disabled || (!account.tested && !smtpTested)}
                   onClick={() => void run({ op: 'disconnect', revision })}
                 >
                   Disconnect
@@ -653,7 +686,7 @@ export default function EmailSettingsSection() {
             <ActivityList
               activity={snapshot?.activity ?? []}
               busy={disabled || dirty}
-              enabled={account.enabled}
+              canSend={canSend}
               onAction={(op, id) => void run({ op, id, revision })}
             />
           </>

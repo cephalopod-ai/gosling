@@ -15,6 +15,8 @@ export interface EmailSettings {
   outgoing: EmailEndpoint;
   provider: string;
   model: string;
+  instructions: string;
+  senders: string[];
   recipients: string[];
   folders: string[];
   archive: string;
@@ -40,19 +42,16 @@ export interface EmailSnapshot {
     settings: EmailSettings;
     enabled: boolean;
     tested: boolean;
+    smtpTested: boolean;
     hasCredentials: boolean;
   } | null;
   activity: EmailActivity[];
   lastStatus: string | null;
-  replyCodeRecipients: string[];
-  newReplyCode?: string;
 }
 
 export type EmailRequest =
   | { op: 'status' | 'test' | 'poll' }
   | { op: 'enable' | 'pause' | 'disconnect' | 'forget' | 'reset'; revision: number }
-  | { op: 'createReplyCode'; recipient: string; revision: number }
-  | { op: 'clearReplyCodes'; revision: number }
   | { op: 'send' | 'restore' | 'discard'; id: string; revision: number }
   | {
       op: 'save';

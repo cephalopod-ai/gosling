@@ -354,8 +354,10 @@ type SwitchModelModalProps = {
   initialProvider?: string | null;
   initialModel?: string | null;
   titleOverride?: string;
+  descriptionOverride?: string;
   sessionModel?: string | null;
   sessionProvider?: string | null;
+  forEmail?: boolean;
 };
 export const SwitchModelModal = ({
   sessionId,
@@ -365,8 +367,10 @@ export const SwitchModelModal = ({
   initialProvider,
   initialModel,
   titleOverride,
+  descriptionOverride,
   sessionModel,
   sessionProvider,
+  forEmail = false,
 }: SwitchModelModalProps) => {
   const intl = useIntl();
 
@@ -399,11 +403,13 @@ export const SwitchModelModal = ({
   const [modelOptions, setModelOptions] = useState<{ options: ModelOption[] }[]>([]);
   const [modelSearch, setModelSearch] = useState('');
   const [provider, setProvider] = useState<string | null>(
-    initialProvider || currentProvider || null
+    initialProvider || (forEmail ? null : currentProvider || null)
   );
   const [model, setModel] = useState<string>(
     initialModel ??
-      (initialProvider && initialProvider !== currentProvider ? '' : currentModel || '')
+      (forEmail || (initialProvider && initialProvider !== currentProvider)
+        ? ''
+        : currentModel || '')
   );
   const [isCustomModel, setIsCustomModel] = useState(false);
   const [contextOverride, setContextOverride] = useState('');
@@ -414,7 +420,7 @@ export const SwitchModelModal = ({
   });
   const [isValid, setIsValid] = useState(true);
   const [attemptedSubmit, setAttemptedSubmit] = useState(false);
-  const [usePredefinedModels] = useState(shouldShowPredefinedModels());
+  const [usePredefinedModels] = useState(() => !forEmail && shouldShowPredefinedModels());
   const [selectedPredefinedModel, setSelectedPredefinedModel] = useState<Model | null>(null);
   const [predefinedModels, setPredefinedModels] = useState<Model[]>([]);
   const [loadingModels, setLoadingModels] = useState<boolean>(false);
@@ -440,6 +446,10 @@ export const SwitchModelModal = ({
 
   const selectedProviderId = usePredefinedModels ? selectedPredefinedModel?.provider : provider;
   const selectedModelId = usePredefinedModels ? selectedPredefinedModel?.name : model;
+  const selectedProviderDetails = activeProvidersList.find(
+    (details) => details.name === selectedProviderId
+  );
+  const canSelectEmailModel = Boolean(selectedProviderDetails && model.trim());
   const contextTargetKey = `${selectedProviderId ?? ''}\u0000${selectedModelId ?? ''}`;
   const selectedOption = modelOptions
     .flatMap((group) => group.options)
@@ -458,6 +468,7 @@ export const SwitchModelModal = ({
     : discoveredContextLimit || undefined;
 
   useEffect(() => {
+    if (forEmail) return;
     setContextOverride('');
     contextEditedKey.current = null;
     if (!selectedProviderId || !selectedModelId) return;
@@ -489,12 +500,13 @@ export const SwitchModelModal = ({
     return () => {
       cancelled = true;
     };
-  }, [contextTargetKey, selectedProviderId, selectedModelId, sessionId]);
+  }, [contextTargetKey, forEmail, selectedProviderId, selectedModelId, sessionId]);
 
   const modelReasoning = selectedModelReasoning ?? selectedPredefinedModel?.reasoning;
-  const showThinkingControl = modelReasoning === true;
+  const showThinkingControl = !forEmail && modelReasoning === true;
   const resolveSelectedModelReasoning = useCallback(
     (providerName: string, modelName: string, fallback?: boolean) => {
+      if (forEmail) return;
       const requestId = ++reasoningRequestId.current;
       setSelectedModelReasoning(fallback ?? null);
       fetchModelReasoning(providerName, modelName, fallback).then((reasoning) => {
@@ -503,10 +515,11 @@ export const SwitchModelModal = ({
         }
       });
     },
-    []
+    [forEmail]
   );
 
   useEffect(() => {
+    if (forEmail) return;
     (async () => {
       try {
         const effort = await acpReadThinkingEffort();
@@ -515,10 +528,10 @@ export const SwitchModelModal = ({
         console.warn('Could not read thinking effort, using default:', e);
       }
     })();
-  }, []);
+  }, [forEmail]);
 
   useEffect(() => {
-    if (!provider || !model) return;
+    if (forEmail || !provider || !model) return;
 
     const selectedOption = modelOptions
       .flatMap((group) => group.options)
@@ -535,7 +548,7 @@ export const SwitchModelModal = ({
     }, 400);
 
     return () => clearTimeout(timeout);
-  }, [model, provider, modelOptions, resolveSelectedModelReasoning]);
+  }, [forEmail, model, provider, modelOptions, resolveSelectedModelReasoning]);
 
   // Validate form data
   const validateForm = useCallback(() => {
@@ -657,6 +670,13 @@ export const SwitchModelModal = ({
 
   const handleSubmit = async () => {
     if (loadingModels || isPreviewing || isSwitching || submitInFlight.current) return;
+    if (forEmail) {
+      if (provider && canSelectEmailModel) {
+        onModelSelected?.(model.trim(), provider);
+        onClose();
+      }
+      return;
+    }
     submitInFlight.current = true;
     try {
       await performSubmit();
@@ -666,9 +686,6 @@ export const SwitchModelModal = ({
     }
   };
 
-  const selectedProviderDetails = activeProvidersList.find(
-    (details) => details.name === selectedProviderId
-  );
   const predictedContinuity = continuityClassForProvider(selectedProviderDetails?.capabilities);
   const selectedThinkingEffort = showThinkingControl
     ? (thinkingEffort ?? selectedPredefinedModel?.request_params?.thinking_effort ?? 'off')
@@ -719,14 +736,22 @@ export const SwitchModelModal = ({
   // switching provider clears model intentionally).
   const manualSyncDone = useRef(false);
   useEffect(() => {
-    if (usePredefinedModels || manualSyncDone.current) return;
+    if (forEmail || usePredefinedModels || manualSyncDone.current) return;
     if (initialProvider && initialProvider !== currentProvider) return;
     if (currentModel && currentProvider) {
       if (!provider) setProvider(currentProvider);
       if (!model) setModel(currentModel);
       manualSyncDone.current = true;
     }
-  }, [currentModel, currentProvider, usePredefinedModels, provider, model, initialProvider]);
+  }, [
+    currentModel,
+    currentProvider,
+    forEmail,
+    usePredefinedModels,
+    provider,
+    model,
+    initialProvider,
+  ]);
 
   useEffect(() => {
     if (usePredefinedModels) {
@@ -737,7 +762,12 @@ export const SwitchModelModal = ({
     (async () => {
       try {
         const providersResponse = await acpListProviderDetails();
-        const activeProviders = providersResponse.filter((provider) => provider.is_configured);
+        const activeProviders = providersResponse.filter(
+          (provider) =>
+            provider.is_configured &&
+            (!forEmail ||
+              (!provider.manages_own_context && !provider.executes_tools_outside_gosling))
+        );
         setActiveProvidersList(activeProviders);
         setProviderOptions([
           ...activeProviders.map(({ metadata, name }) => ({
@@ -753,7 +783,7 @@ export const SwitchModelModal = ({
         console.error('Failed to query providers:', error);
       }
     })();
-  }, [usePredefinedModels, intl]);
+  }, [forEmail, usePredefinedModels, intl]);
 
   useEffect(() => {
     if (!provider || usePredefinedModels) return;
@@ -967,7 +997,9 @@ export const SwitchModelModal = ({
             <Bot size={24} className="text-text-primary" />
             {titleOverride || intl.formatMessage(i18n.title)}
           </DialogTitle>
-          <DialogDescription>{intl.formatMessage(i18n.description)}</DialogDescription>
+          <DialogDescription>
+            {descriptionOverride ?? intl.formatMessage(i18n.description)}
+          </DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col gap-4 py-4">
@@ -1074,7 +1106,7 @@ export const SwitchModelModal = ({
                 )}
               </div>
 
-              {provider && (
+              {provider && (!forEmail || selectedProviderDetails) && (
                 <>
                   {providerErrors[provider] ? (
                     /* Show error with custom model input so users aren't stuck */
@@ -1195,7 +1227,8 @@ export const SwitchModelModal = ({
             </div>
           )}
 
-          {selectedProviderId &&
+          {!forEmail &&
+            selectedProviderId &&
             selectedModelId &&
             !selectedProviderDetails?.manages_own_context && (
               <div className="space-y-2">
@@ -1343,7 +1376,12 @@ export const SwitchModelModal = ({
             <Button
               onClick={handleSubmit}
               disabled={
-                !isValid || invalidContextOverride || loadingModels || isPreviewing || isSwitching
+                !isValid ||
+                invalidContextOverride ||
+                loadingModels ||
+                isPreviewing ||
+                isSwitching ||
+                (forEmail && !canSelectEmailModel)
               }
             >
               {isPreviewing

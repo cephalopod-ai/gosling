@@ -107,6 +107,7 @@ async function fetchProviderDetails(): Promise<ProviderDetails[]> {
     name: entry.providerId,
     is_configured: entry.configured,
     manages_own_context: entry.managesOwnContext ?? false,
+    executes_tools_outside_gosling: entry.executesToolsOutsideGosling ?? false,
     capabilities: entry.capabilities ?? {
       contextOwnership: entry.managesOwnContext ? 'provider' : 'gosling',
       nativeResume: 'unsupported',

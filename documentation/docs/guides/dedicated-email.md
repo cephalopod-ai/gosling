@@ -13,16 +13,24 @@ gosling checks the inbox about once a minute. You can also process mail from Set
 2. Use **IMAP** for server folders and Trash. **POP3** supports local folders and local Trash.
    Check the provider's POP settings for how it treats downloaded messages. gosling leaves the
    POP server copy in place.
-3. Open **Advanced → Allowed recipients**. Enter each address that can receive replies on its
-   own line. You can also choose the model and configure filing folders. The selected model
-   receives the sender, subject, and bounded message text needed to classify the mail.
+3. Select **Choose email model** to pick a configured direct provider and model. This selection
+   applies to the mailbox. The model receives the sender, subject, and bounded message text
+   needed to classify the mail.
    A remote API provider receives this content at its endpoint. Use a local Ollama instance
    to keep classification on this computer. For a provider that uses an API key, save its
    credentials under **Settings → Auth** so the email worker can use them.
-4. Select **Save email settings**, then **Test connection**, then **Enable email**. The
-   connection test signs in to the incoming and outgoing servers. **Process now** triggers an
-   inbox check. On the first check, gosling starts with new mail unless you selected
+4. Select **Instructions** to set how gosling should sort mail and draft replies. Use **Advanced**
+   to configure filing folders. Add addresses under **Receive allowlist** for senders gosling
+   may process and under **Send allowlist** for recipients it may email. Enter one address per
+   line. Add an address to both lists when you want gosling to process its mail and reply to it.
+5. Select **Save email settings**, then **Test connection**, then **Enable email**. The
+   connection test signs in to the incoming and outgoing servers separately. A verified
+   incoming connection is enough to enable inbox processing. Sending replies also requires a
+   successful SMTP test. **Process now** triggers
+   an inbox check. On the first check, gosling starts with new mail unless you selected
    **Process existing mail on the first inbox check** when setting up the account.
+
+After changing the email model on an active mailbox, select **Enable email** to resume processing.
 
 Passwords are stored in the operating system credential store. If the store is unavailable,
 gosling cannot save or use the mailbox password.
@@ -43,18 +51,17 @@ configured folder, archive it, retain a local text copy, move it to Trash, or dr
 On IMAP, the server must support a safe move to use its folders. Use **Restore** where
 available, or restore from the provider's webmail while the message is still in Trash.
 
-A reply uses the dedicated mailbox as its sender. Only an address on the saved allowlist can
-receive it. gosling ignores `Reply-To` and the incoming message's copied recipients. An empty
-allowlist blocks every send.
+gosling matches the message's `From` address against the **Receive allowlist** before sending
+any message content to the model or acting on it. Mail from other addresses stays in the inbox.
+An empty **Receive allowlist** stops processing. Existing accounts keep their **Send allowlist**
+when upgrading and begin with an empty **Receive allowlist**.
 
-Most replies appear under **Mail activity** for review. To authorize an automatic reply to
-your next email, enable monitoring and complete an inbox check, then go to **Advanced**,
-choose your allowed address, and select **Create reply code**. Copy the code into the first
-line of a message sent from that address. Each code can authorize one message and expires
-after 24 hours. Issuing a new code for an address replaces its earlier code. gosling removes
-the code before classification. You can revoke outstanding codes from Settings.
+When the model proposes a reply to an accepted message, gosling can send it automatically if
+SMTP is verified and the `From` address is on the **Send allowlist**. The reply comes from the
+dedicated mailbox. gosling ignores `Reply-To` and copied recipients. If SMTP is unavailable,
+eligible replies remain drafts in **Mail activity**. An empty **Send allowlist** blocks all sends.
 
-Use **Pause** to stop processing and clear outstanding reply codes. Use **Disconnect** to
+Use **Disable email** to stop processing. Use **Disconnect** to
 require a new connection test. **Forget credentials** removes the saved passwords. Mail
 activity, drafts, and local copies stay on this computer until you discard them under
 **Mail activity**. If the model cannot classify a message after three inbox checks, gosling

@@ -1,5 +1,5 @@
 use super::{address, clean_text, store::Draft, Endpoint, Settings, MAX_REPLY, NETWORK_TIMEOUT};
-use anyhow::{ensure, Result};
+use anyhow::{anyhow, bail, ensure, Result};
 use lettre::message::{header, Mailbox};
 use lettre::transport::smtp::{
     authentication::Credentials,
@@ -29,11 +29,24 @@ pub(super) fn transport(endpoint: &Endpoint, secret: &str) -> Result<Transport> 
 }
 
 pub(super) async fn test(endpoint: &Endpoint, secret: &str) -> Result<()> {
-    ensure!(
-        transport(endpoint, secret)?.test_connection().await?,
-        "SMTP NOOP failed"
-    );
-    Ok(())
+    let server = format!("{}:{}", endpoint.host, endpoint.port);
+    let transport = transport(endpoint, secret)
+        .map_err(|_| anyhow!("Could not configure SMTP TLS for {server}"))?;
+    let outcome = tokio::time::timeout(NETWORK_TIMEOUT, transport.test_connection()).await;
+    match outcome {
+        Ok(Ok(true)) => Ok(()),
+        Err(_) => bail!("SMTP connection to {server} timed out"),
+        Ok(Err(error)) if error.is_timeout() => bail!("SMTP connection to {server} timed out"),
+        Ok(Err(error)) if error.is_tls() => bail!("SMTP TLS negotiation failed with {server}"),
+        Ok(Err(error))
+            if error
+                .status()
+                .is_some_and(|status| u16::from(status) == 535) =>
+        {
+            bail!("SMTP authentication was rejected by {server}")
+        }
+        _ => bail!("SMTP connection or authentication failed with {server}"),
+    }
 }
 
 pub(super) fn authorized_message(

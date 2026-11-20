@@ -87,3 +87,69 @@ with the `rustls-tls,system-keyring` features. The reverse dependency tree confi
 0.23.46 for the mail transports. `cargo fmt --check` and `git diff --check` passed.
 Desktop typecheck, scoped ESLint and Prettier, and all 3 focused Desktop tests passed.
 Live mail providers, the desktop keyring, and packaged Windows and Linux runs remain unverified.
+
+## Mailbox model and instructions controls
+
+Email settings use the shared Desktop model picker with configured direct providers. The
+selection is saved with the mailbox settings. The Instructions dialog saves optional triage
+and reply guidance, which the worker places in its system prompt under the fixed mail rules.
+Existing mailboxes load with empty instructions. The Send allowlist section exposes the saved
+recipient policy and contains the automatic reply code controls.
+
+Updated the Rust mail settings and prompt, Desktop Email settings and model picker, provider
+capability mapping, focused tests, and the dedicated-email guide.
+
+Validation passed for 10 targeted Rust mail tests, 29 targeted Desktop tests, Desktop typecheck,
+scoped ESLint and Prettier, and `cargo fmt --check`. Live mailbox processing and a packaged
+Desktop build were outside this validation.
+
+## Inbox connection when SMTP is unavailable
+
+Reproduced the installed worker's SMTP timeout with the saved Purelymail configuration in an
+isolated data directory. TCP connected to Purelymail IMAP on port 993. Connections to both
+Purelymail SMTP ports (465 and 587) timed out. Gmail SMTP on the same ports timed out as well.
+
+The worker now tests incoming mail and SMTP independently. A successful incoming test enables
+inbox processing. Sending and creating automatic reply codes require a successful SMTP test.
+If an SMTP retest fails, existing codes are revoked and drafts remain available for review.
+Older mailboxes that passed the combined test retain both verified connections.
+
+Validation passed for 11 Rust mail tests, 20 focused Desktop tests, Desktop typecheck, scoped
+ESLint and Prettier, and `cargo fmt --check`.
+
+Rebuilt and installed the signed macOS arm64 app and matching CLI without retaining the previous
+copies. The installed app, renderer, and backend launched. The supervised worker read the saved
+paused mailbox and returned its SMTP readiness. The rebuilt worker's unattended live connection
+test stopped at Keychain access. An interactive connection test is needed to verify the new
+build against the saved mailbox.
+
+## Email monitoring button
+
+The active monitoring button now reads **Disable email**, paired with **Enable email** when
+monitoring is off. The settings guide uses the same label. The focused test reproduced the
+missing label and now verifies the round trip through the existing enable and pause requests.
+All four focused Desktop tests, typecheck, ESLint, and formatting checks passed. Repackaged and
+installed the signed macOS Desktop app with the existing mail worker.
+
+## Separate sender and recipient allowlists
+
+The Receive allowlist gates classification and inbox actions. The Send allowlist gates SMTP
+recipients. Accepted messages can receive an automatic reply when the sender is also on the
+Send allowlist and SMTP has passed its test. A reply body can be retained as a draft when SMTP
+is unavailable. The prior send list is preserved on load. The receive list starts empty, and
+mailbox checkpoints stay in place until the user adds a sender.
+
+Removed the reply-code workflow from the Rust worker and Desktop bridge and settings. Older
+ledgers load with their reply-code digests ignored. Previously issued codes in message content
+remain redacted. Each list keeps its own address validation, with the bounded IPC request size
+increased to accommodate both lists.
+
+Passed 13 Rust mail tests, 20 focused Desktop tests, typecheck, ESLint, Prettier, and Rust
+formatting checks.
+
+The packaged worker passed a supervised smoke check using an isolated legacy ledger. It read
+the old Send allowlist, left the checkpoint in place with an empty Receive list, saved distinct
+lists, and rejected the retired reply-code request. Rebuilt and installed the signed macOS app
+and matching CLI. The installed worker loaded the existing mailbox and both policy fields.
+The Desktop process reached a macOS Keychain prompt before its window opened. Live SMTP
+delivery was not part of this check.

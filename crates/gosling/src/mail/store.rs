@@ -9,39 +9,7 @@ use uuid::Uuid;
 
 const VERSION: u32 = 1;
 const RECENT_ACTIVITY: usize = 80;
-const REPLY_CODE_PREFIX: &str = "Gosling reply code:";
 const CLASSIFICATION_ATTEMPTS: u32 = 3;
-
-#[derive(Deserialize, Serialize)]
-struct ReplyCode {
-    digest: String,
-    recipient: String,
-    expires: i64,
-}
-
-pub(super) fn code_digest(value: &str) -> String {
-    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-    use sha2::{Digest, Sha256};
-    URL_SAFE_NO_PAD.encode(Sha256::digest(value.as_bytes()))
-}
-
-pub(super) fn redact_code(value: &str) -> (String, Option<&str>) {
-    let first = value.lines().next().unwrap_or("");
-    let code = first
-        .strip_prefix(REPLY_CODE_PREFIX)
-        .map(str::trim)
-        .filter(|code| code.len() == 32 && code.bytes().all(|byte| byte.is_ascii_hexdigit()));
-    let cleaned = value
-        .lines()
-        .filter(|line| !line.contains(REPLY_CODE_PREFIX))
-        .collect::<Vec<_>>()
-        .join("\n");
-    let cleaned = match code {
-        Some(code) => cleaned.replace(code, "[reply code removed]"),
-        None => cleaned,
-    };
-    (cleaned, code)
-}
 
 #[derive(Clone, Deserialize, Serialize)]
 pub(super) struct Account {
@@ -49,6 +17,19 @@ pub(super) struct Account {
     pub secret_id: Option<String>,
     pub enabled: bool,
     pub tested: bool,
+    #[serde(default)]
+    pub smtp_tested: Option<bool>,
+}
+
+impl Account {
+    pub fn smtp_tested(&self) -> bool {
+        // Older mailboxes set tested only after both connections passed.
+        self.smtp_tested.unwrap_or(self.tested)
+    }
+
+    pub fn can_send(&self) -> bool {
+        self.enabled && self.tested && self.smtp_tested()
+    }
 }
 
 #[derive(Deserialize, Serialize)]
@@ -115,8 +96,6 @@ pub(super) struct Ledger {
     #[serde(default)]
     pub restored_uids: Vec<(u32, u32)>,
     retired_secrets: Vec<String>,
-    #[serde(default)]
-    reply_codes: Vec<ReplyCode>,
     last_status: Option<String>,
     #[serde(default)]
     classification_failure: Option<(String, u32)>,
@@ -132,7 +111,6 @@ impl Default for Ledger {
             activity: Vec::new(),
             restored_uids: Vec::new(),
             retired_secrets: Vec::new(),
-            reply_codes: Vec::new(),
             last_status: None,
             classification_failure: None,
         }
@@ -179,6 +157,26 @@ impl Ledger {
         self.last_status = Some(status.into());
     }
 
+    pub fn record_connection_test(
+        &mut self,
+        store: &MailStore,
+        inbox: Result<()>,
+        smtp: Result<()>,
+    ) -> Result<()> {
+        let account = self.account_mut()?;
+        account.tested = inbox.is_ok();
+        account.smtp_tested = Some(smtp.is_ok());
+        account.enabled &= account.tested;
+        let status = match (inbox, smtp) {
+            (Ok(()), Ok(())) => "Incoming mail and SMTP connections verified".into(),
+            (Ok(()), Err(error)) => format!("Inbox connection verified. {error}."),
+            (Err(error), Ok(())) => format!("{error}. SMTP connection verified."),
+            (Err(inbox), Err(smtp)) => format!("{inbox}. {smtp}."),
+        };
+        self.note(status);
+        self.changed(store)
+    }
+
     pub fn add(&mut self, activity: Activity) {
         self.activity.insert(0, activity);
         let mut recent = 0;
@@ -205,6 +203,7 @@ impl Ledger {
                 "settings": account.settings,
                 "enabled": account.enabled,
                 "tested": account.tested,
+                "smtpTested": account.smtp_tested(),
                 "hasCredentials": account.secret_id.is_some(),
             })
         });
@@ -213,34 +212,7 @@ impl Ledger {
             "account": account,
             "activity": self.activity,
             "lastStatus": self.last_status,
-            "replyCodeRecipients": self.reply_codes.iter()
-                .filter(|code| code.expires > chrono::Utc::now().timestamp())
-                .map(|code| &code.recipient).collect::<Vec<_>>(),
         }))
-    }
-
-    pub fn create_reply_code(&mut self, store: &MailStore, recipient: &str) -> Result<String> {
-        let recipient = super::address(recipient)?;
-        let account = self.account()?;
-        ensure!(
-            account.enabled && account.tested && self.cursor.is_some(),
-            "Enable email and complete an inbox check before creating a reply code"
-        );
-        ensure!(
-            account.settings.recipients.contains(&recipient),
-            "This recipient is not allowed"
-        );
-        let now = chrono::Utc::now().timestamp();
-        self.reply_codes
-            .retain(|code| code.recipient != recipient && code.expires > now);
-        let code = Uuid::new_v4().simple().to_string();
-        self.reply_codes.push(ReplyCode {
-            digest: code_digest(&code),
-            recipient,
-            expires: now + 24 * 60 * 60,
-        });
-        self.changed(store)?;
-        Ok(format!("{REPLY_CODE_PREFIX} {code}"))
     }
 
     /// Records a failed classification of `message` and reports whether it should be retried on
@@ -262,24 +234,6 @@ impl Ledger {
 
     pub fn classification_succeeded(&mut self) {
         self.classification_failure = None;
-    }
-
-    pub fn clear_reply_codes(&mut self) {
-        self.reply_codes.clear();
-    }
-
-    pub fn consume_reply_code(&mut self, recipient: &str, digest: &str) -> bool {
-        let now = chrono::Utc::now().timestamp();
-        self.reply_codes.retain(|code| code.expires > now);
-        let Some(index) = self
-            .reply_codes
-            .iter()
-            .position(|code| code.recipient == recipient && code.digest == digest)
-        else {
-            return false;
-        };
-        self.reply_codes.swap_remove(index);
-        true
     }
 
     pub fn save_settings(
@@ -335,6 +289,8 @@ impl Ledger {
         };
         let tested =
             same_identity && !replacement && previous.is_some_and(|account| account.tested);
+        let smtp_tested =
+            same_identity && !replacement && previous.is_some_and(Account::smtp_tested);
         let enabled = tested
             && previous.is_some_and(|account| account.enabled)
             && previous.is_some_and(|account| {
@@ -342,22 +298,16 @@ impl Ledger {
                     && account.settings.model == settings.model
             });
         if !same_identity {
-            self.clear_reply_codes();
             self.cursor = None;
             self.restored_uids.clear();
             self.activity.clear();
-        }
-        if !enabled {
-            self.clear_reply_codes();
-        } else {
-            self.reply_codes
-                .retain(|code| settings.recipients.contains(&code.recipient));
         }
         self.account = Some(Account {
             settings,
             secret_id: new_key,
             enabled,
             tested,
+            smtp_tested: Some(smtp_tested),
         });
         self.changed(store)?;
         self.clean_retired(store);

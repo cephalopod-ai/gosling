@@ -43,6 +43,7 @@ export type ProviderMetadata = {
 
 export type ProviderDetails = {
   capabilities?: ProviderCapabilitiesDto;
+  executes_tools_outside_gosling?: boolean;
   is_configured: boolean;
   manages_own_context: boolean;
   metadata: ProviderMetadata;
