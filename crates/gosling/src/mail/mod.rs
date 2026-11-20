@@ -194,10 +194,16 @@ enum Request {
 #[serde(tag = "action", rename_all = "lowercase", deny_unknown_fields)]
 enum Proposal {
     Keep,
-    Move { folder: String },
+    Move {
+        folder: String,
+    },
     Store,
     Trash,
-    Reply { text: String },
+    Reply {
+        text: String,
+    },
+    #[serde(skip_deserializing)]
+    Unclassified,
 }
 
 struct IncomingMessage {
@@ -604,7 +610,8 @@ async fn poll(store: &MailStore, state: &mut Ledger) -> Result<()> {
                         "IMAP message fetch failed",
                     )
                     .await?;
-                    let action = decide(settings, raw.as_deref()).await?;
+                    let key = format!("imap:{validity}:{uid}");
+                    let action = decide(store, state, settings, &key, raw.as_deref()).await?;
                     state.cursor = Some(Cursor::Imap {
                         validity,
                         seen_through: uid,
@@ -655,7 +662,8 @@ async fn poll(store: &MailStore, state: &mut Ledger) -> Result<()> {
                 .collect();
             for (number, id) in pending {
                 let raw = timed(session.fetch(*number), "POP message fetch failed").await?;
-                let action = decide(settings, raw.as_deref()).await?;
+                let key = format!("pop:{id}");
+                let action = decide(store, state, settings, &key, raw.as_deref()).await?;
                 if let Some(Cursor::Pop { seen }) = &mut state.cursor {
                     seen.insert(id.clone());
                 }
@@ -673,14 +681,27 @@ async fn poll(store: &MailStore, state: &mut Ledger) -> Result<()> {
 }
 
 async fn decide(
+    store: &MailStore,
+    state: &mut Ledger,
     settings: &Settings,
+    key: &str,
     raw: Option<&[u8]>,
 ) -> Result<Option<(IncomingMessage, Proposal)>> {
     let Some(message) = raw.and_then(IncomingMessage::parse) else {
         return Ok(None);
     };
     let can_reply = reply_recipient(settings, &message).is_some();
-    let proposal = classify(settings, &message, can_reply).await?;
+    let proposal = match classify(settings, &message, can_reply).await {
+        Ok(proposal) => {
+            state.classification_succeeded();
+            proposal
+        }
+        Err(error) if state.retry_classification(key) => {
+            store.write(state)?;
+            return Err(error);
+        }
+        Err(_) => Proposal::Unclassified,
+    };
     Ok(Some((message, proposal)))
 }
 
@@ -710,7 +731,11 @@ async fn record_action(
     let authenticated = reply_recipient(settings, &message)
         .zip(message.reply_code_digest.as_deref())
         .is_some_and(|(recipient, digest)| state.consume_reply_code(recipient, digest));
-    let mut item = Activity::new(message.subject.clone(), "Kept in inbox");
+    let status = match &proposal {
+        Proposal::Unclassified => "Kept in inbox. The mail model could not classify it",
+        _ => "Kept in inbox",
+    };
+    let mut item = Activity::new(message.subject.clone(), status);
     let destination = match &proposal {
         Proposal::Move { folder } if settings.folders.contains(folder) => Some(folder.clone()),
         Proposal::Trash => Some(settings.trash.clone()),

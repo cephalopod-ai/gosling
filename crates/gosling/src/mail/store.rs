@@ -10,6 +10,7 @@ use uuid::Uuid;
 const VERSION: u32 = 1;
 const RECENT_ACTIVITY: usize = 80;
 const REPLY_CODE_PREFIX: &str = "Gosling reply code:";
+const CLASSIFICATION_ATTEMPTS: u32 = 3;
 
 #[derive(Deserialize, Serialize)]
 struct ReplyCode {
@@ -117,6 +118,8 @@ pub(super) struct Ledger {
     #[serde(default)]
     reply_codes: Vec<ReplyCode>,
     last_status: Option<String>,
+    #[serde(default)]
+    classification_failure: Option<(String, u32)>,
 }
 
 impl Default for Ledger {
@@ -131,6 +134,7 @@ impl Default for Ledger {
             retired_secrets: Vec::new(),
             reply_codes: Vec::new(),
             last_status: None,
+            classification_failure: None,
         }
     }
 }
@@ -237,6 +241,27 @@ impl Ledger {
         });
         self.changed(store)?;
         Ok(format!("{REPLY_CODE_PREFIX} {code}"))
+    }
+
+    /// Records a failed classification of `message` and reports whether it should be retried on
+    /// the next poll. Once the attempts are exhausted the message is released so one message the
+    /// model cannot handle does not block the rest of the inbox indefinitely.
+    pub fn retry_classification(&mut self, message: &str) -> bool {
+        let attempts = match &self.classification_failure {
+            Some((failed, attempts)) if failed == message => attempts + 1,
+            _ => 1,
+        };
+        if attempts < CLASSIFICATION_ATTEMPTS {
+            self.classification_failure = Some((message.to_owned(), attempts));
+            true
+        } else {
+            self.classification_failure = None;
+            false
+        }
+    }
+
+    pub fn classification_succeeded(&mut self) {
+        self.classification_failure = None;
     }
 
     pub fn clear_reply_codes(&mut self) {

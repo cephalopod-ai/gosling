@@ -41,3 +41,24 @@ preload wiring, Email settings, focused Rust and Desktop tests, and the dedicate
 Live provider sign-in, native keyring integration, a packaged Desktop launch, and non-macOS
 execution remain unverified. The shipped Gmail preset in this patch requires an eligible app
 password. Google OAuth is a separate release dependency.
+
+## Post-commit review repairs
+
+A review of `441a6245e` found these problems, now repaired:
+
+- `EmailSettingsSection` named a plain helper `useSaved`, which failed `react-hooks/rules-of-hooks`.
+  It is now `applySaved`.
+- A message the model could not classify blocked the inbox, because the poll retried it forever.
+  The ledger now counts failures for each message. After three failed inbox checks the message
+  stays in the inbox, the failure is recorded under activity, and processing continues.
+- The Electron reaper timeout of 165 s was shorter than a legitimate three-message poll. It is now
+  10 minutes, and the Rust worker still bounds each network step.
+- When the worker failed to spawn, its kill timer and child reference were left behind. Both are
+  now released on `error`.
+- The guide now states that **Forget credentials** keeps local activity, drafts, and copies.
+
+Validation: `cargo fmt`; `cargo clippy -p gosling -p gosling-cli --all-targets -- -D warnings`
+clean; `cargo test -p gosling --lib mail` (9 passed); `cargo test -p gosling-cli --test
+desktop_email_test` (1 passed); ESLint and Prettier on the changed Desktop files; `pnpm run
+typecheck`; vitest for the email IPC and settings tests (3 passed). Live mail servers, the
+keychain, and a packaged Desktop launch remain unverified.

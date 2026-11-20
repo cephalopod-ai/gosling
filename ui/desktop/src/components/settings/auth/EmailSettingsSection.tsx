@@ -187,7 +187,7 @@ export default function EmailSettingsSection() {
   const [replyCode, setReplyCode] = useState('');
   const [copiedCode, setCopiedCode] = useState(false);
 
-  function useSaved(next: EmailSnapshot) {
+  function applySaved(next: EmailSnapshot) {
     setSnapshot(next);
     const saved = next.account?.settings ?? initialSettings;
     setSettings(saved);
@@ -201,7 +201,7 @@ export default function EmailSettingsSection() {
     let live = true;
     void window.electron.emailRequest({ op: 'status' }).then(
       (next) => {
-        if (live) useSaved(next);
+        if (live) applySaved(next);
       },
       (error: unknown) => {
         if (live) setError(errorMessage(error));
@@ -225,7 +225,7 @@ export default function EmailSettingsSection() {
         setReplyCode('');
       }
       if (request.op === 'save' || request.op === 'status' || request.op === 'reset') {
-        useSaved(next);
+        applySaved(next);
       } else {
         setSnapshot(next);
       }

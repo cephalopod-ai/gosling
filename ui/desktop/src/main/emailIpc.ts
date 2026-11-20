@@ -5,6 +5,9 @@ import { desktopCommandChannels } from '../ipc/channels';
 import type { EmailRequest, EmailSnapshot } from '../types/email';
 
 const POLL_INTERVAL = 60_000;
+// The worker bounds every network step itself; this only reaps a hung child. A three-message
+// IMAP poll can legitimately spend several minutes across login, classification, moves and SMTP.
+const WORKER_TIMEOUT = 10 * 60_000;
 const MAX_REQUEST = 65_536;
 const MAX_RESPONSE = 10 * 1024 * 1024;
 const OPERATIONS = new Set([
@@ -148,7 +151,14 @@ export class DesktopEmailWorker {
       this.childOperation = request.op;
       const chunks: Buffer[] = [];
       let size = 0;
-      const timer = setTimeout(() => child.kill(), 165_000);
+      const timer = setTimeout(() => child.kill(), WORKER_TIMEOUT);
+      const release = () => {
+        clearTimeout(timer);
+        if (this.child === child) {
+          this.child = undefined;
+          this.childOperation = undefined;
+        }
+      };
       child.stdout.on('data', (chunk: Buffer) => {
         size += chunk.length;
         if (size > MAX_RESPONSE) {
@@ -160,15 +170,12 @@ export class DesktopEmailWorker {
       child.stdin.on('error', () => {
         // Child close reports unsupported and prematurely ended requests.
       });
-      child.once('error', () =>
-        reject(new Error('Could not start the local Gosling email worker'))
-      );
+      child.once('error', () => {
+        release();
+        reject(new Error('Could not start the local Gosling email worker'));
+      });
       child.once('close', (code) => {
-        clearTimeout(timer);
-        if (this.child === child) {
-          this.child = undefined;
-          this.childOperation = undefined;
-        }
+        release();
         child.stdin.destroy();
         if (code !== 0 || size > MAX_RESPONSE) {
           reject(new Error('The local Gosling binary could not complete the email operation'));

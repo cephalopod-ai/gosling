@@ -53,6 +53,9 @@ after 24 hours. Issuing a new code for an address replaces its earlier code. gos
 the code before classification. You can revoke outstanding codes from Settings.
 
 Use **Pause** to stop processing and clear outstanding reply codes. Use **Disconnect** to
-require a new connection test. **Forget credentials** removes the saved passwords. If SMTP
+require a new connection test. **Forget credentials** removes the saved passwords. Mail
+activity, drafts, and local copies stay on this computer until you discard them under
+**Mail activity**. If the model cannot classify a message after three inbox checks, gosling
+keeps it in the inbox, records that under **Mail activity**, and moves on. If SMTP
 delivery is uncertain, check your mailbox before following up. gosling records the uncertainty
 and leaves retry to you.

@@ -223,6 +223,43 @@ async fn pop_local_trash_can_be_restored_without_a_server_operation() {
     );
 }
 
+#[tokio::test]
+async fn repeated_classification_failure_releases_the_message() {
+    let root = tempfile::tempdir().unwrap();
+    let (store, mut ledger) = MailStore::open(root.path().to_path_buf()).unwrap();
+    assert!(ledger.retry_classification("imap:7:41"));
+    store.write(&ledger).unwrap();
+    drop(store);
+
+    let (store, mut ledger) = MailStore::open(root.path().to_path_buf()).unwrap();
+    assert!(ledger.retry_classification("imap:7:41"));
+    assert!(!ledger.retry_classification("imap:7:41"));
+    assert!(ledger.retry_classification("imap:7:42"));
+    ledger.classification_succeeded();
+    assert!(ledger.retry_classification("imap:7:42"));
+    assert!(ledger.retry_classification("imap:7:42"));
+    assert!(!ledger.retry_classification("imap:7:42"));
+
+    let message =
+        IncomingMessage::parse(b"From: sender@example.org\r\nSubject: Hard\r\n\r\nBody").unwrap();
+    record_action(
+        &store,
+        &mut ledger,
+        &settings(),
+        Some((message, Proposal::Unclassified)),
+        None,
+    )
+    .await
+    .unwrap();
+    let item = &store.read().unwrap().activity[0];
+    assert_eq!(item.subject, "Hard");
+    assert!(item
+        .status
+        .starts_with("Kept in inbox. The mail model could not"));
+    assert!(item.local_folder.is_none() && item.draft.is_none());
+    assert!(serde_json::from_str::<Proposal>(r#"{"action":"unclassified"}"#).is_err());
+}
+
 #[test]
 fn stale_policy_revision_and_secret_references_never_leave_storage() {
     let root = tempfile::tempdir().unwrap();
