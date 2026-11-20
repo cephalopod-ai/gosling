@@ -66,6 +66,18 @@ pub struct ChatGptCodexModelAttrs {
 // returns HTTP 400 invalid_value if sent "ultra" literally.
 pub const CHATGPT_CODEX_KNOWN_MODELS: &[ChatGptCodexModelAttrs] = &[
     ChatGptCodexModelAttrs {
+        name: "gpt-6.2-sol",
+        reasoning_levels: &["low", "medium", "high", "xhigh", "max"],
+    },
+    ChatGptCodexModelAttrs {
+        name: "gpt-6.2-astra",
+        reasoning_levels: &["low", "medium", "high", "xhigh", "max"],
+    },
+    ChatGptCodexModelAttrs {
+        name: "gpt-6.1-terra",
+        reasoning_levels: &["low", "medium", "high", "xhigh", "max"],
+    },
+    ChatGptCodexModelAttrs {
         name: "gpt-6-astra",
         reasoning_levels: &["low", "medium", "high", "xhigh", "max"],
     },
@@ -104,6 +116,8 @@ struct ChatGptCodexRouteModel {
     slug: String,
     #[serde(default)]
     context_window: Option<usize>,
+    #[serde(default)]
+    max_context_window: Option<usize>,
     #[serde(default = "default_effective_context_window_percent")]
     effective_context_window_percent: usize,
     #[serde(default)]
@@ -119,31 +133,36 @@ const fn default_effective_context_window_percent() -> usize {
     95
 }
 
-fn effective_route_context_limit(model: &ChatGptCodexRouteModel) -> Option<usize> {
-    let percent = model.effective_context_window_percent.min(100);
-    let context_window = model.context_window?;
-    (percent > 0)
-        .then(|| context_window.saturating_mul(percent) / 100)
-        .filter(|limit| *limit > 0)
+impl ChatGptCodexRouteModel {
+    fn usable_window(&self, window: Option<usize>) -> Option<usize> {
+        let percent = self.effective_context_window_percent.min(100);
+        window
+            .map(|window| window.saturating_mul(percent) / 100)
+            .filter(|limit| *limit > 0)
+    }
+
+    fn maximum_usable_window(&self) -> Option<usize> {
+        self.usable_window(self.max_context_window)
+    }
 }
 
 fn uses_responses_lite(model_name: &str) -> bool {
     matches!(model_name, "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna")
 }
 
-/// The route advertises a flat 272k `context_window` for every slug it lists —
-/// including placeholders like `gpt-reserve` — so it reports a backend default
-/// rather than each model's real window. Taking it at face value clamped
-/// gpt-6-astra's ~1M window to 258,400 and compacted sessions that had used a
-/// fifth of their context. Curated per-model limits win; the route only fills in
-/// slugs this build does not know yet.
+/// The route's starting window can be smaller than the maximum it accepts.
+/// For models with a verified larger budget, stay within the live route's cap.
 fn resolved_route_context_limit(model: &ChatGptCodexRouteModel) -> Option<usize> {
-    context_limit_for_model(&model.slug).or_else(|| effective_route_context_limit(model))
+    let limit = context_limit_for_model(&model.slug)
+        .or_else(|| model.usable_window(model.context_window))
+        .or_else(|| model.maximum_usable_window())?;
+    Some(limit.min(model.maximum_usable_window().unwrap_or(limit)))
 }
 
 pub(crate) fn context_limit_for_model(model_name: &str) -> Option<usize> {
     match model_name {
-        "gpt-6-astra" | "gpt-6.1-sol" | "gpt-6-sol" | "gpt-6-luna" => Some(997_500),
+        "gpt-6.2-sol" | "gpt-6.2-astra" | "gpt-6.1-terra" | "gpt-6.1-sol" | "gpt-6-astra"
+        | "gpt-6-sol" | "gpt-6-luna" => Some(828_400),
         "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna" | "gpt-5.5" | "gpt-5.4"
         | "gpt-5.4-mini" => Some(258_400),
         "gpt-5.3-codex-spark" => Some(121_600),
@@ -1108,19 +1127,12 @@ impl ChatGptCodexProvider {
         Ok(models.as_slice())
     }
 
-    async fn route_model_info(&self, model_name: &str) -> Option<ModelInfo> {
-        let route_model = self
-            .fetch_route_models()
+    async fn route_model(&self, model_name: &str) -> Option<&ChatGptCodexRouteModel> {
+        self.fetch_route_models()
             .await
             .ok()?
             .iter()
-            .find(|model| model.slug == model_name)?;
-        let mut model = ModelInfo::new(
-            route_model.slug.clone(),
-            resolved_route_context_limit(route_model)?,
-        );
-        model.reasoning = true;
-        Some(model)
+            .find(|model| model.slug == model_name)
     }
 
     async fn post_streaming(
@@ -1219,10 +1231,13 @@ impl Provider for ChatGptCodexProvider {
     }
 
     async fn get_context_limit(&self, model_config: &ModelConfig) -> Result<usize, ProviderError> {
-        Ok(self
-            .route_model_info(&model_config.model_name)
-            .await
-            .map(|model| model.context_limit)
+        let route_model = self.route_model(&model_config.model_name).await;
+        if let Some(limit) = model_config.context_limit {
+            let maximum = route_model.and_then(ChatGptCodexRouteModel::maximum_usable_window);
+            return Ok(limit.min(maximum.unwrap_or(limit)));
+        }
+        Ok(route_model
+            .and_then(resolved_route_context_limit)
             .or_else(|| context_limit_for_model(&model_config.model_name))
             .unwrap_or_else(|| model_config.context_limit()))
     }
@@ -1881,8 +1896,11 @@ mod tests {
         assert_eq!(reasoning_levels_for_model(model), expected);
     }
 
-    #[test_case("gpt-6-astra", false, Some(997_500); "gpt 6 astra")]
-    #[test_case("gpt-6.1-sol", false, Some(997_500); "gpt 6.1 sol")]
+    #[test_case("gpt-6.2-sol", false, Some(828_400); "gpt 6.2 sol")]
+    #[test_case("gpt-6.2-astra", false, Some(828_400); "gpt 6.2 astra")]
+    #[test_case("gpt-6.1-terra", false, Some(828_400); "gpt 6.1 terra")]
+    #[test_case("gpt-6-astra", false, Some(828_400); "gpt 6 astra")]
+    #[test_case("gpt-6.1-sol", false, Some(828_400); "gpt 6.1 sol")]
     #[test_case("gpt-5.6-luna", true, Some(258_400); "gpt 5.6 luna")]
     #[test_case("gpt-5.4-mini", false, Some(258_400); "gpt 5.4 mini")]
     #[test_case("gpt-5.3-codex-spark", false, Some(121_600); "gpt 5.3 codex spark")]
@@ -1910,51 +1928,66 @@ mod tests {
 
         assert_eq!(catalog.models.len(), 1);
         assert_eq!(
-            effective_route_context_limit(&catalog.models[0]),
+            resolved_route_context_limit(&catalog.models[0]),
             Some(258_400)
         );
     }
 
     #[test]
-    fn curated_limits_survive_the_routes_generic_context_window() {
-        // The live route reports 272000 for every slug, so a model with a larger
-        // real window must not be clamped to the backend default. (Regression:
-        // gpt-6-astra reported 258,400 and compacted at roughly a fifth of its
-        // context.)
-        let catalog: ChatGptCodexModelsResponse = serde_json::from_value(json!({
-            "models": [
-                {
-                    "slug": "gpt-6-astra",
-                    "context_window": 272000,
-                    "effective_context_window_percent": 95,
-                    "supported_in_api": true
-                },
-                {
-                    "slug": "gpt-5.6-sol",
-                    "context_window": 272000,
-                    "effective_context_window_percent": 95,
-                    "supported_in_api": true
-                },
-                {
-                    "slug": "gpt-unreleased",
-                    "context_window": 272000,
-                    "effective_context_window_percent": 95,
-                    "supported_in_api": true
-                }
-            ]
-        }))
-        .unwrap();
+    fn automatic_limits_match_the_available_codex_catalog() {
+        for (slug, default_window, expected_limit) in [
+            ("gpt-6.2-sol", 500_000, 828_400),
+            ("gpt-6.2-astra", 272_000, 828_400),
+            ("gpt-6.1-sol", 500_000, 828_400),
+            ("gpt-6.1-terra", 500_000, 828_400),
+            ("gpt-6-astra", 272_000, 828_400),
+            ("gpt-6-sol", 272_000, 828_400),
+            ("gpt-6-luna", 272_000, 828_400),
+            ("gpt-5.6-sol", 272_000, 258_400),
+            ("gpt-5.6-terra", 272_000, 258_400),
+            ("gpt-5.6-luna", 272_000, 258_400),
+            ("gpt-reserve", 272_000, 258_400),
+            ("codex-auto-review", 272_000, 258_400),
+        ] {
+            let model: ChatGptCodexRouteModel = serde_json::from_value(json!({
+                "slug": slug,
+                "context_window": default_window,
+                "max_context_window": 872_000,
+                "supported_in_api": true
+            }))
+            .unwrap();
+            assert_eq!(
+                resolved_route_context_limit(&model),
+                Some(expected_limit),
+                "{slug}"
+            );
+        }
+    }
 
-        let limits: Vec<Option<usize>> = catalog
-            .models
-            .iter()
-            .map(resolved_route_context_limit)
-            .collect();
-
+    #[tokio::test]
+    async fn runtime_applies_manual_limits_within_the_route_cap() {
+        let provider = provider_with_auth_state(Arc::new(ChatGptCodexAuthState::new()));
+        provider
+            .route_models
+            .set(vec![ChatGptCodexRouteModel {
+                slug: "gpt-6.2-sol".into(),
+                context_window: Some(500_000),
+                max_context_window: Some(800_000),
+                effective_context_window_percent: 95,
+                supported_in_api: true,
+            }])
+            .unwrap();
+        let automatic = ModelConfig::new("gpt-6.2-sol");
         assert_eq!(
-            limits,
-            vec![Some(997_500), Some(258_400), Some(258_400)],
-            "curated limits win; unknown slugs still fall back to the route"
+            provider.get_context_limit(&automatic).await.unwrap(),
+            760_000
+        );
+        let lower = automatic.clone().with_context_limit(Some(64_000));
+        assert_eq!(provider.get_context_limit(&lower).await.unwrap(), 64_000);
+        let above_cap = automatic.with_context_limit(Some(1_050_000));
+        assert_eq!(
+            provider.get_context_limit(&above_cap).await.unwrap(),
+            760_000
         );
     }
 
@@ -1963,6 +1996,7 @@ mod tests {
         let model = ChatGptCodexRouteModel {
             slug: "gpt-unreleased".into(),
             context_window: None,
+            max_context_window: None,
             effective_context_window_percent: 95,
             supported_in_api: true,
         };
@@ -1976,17 +2010,19 @@ mod tests {
             ChatGptCodexRouteModel {
                 slug: "missing".into(),
                 context_window: None,
+                max_context_window: None,
                 effective_context_window_percent: 95,
                 supported_in_api: true,
             },
             ChatGptCodexRouteModel {
                 slug: "zero".into(),
                 context_window: Some(272_000),
+                max_context_window: Some(872_000),
                 effective_context_window_percent: 0,
                 supported_in_api: true,
             },
         ] {
-            assert_eq!(effective_route_context_limit(&model), None);
+            assert_eq!(resolved_route_context_limit(&model), None);
         }
     }
 

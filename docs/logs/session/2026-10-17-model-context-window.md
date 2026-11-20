@@ -109,3 +109,24 @@ The complete workspace suite, Clippy, native GUI replay, authenticated inference
 release packaging and reinstall were not run. `/Applications/Gosling.app` and the
 standalone installed CLI remain unchanged. The source patch is locally verified;
 installed behavior will require rebuilding and reinstalling the application.
+
+## 2026-11-20 follow-up — ChatGPT Codex context limits
+
+The authenticated ChatGPT Codex catalog reported 500,000 default tokens for GPT‑6.2 Sol and
+an 872,000-token maximum. With the route's 5% headroom, the supported automatic budget is
+828,400. The same maximum applies to the seven visible GPT‑6 variants in the catalog. The
+three GPT‑5.6 variants use their 258,400-token effective defaults.
+
+The installed backend reproduced the manual-entry bug. A 64,000-token default saved correctly,
+then a newly opened session still reported 475,000. The provider now applies manual limits up
+to the route cap. The Codex model picker submits a manual value only when the user enters one.
+
+The targeted ChatGPT Codex provider suite passed 52 tests. The three focused Desktop suites
+passed 28 tests, including saving a manual value and clearing it back to Automatic. Desktop
+typecheck, scoped ESLint and Prettier, and Rust formatting checks passed.
+
+The signed release passed an isolated ACP smoke check against the live catalog for all ten
+visible ChatGPT Codex models. A new session used the saved 64,000-token limit, an active session
+applied 96,000 after preview and transition, and clearing the default restored 828,400 in a new
+session. The signed Desktop app and matching standalone CLI replaced the prior installs.
+The relaunched app reached a macOS Keychain prompt before its window opened.

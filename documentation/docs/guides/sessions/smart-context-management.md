@@ -425,6 +425,8 @@ context. See [Creating Plans](/docs/guides/context-engineering/creating-plans).
      Use the context limit supported by your provider's deployment. A value that is
      too high can cause context-length errors; a lower value causes earlier
      compaction. Changing this setting does not expand the model's capacity.
+     ChatGPT Codex applies the route's advertised maximum with its token headroom
+     when computing the effective budget for a manual setting.
 
      Within a chat, the limit is saved with that session and used for its context
      meter and compaction budget. From Settings, it is saved with the selected

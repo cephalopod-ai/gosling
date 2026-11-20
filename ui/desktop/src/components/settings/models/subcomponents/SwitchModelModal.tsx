@@ -465,7 +465,9 @@ export const SwitchModelModal = ({
       Number(contextOverride) <= 0);
   const selectedContextLimit = hasContextOverride
     ? Number(contextOverride)
-    : discoveredContextLimit || undefined;
+    : selectedProviderId === 'chatgpt_codex' && !usePredefinedModels
+      ? undefined
+      : discoveredContextLimit || undefined;
 
   useEffect(() => {
     if (forEmail) return;

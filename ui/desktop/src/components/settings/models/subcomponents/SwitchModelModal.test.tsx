@@ -292,6 +292,43 @@ describe('SwitchModelModal model search', () => {
     );
   });
 
+  it('shows the Codex automatic budget and saves only a manual override', async () => {
+    const model = 'gpt-6.2-sol';
+    vi.mocked(acpListProviderDetails).mockResolvedValue([
+      provider('chatgpt_codex', 'ChatGPT Codex'),
+    ]);
+    vi.mocked(acpListProviderModels).mockResolvedValue([
+      { id: model, reasoning: false, contextLimit: 828_400 },
+    ]);
+    const user = userEvent.setup();
+    render(
+      <SwitchModelModal
+        sessionId={null}
+        initialProvider="chatgpt_codex"
+        initialModel={model}
+        onClose={vi.fn()}
+        setView={vi.fn()}
+      />,
+      { wrapper: IntlTestWrapper }
+    );
+
+    const context = await screen.findByPlaceholderText('Automatic: 828,400 tokens');
+    const selectModel = screen.getByRole('button', { name: 'Select model' });
+    await user.type(context, '600000');
+    await user.click(selectModel);
+    await waitFor(() =>
+      expect(changeModel).toHaveBeenLastCalledWith(
+        null,
+        expect.objectContaining({ name: model, context_limit: 600_000 }),
+        expect.any(Object)
+      )
+    );
+    await user.clear(context);
+    await user.click(selectModel);
+    await waitFor(() => expect(changeModel).toHaveBeenCalledTimes(2));
+    expect(changeModel.mock.lastCall?.[1].context_limit).toBeUndefined();
+  });
+
   it('requires a fresh checkpoint preview after editing the context window', async () => {
     vi.mocked(acpPreviewSessionHandoff).mockResolvedValue({
       snapshot: {
