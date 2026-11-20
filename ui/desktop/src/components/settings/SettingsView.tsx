@@ -23,6 +23,7 @@ import { useState, useEffect, useRef } from 'react';
 import ChatSettingsSection from './chat/ChatSettingsSection';
 import KeyboardShortcutsSection from './keyboard/KeyboardShortcutsSection';
 import AuthSettingsSection from './auth/AuthSettingsSection';
+import EmailSettingsSection from './auth/EmailSettingsSection';
 import WebsiteLoginsSection from './auth/WebsiteLoginsSection';
 import SkillsView from '../skills/SkillsView';
 import ExtensionsView from '../extensions/ExtensionsView';
@@ -273,6 +274,7 @@ export default function SettingsView({
                   <div className="space-y-4">
                     <WebsiteLoginsSection />
                     <AuthSettingsSection />
+                    <EmailSettingsSection />
                   </div>
                 </TabsContent>
 

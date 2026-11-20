@@ -919,6 +919,12 @@ enum McpSubcommand {
 
 #[derive(Subcommand)]
 enum Command {
+    #[command(name = "desktop-email", hide = true)]
+    DesktopEmail {
+        #[arg(long)]
+        supervised: bool,
+    },
+
     #[command(name = "session-history-mcp", hide = true)]
     SessionHistoryMcp {
         #[arg(long, hide = true)]
@@ -1583,6 +1589,7 @@ pub struct InputConfig {
 fn get_command_name(command: &Option<Command>) -> &'static str {
     match command {
         Some(Command::SessionHistoryMcp { .. }) => "session-history-mcp",
+        Some(Command::DesktopEmail { .. }) => "desktop-email",
         Some(Command::Configure {}) => "configure",
         Some(Command::Doctor {}) => "doctor",
         Some(Command::Info { .. }) => "info",
@@ -2782,6 +2789,9 @@ pub async fn cli() -> anyhow::Result<()> {
     // never create a log file in the state directory.
     let cli =
         Cli::try_parse().unwrap_or_else(|error| drop_hidden_subcommand_suggestions(error).exit());
+    if let Some(Command::DesktopEmail { supervised }) = cli.command {
+        return gosling::mail::run(supervised).await;
+    }
     if let Err(e) = crate::logging::setup_logging(None) {
         eprintln!("Warning: Failed to initialize logging: {}", e);
     }
@@ -2803,7 +2813,7 @@ pub async fn cli() -> anyhow::Result<()> {
     );
 
     match cli.command {
-        Some(Command::SessionHistoryMcp { .. }) => unreachable!(),
+        Some(Command::SessionHistoryMcp { .. } | Command::DesktopEmail { .. }) => unreachable!(),
         Some(Command::Completion { shell, bin_name }) => {
             // Generate into a buffer first: clap_complete panics if the writer
             // fails, which turns `gosling completion bash | head` (early-closed

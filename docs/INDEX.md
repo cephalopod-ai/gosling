@@ -5,6 +5,9 @@ for the relationship to cephalopod-ai/gosling.
 
 ## Standard sections
 
+- [../documentation/docs/guides/dedicated-email.md](../documentation/docs/guides/dedicated-email.md) — Desktop mailbox setup, recipient policy, and inbox actions
+- [logs/session/2026-11-20-dedicated-email.md](logs/session/2026-11-20-dedicated-email.md) — plan decisions, implementation, and focused validation
+
 - [../documentation/docs/guides/meta-muse.md](../documentation/docs/guides/meta-muse.md) — Meta Muse API and Muse Code subscription setup, permissions, billing and wrapper limits
 - [logs/session/2026-10-17-meta-muse-provider.md](logs/session/2026-10-17-meta-muse-provider.md) — provider implementation and validation evidence
 - [logs/session/2026-10-17-together-model-search.md](logs/session/2026-10-17-together-model-search.md) — Together catalog parsing, Muse discovery and shared model-search validation

@@ -1,4 +1,5 @@
 import type Electron from 'electron';
+import type { EmailRequest } from '../types/email';
 import type { Settings, SettingKey } from '../utils/settings';
 import type { ArtifactRoutingConfig, ArtifactSaveRequest } from '../types/artifactRouter';
 
@@ -56,6 +57,7 @@ export interface CreateChatWindowOptions {
 export type CreateChatWindowRefusal = 'unavailable-directory' | 'unapproved-directory' | 'failed';
 
 export const desktopCommandChannels = {
+  emailRequest: 'email-request',
   directoryChooser: 'directory-chooser',
   sessionDirectoryChooser: 'session-directory-chooser',
   getResearchLibraryPath: 'get-research-library-path',
@@ -155,6 +157,7 @@ export const desktopSyncChannels = [
 ] as const;
 
 export const desktopInvokeChannels = [
+  desktopCommandChannels.emailRequest,
   desktopCommandChannels.directoryChooser,
   desktopCommandChannels.sessionDirectoryChooser,
   desktopCommandChannels.getResearchLibraryPath,
@@ -233,6 +236,7 @@ export type DesktopInvokeChannel = (typeof desktopInvokeChannels)[number];
 
 /** Argument tuples for every renderer-to-main command, shared by both sides of the bridge. */
 export interface DesktopCommandPayloads {
+  [desktopCommandChannels.emailRequest]: [request: EmailRequest];
   [desktopCommandChannels.directoryChooser]: [];
   [desktopCommandChannels.sessionDirectoryChooser]: [];
   [desktopCommandChannels.getResearchLibraryPath]: [];

@@ -16,6 +16,7 @@ import type {
   UpdaterEvent,
 } from './ipc/channels';
 import type { Settings, SettingKey } from './utils/settings';
+import type { EmailRequest, EmailSnapshot } from './types/email';
 import { defaultSettings } from './utils/settings';
 import type {
   ArtifactRoutingConfig,
@@ -162,6 +163,7 @@ type ElectronAPI = {
   getSetting: <K extends SettingKey>(key: K) => Promise<Settings[K]>;
   getSettings: <K extends SettingKey>(keys: K[]) => Promise<Pick<Settings, K>>;
   setSetting: <K extends SettingKey>(key: K, value: Settings[K]) => Promise<void>;
+  emailRequest: (request: EmailRequest) => Promise<EmailSnapshot>;
   getAcpUrl: () => Promise<AcpEndpoint | null>;
   getMcpAppProxyUrl: (csp?: McpAppProxyCsp | null) => Promise<string | null>;
   setWakelock: (enable: boolean) => Promise<boolean>;
@@ -343,6 +345,7 @@ const electronAPI: ElectronAPI = {
     }
     return invokeMain(desktopCommandChannels.setSetting, key, value);
   },
+  emailRequest: (request) => invokeMain(desktopCommandChannels.emailRequest, request),
   getAcpUrl: () => invokeMain(desktopCommandChannels.getAcpUrl),
   getMcpAppProxyUrl: (csp?: McpAppProxyCsp | null) =>
     invokeMain(desktopCommandChannels.getMcpAppProxyUrl, csp),

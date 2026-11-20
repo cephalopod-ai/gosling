@@ -1,0 +1,58 @@
+---
+title: Dedicated email
+---
+
+Use a dedicated mailbox for gosling Desktop to read and organize. While Desktop is running,
+gosling checks the inbox about once a minute. You can also process mail from Settings.
+
+## Set up the mailbox
+
+1. Open **Settings → Auth → Email**. Choose **Purelymail**, **Gmail**, or **Custom** and enter
+   the dedicated address. Use a mailbox or app password for Purelymail and a Google app password
+   for an eligible Gmail account.
+2. Use **IMAP** for server folders and Trash. **POP3** supports local folders and local Trash.
+   Check the provider's POP settings for how it treats downloaded messages. gosling leaves the
+   POP server copy in place.
+3. Open **Advanced → Allowed recipients**. Enter each address that can receive replies on its
+   own line. You can also choose the model and configure filing folders. The selected model
+   receives the message text needed to classify the mail. Use a direct model provider such as
+   Ollama or an API provider.
+4. Select **Save email settings**, then **Test connection**, then **Enable email**. The
+   connection test signs in to the incoming and outgoing servers. **Process now** triggers an
+   inbox check. On the first check, gosling starts with new mail unless you selected
+   **Process existing mail on the first inbox check** when setting up the account.
+
+Passwords are stored in the operating system credential store. If the store is unavailable,
+gosling cannot save or use the mailbox password.
+
+| Preset | IMAP | POP3 | SMTP |
+| --- | --- | --- | --- |
+| Purelymail | `imap.purelymail.com:993` | `pop3.purelymail.com:995` | `smtp.purelymail.com:465` |
+| Gmail | `imap.gmail.com:993` | `pop.gmail.com:995` | `smtp.gmail.com:465` |
+
+The presets use TLS. Edit **Server settings** to use port 587 with STARTTLS for SMTP or to
+enter custom servers, ports, and logins. Check your Google account's app-password eligibility.
+If you select Gmail POP3, enable POP in Gmail. [Purelymail server settings](https://support.purelymail.com/support/solutions/articles/159000430778-server-settings-imap-smtp-pop3-and-managesieve-protocols) · [Gmail server settings](https://developers.google.com/workspace/gmail/imap/imap-smtp) · [Google app passwords](https://support.google.com/accounts/answer/185833) · [Gmail POP setup](https://support.google.com/mail/answer/7104828)
+
+## Review decisions and replies
+
+Open **Mail activity** to see what happened. gosling can keep mail, move it to an existing
+configured folder, archive it, retain a local text copy, move it to Trash, or draft a reply.
+On IMAP, the server must support a safe move to use its folders. Use **Restore** where
+available, or restore from the provider's webmail while the message is still in Trash.
+
+A reply uses the dedicated mailbox as its sender. Only an address on the saved allowlist can
+receive it. gosling ignores `Reply-To` and the incoming message's copied recipients. An empty
+allowlist blocks every send.
+
+Most replies appear under **Mail activity** for review. To authorize an automatic reply to
+your next email, enable monitoring and complete an inbox check, then go to **Advanced**,
+choose your allowed address, and select **Create reply code**. Copy the code into the first
+line of a message sent from that address. Each code can authorize one message and expires
+after 24 hours. Issuing a new code for an address replaces its earlier code. gosling removes
+the code before classification. You can revoke outstanding codes from Settings.
+
+Use **Pause** to stop processing and clear outstanding reply codes. Use **Disconnect** to
+require a new connection test. **Forget credentials** removes the saved passwords. If SMTP
+delivery is uncertain, check your mailbox before following up. gosling records the uncertainty
+and leaves retry to you.

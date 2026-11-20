@@ -85,6 +85,7 @@ import { registerFileIpcHandlers } from './main/fileIpc';
 import { registerSystemIpcHandlers } from './main/systemIpc';
 import { registerRendererIpcHandlers } from './main/rendererIpc';
 import { registerSettingsIpcHandlers } from './main/settingsIpc';
+import { DesktopEmailWorker } from './main/emailIpc';
 import { createWindowChrome } from './main/windowChrome';
 import { installApplicationMenu } from './main/applicationMenu';
 import { registerAppIpcHandlers } from './main/appIpc';
@@ -805,6 +806,13 @@ const resolveGoslingPathRoot = (): string | undefined => {
   return undefined;
 };
 
+const desktopEmail = new DesktopEmailWorker({
+  isPackaged: app.isPackaged,
+  resourcesPath: process.resourcesPath,
+  pathRoot: resolveGoslingPathRoot(),
+});
+desktopEmail.register(ipcMain);
+
 const GENERATED_SECRET = crypto.randomBytes(32).toString('hex');
 
 interface ExternalBackend {
@@ -1276,6 +1284,7 @@ const createChat = async (
         partition: MAIN_WINDOW_SESSION_PARTITION,
       },
     });
+    desktopEmail.trustRenderer(mainWindow.webContents);
     rendererDirectoryGrants.grantLaunchDirectory(mainWindow.webContents.id, workingDir);
     if (options.nativeDirectorySelection) {
       rendererDirectoryGrants.grantSelectedPath(
@@ -1713,6 +1722,7 @@ async function appMain() {
 
   // Ensure Windows shims are available before any MCP processes are spawned
   await ensureWinShims();
+  desktopEmail.start();
 
   try {
     await cleanupRecordedBackendProcesses(BACKEND_PROCESS_REGISTRY_PATH, log);
@@ -1921,6 +1931,7 @@ let shutdownCleanupPromise: Promise<void> | null = null;
 let shutdownCleanupComplete = false;
 
 async function runShutdownCleanup(): Promise<void> {
+  await desktopEmail.stop();
   try {
     sessionRecoveryRegistry.clearAll();
   } catch (error) {

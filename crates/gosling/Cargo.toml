@@ -201,6 +201,11 @@ tree-sitter = "0.26"
 tree-sitter-bash = "0.25"
 unicode-normalization = { version = "0.1.22", default-features = false, features = ["std"] }
 gosling-mcp = { version = "1.5.0", path = "../gosling-mcp", default-features = false }
+async-imap = { version = "0.11.2", default-features = false, features = ["runtime-tokio"] }
+mail-parser = { version = "0.11.2", features = ["full_encoding"] }
+lettre = { version = "0.11.23", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls", "aws-lc-rs", "rustls-native-certs"] }
+tokio-rustls = { version = "0.26.4", default-features = false, features = ["aws_lc_rs", "tls12"] }
+rustls-native-certs = "0.8.3"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winapi = { workspace = true }

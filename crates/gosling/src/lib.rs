@@ -21,6 +21,7 @@ pub mod hints;
 pub mod hooks;
 pub mod instance_id;
 pub mod logging;
+pub mod mail;
 pub mod mcp_utils;
 pub mod model_config;
 pub mod oauth;
