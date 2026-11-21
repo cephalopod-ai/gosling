@@ -208,6 +208,11 @@ function ActivityList({
                 <p className={contentClass}>{item.localBody}</p>
               </details>
             )}
+            {item.paper?.pdf && item.localBody !== null && (
+              <p id={`mail-pdf-retention-${item.id}`} className="text-muted-foreground">
+                The PDF stays in local research storage.
+              </p>
+            )}
             <div className="flex flex-wrap gap-2">
               {item.taskSessionId && (
                 <Button
@@ -239,8 +244,17 @@ function ActivityList({
                   variant="ghost"
                   disabled={busy}
                   onClick={() => onAction('discard', item.id)}
+                  aria-describedby={
+                    item.paper?.pdf && item.localBody !== null
+                      ? `mail-pdf-retention-${item.id}`
+                      : undefined
+                  }
                 >
-                  {item.trashed ? 'Clear restore record' : 'Discard local copy'}
+                  {item.trashed
+                    ? 'Clear restore record'
+                    : item.paper?.pdf
+                      ? 'Discard text and summary'
+                      : 'Discard local copy'}
                 </Button>
               )}
             </div>

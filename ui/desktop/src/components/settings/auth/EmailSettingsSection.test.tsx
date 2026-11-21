@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { IntlTestWrapper } from '../../../i18n/test-utils';
-import type { EmailRequest, EmailSnapshot } from '../../../types/email';
+import type { EmailActivity, EmailRequest, EmailSnapshot } from '../../../types/email';
 import EmailSettingsSection from './EmailSettingsSection';
 
 vi.mock('../models/subcomponents/SwitchModelModal', () => ({
@@ -29,6 +29,30 @@ const empty: EmailSnapshot = {
   account: null,
   activity: [],
   lastStatus: null,
+};
+
+const endpoint = { host: 'localhost', port: 993, startTls: false, username: '' };
+const testAccount: NonNullable<EmailSnapshot['account']> = {
+  enabled: false,
+  tested: false,
+  smtpTested: false,
+  hasCredentials: true,
+  settings: {
+    address: 'gosling@example.com',
+    protocol: 'imap',
+    incoming: endpoint,
+    outgoing: endpoint,
+    provider: 'ollama',
+    model: 'local-model',
+    instructions: '',
+    senders: ['owner@example.com'],
+    recipients: ['owner@example.com'],
+    folders: [],
+    archive: '',
+    trash: '',
+    includeExisting: false,
+    localArchive: false,
+  },
 };
 
 function bridge() {
@@ -126,29 +150,7 @@ describe('Email settings', () => {
 
   it('allows inbox processing after an SMTP failure while keeping replies disabled', async () => {
     const { request, restore } = bridge();
-    const endpoint = { host: 'localhost', port: 993, startTls: false, username: '' };
-    const account: NonNullable<EmailSnapshot['account']> = {
-      enabled: false,
-      tested: false,
-      smtpTested: false,
-      hasCredentials: true,
-      settings: {
-        address: 'gosling@example.com',
-        protocol: 'imap',
-        incoming: endpoint,
-        outgoing: endpoint,
-        provider: 'ollama',
-        model: 'local-model',
-        instructions: '',
-        senders: ['owner@example.com'],
-        recipients: ['owner@example.com'],
-        folders: [],
-        archive: '',
-        trash: '',
-        includeExisting: false,
-        localArchive: false,
-      },
-    };
+    const account = testAccount;
     const inboxVerified: EmailSnapshot = {
       ...empty,
       revision: 1,
@@ -215,6 +217,63 @@ describe('Email settings', () => {
       expect(await screen.findByRole('button', { name: 'Enable email' })).toBeEnabled();
       expect(request).toHaveBeenLastCalledWith({ op: 'pause', revision: 2 });
       expect(screen.getByRole('button', { name: 'Process now' })).toBeDisabled();
+    } finally {
+      restore();
+    }
+  });
+  it('discloses retained PDFs when discarding a paper and keeps the note action', async () => {
+    const { request, restore } = bridge();
+    const note: EmailActivity = {
+      id: 'note',
+      subject: 'Standalone note',
+      status: 'Note saved',
+      at: '2026-11-20T14:00:00Z',
+      draft: null,
+      localBody: 'Test email text',
+      localFolder: 'Research',
+      trashed: null,
+    };
+    const paper: EmailActivity = {
+      ...note,
+      id: 'paper',
+      subject: 'Research paper',
+      paper: {
+        title: 'Research paper',
+        pdf: true,
+        summary: 'Generated summary',
+        destinations: { physics: { status: 'saved', detail: 'RR-fixture' } },
+      },
+    };
+    const snapshot = { ...empty, account: testAccount, activity: [note, paper] };
+    request.mockResolvedValueOnce(snapshot).mockResolvedValueOnce({
+      ...snapshot,
+      activity: [
+        note,
+        {
+          ...paper,
+          localBody: null,
+          localFolder: null,
+          paper: { ...paper.paper!, summary: null },
+          status: 'Discarded text and summary. PDF retained in local research storage',
+        },
+      ],
+    });
+    try {
+      render(<EmailSettingsSection setView={vi.fn()} />, { wrapper: IntlTestWrapper });
+      fireEvent.click(await screen.findByText('Mail activity (2)'));
+      expect(screen.getByRole('button', { name: 'Discard local copy' })).toBeVisible();
+      const discard = screen.getByRole('button', { name: 'Discard text and summary' });
+      expect(discard).toHaveAccessibleDescription('The PDF stays in local research storage.');
+      fireEvent.click(discard);
+      expect(
+        await screen.findByText(
+          /Discarded text and summary. PDF retained in local research storage/
+        )
+      ).toBeVisible();
+      expect(request).toHaveBeenLastCalledWith({ op: 'discard', id: 'paper', revision: 0 });
+      expect(screen.queryByRole('button', { name: 'Discard text and summary' })).toBeNull();
+      fireEvent.click(screen.getByText('Research intake'));
+      expect(screen.getByText(/RR-fixture/)).toBeVisible();
     } finally {
       restore();
     }

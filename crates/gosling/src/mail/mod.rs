@@ -579,7 +579,12 @@ async fn dispatch(request: Request) -> Result<serde_json::Value> {
             if let Some(paper) = &mut item.paper {
                 paper.summary = None;
             }
-            item.status = "Discarded local content".into();
+            item.status = if item.paper.as_ref().is_some_and(workflow::Paper::has_pdf) {
+                "Discarded text and summary. PDF retained in local research storage"
+            } else {
+                "Discarded local content"
+            }
+            .into();
             store.write(&state)?;
         }
     }

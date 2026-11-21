@@ -245,9 +245,11 @@ impl Connector {
             .take()
             .context("Research adapter has no stdout")?;
         let ((), bytes) = tokio::try_join!(
-            async {
+            async move {
                 stdin.write_all(request).await?;
-                stdin.shutdown().await
+                // The adapters read to EOF, so close the pipe before waiting for their output.
+                drop(stdin);
+                Ok::<_, std::io::Error>(())
             },
             async {
                 let mut bytes = Vec::new();
@@ -544,6 +546,21 @@ fn bounded_result(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn connector_closes_stdin_for_eof_readers() {
+        let connector = Connector {
+            executable: PathBuf::from("/bin/cat"),
+            args: Vec::new(),
+        };
+        let request = br#"{"version":1,"id":"sample"}"#;
+        let output = tokio::time::timeout(Duration::from_secs(5), connector.run(request))
+            .await
+            .expect("the adapter must receive EOF")
+            .unwrap();
+        assert_eq!(output, request);
+    }
 
     #[test]
     fn signature_is_bound_to_sender_mailbox_and_exact_request() {

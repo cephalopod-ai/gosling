@@ -39,6 +39,7 @@ export interface EmailActivity {
   taskResult?: string | null;
   paper?: {
     title: string;
+    pdf: boolean;
     summary: string | null;
     scope?: 'summary' | 'zotero' | 'math' | 'physics' | null;
     destinations: Partial<

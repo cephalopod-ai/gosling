@@ -203,3 +203,32 @@ mock transport, and exercised the task runner's arguments, workspace, mode, and 
 fixture executable. The 16 focused Rust mail tests and 19 focused Desktop tests passed,
 along with Desktop typecheck, scoped lint, Rust formatting, Python syntax, and whitespace validation. Production mailbox, live Zotero writes, and a packaged app
 launch were outside these checks.
+
+## Email playtest repairs
+
+Reconciles EMAIL-PT-01 and EMAIL-PT-02 from the
+`2026-11-20-gosling-email-playtest` report. The baseline was clean `main` at
+`e40fef1e6`. A repeat of the old worker run recorded a 40.04-second adapter
+timeout with the child waiting for EOF. The old discard response showed
+`Discarded local content` while its PDF remained.
+
+- **EMAIL-PT-01 (EM-06 and EM-08)** — Close the connector's stdin after writing the
+  request. The connector keeps its existing concurrent bounded output read and
+  process cleanup. In rebuilt Electron Desktop, the supplied task adapter with a
+  fixture executable completed EM-06 and the answer opened in its transcript.
+  The three EOF-reading research fixtures completed EM-08. Zotero and Math each
+  ran once, and retry invoked only Physics. The supplied research adapter also
+  returned an Alfred record ID from a disposable database.
+- **EMAIL-PT-02 (EM-13)** — Rename the PDF activity action to **Discard text and
+  summary**, expose an accessible PDF retention description, and report the
+  retained PDF in the worker's status. EM-13 verified the email text and summary
+  were cleared, the PDF's SHA-256 stayed the same, and the existing receipts
+  remained. Adjacent EM-10 verified the original note action and status.
+
+The scoped recheck traced task and research callers through the same connector,
+and followed the discard request from Desktop through the ledger write. The
+request shape and persisted PDF flag are unchanged. The 17 Rust mail tests,
+5 focused Desktop tests, Desktop typecheck, scoped ESLint, formatting, and
+`git diff --check` passed. Desktop replay used disposable profiles, a mock
+model and research services, and native credential access disabled. Live
+mailbox intake and live Zotero writes were outside the repair replay.

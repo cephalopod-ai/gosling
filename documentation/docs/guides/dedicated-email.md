@@ -117,8 +117,11 @@ The adapter receives a versioned JSON request on stdin and reports a destination
 as `{"id":"…"}`. Create the config file and key files with restricted permissions and use
 disposable databases and a test Zotero collection for the first import.
 
-For PDFs, Gosling retains the original locally and summarizes the extracted pages. For DOI
-messages without full text, it can summarize a Crossref abstract when available. It fetches
+For PDFs, Gosling retains the original locally and summarizes the extracted pages.
+**Discard text and summary** in Mail activity clears the email text and generated summary.
+The PDF stays in local research storage so research records can still refer to it.
+
+For DOI messages without full text, Gosling can summarize a Crossref abstract when available. It fetches
 arXiv PDFs from arXiv.org. Use **Summarize only**, **Zotero only**, **Math MCP only**, or
 **Alfred only** as the subject or first line to narrow research intake. Research intake
 shows unavailable sources, unavailable abstracts, and each destination's status. Unknown write outcomes require
@@ -144,8 +147,8 @@ eligible replies remain drafts in **Mail activity**. An empty **Send allowlist**
 
 Use **Disable email** to stop processing. Use **Disconnect** to
 require a new connection test. **Forget credentials** removes the saved passwords. Mail
-activity, drafts, and local copies stay on this computer until you discard them under
-**Mail activity**. If the model cannot classify a message after three inbox checks, gosling
+activity, drafts and saved email text stay on this computer. Use **Mail activity** to
+discard a draft or saved text. If the model cannot classify a message after three inbox checks, gosling
 keeps it in the inbox, records that under **Mail activity**, and moves on. If SMTP
 delivery is uncertain, check your mailbox before following up. gosling records the uncertainty
 and leaves retry to you.
