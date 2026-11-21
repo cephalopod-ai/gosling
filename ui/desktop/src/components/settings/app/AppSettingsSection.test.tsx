@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { IntlTestWrapper } from '../../../i18n/test-utils';
 import AppSettingsSection from './AppSettingsSection';
@@ -23,6 +23,25 @@ describe('AppSettingsSection', () => {
       writable: true,
       value: { get: vi.fn(() => '1.0.0') },
     });
+  });
+
+  it('persists the master tool approval switch', async () => {
+    const setSetting = vi.fn().mockResolvedValue(undefined);
+    const previous = window.electron.setSetting;
+    window.electron.setSetting = setSetting;
+    try {
+      render(<AppSettingsSection />, { wrapper: IntlTestWrapper });
+      const control = screen.getByRole('switch', { name: 'Auto approve tool requests' });
+      expect(control).not.toBeChecked();
+      fireEvent.click(control);
+      await waitFor(() => expect(control).toBeChecked());
+      expect(setSetting).toHaveBeenLastCalledWith('autoApproveTools', true);
+      fireEvent.click(control);
+      await waitFor(() => expect(control).not.toBeChecked());
+      expect(setSetting).toHaveBeenLastCalledWith('autoApproveTools', false);
+    } finally {
+      window.electron.setSetting = previous;
+    }
   });
 
   it('names every switch after the setting it controls', async () => {

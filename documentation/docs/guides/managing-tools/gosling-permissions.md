@@ -177,6 +177,11 @@ but that judgment cannot grant tools that gosling recognizes as having side
 effects. Tool annotations may force more review; they cannot grant execution.
 :::
 
+Desktop's **Settings → App → Auto approve tool requests** setting automatically selects
+**Allow once** on incoming ACP tool requests that offer it. Gosling still applies host-side
+denials and session restrictions. This setting applies to Desktop chats and leaves operating
+system dialogs, provider-native prompts, and plan decisions with their respective controls.
+
 ## Host-enforced planning
 
 Host-enforced planning is separate from the four permission modes. While a

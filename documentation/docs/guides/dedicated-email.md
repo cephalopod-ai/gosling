@@ -44,6 +44,87 @@ The presets use TLS. Edit **Server settings** to use port 587 with STARTTLS for 
 enter custom servers, ports, and logins. Check your Google account's app-password eligibility.
 If you select Gmail POP3, enable POP in Gmail. [Purelymail server settings](https://support.purelymail.com/support/solutions/articles/159000430778-server-settings-imap-smtp-pop3-and-managesieve-protocols) · [Gmail server settings](https://developers.google.com/workspace/gmail/imap/imap-smtp) · [Google app passwords](https://support.google.com/accounts/answer/185833) · [Gmail POP setup](https://support.google.com/mail/answer/7104828)
 
+## Save notes and task requests
+
+Turn on **Save notes and task requests locally** under **Advanced** to sort email text from
+allowed senders into configured folders in **Mail activity**. An explicit filing request can
+name a configured folder. If the model cannot determine a destination, the message goes to
+**Unsorted**. The saved note contains bounded email text. Gosling keeps paper PDFs separately.
+
+When the model identifies a question or instruction, Gosling saves it under **Task requests**.
+Use **Open as chat draft** to review the text and submit it in a new Desktop chat. This mode
+uses local capture in place of the mailbox's automatic filing and reply actions.
+
+## Run signed tasks and import papers
+
+Capture mode also recognizes signed questions and instructions, PDF attachments up to 8 MiB,
+DOIs, and modern arXiv IDs or links. Completed signed requests show their responses in
+**Mail activity**. Gosling opens a session and stores the answer. The built-in runner can
+answer or transform text. For tool-backed work, set a local `task_runners` entry for that enrolled sender, using
+the same absolute executable and arguments format as the research adapters. The runner
+receives JSON with `version`, `sender`, `idempotencyKey`, `prompt`, `provider`, and `model`
+on stdin and returns `{"answer":"…"}`. The configured runner controls the tools and workspace
+that sender can use. The supplied `scripts/run-email-task.py` uses
+`--gosling <binary> --workspace <directory>` and repeatable `--builtin <name>` arguments.
+It uses a tool-free session by default. Explicit built-ins run through Gosling's ordinary
+tool policies in Auto mode, with other profile extensions disabled. Unsigned requests remain
+editable drafts.
+
+Add an `email-workflows.json` file to the Gosling config directory. Its `task_signers` map
+binds each enrolled email address to a Gosling secret holding a base64-encoded 32-byte key.
+Install the same key on the sender's system as an owner-readable file. Use
+`scripts/sign-email-task.py --from <sender> --to <mailbox> --subject <subject> --key-file <path>`
+with the request body on stdin. It emits an RFC 822 message for your mail client or submission
+tool. Send it preserving the custom headers and body. The sender also needs to be on the
+Receive allowlist. A signature expires after 24 hours and can run only once.
+
+In the same JSON file, the `research` map accepts `zotero`, `math`, and `physics` entries.
+Each has an absolute `executable` and an `args` array. Use a Python interpreter as the
+executable and the absolute path to `scripts/email-research.py` as its first argument. The
+rest of the arguments identify the destination and its write scope:
+
+| Destination | Adapter arguments after the script path |
+|---|---|
+| Zotero | `zotero --library users/<id> --collection <key> --key-file <path>`. Use a library-scoped write key in an owner-readable file. |
+| Math MCP | `math --mathmcp <binary> --store <database> --capture-store <directory> --project <name> --license-note <note>`. Use a Python environment with Sampo and its PDF extra installed. |
+| Alfred Physics | `physics --alfred <binary> --database <database>`. Use the intended Alfred research store. |
+
+For example, a signed sender and one research destination can be configured as follows.
+
+```json
+{
+  "task_signers": {
+    "you@example.com": "GOSLING_MAIL_SIGNER_KEY"
+  },
+  "research": {
+    "zotero": {
+      "executable": "/absolute/path/to/python3",
+      "args": [
+        "/absolute/path/to/scripts/email-research.py",
+        "zotero",
+        "--library", "users/123456",
+        "--collection", "ABCDEFGH",
+        "--key-file", "/absolute/path/to/zotero-key"
+      ]
+    }
+  }
+}
+```
+
+These destinations are private write scopes chosen locally. Connector paths and arguments
+come from this file. Mail text supplies article data and cannot modify the connector command.
+The adapter receives a versioned JSON request on stdin and reports a destination receipt
+as `{"id":"…"}`. Create the config file and key files with restricted permissions and use
+disposable databases and a test Zotero collection for the first import.
+
+For PDFs, Gosling retains the original locally and summarizes the extracted pages. For DOI
+messages without full text, it can summarize a Crossref abstract when available. It fetches
+arXiv PDFs from arXiv.org. Use **Summarize only**, **Zotero only**, **Math MCP only**, or
+**Alfred only** as the subject or first line to narrow research intake. Research intake
+shows unavailable sources, unavailable abstracts, and each destination's status. Unknown write outcomes require
+checking the destination before using **Retry unverified imports**. The worker keeps the receipts
+it already received and retries the other writes on a later inbox check.
+
 ## Review decisions and replies
 
 Open **Mail activity** to see what happened. gosling can keep mail, move it to an existing

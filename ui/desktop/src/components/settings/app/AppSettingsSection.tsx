@@ -17,6 +17,7 @@ import { COST_TRACKING_ENABLED, UPDATES_ENABLED } from '../../../updates';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../ui/card';
 import ThemeSelector from '../../GoslingSidebar/ThemeSelector';
 import GoslingLogo from '../../GoslingLogo';
+import { autoApprovePendingAcpPermissionRequests } from '../../../acp/permissionRequests';
 import { trackSettingToggled } from '../../../utils/analytics';
 import type { LanguageSetting } from '../../../utils/settings';
 import OutputFileExtensionsSection from './OutputFileExtensionsSection';
@@ -24,6 +25,14 @@ import CrashRecoveryPolicySection from './CrashRecoveryPolicySection';
 import ContextHistorySettings from './ContextHistorySettings';
 
 const i18n = defineMessages({
+  autoApproveTools: {
+    id: 'settings.tools.autoApprove.title',
+    defaultMessage: 'Auto approve tool requests',
+  },
+  autoApproveToolsDesc: {
+    id: 'settings.tools.autoApprove.description',
+    defaultMessage: 'Automatically allow each tool request that offers approval in Desktop chats.',
+  },
   appearanceTitle: { id: 'settings.appearance.title', defaultMessage: 'Appearance' },
   appearanceDesc: {
     id: 'settings.appearance.description',
@@ -198,6 +207,9 @@ interface AppSettingsSectionProps {
 }
 
 export default function AppSettingsSection({ scrollToSection }: AppSettingsSectionProps) {
+  const [autoApproveTools, setAutoApproveTools] = useState(false);
+  const [savingAutoApprove, setSavingAutoApprove] = useState(false);
+  const [autoApproveError, setAutoApproveError] = useState(false);
   const [menuBarIconEnabled, setMenuBarIconEnabled] = useState(true);
   const [dockIconEnabled, setDockIconEnabled] = useState(true);
   const [wakelockEnabled, setWakelockEnabled] = useState(true);
@@ -217,8 +229,9 @@ export default function AppSettingsSection({ scrollToSection }: AppSettingsSecti
 
   useEffect(() => {
     window.electron
-      .getSettings(['showPricing', 'language', 'archiveFolder'])
-      .then(({ showPricing, language, archiveFolder }) => {
+      .getSettings(['showPricing', 'language', 'archiveFolder', 'autoApproveTools'])
+      .then(({ showPricing, language, archiveFolder, autoApproveTools }) => {
+        setAutoApproveTools(autoApproveTools === true);
         setShowPricing(showPricing);
         setLanguage(language ?? 'system');
         setArchiveFolder(archiveFolder ?? null);
@@ -301,6 +314,20 @@ export default function AppSettingsSection({ scrollToSection }: AppSettingsSecti
     if (success) {
       setWakelockEnabled(newState);
       trackSettingToggled('prevent_sleep', newState);
+    }
+  };
+
+  const handleAutoApproveToggle = async (checked: boolean) => {
+    setSavingAutoApprove(true);
+    setAutoApproveError(false);
+    try {
+      await window.electron.setSetting('autoApproveTools', checked);
+      setAutoApproveTools(checked);
+      if (checked) autoApprovePendingAcpPermissionRequests();
+    } catch {
+      setAutoApproveError(true);
+    } finally {
+      setSavingAutoApprove(false);
     }
   };
 
@@ -416,6 +443,32 @@ export default function AppSettingsSection({ scrollToSection }: AppSettingsSecti
                 variant="mono"
               />
             </div>
+          </div>
+
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <h3 className="text-text-primary text-xs">
+                {intl.formatMessage(i18n.autoApproveTools)}
+              </h3>
+              <p className="text-xs text-text-secondary max-w-md mt-[2px]">
+                {intl.formatMessage(i18n.autoApproveToolsDesc)}
+              </p>
+              {autoApproveError && (
+                <p role="alert" className="text-xs text-destructive">
+                  {intl.formatMessage({
+                    id: 'settings.tools.autoApprove.error',
+                    defaultMessage: 'Could not save the auto approve setting.',
+                  })}
+                </p>
+              )}
+            </div>
+            <Switch
+              checked={autoApproveTools}
+              disabled={savingAutoApprove}
+              onCheckedChange={handleAutoApproveToggle}
+              aria-label={intl.formatMessage(i18n.autoApproveTools)}
+              variant="mono"
+            />
           </div>
 
           <div className="flex items-center justify-between">

@@ -11,7 +11,7 @@ import {
 } from './chatNotifications';
 import { createWebSocketStream } from './createWebSocketStream';
 import { requestAcpElicitation } from './elicitationRequests';
-import { requestAcpPermission } from './permissionRequests';
+import { requestDesktopAcpPermission } from './permissionRequests';
 
 type InitializedAcpClient = {
   client: GoslingClient;
@@ -50,7 +50,7 @@ function setConnectionStatus(status: AcpConnectionStatus): void {
 
 function createClientCallbacks(): () => GoslingClientCallbacks {
   return () => ({
-    requestPermission: requestAcpPermission,
+    requestPermission: requestDesktopAcpPermission,
     unstable_createElicitation: requestAcpElicitation,
     sessionUpdate: handleAcpSessionNotification,
     unstable_sessionUpdate: handleAcpGoslingSessionNotification,

@@ -76,6 +76,7 @@ export interface Settings {
   showDockIcon: boolean;
   enableWakelock: boolean;
   enableNotifications: boolean;
+  autoApproveTools: boolean;
   spellcheckEnabled: boolean;
   archiveFolder: string | null;
   archivedSessionFiles: Record<string, string>;
@@ -101,6 +102,7 @@ export const settingKeys = [
   'showDockIcon',
   'enableWakelock',
   'enableNotifications',
+  'autoApproveTools',
   'spellcheckEnabled',
   'archiveFolder',
   'archivedSessionFiles',
@@ -148,6 +150,7 @@ export const defaultSettings: Settings = {
   showDockIcon: true,
   enableWakelock: false,
   enableNotifications: true,
+  autoApproveTools: false,
   spellcheckEnabled: true,
   archiveFolder: null,
   archivedSessionFiles: {},
@@ -318,6 +321,7 @@ export function isSettingValue<K extends SettingKey>(key: K, value: unknown): va
     case 'disableAutoDownload':
     case 'showDockIcon':
     case 'enableWakelock':
+    case 'autoApproveTools':
     case 'enableNotifications':
     case 'spellcheckEnabled':
     case 'useSystemTheme':
@@ -375,6 +379,7 @@ export function setSettingValue<K extends SettingKey>(
     case 'disableAutoDownload':
     case 'showDockIcon':
     case 'enableWakelock':
+    case 'autoApproveTools':
     case 'enableNotifications':
     case 'spellcheckEnabled':
     case 'archiveFolder':

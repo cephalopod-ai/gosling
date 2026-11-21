@@ -4148,6 +4148,7 @@ dependencies = [
  "gosling-providers",
  "gosling-sdk-types",
  "gosling-test-support",
+ "hmac 0.13.0",
  "http 1.4.2",
  "icu_calendar",
  "icu_locale",

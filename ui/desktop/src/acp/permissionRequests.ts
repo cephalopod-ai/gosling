@@ -30,7 +30,8 @@ function notifyPermissionRequests(): void {
 
 /** Replaces any pending request with the same IDs and waits for a decision or cancellation. */
 export async function requestAcpPermission(
-  request: RequestPermissionRequest
+  request: RequestPermissionRequest,
+  autoApprove?: Promise<boolean>
 ): Promise<RequestPermissionResponse> {
   const key = permissionRequestKey(request.sessionId, request.toolCall.toolCallId);
   const replacedRequest = pendingRequests.get(key);
@@ -39,7 +40,8 @@ export async function requestAcpPermission(
   }
 
   return new Promise<RequestPermissionResponse>((resolve) => {
-    pendingRequests.set(key, { request, resolve });
+    const pending = { request, resolve };
+    pendingRequests.set(key, pending);
     requestGenerations.delete(key);
     requestGenerations.set(key, ++nextGeneration);
     // Pending requests may exceed the limit; only resolved history can be evicted.
@@ -47,8 +49,22 @@ export async function requestAcpPermission(
       if (requestGenerations.size <= REQUEST_GENERATION_HISTORY_LIMIT) break;
       if (!pendingRequests.has(candidateKey)) requestGenerations.delete(candidateKey);
     }
-    acpChatSessionActions.applyPermissionRequest(request);
-    notifyPermissionRequests();
+    const showRequest = () => {
+      acpChatSessionActions.applyPermissionRequest(request);
+      notifyPermissionRequests();
+    };
+    if (!autoApprove) {
+      showRequest();
+      return;
+    }
+    void autoApprove.then((enabled) => {
+      if (pendingRequests.get(key) !== pending) return;
+      if (enabled) {
+        approvePendingRequest(request);
+      } else {
+        showRequest();
+      }
+    });
   });
 }
 
@@ -95,6 +111,27 @@ export function resolveAcpPermissionRequest(
   pending.resolve(permissionResponseForAction(pending.request, action));
   notifyPermissionRequests();
   return true;
+}
+
+export function requestDesktopAcpPermission(
+  request: RequestPermissionRequest
+): Promise<RequestPermissionResponse> {
+  return requestAcpPermission(
+    request,
+    window.electron.getSetting('autoApproveTools').catch(() => false)
+  );
+}
+
+function approvePendingRequest(request: RequestPermissionRequest): void {
+  const { sessionId, toolCall } = request;
+  const action = permissionOptionIdForAction(request, 'allow_once') ? 'allow_once' : 'cancel';
+  resolveAcpPermissionRequest(sessionId, toolCall.toolCallId, action);
+}
+
+export function autoApprovePendingAcpPermissionRequests(): void {
+  for (const { request } of pendingRequests.values()) {
+    approvePendingRequest(request);
+  }
 }
 
 export function cancelAcpPermissionRequestsForSession(sessionId: string): void {

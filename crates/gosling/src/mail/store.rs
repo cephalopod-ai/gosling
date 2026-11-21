@@ -1,7 +1,7 @@
 use super::Settings;
 use anyhow::{bail, ensure, Context, Result};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::{ErrorKind, Write};
 use std::path::PathBuf;
@@ -64,6 +64,19 @@ pub(super) struct Activity {
     pub draft: Option<Draft>,
     pub local_body: Option<String>,
     pub local_folder: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub task_request: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub signed_task: bool,
+    #[serde(default)]
+    pub task_sender: Option<String>,
+    #[serde(default)]
+    pub task_session_id: Option<String>,
+    #[serde(default)]
+    pub task_result: Option<String>,
+    #[serde(default)]
+    pub paper: Option<super::workflow::Paper>,
+
     pub trashed: Option<Trashed>,
 }
 
@@ -77,6 +90,12 @@ impl Activity {
             draft: None,
             local_body: None,
             local_folder: None,
+            task_request: false,
+            signed_task: false,
+            task_sender: None,
+            task_session_id: None,
+            task_result: None,
+            paper: None,
             trashed: None,
         }
     }
@@ -94,6 +113,8 @@ pub(super) struct Ledger {
     pub cursor: Option<Cursor>,
     pub activity: Vec<Activity>,
     #[serde(default)]
+    pub task_nonces: BTreeMap<String, i64>,
+    #[serde(default)]
     pub restored_uids: Vec<(u32, u32)>,
     retired_secrets: Vec<String>,
     last_status: Option<String>,
@@ -109,6 +130,7 @@ impl Default for Ledger {
             account: None,
             cursor: None,
             activity: Vec::new(),
+            task_nonces: BTreeMap::new(),
             restored_uids: Vec::new(),
             retired_secrets: Vec::new(),
             last_status: None,
@@ -364,6 +386,25 @@ impl MailStore {
         let mut state = store.read()?;
         state.clean_retired(&store);
         Ok((store, state))
+    }
+
+    pub fn paper_path(&self, key: &str) -> Result<PathBuf> {
+        ensure!(
+            key.len() == 64 && key.bytes().all(|byte| byte.is_ascii_hexdigit()),
+            "Invalid paper identity"
+        );
+        Ok(self.dir.join(format!("{key}.pdf")))
+    }
+
+    pub fn save_pdf(&self, key: &str, pdf: &[u8]) -> Result<()> {
+        let path = self.paper_path(key)?;
+        if !path.try_exists()? {
+            let mut file = tempfile::NamedTempFile::new_in(&self.dir)?;
+            file.write_all(pdf)?;
+            file.as_file().sync_all()?;
+            file.persist_noclobber(path)?;
+        }
+        Ok(())
     }
 
     pub fn read(&self) -> Result<Ledger> {

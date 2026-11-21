@@ -153,3 +153,53 @@ lists, and rejected the retired reply-code request. Rebuilt and installed the si
 and matching CLI. The installed worker loaded the existing mailbox and both policy fields.
 The Desktop process reached a macOS Keychain prompt before its window opened. Live SMTP
 delivery was not part of this check.
+
+## Email capture and Desktop tool approval
+
+Added an opt-in capture mode to the dedicated mailbox. The mail worker applies the Receive
+allowlist, selects a configured folder or Unsorted, and stores bounded text in the local
+mail ledger. A captured task can open in the normal Desktop composer as an editable draft.
+The mode does not enact existing IMAP filing, Trash, or automatic replies.
+
+Added the persisted **Auto approve tool requests** setting for Desktop chats. The ACP client
+selects Allow once for each offered approval while the switch is on. The client cancels a
+request that has no one-time approval option. Turning the switch off restores interactive
+requests. Tests cover selection, missing Allow once, a cancelled setting lookup, and the
+settings toggle. Other clients, host-side denials, and native dialogs are outside this setting.
+
+Changed the Rust mail worker and ledger in `crates/gosling/src/mail/`, Desktop ACP request
+handling and App and Email settings in `ui/desktop/src/`, and the dedicated email and
+permissions guides under `documentation/docs/guides/`.
+
+Validation includes 14 focused Rust mail tests, 32 tests across five Desktop files, Desktop
+typecheck, scoped ESLint, formatting, and whitespace checks. No live mailbox or research store was changed.
+
+Remaining plan work includes authenticated unattended task submission, attachment intake,
+paper summaries, and verified writes to Zotero, Math MCP, and Alfred Physics. The current
+mail sender filter matches the From address, and the existing physics shell exposes only
+read access to Math MCP. Those behaviors are insufficient for unattended task admission
+and research ingestion.
+
+## Signed email tasks and research intake
+
+Extended local capture with HMAC-signed task admission and a durable replay ledger. Tasks
+create a Gosling transcript and persist the answer. The default model path runs without tools.
+An explicitly enrolled sender can use a fixed local runner with a configured workspace and
+built-ins. The worker rechecks enrollment before launching a queued task.
+
+Increased the capture-mode MIME limit for bounded PDF attachments. The new workflow retains
+papers by key, extracts bounded page text, summarizes available PDF text or a Crossref abstract,
+and accepts arXiv IDs and links. Signed task responses, research summaries, and independent
+destination receipts are visible in Mail activity. The retry action preserves successful receipts.
+Unknown outcomes are shown for review and can be retried explicitly.
+
+Added the signed-message, CLI runner, and research adapter scripts. The adapters use Zotero's
+v3 item and attachment API, Sampo and Math MCP's source custody and capture-import commands,
+and Alfred's research record ingestion. Local configuration selects the exact write scopes.
+
+Verified Math MCP and Alfred against disposable stores. Two Math imports returned the same
+package receipt. Verified the Zotero item, summary note, PDF upload, and replay sequence using a
+mock transport, and exercised the task runner's arguments, workspace, mode, and stdin with a
+fixture executable. The 16 focused Rust mail tests and 19 focused Desktop tests passed,
+along with Desktop typecheck, scoped lint, Rust formatting, Python syntax, and whitespace validation. Production mailbox, live Zotero writes, and a packaged app
+launch were outside these checks.

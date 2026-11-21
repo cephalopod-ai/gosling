@@ -25,6 +25,7 @@ fn settings() -> Settings {
         trash: String::new(),
         include_existing: false,
         local_archive: false,
+        capture_notes: false,
     }
 }
 
@@ -32,17 +33,22 @@ fn settings() -> Settings {
 fn mail_instructions_default_to_empty_and_are_validated_when_saved() {
     let mut old_settings = serde_json::to_value(settings()).unwrap();
     old_settings.as_object_mut().unwrap().remove("instructions");
+    old_settings.as_object_mut().unwrap().remove("captureNotes");
     let mut settings: Settings = serde_json::from_value(old_settings).unwrap();
     assert!(settings.instructions.is_empty());
-    assert_eq!(classification_prompt("\n\t "), classification_prompt(""));
+    assert!(!settings.capture_notes);
+    assert_eq!(
+        classification_prompt("\n\t ", false),
+        classification_prompt("", false)
+    );
 
     settings.instructions = "Move receipts to Receipts.\nKeep replies brief.".into();
     settings.validate().unwrap();
     let restored: Settings =
         serde_json::from_value(serde_json::to_value(&settings).unwrap()).unwrap();
     assert_eq!(restored.instructions, settings.instructions);
-    let prompt = classification_prompt(&restored.instructions);
-    assert!(prompt.starts_with(&classification_prompt("")));
+    let prompt = classification_prompt(&restored.instructions, false);
+    assert!(prompt.starts_with(&classification_prompt("", false)));
     assert!(prompt.ends_with(&settings.instructions));
 
     settings.instructions = "é".repeat(MAX_INSTRUCTIONS / 2);
@@ -51,6 +57,63 @@ fn mail_instructions_default_to_empty_and_are_validated_when_saved() {
     assert!(settings.validate().is_err());
     settings.instructions = "Instruction\0text".into();
     assert!(settings.validate().is_err());
+}
+
+#[tokio::test]
+async fn capture_mode_retains_notes_and_reviewable_tasks_across_restart() {
+    let root = tempfile::tempdir().unwrap();
+    let (store, mut state) = MailStore::open(root.path().to_path_buf()).unwrap();
+    let mut policy = settings();
+    policy.capture_notes = true;
+    let test_mail = |sender: &str| {
+        IncomingMessage::parse(
+            format!("From: {sender}\r\nSubject: Research\r\n\r\nSource text").as_bytes(),
+        )
+        .unwrap()
+    };
+    let cases = [
+        (
+            "owner@example.com",
+            Proposal::Note {
+                folder: Some("Receipts".into()),
+            },
+        ),
+        (
+            "owner@example.com",
+            Proposal::Note {
+                folder: Some("../unconfigured".into()),
+            },
+        ),
+        ("owner@example.com", Proposal::Task),
+        ("other@example.net", Proposal::Task),
+    ];
+    for (sender, proposal) in cases {
+        assert!(record_action(
+            &store,
+            &mut state,
+            &policy,
+            Some((test_mail(sender), proposal)),
+            None
+        )
+        .await
+        .unwrap()
+        .is_none());
+    }
+
+    drop(store);
+    let (_store, state) = MailStore::open(root.path().to_path_buf()).unwrap();
+    assert_eq!(state.activity.len(), 3);
+    assert!(state.activity[0].task_request);
+    assert_eq!(
+        state.activity[0].local_folder.as_deref(),
+        Some("Task requests")
+    );
+    assert_eq!(state.activity[1].local_folder.as_deref(), Some("Unsorted"));
+    assert_eq!(state.activity[2].local_folder.as_deref(), Some("Receipts"));
+    assert!(state
+        .activity
+        .iter()
+        .all(|item| item.local_body.as_deref() == Some("Source text")));
 }
 
 fn draft_item(recipient: &str) -> Activity {

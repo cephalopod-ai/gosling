@@ -1,4 +1,4 @@
-use super::{store::Trashed, Endpoint, Protocol, Settings, MAX_MESSAGE};
+use super::{store::Trashed, Endpoint, Protocol, Settings};
 use anyhow::{bail, ensure, Context, Result};
 use async_imap::imap_proto::{Response, ResponseCode, Status, UidSetMember};
 use async_imap::types::NameAttribute;
@@ -98,13 +98,17 @@ pub(super) async fn test(settings: &Settings, password: &str) -> Result<()> {
     Ok(())
 }
 
-pub(super) async fn fetch_imap(session: &mut Imap, uid: u32) -> Result<Option<Vec<u8>>> {
-    let query = format!("(UID RFC822.SIZE BODY.PEEK[]<0.{}>)", MAX_MESSAGE + 1);
+pub(super) async fn fetch_imap(
+    session: &mut Imap,
+    uid: u32,
+    message_limit: usize,
+) -> Result<Option<Vec<u8>>> {
+    let query = format!("(UID RFC822.SIZE BODY.PEEK[]<0.{}>)", message_limit + 1);
     let mut rows = session.uid_fetch(uid.to_string(), &query).await?;
     let mut message = None;
     while let Some(row) = rows.try_next().await? {
-        if row.uid == Some(uid) && row.size.is_some_and(|size| size as usize <= MAX_MESSAGE) {
-            if let Some(body) = row.body().filter(|body| body.len() <= MAX_MESSAGE) {
+        if row.uid == Some(uid) && row.size.is_some_and(|size| size as usize <= message_limit) {
+            if let Some(body) = row.body().filter(|body| body.len() <= message_limit) {
                 message = Some(body.to_vec());
             }
         }
@@ -264,7 +268,7 @@ impl Pop {
         }
     }
 
-    pub async fn fetch(&mut self, number: u32) -> Result<Option<Vec<u8>>> {
+    pub async fn fetch(&mut self, number: u32, message_limit: usize) -> Result<Option<Vec<u8>>> {
         let listing = self.command(&format!("LIST {number}")).await?;
         let mut columns = std::str::from_utf8(&listing)?
             .split_ascii_whitespace()
@@ -278,13 +282,13 @@ impl Pop {
             .context("Missing POP message size")?
             .parse::<usize>()?;
         ensure!(listed_number == number, "Unexpected POP message number");
-        if size > MAX_MESSAGE {
+        if size > message_limit {
             return Ok(None);
         }
         self.command(&format!("RETR {number}")).await?;
         let mut contents = Vec::new();
         loop {
-            let line = read_line(&mut self.0, MAX_MESSAGE + 2).await?;
+            let line = read_line(&mut self.0, message_limit + 2).await?;
             if line == b".\r\n" {
                 return Ok(Some(contents));
             }
@@ -293,7 +297,7 @@ impl Pop {
             } else {
                 &line
             };
-            if contents.len() + line.len() > MAX_MESSAGE {
+            if contents.len() + line.len() > message_limit {
                 return Ok(None);
             }
             contents.extend_from_slice(line);

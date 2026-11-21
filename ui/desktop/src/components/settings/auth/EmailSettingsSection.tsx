@@ -10,7 +10,7 @@ import type {
 } from '../../../types/email';
 import { applyEmailPreset } from '../../../types/email';
 import { errorMessage } from '../../../utils/conversionUtils';
-import type { View } from '../../../utils/navigationUtils';
+import type { View, ViewOptions } from '../../../utils/navigationUtils';
 import { Button } from '../../ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../ui/card';
 import {
@@ -41,6 +41,7 @@ const initialSettings: EmailSettings = {
   trash: '',
   includeExisting: false,
   localArchive: false,
+  captureNotes: false,
 };
 
 function inferPreset(settings: EmailSettings): EmailPreset {
@@ -117,11 +118,15 @@ function ActivityList({
   busy,
   canSend,
   onAction,
+  onOpenTask,
+  onOpenSession,
 }: {
   activity: EmailActivity[];
   busy: boolean;
   canSend: boolean;
-  onAction: (action: 'send' | 'restore' | 'discard', id: string) => void;
+  onOpenTask: (item: EmailActivity) => void;
+  onOpenSession: (id: string) => void;
+  onAction: (action: 'send' | 'restore' | 'discard' | 'retryResearch', id: string) => void;
 }) {
   return (
     <details className="rounded-md border p-3 text-sm">
@@ -134,6 +139,55 @@ function ActivityList({
             <div className="text-muted-foreground">
               {item.status} · <time dateTime={item.at}>{new Date(item.at).toLocaleString()}</time>
             </div>
+            {item.taskResult && (
+              <details>
+                <summary className="cursor-pointer">Read task response</summary>
+                <p className={contentClass}>{item.taskResult}</p>
+              </details>
+            )}
+            {item.paper && (
+              <details>
+                <summary className="cursor-pointer">Research intake</summary>
+                {item.paper.summary && <p className={contentClass}>{item.paper.summary}</p>}
+                <ul>
+                  {(
+                    [
+                      ['zotero', 'Zotero'],
+                      ['math', 'Math MCP'],
+                      ['physics', 'Alfred Physics'],
+                    ] as const
+                  ).map(([key, label]) => {
+                    if (item.paper?.scope && item.paper.scope !== key) return null;
+                    const outcome = item.paper?.destinations[key];
+                    return (
+                      <li key={key}>
+                        {label} ·{' '}
+                        {outcome?.status === 'saved'
+                          ? outcome.detail
+                          : outcome?.status === 'inProgress'
+                            ? 'Outcome unknown'
+                            : outcome?.status === 'failed'
+                              ? 'Import could not be verified'
+                              : 'Waiting for import'}
+                      </li>
+                    );
+                  })}
+                </ul>
+                {item.localBody !== null &&
+                  Object.values(item.paper.destinations).some(
+                    (outcome) => outcome.status !== 'saved'
+                  ) && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() => onAction('retryResearch', item.id)}
+                    >
+                      Retry unverified imports
+                    </Button>
+                  )}
+              </details>
+            )}
             {item.draft && (
               <details>
                 <summary className="cursor-pointer">Review reply to {item.draft.recipient}</summary>
@@ -155,6 +209,20 @@ function ActivityList({
               </details>
             )}
             <div className="flex flex-wrap gap-2">
+              {item.taskSessionId && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onOpenSession(item.taskSessionId!)}
+                >
+                  Open task session
+                </Button>
+              )}
+              {item.taskRequest && item.localBody !== null && (
+                <Button size="sm" variant="outline" onClick={() => onOpenTask(item)}>
+                  Open as chat draft
+                </Button>
+              )}
               {(item.trashed || item.localFolder === 'Trash') && (
                 <Button
                   size="sm"
@@ -183,7 +251,11 @@ function ActivityList({
   );
 }
 
-export default function EmailSettingsSection({ setView }: { setView: (view: View) => void }) {
+export default function EmailSettingsSection({
+  setView,
+}: {
+  setView: (view: View, options?: ViewOptions) => void;
+}) {
   const [snapshot, setSnapshot] = useState<EmailSnapshot>();
   const [settings, setSettings] = useState(initialSettings);
   const [preset, setPreset] = useState<EmailPreset>('purelymail');
@@ -531,7 +603,15 @@ export default function EmailSettingsSection({ setView }: { setView: (view: View
                   Process existing mail on the first inbox check
                 </label>
               )}
-              {settings.protocol === 'imap' && (
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={settings.captureNotes ?? false}
+                  onChange={(event) => update({ captureNotes: event.target.checked })}
+                />
+                Save notes and task requests locally
+              </label>
+              {settings.protocol === 'imap' && !settings.captureNotes && (
                 <label className="flex items-center gap-2 text-sm">
                   <input
                     type="checkbox"
@@ -688,6 +768,15 @@ export default function EmailSettingsSection({ setView }: { setView: (view: View
               busy={disabled || dirty}
               canSend={canSend}
               onAction={(op, id) => void run({ op, id, revision })}
+              onOpenSession={(resumeSessionId) => setView('pair', { resumeSessionId })}
+              onOpenTask={(item) =>
+                setView('chat', {
+                  initialMessage: {
+                    msg: [item.subject, item.localBody].filter(Boolean).join('\n\n'),
+                    images: [],
+                  },
+                })
+              }
             />
           </>
         )}

@@ -2,10 +2,12 @@
 import type { RequestPermissionRequest, RequestPermissionResponse } from '@agentclientprotocol/sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  autoApprovePendingAcpPermissionRequests,
   cancelAcpPermissionRequestsForSession,
   acpPermissionRequestIdentity,
   isAcpPermissionRequestPending,
   requestAcpPermission,
+  requestDesktopAcpPermission,
   resolveAcpPermissionRequest,
 } from '../permissionRequests';
 import { acpChatSessionActions } from '../chatSessionStore';
@@ -83,6 +85,52 @@ describe('ACP permission requests', () => {
     for (const sessionId of TEST_SESSION_IDS) {
       cancelAcpPermissionRequestsForSession(sessionId);
     }
+  });
+
+  it('automatically chooses allow once without displaying an approval request', async () => {
+    const getSetting = vi.fn().mockResolvedValue(true);
+    vi.stubGlobal('window', { electron: { getSetting } });
+    try {
+      const request = permissionRequest('session-1', 'tool-1');
+      await expect(requestDesktopAcpPermission(request)).resolves.toEqual({
+        outcome: { outcome: 'selected', optionId: 'allow-once' },
+      });
+      await expect(
+        requestDesktopAcpPermission({ ...request, options: request.options.slice(1) })
+      ).resolves.toEqual({
+        outcome: { outcome: 'cancelled' },
+      });
+      expect(getSetting).toHaveBeenCalledWith('autoApproveTools');
+      expect(acpChatSessionActions.applyPermissionRequest).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('does not revive a cancelled request while reading auto approve settings', async () => {
+    let resolveSetting!: (enabled: boolean) => void;
+    const setting = new Promise<boolean>((resolve) => {
+      resolveSetting = resolve;
+    });
+    vi.stubGlobal('window', { electron: { getSetting: () => setting } });
+    try {
+      const pending = requestDesktopAcpPermission(permissionRequest('session-1', 'tool-1'));
+      cancelAcpPermissionRequestsForSession('session-1');
+      resolveSetting(false);
+      await expect(pending).resolves.toEqual({ outcome: { outcome: 'cancelled' } });
+      expect(acpChatSessionActions.applyPermissionRequest).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('resolves visible pending requests when auto approve is enabled', async () => {
+    const pending = requestAcpPermission(permissionRequest('session-1', 'tool-1'));
+    autoApprovePendingAcpPermissionRequests();
+    await expect(pending).resolves.toEqual({
+      outcome: { outcome: 'selected', optionId: 'allow-once' },
+    });
+    expect(isAcpPermissionRequestPending('session-1', 'tool-1')).toBe(false);
   });
 
   it('keeps permission requests pending until explicit resolve', async () => {
@@ -207,7 +255,11 @@ describe('ACP permission requests', () => {
           name: 'Allow /private/tmp for this session',
           kind: 'allow_always',
         },
-        { optionId: 'allow_always_folder', name: 'Always allow /private/tmp', kind: 'allow_always' },
+        {
+          optionId: 'allow_always_folder',
+          name: 'Always allow /private/tmp',
+          kind: 'allow_always',
+        },
         { optionId: 'allow_once', name: 'allow_once', kind: 'allow_once' },
       ],
       toolCall: { toolCallId: 'tool-1', title: 'Run shell command' },

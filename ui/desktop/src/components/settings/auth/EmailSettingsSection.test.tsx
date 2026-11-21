@@ -173,10 +173,22 @@ describe('Email settings', () => {
             localFolder: null,
             trashed: null,
           },
+          {
+            id: 'request',
+            at: '2026-11-20T14:00:00Z',
+            subject: 'Research request',
+            status: 'Task request captured for review',
+            draft: null,
+            localBody: 'Compare the approaches.',
+            localFolder: 'Task requests',
+            taskRequest: true,
+            trashed: null,
+          },
         ],
       });
+    const setView = vi.fn();
     try {
-      render(<EmailSettingsSection setView={vi.fn()} />, { wrapper: IntlTestWrapper });
+      render(<EmailSettingsSection setView={setView} />, { wrapper: IntlTestWrapper });
       expect(await screen.findByRole('button', { name: 'Enable email' })).toBeDisabled();
       fireEvent.click(screen.getByRole('button', { name: 'Test connection' }));
       expect(await screen.findByText(inboxVerified.lastStatus!)).toBeVisible();
@@ -187,7 +199,11 @@ describe('Email settings', () => {
       await screen.findByText(/Monitoring inbox/);
       expect(request).toHaveBeenLastCalledWith({ op: 'enable', revision: 1 });
       expect(screen.getByRole('button', { name: 'Process now' })).toBeEnabled();
-      fireEvent.click(screen.getByText('Mail activity (1)'));
+      fireEvent.click(screen.getByText('Mail activity (2)'));
+      fireEvent.click(screen.getByRole('button', { name: 'Open as chat draft' }));
+      expect(setView).toHaveBeenCalledWith('chat', {
+        initialMessage: { msg: 'Research request\n\nCompare the approaches.', images: [] },
+      });
       fireEvent.click(screen.getByText('Review reply to owner@example.com'));
       expect(screen.getByRole('button', { name: 'Send reply' })).toBeDisabled();
       expect(screen.queryByText('Create reply code')).toBeNull();

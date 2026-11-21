@@ -75,6 +75,7 @@ const OPERATIONS = new Set([
   'send',
   'restore',
   'discard',
+  'retryResearch',
 ]);
 
 interface Options {

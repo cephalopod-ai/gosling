@@ -32,7 +32,7 @@ vi.mock('../chatNotifications', () => ({
   handleAcpSessionNotification: vi.fn(),
 }));
 vi.mock('../elicitationRequests', () => ({ requestAcpElicitation: vi.fn() }));
-vi.mock('../permissionRequests', () => ({ requestAcpPermission: vi.fn() }));
+vi.mock('../permissionRequests', () => ({ requestDesktopAcpPermission: vi.fn() }));
 
 describe('ACP connection status', () => {
   beforeEach(() => {

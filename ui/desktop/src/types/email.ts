@@ -23,6 +23,7 @@ export interface EmailSettings {
   trash: string;
   includeExisting: boolean;
   localArchive: boolean;
+  captureNotes?: boolean;
 }
 
 export interface EmailActivity {
@@ -33,6 +34,23 @@ export interface EmailActivity {
   draft: { recipient: string; text: string } | null;
   localBody: string | null;
   localFolder: string | null;
+  taskRequest?: boolean;
+  taskSessionId?: string | null;
+  taskResult?: string | null;
+  paper?: {
+    title: string;
+    summary: string | null;
+    scope?: 'summary' | 'zotero' | 'math' | 'physics' | null;
+    destinations: Partial<
+      Record<
+        'zotero' | 'math' | 'physics',
+        {
+          status: 'inProgress' | 'saved' | 'failed';
+          detail?: string;
+        }
+      >
+    >;
+  } | null;
   trashed: { folder: string } | null;
 }
 
@@ -52,7 +70,7 @@ export interface EmailSnapshot {
 export type EmailRequest =
   | { op: 'status' | 'test' | 'poll' }
   | { op: 'enable' | 'pause' | 'disconnect' | 'forget' | 'reset'; revision: number }
-  | { op: 'send' | 'restore' | 'discard'; id: string; revision: number }
+  | { op: 'send' | 'restore' | 'discard' | 'retryResearch'; id: string; revision: number }
   | {
       op: 'save';
       revision: number;
