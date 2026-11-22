@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useId } from 'react';
 import { AlertTriangle, Bot, CheckCircle2, ExternalLink, LoaderCircle, Search } from 'lucide-react';
 import { defineMessages, useIntl } from '../../../../i18n';
 
@@ -157,13 +157,11 @@ const i18n = defineMessages({
   },
   unknownContext: {
     id: 'switchModelModal.unknownContext',
-    defaultMessage:
-      'The context window could not be discovered for this model. Gosling will use 128,000 tokens unless you enter the limit supported by your provider.',
+    defaultMessage: 'Context window unknown. The default is 128,000 tokens.',
   },
   contextWarning: {
     id: 'switchModelModal.contextWarning',
-    defaultMessage:
-      'Use the limit supported by this provider. A value that is too high can cause context-length errors; a value that is too low causes earlier compaction. This setting does not increase the model’s capacity.',
+    defaultMessage: 'Use your provider’s limit to avoid errors or early compaction.',
   },
   invalidContext: {
     id: 'switchModelModal.invalidContext',
@@ -253,7 +251,11 @@ const i18n = defineMessages({
   newContextWarning: {
     id: 'switchModelModal.newContextWarning',
     defaultMessage:
-      'This provider cannot receive the checkpoint. Continuing starts a new provider context; the previous provider and checkpoint remain available.',
+      'The new model starts without this chat’s context. Your chat and checkpoint stay available.',
+  },
+  handoffDetails: {
+    id: 'switchModelModal.handoffDetails',
+    defaultMessage: 'Handoff details',
   },
   checkpointCoverage: {
     id: 'switchModelModal.checkpointCoverage',
@@ -267,8 +269,7 @@ const i18n = defineMessages({
   },
   queuedSwitch: {
     id: 'switchModelModal.queuedSwitch',
-    defaultMessage:
-      'The current response will finish first. Gosling will refresh this checkpoint with its final output, then activate the switch before the next queued message.',
+    defaultMessage: 'Switches after the current reply, before the next message.',
   },
   sessionToolContinuity: {
     id: 'switchModelModal.sessionToolContinuity',
@@ -277,8 +278,7 @@ const i18n = defineMessages({
   },
   providerNativeToolsWarning: {
     id: 'switchModelModal.providerNativeToolsWarning',
-    defaultMessage:
-      'Provider-native tools do not transfer between providers and the target may expose a different native tool set. Session-enabled Gosling extensions will remain configured.',
+    defaultMessage: 'Provider tools may change. Gosling extensions carry over.',
   },
   transitionStages: {
     id: 'switchModelModal.transitionStages',
@@ -443,6 +443,20 @@ export const SwitchModelModal = ({
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [isSwitching, setIsSwitching] = useState(false);
   const [transitionActivated, setTransitionActivated] = useState(false);
+  const scrollBodyRef = useRef<HTMLDivElement>(null);
+  const continuityRef = useRef<HTMLElement>(null);
+  const continuityHeadingId = useId();
+  const thinkingEffortId = useId();
+
+  const selectMenuProps = {
+    menuPosition: 'fixed' as const,
+    maxMenuHeight: 240,
+    closeMenuOnScroll: (event: Event) => event.target === scrollBodyRef.current,
+  };
+
+  useEffect(() => {
+    if (handoffPreview) continuityRef.current?.focus();
+  }, [handoffPreview]);
 
   const selectedProviderId = usePredefinedModels ? selectedPredefinedModel?.provider : provider;
   const selectedModelId = usePredefinedModels ? selectedPredefinedModel?.name : model;
@@ -976,10 +990,12 @@ export const SwitchModelModal = ({
 
   const thinkingEffortControl = showThinkingControl && (
     <div className="mt-2">
-      <label className="text-sm text-textSubtle mb-1 block">
+      <label htmlFor={thinkingEffortId} className="text-sm text-textSubtle mb-1 block">
         {intl.formatMessage(i18n.thinkingEffort)}
       </label>
       <Select
+        {...selectMenuProps}
+        inputId={thinkingEffortId}
         options={THINKING_EFFORT_OPTIONS}
         value={THINKING_EFFORT_OPTIONS.find((o) => o.value === (thinkingEffort ?? 'off'))}
         onChange={(newValue: unknown) => {
@@ -993,18 +1009,22 @@ export const SwitchModelModal = ({
 
   return (
     <Dialog open={true} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[500px]">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Bot size={24} className="text-text-primary" />
+      {/* Center without transforms so fixed dropdown menus can escape the scrolling form. */}
+      <DialogContent className="inset-0 m-auto h-fit max-h-[calc(100dvh-2rem)] translate-none grid-rows-[auto_minmax(0,1fr)_auto] gap-0 p-0 data-[state=open]:animate-none data-[state=closed]:animate-none sm:max-w-[500px]">
+        <DialogHeader className="mb-0 py-4 pl-5 pr-12">
+          <DialogTitle className="flex items-center gap-2 text-left">
+            <Bot size={24} className="shrink-0 text-text-primary" aria-hidden="true" />
             {titleOverride || intl.formatMessage(i18n.title)}
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription className={descriptionOverride ? 'text-left' : 'sr-only'}>
             {descriptionOverride ?? intl.formatMessage(i18n.description)}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-4 py-4">
+        <div
+          ref={scrollBodyRef}
+          className="min-h-0 space-y-3 overflow-y-auto overscroll-contain px-5 py-2"
+        >
           {usePredefinedModels ? (
             <div className="w-full flex flex-col gap-4">
               <div className="flex justify-between items-center">
@@ -1083,6 +1103,7 @@ export const SwitchModelModal = ({
             <div className="w-full flex flex-col gap-4">
               <div>
                 <Select
+                  {...selectMenuProps}
                   options={providerOptions}
                   value={providerOptions.find((option) => option.value === provider) || null}
                   onChange={(newValue: unknown) => {
@@ -1161,6 +1182,7 @@ export const SwitchModelModal = ({
                         />
                       </div>
                       <Select
+                        {...selectMenuProps}
                         options={
                           loadingModels
                             ? []
@@ -1269,54 +1291,25 @@ export const SwitchModelModal = ({
             )}
 
           {sessionId && selectedProviderId && selectedModelId && (
-            <div className="rounded-lg border border-border-primary bg-background-secondary p-3 text-sm">
-              <div className="flex items-center justify-between gap-3">
-                <span className="font-medium text-text-primary">
+            <section
+              ref={continuityRef}
+              aria-labelledby={continuityHeadingId}
+              tabIndex={-1}
+              className="rounded-lg border border-border-primary bg-background-secondary p-3 text-sm"
+            >
+              <div className="space-y-1">
+                <h3 id={continuityHeadingId} className="font-medium text-text-primary">
                   {intl.formatMessage(i18n.continuity, {
                     continuity: continuityLabel(
                       handoffPreview?.snapshot.continuityClass ?? predictedContinuity
                     ),
                   })}
-                </span>
-                <span className="text-xs text-text-secondary">
+                </h3>
+                <p className="wrap-anywhere text-xs text-text-secondary">
                   {currentProvider ?? '—'} / {currentModel ?? '—'} → {selectedProviderId} /{' '}
                   {selectedModelId}
-                </span>
+                </p>
               </div>
-
-              {handoffPreview && (
-                <div className="mt-2 space-y-1 text-xs text-text-secondary">
-                  <p>
-                    {intl.formatMessage(i18n.checkpointCoverage, {
-                      covered: handoffPreview.snapshot.coverage.coveredMessageCount,
-                      total: handoffPreview.snapshot.coverage.totalMessageCount,
-                      row: handoffPreview.snapshot.coverage.coveredThroughRowId ?? '—',
-                      tokens: handoffPreview.snapshot.coverage.estimatedTokens,
-                    })}
-                  </p>
-                  <p>
-                    {intl.formatMessage(i18n.checkpointDetails, {
-                      summary: handoffPreview.snapshot.coverage.summaryStatus,
-                      delivery: handoffPreview.snapshot.deliveryStrategy,
-                      operations:
-                        handoffPreview.snapshot.activeOrInterruptedOperations?.length ?? 0,
-                      approvals: handoffPreview.snapshot.pendingApprovals?.length ?? 0,
-                      redactions: handoffPreview.snapshot.redactionReport.redactionCount,
-                      truncations:
-                        (handoffPreview.snapshot.coverage.truncations?.length ?? 0) +
-                        handoffPreview.snapshot.redactionReport.truncatedItemCount,
-                    })}
-                  </p>
-                  <p>
-                    {intl.formatMessage(i18n.sessionToolContinuity, {
-                      tools: handoffPreview.toolContinuity.goslingToolCount,
-                      extensions:
-                        handoffPreview.toolContinuity.enabledExtensionNames?.join(', ') || '—',
-                      mode: handoffPreview.toolContinuity.authorizationMode,
-                    })}
-                  </p>
-                </div>
-              )}
 
               {handoffPreview?.queuedAfterRunId && (
                 <div className="mt-2 flex gap-2 rounded-md border border-blue-500/40 bg-blue-500/10 p-2 text-xs text-blue-800 dark:text-blue-200">
@@ -1340,6 +1333,45 @@ export const SwitchModelModal = ({
                 </div>
               )}
 
+              {handoffPreview && (
+                <details className="mt-2 text-xs text-text-secondary">
+                  <summary className="cursor-pointer text-text-primary">
+                    {intl.formatMessage(i18n.handoffDetails)}
+                  </summary>
+                  <div className="mt-2 space-y-1 wrap-anywhere">
+                    <p>
+                      {intl.formatMessage(i18n.checkpointCoverage, {
+                        covered: handoffPreview.snapshot.coverage.coveredMessageCount,
+                        total: handoffPreview.snapshot.coverage.totalMessageCount,
+                        row: handoffPreview.snapshot.coverage.coveredThroughRowId ?? '—',
+                        tokens: handoffPreview.snapshot.coverage.estimatedTokens,
+                      })}
+                    </p>
+                    <p>
+                      {intl.formatMessage(i18n.checkpointDetails, {
+                        summary: handoffPreview.snapshot.coverage.summaryStatus,
+                        delivery: handoffPreview.snapshot.deliveryStrategy,
+                        operations:
+                          handoffPreview.snapshot.activeOrInterruptedOperations?.length ?? 0,
+                        approvals: handoffPreview.snapshot.pendingApprovals?.length ?? 0,
+                        redactions: handoffPreview.snapshot.redactionReport.redactionCount,
+                        truncations:
+                          (handoffPreview.snapshot.coverage.truncations?.length ?? 0) +
+                          handoffPreview.snapshot.redactionReport.truncatedItemCount,
+                      })}
+                    </p>
+                    <p>
+                      {intl.formatMessage(i18n.sessionToolContinuity, {
+                        tools: handoffPreview.toolContinuity.goslingToolCount,
+                        extensions:
+                          handoffPreview.toolContinuity.enabledExtensionNames?.join(', ') || '—',
+                        mode: handoffPreview.toolContinuity.authorizationMode,
+                      })}
+                    </p>
+                  </div>
+                </details>
+              )}
+
               {isSwitching && (
                 <div
                   className="mt-3 flex items-center gap-2 text-xs text-text-primary"
@@ -1357,11 +1389,11 @@ export const SwitchModelModal = ({
                   </span>
                 </div>
               )}
-            </div>
+            </section>
           )}
         </div>
 
-        <DialogFooter className="pt-4 flex-col sm:flex-row gap-3">
+        <DialogFooter className="flex-row flex-wrap items-center gap-x-3 gap-y-2 border-t border-border-primary px-5 py-3">
           <a
             href={QUICKSTART_GUIDE_URL}
             target="_blank"
@@ -1371,7 +1403,7 @@ export const SwitchModelModal = ({
             <ExternalLink size={14} className="mr-1" />
             {intl.formatMessage(i18n.quickStartGuide)}
           </a>
-          <div className="flex gap-2">
+          <div className="ml-auto flex flex-wrap justify-end gap-2">
             <Button variant="outline" onClick={handleClose} type="button" disabled={isSwitching}>
               {intl.formatMessage(i18n.cancel)}
             </Button>

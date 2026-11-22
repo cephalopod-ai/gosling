@@ -51,7 +51,7 @@ export const Select = (props: React.ComponentProps<typeof ReactSelect>) => {
         }),
         menuList: (base) => ({
           ...base,
-          maxHeight: '240px',
+          maxHeight: props.menuPosition === 'fixed' ? base.maxHeight : '240px',
           overflowY: 'auto',
           pointerEvents: 'auto',
         }),

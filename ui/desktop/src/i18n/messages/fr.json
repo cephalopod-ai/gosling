@@ -3609,7 +3609,7 @@
     "defaultMessage": "New context only"
   },
   "switchModelModal.newContextWarning": {
-    "defaultMessage": "This provider cannot receive the checkpoint. Continuing starts a new provider context; the previous provider and checkpoint remain available."
+    "defaultMessage": "The new model starts without this chat’s context. Your chat and checkpoint stay available."
   },
   "switchModelModal.preparingPreview": {
     "defaultMessage": "Preparing preview…"
@@ -3630,10 +3630,10 @@
     "defaultMessage": "Preparing checkpoint · Initializing target · Delivering handoff · Activating"
   },
   "switchModelModal.providerNativeToolsWarning": {
-    "defaultMessage": "Provider-native tools do not transfer between providers and the target may expose a different native tool set. The enabled Gosling extensions above will remain configured."
+    "defaultMessage": "Provider tools may change. Gosling extensions carry over."
   },
   "switchModelModal.queuedSwitch": {
-    "defaultMessage": "The current response will finish first. Gosling will refresh this checkpoint with its final output, then activate the switch before the next queued message."
+    "defaultMessage": "Switches after the current reply, before the next message."
   },
   "switchModelModal.sessionToolContinuity": {
     "defaultMessage": "Session tools: {tools} from {extensions} enabled extensions. Authorization mode remains {mode}."
@@ -4290,7 +4290,7 @@
     "defaultMessage": "Automatic: {tokens, number} tokens"
   },
   "switchModelModal.contextWarning": {
-    "defaultMessage": "Use the limit supported by this provider. A value that is too high can cause context-length errors; a value that is too low causes earlier compaction. This setting does not increase the model’s capacity."
+    "defaultMessage": "Use your provider’s limit to avoid errors or early compaction."
   },
   "switchModelModal.contextWindow": {
     "defaultMessage": "Context window (tokens)"
@@ -4299,9 +4299,12 @@
     "defaultMessage": "Enter a whole number of tokens greater than 0 and no larger than {maximum, number}."
   },
   "switchModelModal.unknownContext": {
-    "defaultMessage": "The context window could not be discovered for this model. Gosling will use 128,000 tokens unless you enter the limit supported by your provider."
+    "defaultMessage": "Context window unknown. The default is 128,000 tokens."
   },
   "modelsSection.noProvider": {
     "defaultMessage": "No provider configured"
+  },
+  "switchModelModal.handoffDetails": {
+    "defaultMessage": "Handoff details"
   }
 }

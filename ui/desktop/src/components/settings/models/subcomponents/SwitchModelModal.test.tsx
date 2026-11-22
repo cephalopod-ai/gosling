@@ -225,7 +225,7 @@ describe('SwitchModelModal model search', () => {
   it('warns when the context window is unknown and submits a manual limit', async () => {
     const user = userEvent.setup();
     openModal();
-    await screen.findByText(/context window could not be discovered/);
+    await screen.findByText(/Context window unknown/);
     const context = screen.getByRole('textbox', { name: 'Context window (tokens)' });
     await user.type(context, '1048576');
     await user.click(screen.getByRole('button', { name: 'Select model' }));
@@ -269,7 +269,7 @@ describe('SwitchModelModal model search', () => {
     await user.click(screen.getByRole('option', { name: promo }));
     expect(context).toHaveValue('');
     expect(context).toHaveAttribute('placeholder', 'Automatic: 1,048,576 tokens');
-    expect(screen.queryByText(/context window could not be discovered/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Context window unknown/)).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Select model' }));
     await waitFor(() =>
       expect(changeModel).toHaveBeenCalledWith(
@@ -332,18 +332,38 @@ describe('SwitchModelModal model search', () => {
   it('requires a fresh checkpoint preview after editing the context window', async () => {
     vi.mocked(acpPreviewSessionHandoff).mockResolvedValue({
       snapshot: {
+        snapshotId: 'preview-1',
+        schemaVersion: 1,
+        sessionId: 'session-1',
+        generation: 1,
+        trigger: 'user_requested_switch',
+        status: 'prepared',
+        createdAt: '2026-11-21T00:00:00Z',
+        source: { providerId: 'openai' },
+        target: { providerId: 'together' },
         continuityClass: 'summarized_handoff',
-        coverage: { coveredMessageCount: 0, totalMessageCount: 0, sourceHash: 'hash' },
-        omissions: [],
-        truncations: [],
-        redactions: [],
-        redactionReport: { redactionCount: 0, truncatedItemCount: 0 },
-        interruptedOperations: [],
-        pendingApprovals: [],
+        deliveryStrategy: 'context_injection',
+        coverage: {
+          coveredMessageCount: 8,
+          totalMessageCount: 12,
+          sourceHash: 'hash',
+          summaryStatus: 'stale',
+          recentTailMessageCount: 8,
+          estimatedTokens: 200,
+        },
+        redactionReport: { redactionCount: 1, truncatedItemCount: 2, excludedBinaryCount: 0 },
+        enrichment: { source: 'fixture', status: 'unavailable' },
       },
+      queuedAfterRunId: 'run-1',
       expectedCurrentGeneration: 0,
-      toolContinuity: { enabledExtensions: [], tools: [], goslingMode: 'auto' },
-    } as unknown as Awaited<ReturnType<typeof acpPreviewSessionHandoff>>);
+      toolContinuity: {
+        enabledExtensionNames: ['session_history'],
+        goslingToolCount: 2,
+        authorizationMode: 'auto',
+        providerNativeToolingMayChange: true,
+        stateHash: 'tool-state',
+      },
+    });
     const user = userEvent.setup();
     render(<SwitchModelModal sessionId="session-1" onClose={vi.fn()} setView={vi.fn()} />, {
       wrapper: IntlTestWrapper,
@@ -354,8 +374,18 @@ describe('SwitchModelModal model search', () => {
     await waitFor(() =>
       expect(acpPreviewSessionHandoff).toHaveBeenCalledWith('session-1', 'together', llama, 64_000)
     );
+    const preview = screen.getByRole('region', { name: 'Continuity: Summarized handoff' });
+    expect(preview).toHaveFocus();
+    expect(screen.getByText(/Switches after the current reply/)).toBeVisible();
+    expect(screen.getByText(/Provider tools may change/)).toBeVisible();
+    const coverage = screen.getByText(/Checkpoint covers 8 of 12 messages/);
+    expect(coverage).not.toBeVisible();
+    await user.click(screen.getByText('Handoff details'));
+    expect(coverage).toBeVisible();
+
     await user.clear(context);
     await user.type(context, '32000');
+    expect(screen.queryByText('Handoff details')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Review checkpoint' }));
     await waitFor(() =>
       expect(acpPreviewSessionHandoff).toHaveBeenLastCalledWith(
