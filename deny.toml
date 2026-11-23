@@ -6,10 +6,4 @@ yanked = "deny"
 unmaintained = "none"
 unsound = "none"
 
-ignore = [
-    # quick-xml 0.41 is blocked on compatible docx-rs and umya-spreadsheet releases:
-    # https://github.com/bokuweb/docx-rs/pull/894
-    # https://github.com/MathNya/umya-spreadsheet/issues/340
-    "RUSTSEC-2026-0194",
-    "RUSTSEC-2026-0195",
-]
+ignore = []
