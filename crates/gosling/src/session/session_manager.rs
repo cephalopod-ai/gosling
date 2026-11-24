@@ -1294,6 +1294,7 @@ impl SessionManager {
                 accumulated_delta,
                 cost_delta,
                 false,
+                current_usage.total_tokens,
             )
             .await
     }
@@ -1312,6 +1313,20 @@ impl SessionManager {
                 accumulated_delta,
                 cost_delta,
                 true,
+                None,
+            )
+            .await
+    }
+
+    pub(crate) async fn record_run_usage(&self, session_id: &str, usage: Usage) -> Result<()> {
+        self.storage
+            .record_usage(
+                session_id,
+                Usage::default(),
+                usage,
+                None,
+                false,
+                usage.total_tokens,
             )
             .await
     }
@@ -5803,6 +5818,30 @@ mod tests {
         assert_eq!(reloaded.usage.total_tokens, Some(758_000));
         assert!(reloaded.context_usage_estimated);
         assert_eq!(reloaded.last_request_tokens, Some(29_000));
+    }
+
+    #[tokio::test]
+    async fn run_usage_accumulates_without_setting_context_or_cost() {
+        let temp_dir = TempDir::new().unwrap();
+        let manager = SessionManager::new(temp_dir.path().to_path_buf());
+        let session = manager
+            .create_session(
+                PathBuf::from("/tmp/test"),
+                "External run usage".to_string(),
+                SessionType::User,
+                GoslingMode::default(),
+            )
+            .await
+            .unwrap();
+        let usage = Usage::new(Some(30), Some(10), Some(40)).with_cache_tokens(Some(8), None);
+        for _ in 0..2 {
+            manager.record_run_usage(&session.id, usage).await.unwrap();
+        }
+        let reloaded = manager.get_session(&session.id, false).await.unwrap();
+        assert_eq!(reloaded.usage, Usage::default());
+        assert_eq!(reloaded.last_request_tokens, Some(40));
+        assert_eq!(reloaded.accumulated_usage, usage + usage);
+        assert_eq!(reloaded.accumulated_cost, None);
     }
 
     // FSR-CROSS-001: compaction used to call `replace_conversation` and

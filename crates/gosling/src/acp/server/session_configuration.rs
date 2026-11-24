@@ -665,6 +665,12 @@ impl GoslingAcpAgent {
         if model_exists {
             return Ok(());
         }
+        if provider_id == crate::providers::muse_code::MUSE_CODE_PROVIDER_NAME
+            && crate::providers::muse_code::MuseCodeProvider::accepts_model_id(model_id)
+        {
+            // The compatibility catalog cannot establish account entitlement.
+            return Ok(());
+        }
 
         let provider = self
             .create_provider(provider_id, Vec::new(), None)

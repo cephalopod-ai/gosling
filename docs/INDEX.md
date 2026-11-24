@@ -10,6 +10,7 @@ for the relationship to cephalopod-ai/gosling.
 
 - [../documentation/docs/guides/meta-muse.md](../documentation/docs/guides/meta-muse.md) — Meta Muse API and Muse Code subscription setup, permissions, billing and wrapper limits
 - [logs/session/2026-10-17-meta-muse-provider.md](logs/session/2026-10-17-meta-muse-provider.md) — provider implementation and validation evidence
+- [logs/session/2026-11-24-muse-code-modernization.md](logs/session/2026-11-24-muse-code-modernization.md) — headless modernization, native transport qualification, and validation
 - [logs/session/2026-10-17-together-model-search.md](logs/session/2026-10-17-together-model-search.md) — Together catalog parsing, Muse discovery and shared model-search validation
 - [logs/session/2026-10-17-model-context-window.md](logs/session/2026-10-17-model-context-window.md) — context metadata discovery, editable Desktop token limits, warnings and validation
 
@@ -85,6 +86,7 @@ for the relationship to cephalopod-ai/gosling.
 - [adr/0021-context-compaction-history.md](adr/0021-context-compaction-history.md) — append-only local compaction provenance, retention, and atomic capture contract
 - [adr/0022-provenance-safe-recall-brief.md](adr/0022-provenance-safe-recall-brief.md) — explicit ACP report gate, exact Muninn revision citations, and epistemic limits
 - [adr/0023-evidence-instruction-authority-boundary.md](adr/0023-evidence-instruction-authority-boundary.md) — host-owned, revision-bound, turn-scoped skill admission; content never changes authority
+- [adr/0024-muse-code-transport.md](adr/0024-muse-code-transport.md) — headless transport decision and ACP/MSP qualification gates
 - [build/](build/) — build documentation
 - [build/context-compaction-failsafe-plan.md](build/context-compaction-failsafe-plan.md) — recurring oversized-session compaction repair plan and acceptance criteria
 - [build/host-enforced-planning/README.md](build/host-enforced-planning/README.md) — ADR-0020 implementation sequence, release gates, evidence, and resumable status

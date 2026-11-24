@@ -813,6 +813,13 @@ impl Agent {
     ) -> Result<()> {
         let manager = self.config.session_manager.clone();
         let session = manager.get_session(session_id, false).await?;
+        if session.provider_name.as_deref()
+            == Some(crate::providers::muse_code::MUSE_CODE_PROVIDER_NAME)
+        {
+            // A run can include several model calls. Its aggregate is for
+            // accounting and does not measure the active model window.
+            return manager.record_run_usage(session_id, usage.usage).await;
+        }
         let cost_delta = session
             .provider_name
             .as_deref()
@@ -863,6 +870,9 @@ impl Agent {
     }
 
     fn estimate_usage_cost(&self, usage: &ProviderUsage, provider_name: &str) -> Option<f64> {
+        if provider_name == crate::providers::muse_code::MUSE_CODE_PROVIDER_NAME {
+            return None;
+        }
         let canonical =
             crate::providers::canonical::maybe_get_canonical_model(provider_name, &usage.model)?;
 

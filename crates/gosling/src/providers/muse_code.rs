@@ -1,25 +1,23 @@
 use std::io::Write;
 use std::path::PathBuf;
-use std::process::Stdio;
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use anyhow::Result;
 use async_stream::try_stream;
 use async_trait::async_trait;
 use futures::{future::BoxFuture, StreamExt};
-use gosling_providers::conversation::token_usage::{ProviderUsage, Usage};
+use gosling_providers::conversation::token_usage::ProviderUsage;
 use gosling_providers::errors::ProviderError;
 use gosling_providers::model::ModelConfig;
-use gosling_providers::secret_redaction::redact_secrets;
 use rmcp::model::Tool;
 use serde_json::{json, Value};
-use tokio::process::Command;
+use tokio::time::{timeout, timeout_at, Instant};
 use tokio_util::codec::{FramedRead, LinesCodec};
 use tokio_util::task::AbortOnDropHandle;
 
 use super::base::{
-    stream_from_single_message, MessageStream, ModelInfo, Provider, ProviderDef,
+    stream_from_single_message, ConfigKey, MessageStream, ModelInfo, Provider, ProviderDef,
     ProviderDescriptor, ProviderMetadata, DEFAULT_PROVIDER_TIMEOUT_SECS,
 };
 use super::cli_common;
@@ -28,16 +26,22 @@ use crate::agents::mcp_client::ExtensionProcessGroup;
 use crate::config::search_path::SearchPaths;
 use crate::config::{Config, GoslingMode};
 use crate::conversation::message::{Message, MessageContent};
-use crate::subprocess::configure_subprocess;
+
+mod cli;
+mod output;
+
+use cli::{diagnostic_stderr, MuseCli};
+use output::{protocol_error, MuseOutput};
 
 pub(crate) const MUSE_CODE_PROVIDER_NAME: &str = "muse-code";
 const DEFAULT_MODEL: &str = "muse-spark-1.3";
 const MAX_EVENT_BYTES: usize = 16 * 1024 * 1024;
+const MAX_RUN_DURATION: Duration = Duration::from_secs(30 * 60);
+const EXIT_TIMEOUT: Duration = Duration::from_secs(10);
 const KNOWN_MODELS: &[&str] = &["muse-spark-1.3", "muse-wonder-1.0", "muse-spark-1.2"];
 
 pub struct MuseCodeProvider {
-    command: PathBuf,
-    working_dir: PathBuf,
+    cli: Arc<MuseCli>,
     mode: RwLock<GoslingMode>,
 }
 
@@ -92,75 +96,57 @@ fn write_prompt(prompt: &str) -> Result<tempfile::NamedTempFile> {
     Ok(file)
 }
 
-#[derive(Default)]
-struct MuseOutput {
-    run_id: Option<String>,
-    terminal_text: Option<String>,
+fn failure_hint(diagnostic: &str) -> Option<&'static str> {
+    // CLI diagnostics can echo arbitrary tool output or prompt text.
+    let diagnostic = diagnostic.to_ascii_lowercase();
+    let contains = |patterns: &[&str]| patterns.iter().any(|pattern| diagnostic.contains(pattern));
+    if contains(&[
+        "missing meta credentials",
+        "not logged in",
+        "authentication expired",
+        "unauthorized",
+        "unauthenticated",
+    ]) {
+        Some("could not authenticate. Check the subscribed browser sign-in with `muse login`")
+    } else if contains(&[
+        "subscription limit",
+        "subscription allowance",
+        "quota exceeded",
+    ]) {
+        Some("reported a quota or subscription limit. Check `muse usage`")
+    } else if contains(&[
+        "unknown model",
+        "model not found",
+        "model is not available",
+        "model unavailable",
+    ]) {
+        Some("could not use the selected model. Check `muse exec --provider meta --list-models`")
+    } else if contains(&[
+        "permission denied",
+        "sandbox denied",
+        "sandbox unavailable",
+        "approval denied",
+    ]) {
+        Some("reported a permission or sandbox denial. Review the workspace and Muse permission settings")
+    } else if contains(&[
+        "connection refused",
+        "failed to connect",
+        "network error",
+        "dns error",
+    ]) {
+        Some("reported a network failure. Check the connection before trying again")
+    } else if contains(&["tool execution failed", "tool execution error"]) {
+        Some("reported a tool execution failure. Check the workspace before trying again")
+    } else {
+        None
+    }
 }
 
-impl MuseOutput {
-    fn push(&mut self, event: Value) -> Result<(), ProviderError> {
-        let event_type = event["payload_type"].as_str().ok_or_else(|| {
-            ProviderError::RequestFailed("Muse Code emitted an invalid event envelope".to_string())
-        })?;
-        if event["schema_version"].as_u64() != Some(1)
-            || event["payload_schema_version"].as_u64() != Some(1)
-        {
-            return Err(ProviderError::RequestFailed(
-                "Unsupported Muse Code event schema; update Gosling or use a compatible Muse CLI"
-                    .to_string(),
-            ));
-        }
-        let payload = &event["payload"];
-        if event_type == "run.lifecycle.started" && self.run_id.is_none() {
-            self.run_id = payload["run_stream"]["id"].as_str().map(str::to_string);
-            if self.run_id.is_none() {
-                return Err(ProviderError::RequestFailed(
-                    "Muse Code started a run without an identity".to_string(),
-                ));
-            }
-        }
-        if !event_type.starts_with("run.terminal.") {
-            return Ok(());
-        }
-        let run_id = self.run_id.as_deref().ok_or_else(|| {
-            ProviderError::RequestFailed(
-                "Muse Code returned a terminal before starting a run".to_string(),
-            )
-        })?;
-        if payload["run_stream"]["id"].as_str() != Some(run_id) {
-            return Ok(());
-        }
-        if event_type != "run.terminal.completed" || payload["terminal"] != "completed" {
-            let reason = payload["reason"].as_str().unwrap_or("run did not complete");
-            return Err(ProviderError::RequestFailed(format!(
-                "Muse Code {event_type}: {}",
-                redact_secrets(reason)
-            )));
-        }
-        let text = payload["text"]
-            .as_str()
-            .filter(|text| !text.trim().is_empty())
-            .ok_or_else(|| {
-                ProviderError::RequestFailed(
-                    "Muse Code returned an empty terminal result".to_string(),
-                )
-            })?;
-        if self.terminal_text.replace(text.to_string()).is_some() {
-            return Err(ProviderError::RequestFailed(
-                "Muse Code returned multiple terminal results".to_string(),
-            ));
-        }
-        Ok(())
-    }
-
-    fn finish(self) -> Result<String, ProviderError> {
-        self.terminal_text.ok_or_else(|| {
-            ProviderError::RequestFailed(
-                "Muse Code exited without a completed terminal result; run `muse login` and verify the CLI works in this folder".to_string(),
-            )
-        })
-    }
+fn run_failure(diagnostic: &str) -> ProviderError {
+    protocol_error(
+        failure_hint(diagnostic)
+            .unwrap_or("reported a failure. Check Muse in the working directory"),
+    )
 }
 
 impl ProviderDescriptor for MuseCodeProvider {
@@ -180,12 +166,12 @@ impl ProviderDescriptor for MuseCodeProvider {
             DEFAULT_MODEL,
             models,
             "https://dev.meta.ai/docs/muse-code",
-            vec![],
+            vec![ConfigKey::new("MUSE_CODE_COMMAND", false, false, None, true)],
         )
         .with_setup_steps(vec![
             "Install Muse Code using https://dev.meta.ai/docs/muse-code and confirm `muse --version` works",
             "Run `muse login` in a terminal and sign in to the account with your Muse Code subscription",
-            "Verify Muse is using your subscription: a stored CLI API key takes priority over browser sign-in",
+            "Check subscription billing with `muse usage --json`; a stored CLI API key takes priority over browser sign-in",
             "If needed, set MUSE_CODE_COMMAND to the full path of your Muse executable",
             "Select Auto mode in Gosling; this wrapper uses Muse's tools and sandbox, and cannot relay Gosling approval prompts or extensions",
         ])
@@ -212,11 +198,16 @@ impl ProviderDef for MuseCodeProvider {
             let config = Config::global();
             let mode = config.resolve_gosling_mode()?;
             Ok(Self {
-                command: resolved_muse_command()?,
-                working_dir,
+                cli: Arc::new(MuseCli::new(resolved_muse_command()?, working_dir)),
                 mode: RwLock::new(mode),
             })
         })
+    }
+}
+
+impl MuseCodeProvider {
+    pub(crate) fn accepts_model_id(model: &str) -> bool {
+        cli::valid_model_id(model)
     }
 }
 
@@ -241,6 +232,11 @@ impl Provider for MuseCodeProvider {
     }
 
     async fn fetch_supported_models(&self) -> Result<Vec<String>, ProviderError> {
+        if let Ok(capabilities) = self.cli.capabilities().await {
+            if let Some(models) = self.cli.discover_models(&capabilities).await {
+                return Ok(models);
+            }
+        }
         Ok(KNOWN_MODELS
             .iter()
             .map(|name| (*name).to_string())
@@ -248,7 +244,21 @@ impl Provider for MuseCodeProvider {
     }
 
     async fn fetch_supported_model_info(&self) -> Result<Vec<ModelInfo>, ProviderError> {
-        Ok(Self::metadata().known_models)
+        let known = Self::metadata().known_models;
+        Ok(self
+            .fetch_supported_models()
+            .await?
+            .into_iter()
+            .map(|name| {
+                known
+                    .iter()
+                    .find(|model| model.name == name)
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        super::base::model_info_for_provider_model(MUSE_CODE_PROVIDER_NAME, &name)
+                    })
+            })
+            .collect())
     }
 
     async fn stream(
@@ -269,14 +279,20 @@ impl Provider for MuseCodeProvider {
                 cli_common::generate_simple_session_description(&model.model_name, messages)?;
             return Ok(stream_from_single_message(message, usage));
         }
+        if !Self::accepts_model_id(&model.model_name) {
+            return Err(protocol_error("requires a valid model ID"));
+        }
 
         let prompt = build_prompt(system, messages)?;
-        let prompt_file = write_prompt(&prompt)?;
+        let capabilities = self.cli.capabilities().await?;
+        if model.thinking_effort().is_some() {
+            capabilities.require_reasoning_effort()?;
+        }
+        let prompt_file = write_prompt(&prompt)
+            .map_err(|_| protocol_error("could not write the private prompt file"))?;
 
-        let mut command = Command::new(&self.command);
-        configure_subprocess(&mut command);
+        let mut command = self.cli.command(&capabilities.executable);
         command
-            .current_dir(&self.working_dir)
             .args([
                 "exec",
                 "--provider",
@@ -287,56 +303,72 @@ impl Provider for MuseCodeProvider {
             ])
             .arg("--prompt-file")
             .arg(prompt_file.path())
-            .args(["--disable-approval", "--no-session-log"])
-            .env_remove("META_API_KEY")
-            .env_remove("MODEL_API_KEY")
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+            .args(["--disable-approval", "--no-session-log"]);
         if let Some(effort) = model.thinking_effort() {
             command.arg("--reasoning-effort").arg(
                 gosling_providers::formats::meta::reasoning_effort(&model.model_name, effort),
             );
         }
-        if let Ok(path) = SearchPaths::builder().path() {
-            command.env("PATH", path);
-        }
         let model_name = model.model_name.clone();
+        let cli = Arc::clone(&self.cli);
 
         Ok(Box::pin(try_stream! {
             let _prompt_file = prompt_file;
-            let mut child = command.spawn().map_err(|error| ProviderError::RequestFailed(format!(
-                "Cannot start Muse Code: {error}. Install `muse` or configure MUSE_CODE_COMMAND."
-            )))?;
-            let _process_group = ExtensionProcessGroup::new(child.id());
-            let stdout = child.stdout.take().ok_or_else(|| ProviderError::RequestFailed("Muse stdout is unavailable".to_string()))?;
-            let mut stderr = child.stderr.take().ok_or_else(|| ProviderError::RequestFailed("Muse stderr is unavailable".to_string()))?;
-            let stderr_task = AbortOnDropHandle::new(tokio::spawn(async move {
-                tokio::io::copy(&mut stderr, &mut tokio::io::sink()).await
-            }));
+            cli.require_subscription(&capabilities).await?;
+            let mut child = cli::spawn(command).map_err(|_| {
+                protocol_error("could not start exec; check installation, MUSE_CODE_COMMAND and the working directory")
+            })?;
+            let process_group = ExtensionProcessGroup::new(child.id());
+            let stdout = child.stdout().take().ok_or_else(|| protocol_error("stdout is unavailable"))?;
+            let stderr = child.stderr().take().ok_or_else(|| protocol_error("stderr is unavailable"))?;
+            let mut stderr_task = AbortOnDropHandle::new(tokio::spawn(diagnostic_stderr(stderr)));
             let mut lines = FramedRead::new(stdout, LinesCodec::new_with_max_length(MAX_EVENT_BYTES));
             let mut output = MuseOutput::default();
-            while let Some(line) = tokio::time::timeout(Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS), lines.next())
-                .await.map_err(|_| ProviderError::RequestFailed("Muse Code stopped producing events".to_string()))?
-            {
-                let line = line.map_err(|error| ProviderError::RequestFailed(format!("Cannot read Muse Code event: {error}")))?;
+            let deadline = Instant::now() + MAX_RUN_DURATION;
+            let inactivity = Duration::from_secs(DEFAULT_PROVIDER_TIMEOUT_SECS);
+            let mut last_event = Instant::now();
+            loop {
+                let read_deadline = deadline.min(last_event + inactivity);
+                let timed_out = || {
+                    protocol_error(if Instant::now() >= deadline {
+                        "exceeded the overall run time limit"
+                    } else {
+                        "stopped producing events"
+                    })
+                };
+                if Instant::now() >= read_deadline {
+                    Err(timed_out())?;
+                }
+                let line = timeout_at(read_deadline, lines.next()).await.map_err(|_| timed_out())?;
+                let Some(line) = line else { break };
+                let line = line.map_err(|error| protocol_error(&format!("could not read a JSONL event: {error}")))?;
                 if line.trim().is_empty() {
                     continue;
                 }
-                let event = serde_json::from_str(&line).map_err(|error| ProviderError::RequestFailed(format!("Malformed Muse Code JSON event: {error}")))?;
-                output.push(event)?;
+                let event = serde_json::from_str(&line).map_err(|error| {
+                    protocol_error(&format!("emitted malformed JSON at column {}", error.column()))
+                })?;
+                last_event = Instant::now();
+                if let Some(delta) = output.push(event, capabilities.accurate_run_usage)? {
+                    yield (Some(Message::assistant().with_text(delta)), None);
+                }
             }
-            let status = tokio::time::timeout(Duration::from_secs(10), child.wait())
-                .await.map_err(|_| ProviderError::RequestFailed("Muse Code did not exit after closing stdout".to_string()))?
-                .map_err(|error| ProviderError::RequestFailed(error.to_string()))?;
+            let status = timeout_at(deadline.min(Instant::now() + EXIT_TIMEOUT), child.wait())
+                .await.map_err(|_| protocol_error("did not exit after closing stdout"))?
+                .map_err(|_| protocol_error("could not get the process exit status"))?;
+            drop(process_group);
+            drop(child);
             if !status.success() {
-                Err(ProviderError::RequestFailed(format!(
-                    "Muse Code exited with status {status}. Run `muse login` and verify the CLI works in this folder."
-                )))?;
+                let diagnostic = timeout(Duration::from_millis(250), &mut stderr_task)
+                    .await.ok().and_then(Result::ok).and_then(Result::ok);
+                let hint = diagnostic.as_deref().and_then(failure_hint)
+                    .unwrap_or("exited unsuccessfully. Check Muse in the working directory");
+                Err(ProviderError::ExecutionError(format!("Muse Code {hint} ({status}).")))?;
             }
             drop(stderr_task);
-            let text = output.finish()?;
-            yield (Some(Message::assistant().with_text(text)), Some(ProviderUsage::new(model_name, Usage::default())));
+            let (text, usage) = output.finish()?;
+            let message = (!text.is_empty()).then(|| Message::assistant().with_text(text));
+            yield (message, Some(ProviderUsage::new(model_name, usage)));
         }))
     }
 }

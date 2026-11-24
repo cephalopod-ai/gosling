@@ -19,7 +19,10 @@ async fn api_and_cli_have_distinct_setup_and_execution_contracts() {
     assert_eq!(key.name, "MODEL_API_KEY");
     assert!(key.secret && key.required);
     assert!(cli.metadata().config_keys.iter().all(|key| !key.secret));
-    assert!(MuseCodeProvider::metadata().config_keys.is_empty());
+    let cli_keys = MuseCodeProvider::metadata().config_keys;
+    assert_eq!(cli_keys.len(), 1);
+    assert_eq!(cli_keys[0].name, "MUSE_CODE_COMMAND");
+    assert!(!cli_keys[0].required);
     assert!(!MuseCodeProvider::metadata().setup_steps.is_empty());
     for entry in [api, cli] {
         let model = entry
@@ -185,7 +188,31 @@ mod cli {
 
     fn script(root: &Path, body: &str) -> std::path::PathBuf {
         let command = root.join("muse-fixture");
-        std::fs::write(&command, format!("#!/bin/sh\nset -eu\n{body}\n")).unwrap();
+        let probe_handlers = r#"
+test "${META_API_KEY-unset}" = unset
+test "${MODEL_API_KEY-unset}" = unset
+test "${MUSE_PERMISSION_PROFILE_FAIL_OPEN-unset}" = unset
+case "$*" in
+  --version) echo 'Muse Code 1.4.25 (fixture)'; exit 0 ;;
+  --help) echo '  usage  Show your subscription allowance'; exit 0 ;;
+  'exec --help')
+    echo '--json --provider --model --prompt-file --no-session-log --disable-approval --reasoning-effort --list-models'
+    exit 0 ;;
+  'usage --json')
+    if [ -f billing.json ]; then cat billing.json; else
+      echo '{"schemaVersion":1,"allowance":null,"reason":"server_sent_no_usage"}'
+    fi
+    exit 0 ;;
+  'exec --provider meta --list-models')
+    if [ -f model-list.txt ]; then cat model-list.txt; fi
+    exit 0 ;;
+esac
+"#;
+        std::fs::write(
+            &command,
+            format!("#!/bin/sh\nset -eu\n{probe_handlers}\n{body}\n"),
+        )
+        .unwrap();
         std::fs::set_permissions(&command, std::fs::Permissions::from_mode(0o700)).unwrap();
         command
     }
@@ -194,12 +221,22 @@ mod cli {
         root: &Path,
         command: &Path,
     ) -> (MuseCodeProvider, env_lock::EnvGuard<'static>) {
+        provider_with_billing_ack(root, command, Some("true")).await
+    }
+
+    async fn provider_with_billing_ack(
+        root: &Path,
+        command: &Path,
+        acknowledged: Option<&str>,
+    ) -> (MuseCodeProvider, env_lock::EnvGuard<'static>) {
         let guard = env_lock::lock_env([
             ("GOSLING_PATH_ROOT", Some(root.to_str().unwrap())),
             ("MUSE_CODE_COMMAND", Some(command.to_str().unwrap())),
             ("GOSLING_MODE", Some("auto")),
             ("META_API_KEY", Some("must-not-reach-muse")),
             ("MODEL_API_KEY", Some("must-not-reach-muse-either")),
+            ("MUSE_PERMISSION_PROFILE_FAIL_OPEN", Some("1")),
+            ("MUSE_CODE_ACKNOWLEDGE_UNVERIFIED_BILLING", acknowledged),
         ]);
         let provider =
             MuseCodeProvider::from_env_with_working_dir(vec![], root.to_path_buf(), None)
@@ -295,6 +332,10 @@ cat events.jsonl
                 event("run.terminal.cancelled", Some("cancelled"), "")
             ),
             format!("{started}\n{completed}\n{completed}"),
+            format!(
+                "{started}\n{}\n{completed}",
+                event("run.output.delta", None, "Conflicting prefix")
+            ),
             successful_events().replace("\"schema_version\":1", "\"schema_version\":2"),
             successful_events().replace("\"id\":\"root\"", "\"id\":null"),
         ] {
@@ -312,17 +353,22 @@ cat events.jsonl
                 "accepted invalid events: {events}"
             );
         }
-        script(root.path(), "cat events.jsonl\nexit 1");
+        script(
+            root.path(),
+            "cat events.jsonl\nprintf 'network error: private-sentinel\\n' >&2\nexit 1",
+        );
         std::fs::write(root.path().join("events.jsonl"), successful_events()).unwrap();
-        assert!(provider
+        let error = provider
             .complete(
                 &ModelConfig::new("muse-spark-1.3"),
                 "System",
                 &[Message::user().with_text("Hi")],
-                &[]
+                &[],
             )
             .await
-            .is_err());
+            .unwrap_err();
+        assert!(error.to_string().contains("network failure"));
+        assert!(!error.to_string().contains("private-sentinel"));
     }
 
     #[tokio::test]
@@ -360,24 +406,32 @@ cat events.jsonl
     }
 
     #[tokio::test]
-    async fn model_discovery_precedes_session_mode_selection_without_launching_muse() {
+    async fn model_discovery_precedes_session_mode_selection_without_running_a_turn() {
         let root = tempfile::tempdir().unwrap();
+        std::fs::write(
+            root.path().join("model-list.txt"),
+            "muse-ember-1.0\nmuse-spark-1.3\nmuse-spark-1.3\n",
+        )
+        .unwrap();
         let command = script(root.path(), "touch was-launched\nexit 1");
         let _env = env_lock::lock_env([
             ("GOSLING_PATH_ROOT", Some(root.path().to_str().unwrap())),
             ("MUSE_CODE_COMMAND", Some(command.to_str().unwrap())),
             ("GOSLING_MODE", Some("approve")),
+            ("META_API_KEY", Some("must-not-reach-muse")),
+            ("MODEL_API_KEY", Some("must-not-reach-muse-either")),
         ]);
         let provider =
             MuseCodeProvider::from_env_with_working_dir(vec![], root.path().to_path_buf(), None)
                 .await
                 .unwrap();
-        assert!(provider
-            .fetch_supported_models()
-            .await
-            .unwrap()
-            .iter()
-            .any(|name| name == "muse-spark-1.3"));
+        assert_eq!(
+            provider.fetch_supported_models().await.unwrap(),
+            ["muse-ember-1.0", "muse-spark-1.3"]
+        );
+        let models = provider.fetch_supported_model_info().await.unwrap();
+        assert_eq!(models[0].name, "muse-ember-1.0");
+        assert_eq!(models[1].context_limit, 1_048_576);
         assert!(provider
             .stream(
                 &ModelConfig::new("muse-spark-1.3"),
@@ -392,6 +446,231 @@ cat events.jsonl
             .await
             .unwrap();
         assert!(!root.path().join("was-launched").exists());
+    }
+
+    #[tokio::test]
+    async fn paid_api_keys_are_rejected_even_with_a_billing_acknowledgment() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::write(
+            root.path().join("billing.json"),
+            r#"{"schemaVersion":1,"allowance":null,"reason":"api_key"}"#,
+        )
+        .unwrap();
+        let command = script(root.path(), "touch was-launched\nexit 1");
+        let (provider, _env) = provider(root.path(), &command).await;
+        let result = provider
+            .complete(
+                &ModelConfig::new("muse-spark-1.3"),
+                "System",
+                &[Message::user().with_text("Hi")],
+                &[],
+            )
+            .await;
+        assert!(matches!(
+            result,
+            Err(gosling_providers::errors::ProviderError::Authentication(message))
+                if message.contains("selected an API key")
+        ));
+        assert!(!root.path().join("was-launched").exists());
+    }
+
+    #[tokio::test]
+    async fn missing_or_malformed_billing_evidence_stops_before_exec() {
+        let root = tempfile::tempdir().unwrap();
+        let command = script(root.path(), "touch was-launched\ncat events.jsonl");
+        let (provider, _env) = provider_with_billing_ack(root.path(), &command, None).await;
+        let model = ModelConfig::new("muse-spark-1.3");
+        let messages = [Message::user().with_text("Hi")];
+        let billing = root.path().join("billing.json");
+        for (status, diagnostic) in [
+            (
+                r#"{"schemaVersion":1,"allowance":null,"reason":"server_sent_no_usage"}"#,
+                "MUSE_CODE_ACKNOWLEDGE_UNVERIFIED_BILLING",
+            ),
+            (
+                r#"{"schemaVersion":1,"allowance":{"unexpected":true}}"#,
+                "recognized subscription status",
+            ),
+            (
+                r#"{"schemaVersion":1,"allowance":null,"reason":"future_reason"}"#,
+                "recognized subscription status",
+            ),
+        ] {
+            std::fs::write(&billing, status).unwrap();
+            let failure = provider
+                .complete(&model, "System", &messages, &[])
+                .await
+                .unwrap_err();
+            assert!(failure.to_string().contains(diagnostic));
+            assert!(!root.path().join("was-launched").exists());
+        }
+
+        std::fs::write(
+            &billing,
+            json!({
+                "schemaVersion": 1,
+                "allowance": {
+                    "tier":"fixture", "observedAtMs":1,
+                    "window":{"usedPercent":0,"resetsAtMs":2,"windowDurationMins":300},
+                    "weekly":{"usedPercent":5,"resetsAtMs":3}
+                }
+            })
+            .to_string(),
+        )
+        .unwrap();
+        std::fs::write(root.path().join("events.jsonl"), successful_events()).unwrap();
+        let (response, _) = provider
+            .complete(&model, "System", &messages, &[])
+            .await
+            .unwrap();
+        assert_eq!(response.as_concat_text(), "Done");
+    }
+
+    #[tokio::test]
+    async fn executable_updates_invalidate_cached_capabilities() {
+        let root = tempfile::tempdir().unwrap();
+        let command = script(root.path(), "cat events.jsonl");
+        let (provider, _env) = provider(root.path(), &command).await;
+        std::fs::write(root.path().join("events.jsonl"), successful_events()).unwrap();
+        let model = ModelConfig::new("muse-spark-1.3");
+        let messages = [Message::user().with_text("Hi")];
+        assert!(provider
+            .complete(&model, "System", &messages, &[])
+            .await
+            .is_ok());
+        let script = std::fs::read_to_string(&command)
+            .unwrap()
+            .replace("1.4.25", "1.5.0")
+            .replace(" --no-session-log", "");
+        std::fs::write(&command, script).unwrap();
+        let error = provider
+            .complete(&model, "System", &messages, &[])
+            .await
+            .unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("1.5.0 does not advertise exec --no-session-log"));
+    }
+
+    #[tokio::test]
+    async fn stream_emits_root_deltas_before_exit_and_reconciles_final_usage_and_text() {
+        let root = tempfile::tempdir().unwrap();
+        let delta = event("run.output.delta", None, "Hello 🪿");
+        let nested = event("run.output.delta", None, "Internal").replace("root", "child");
+        let usage = |run_id: &str, input: u64, output: u64| {
+            json!({
+                "schema_version": 1, "payload_schema_version": 1, "payload_type": "run.usage",
+                "payload": {
+                    "run_stream": {"kind":"run", "id":run_id},
+                    "models": [
+                        {"model":"muse-spark-1.3", "input_tokens":input, "output_tokens":output, "cached_tokens":2, "future_field":7},
+                        {"model":"muse-spark-1.2", "input_tokens":4, "output_tokens":3, "cached_tokens":1}
+                    ]
+                }
+            })
+        };
+        std::fs::write(
+            root.path().join("deltas.jsonl"),
+            format!(
+                "{}\n{}\n{nested}\n{}\n{delta}\n",
+                event("session.run.linked", None, ""),
+                event("run.lifecycle.started", None, "").replace("root", "child"),
+                event("run.lifecycle.started", None, "")
+            ),
+        )
+        .unwrap();
+        std::fs::write(
+            root.path().join("terminal.jsonl"),
+            format!(
+                "{}\n{}\n{}\n{}\n",
+                usage("root", 10, 2),
+                usage("child", 1000, 500),
+                usage("root", 18, 5),
+                event(
+                    "run.terminal.completed",
+                    Some("completed"),
+                    "Hello 🪿 world"
+                )
+            ),
+        )
+        .unwrap();
+        let command = script(
+            root.path(),
+            "cat deltas.jsonl\nwhile [ ! -f finish ]; do sleep 0.01; done\ncat terminal.jsonl",
+        );
+        let (provider, _env) = provider(root.path(), &command).await;
+        let mut stream = provider
+            .stream(
+                &ModelConfig::new("muse-spark-1.3"),
+                "System",
+                &[Message::user().with_text("Hi")],
+                &[],
+            )
+            .await
+            .unwrap();
+        let (first, usage) = tokio::time::timeout(Duration::from_secs(3), stream.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert_eq!(first.unwrap().as_concat_text(), "Hello 🪿");
+        assert!(usage.is_none());
+        std::fs::write(root.path().join("finish"), "").unwrap();
+        let (last, usage) = stream.next().await.unwrap().unwrap();
+        assert_eq!(last.unwrap().as_concat_text(), " world");
+        let usage = usage.unwrap().usage;
+        assert_eq!(usage.input_tokens, Some(22));
+        assert_eq!(usage.output_tokens, Some(8));
+        assert_eq!(usage.total_tokens, Some(30));
+        assert_eq!(usage.cache_read_input_tokens, Some(3));
+        assert!(stream.next().await.is_none());
+    }
+
+    #[tokio::test]
+    #[ignore = "requires an installed Muse executable named by GOSLING_TEST_MUSE_CLI"]
+    async fn installed_muse_echo_round_trip_through_provider() {
+        let root = tempfile::tempdir().unwrap();
+        let command = root.path().join("muse-echo");
+        std::fs::write(
+            &command,
+            r#"#!/bin/sh
+set -eu
+export HOME="$PWD"
+export XDG_CONFIG_HOME="$PWD/config"
+export XDG_DATA_HOME="$PWD/data"
+export XDG_STATE_HOME="$PWD/state"
+export MUSE_HOME="$PWD/muse"
+case "$*" in
+  'usage --json')
+    echo '{"schemaVersion":1,"allowance":null,"reason":"server_sent_no_usage"}'
+    exit 0 ;;
+esac
+if [ "$1" = exec ] && [ "${2-}" = --provider ]; then
+  test "$3" = meta
+  test "$4" = --json
+  test "$5" = --model
+  shift 6
+  exec "$GOSLING_TEST_MUSE_CLI" exec --provider echo --json --disable-shell --disable-write "$@"
+fi
+exec "$GOSLING_TEST_MUSE_CLI" "$@"
+"#,
+        )
+        .unwrap();
+        std::fs::set_permissions(&command, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let (provider, _env) = provider(root.path(), &command).await;
+        let (message, usage) = provider
+            .complete(
+                &ModelConfig::new("muse-spark-1.3"),
+                "System",
+                &[Message::user().with_text("echo qualification 🪿")],
+                &[],
+            )
+            .await
+            .unwrap();
+        let text = message.as_concat_text();
+        assert!(text.starts_with("echo: System"));
+        assert_eq!(text.matches("echo qualification 🪿").count(), 1);
+        assert_eq!(usage.usage.total_tokens, Some(0));
     }
 
     #[tokio::test]

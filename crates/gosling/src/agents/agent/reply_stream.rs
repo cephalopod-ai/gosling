@@ -1351,6 +1351,11 @@ impl Agent {
                             break;
                         }
                         Err(ref provider_err) => {
+                            if active_provider.get_name() == crate::providers::muse_code::MUSE_CODE_PROVIDER_NAME {
+                                // Muse tools can have run without producing a
+                                // host tool message, so a nudge may repeat effects.
+                                exit_chat = true;
+                            }
                             #[cfg(feature = "telemetry")]
                             crate::posthog::emit_error(provider_err.telemetry_type(), &provider_err.to_string());
                             error!("Error: {}", provider_err);

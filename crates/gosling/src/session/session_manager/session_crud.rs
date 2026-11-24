@@ -472,6 +472,7 @@ impl SessionStorage {
         accumulated_delta: Usage,
         cost_delta: Option<f64>,
         current_usage_estimated: bool,
+        last_request_tokens: Option<i32>,
     ) -> Result<()> {
         let pool = self.pool().await?;
         let result = sqlx::query(
@@ -501,7 +502,7 @@ impl SessionStorage {
         .bind(current_usage.cache_write_input_tokens)
         .bind(current_usage_estimated)
         .bind(current_usage_estimated)
-        .bind(current_usage.total_tokens)
+        .bind(last_request_tokens)
         .bind(accumulated_delta.total_tokens)
         .bind(accumulated_delta.total_tokens)
         .bind(accumulated_delta.input_tokens)

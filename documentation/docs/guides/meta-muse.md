@@ -50,8 +50,9 @@ API usage is billed by Meta separately from a Muse Code subscription.
 
 1. Install [Muse Code](https://dev.meta.ai/docs/muse-code) and check `muse --version`.
 2. Run `muse login` in a terminal and complete browser sign-in for your subscribed account.
-3. Confirm Muse itself can use your subscription in the working folder.
-4. Select **Meta Muse Code (Subscription/CLI)** in Gosling and choose **Auto** mode.
+3. Check your subscription with `muse usage --json` where available.
+4. Select **Meta Muse Code (Subscription/CLI)** in Desktop's provider settings
+   or `gosling configure`, then choose **Auto** mode.
 
 For terminal use:
 
@@ -62,37 +63,56 @@ export GOSLING_MODE=auto
 gosling session
 ```
 
-Set `MUSE_CODE_COMMAND` to the Muse executable path if it is not found. The
-wrapper launches `muse exec --provider meta --json` in the Gosling session's
-working directory, passes the prompt through a private temporary file, and
-waits for both a completed run event and a successful process exit. The final
-answer appears when the run completes. Dropping the response stream terminates
-the owned process; on Unix its process group is also terminated.
+Set the optional **Muse Code Command** field in Desktop or `MUSE_CODE_COMMAND`
+to the executable path. gosling checks Muse's version and help flags and
+refreshes that check when the executable changes. The model picker uses Muse's
+`--list-models` when available, with the built-in list as a fallback. You can
+also enter a model ID for Muse to validate.
 
-The wrapper removes `META_API_KEY` and `MODEL_API_KEY` from the child environment
-to avoid an exported API key overriding browser sign-in. Meta's
-[credential precedence](https://dev.meta.ai/docs/muse-code/auth) still applies
-to Muse's own stored credentials: a stored CLI API key takes priority over
-browser sign-in. Verify billing in Muse; Gosling does not read or rewrite its
-credential store.
+Before sending a prompt, gosling removes `META_API_KEY` and `MODEL_API_KEY` from
+Muse's environment and checks the CLI's billing status when supported. A stored
+API key takes precedence over browser sign-in. gosling blocks execution when the
+CLI reports API-key use, reads no raw credentials, and keeps pay-as-you-go
+requests on the separate `meta` provider. [Meta's authentication guide](https://dev.meta.ai/docs/muse-code/auth).
+
+An older CLI may lack the billing check, or the browser login may return
+`server_sent_no_usage`. After independently confirming that your Muse install
+uses only your subscription, you can start gosling with
+`MUSE_CODE_ACKNOWLEDGE_UNVERIFIED_BILLING=true` in its environment. This is an
+explicit acknowledgment of unavailable billing evidence. A reported API key
+or an unreadable status still blocks the run. Check your Muse sign-in again
+after changing credentials. Usage checks and inference are separate CLI
+processes.
+
+The wrapper streams text from the active run. A complete answer requires a
+successful process exit and a matching terminal event. It passes the prompt
+through a private temporary file in the session's existing working context.
+Dropping the stream cancels the owned process tree. Unix uses a process group
+and Windows uses a Job Object. The wrapper bounds individual events, waits up
+to 10 minutes for activity, and caps an execution at 30 minutes.
 
 ### Wrapper limits
 
-- **Auto mode only.** Headless Muse cannot relay approval prompts into Gosling.
-  The wrapper disables Muse approval prompts and does not disable its sandbox.
+- **Auto mode only.** Headless Muse cannot relay approval prompts into gosling.
+  The wrapper disables Muse approval prompts and retains the Muse sandbox.
   Approve, Smart Approve and Chat mode changes return an explicit error.
-- **Muse owns tools.** Gosling extensions are not forwarded. Configure MCP servers
+- **Muse owns tools.** gosling extensions are not forwarded. Configure MCP servers
   and other tools in Muse, or use `meta` for Gosling-managed tools. Host-enforced
   planning restrictions still apply to this external tool runtime.
 - **Text input.** Image attachments return an explicit error; use `meta` for them.
-- **History replay.** Each turn starts a new Muse process with Gosling's text and
+- **History replay.** Each turn starts a new Muse process with gosling's text and
   tool history. Native Muse session resume is not provided. The wrapper requests
-  no Muse session log; Gosling keeps its own session history.
-- **Usage.** The wrapper does not infer token counts from undocumented events.
-  Muse manages subscription limits and reports run failures through the provider.
-- **Compatibility.** Event schema version 1 was checked with Muse Code 1.4.4.
-  Malformed events, unsupported schemas, failed or cancelled runs, missing or
-  duplicate terminal results, empty answers and nonzero exits return errors.
+  no Muse session log and gosling keeps its own session history.
+- **Usage.** Muse 1.4.24 and later can report input, output, and cached input
+  tokens for the entire run. Desktop's last-request figure represents the
+  whole Muse run, which can involve multiple model calls. Missing counts stay
+  unknown. Use `muse usage --json` for subscription allowance. Run totals carry
+  no API price estimate or current context measurement.
+- **Compatibility.** The wrapper accepts version 1 JSONL events, including
+  terminal-only responses. Malformed events, unsupported schemas, failed or
+  cancelled runs, missing or duplicate terminal results, conflicting final text,
+  and nonzero exits return errors. gosling does not automatically replay a failed
+  Muse turn.
 
 See [Meta's headless documentation](https://dev.meta.ai/docs/muse-code/extending)
 for the underlying CLI interface.

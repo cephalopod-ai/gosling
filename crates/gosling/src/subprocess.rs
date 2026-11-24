@@ -2,7 +2,7 @@ use std::time::Duration;
 use tokio::process::Command;
 
 #[cfg(windows)]
-const CREATE_NO_WINDOW_FLAG: u32 = 0x08000000;
+pub(crate) const CREATE_NO_WINDOW_FLAG: u32 = 0x08000000;
 
 #[cfg(target_os = "linux")]
 fn configure_parent_death_signal(command: &mut Command) {

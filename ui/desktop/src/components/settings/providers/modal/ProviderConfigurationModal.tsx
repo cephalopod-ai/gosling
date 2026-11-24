@@ -178,6 +178,7 @@ export default function ProviderConfigurationModal({
   const configKeys = provider.metadata.config_keys.filter((key) => !key.oauth_flow);
   const hasOAuth = provider.metadata.config_keys.some((key) => key.oauth_flow);
   const hasConfig = configKeys.length > 0;
+  const hasSecret = configKeys.some((key) => key.secret);
   const hasDeviceCodeFlow = provider.metadata.config_keys.some((key) => key.device_code_flow);
 
   const isConfigured = provider.is_configured;
@@ -186,9 +187,7 @@ export default function ProviderConfigurationModal({
     : intl.formatMessage(i18n.configureHeader, { providerName: provider.metadata.display_name });
 
   const isExternalSetup =
-    provider.metadata.config_keys.length === 0 &&
-    provider.metadata.setup_steps &&
-    provider.metadata.setup_steps.length > 0;
+    !hasOAuth && !hasSecret && (provider.metadata.setup_steps?.length ?? 0) > 0;
 
   const descriptionText = showDeleteConfirmation
     ? isActiveProvider
@@ -436,7 +435,7 @@ export default function ProviderConfigurationModal({
                   </div>
                 )}
 
-                {!hasOAuth && !isExternalSetup && (
+                {!hasOAuth && (!isExternalSetup || hasConfig) && (
                   <>
                     <DefaultProviderSetupForm
                       configValues={configValues}
@@ -444,9 +443,7 @@ export default function ProviderConfigurationModal({
                       provider={provider}
                       validationErrors={validationErrors}
                     />
-                    {primaryParameters.length > 0 && provider.metadata.config_keys.length > 0 && (
-                      <SecureStorageNotice />
-                    )}
+                    {hasSecret && <SecureStorageNotice />}
                   </>
                 )}
               </>
@@ -465,7 +462,7 @@ export default function ProviderConfigurationModal({
                   </Button>
                 )}
               </div>
-            ) : isExternalSetup && !showDeleteConfirmation ? (
+            ) : isExternalSetup && !hasConfig && !showDeleteConfirmation ? (
               <div className="w-full">
                 <Button
                   type="button"
