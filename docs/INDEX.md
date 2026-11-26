@@ -5,6 +5,7 @@ for the relationship to cephalopod-ai/gosling.
 
 ## Standard sections
 
+- [logs/session/2026-11-25-provider-mail-audit.md](logs/session/2026-11-25-provider-mail-audit.md) — two-pass audit of Muse Code, desktop mail, and their session and desktop seams
 - [../documentation/docs/guides/dedicated-email.md](../documentation/docs/guides/dedicated-email.md) — Desktop mailbox setup, recipient policy, and inbox actions
 - [logs/session/2026-11-20-dedicated-email.md](logs/session/2026-11-20-dedicated-email.md) — plan decisions, implementation, and focused validation
 

@@ -960,7 +960,7 @@ impl ConversationTokenAccumulator {
         *self = Self::default();
     }
 
-    async fn update(&mut self, conversation: &Conversation) -> Result<usize> {
+    pub(crate) async fn update(&mut self, conversation: &Conversation) -> Result<usize> {
         let counter = crate::token_counter::shared_token_counter()
             .await
             .map_err(|e| anyhow::anyhow!("Failed to create token counter: {}", e))?;

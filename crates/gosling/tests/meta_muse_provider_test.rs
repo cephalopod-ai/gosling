@@ -334,6 +334,16 @@ cat events.jsonl
             format!("{started}\n{completed}\n{completed}"),
             format!(
                 "{started}\n{}\n{completed}",
+                event("session.run.linked", None, "")
+                    .replace("\"id\":\"root\"", "\"id\":\"other\"")
+            ),
+            format!(
+                "{started}\n{}\n{completed}",
+                event("run.output.delta", None, "Unattributed text")
+                    .replace("\"id\":\"root\"", "\"id\":null")
+            ),
+            format!(
+                "{started}\n{}\n{completed}",
                 event("run.output.delta", None, "Conflicting prefix")
             ),
             successful_events().replace("\"schema_version\":1", "\"schema_version\":2"),
@@ -369,6 +379,38 @@ cat events.jsonl
             .unwrap_err();
         assert!(error.to_string().contains("network failure"));
         assert!(!error.to_string().contains("private-sentinel"));
+    }
+
+    #[tokio::test]
+    async fn wrapper_reports_a_conflicting_terminal_without_waiting_for_stdout_to_close() {
+        let root = tempfile::tempdir().unwrap();
+        let command = script(root.path(), "cat events.jsonl\nsleep 30");
+        std::fs::write(
+            root.path().join("events.jsonl"),
+            format!(
+                "{}\n{}\n{}\n",
+                event("run.lifecycle.started", None, ""),
+                event("run.output.delta", None, "Partial"),
+                event("run.terminal.completed", Some("completed"), "Different")
+            ),
+        )
+        .unwrap();
+        let (provider, _env) = provider(root.path(), &command).await;
+        let error = tokio::time::timeout(
+            Duration::from_secs(5),
+            provider.complete(
+                &ModelConfig::new("muse-spark-1.3"),
+                "System",
+                &[Message::user().with_text("Hi")],
+                &[],
+            ),
+        )
+        .await
+        .unwrap()
+        .unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("inconsistent with its streamed text"));
     }
 
     #[tokio::test]

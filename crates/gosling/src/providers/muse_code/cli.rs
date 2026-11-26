@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fs::Metadata;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -168,6 +169,7 @@ impl MuseCli {
             .await
             .ok()?;
         let mut models = Vec::new();
+        let mut seen = HashSet::new();
         for line in output
             .lines()
             .map(str::trim)
@@ -176,7 +178,7 @@ impl MuseCli {
             if !valid_model_id(line) {
                 return None;
             }
-            if !models.iter().any(|model| model == line) {
+            if seen.insert(line) {
                 models.push(line.to_string());
             }
         }

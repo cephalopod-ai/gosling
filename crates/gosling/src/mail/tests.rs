@@ -59,6 +59,24 @@ fn mail_instructions_default_to_empty_and_are_validated_when_saved() {
     assert!(settings.validate().is_err());
 }
 
+#[test]
+fn retained_pdf_digest_tracks_bytes_on_disk_after_a_retry() {
+    let root = tempfile::tempdir().unwrap();
+    let (store, _) = MailStore::open(root.path().to_path_buf()).unwrap();
+    let pdf = b"%PDF-1.7\nPreviously saved bytes";
+    let paper = workflow::Paper::from_mail("Zotero only", "arxiv:2501.00123", None).unwrap();
+    assert_eq!(store.retained_pdf_digest(&paper.key).unwrap(), None);
+    store.save_pdf(&paper.key, pdf).unwrap();
+    let other_bytes = b"%PDF-1.7\nA different version";
+    store.save_pdf(&paper.key, other_bytes).unwrap();
+    assert_eq!(
+        store.retained_pdf_digest(&paper.key).unwrap(),
+        Some(workflow::sha256(pdf))
+    );
+    std::fs::write(store.paper_path(&paper.key).unwrap(), b"Incomplete file").unwrap();
+    assert!(store.retained_pdf_digest(&paper.key).is_err());
+}
+
 #[tokio::test]
 async fn capture_mode_retains_notes_and_reviewable_tasks_across_restart() {
     let root = tempfile::tempdir().unwrap();

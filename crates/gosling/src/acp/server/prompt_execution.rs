@@ -89,9 +89,15 @@ fn to_nonnegative_u64(value: Option<i32>) -> Option<u64> {
 }
 
 pub(super) fn build_prompt_usage(session: &Session) -> Option<Usage> {
-    let total = to_nonnegative_u64(session.usage.total_tokens)?;
-    let input = to_nonnegative_u64(session.usage.input_tokens).unwrap_or(0);
-    let output = to_nonnegative_u64(session.usage.output_tokens).unwrap_or(0);
+    prompt_usage_from_tokens(session.usage)
+}
+
+fn prompt_usage_from_tokens(
+    tokens: gosling_providers::conversation::token_usage::Usage,
+) -> Option<Usage> {
+    let total = to_nonnegative_u64(tokens.total_tokens)?;
+    let input = to_nonnegative_u64(tokens.input_tokens).unwrap_or(0);
+    let output = to_nonnegative_u64(tokens.output_tokens).unwrap_or(0);
     Some(Usage::new(total, input, output))
 }
 
@@ -461,6 +467,7 @@ impl GoslingAcpAgent {
         let mut terminal_assistant_text = String::new();
         let mut current_assistant_message_ids = HashSet::new();
         let mut latest_context_usage = None;
+        let mut last_provider_usage = None;
         let mut provider_usage_after_context = false;
         let mut policy_denied_tools = PolicyDeniedTools::default();
         let mut turn_limit_reached = false;
@@ -595,7 +602,10 @@ impl GoslingAcpAgent {
                         ))?;
                     }
                 }
-                Ok(crate::agents::AgentEvent::Usage(_)) => provider_usage_after_context = true,
+                Ok(crate::agents::AgentEvent::Usage(usage)) => {
+                    last_provider_usage = Some(usage.usage);
+                    provider_usage_after_context = true;
+                }
                 Ok(crate::agents::AgentEvent::ContextUsage(context_usage)) => {
                     latest_context_usage = Some(context_usage);
                     provider_usage_after_context = false;
@@ -823,7 +833,14 @@ impl GoslingAcpAgent {
         };
 
         let mut response = PromptResponse::new(stop_reason);
-        if let Some(usage) = build_prompt_usage(&session) {
+        let usage = if session.provider_name.as_deref()
+            == Some(crate::providers::muse_code::MUSE_CODE_PROVIDER_NAME)
+        {
+            last_provider_usage.and_then(prompt_usage_from_tokens)
+        } else {
+            build_prompt_usage(&session)
+        };
+        if let Some(usage) = usage {
             response = response.usage(usage);
         }
         drop(completed_run);

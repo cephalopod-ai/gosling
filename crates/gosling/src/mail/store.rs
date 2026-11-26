@@ -3,7 +3,7 @@ use anyhow::{bail, ensure, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File, OpenOptions};
-use std::io::{ErrorKind, Write};
+use std::io::{ErrorKind, Read, Write};
 use std::path::PathBuf;
 use uuid::Uuid;
 
@@ -405,6 +405,22 @@ impl MailStore {
             file.persist_noclobber(path)?;
         }
         Ok(())
+    }
+
+    pub fn retained_pdf_digest(&self, key: &str) -> Result<Option<String>> {
+        let file = match File::open(self.paper_path(key)?) {
+            Ok(file) => file,
+            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error.into()),
+        };
+        let mut pdf = Vec::new();
+        file.take(super::workflow::MAX_PDF as u64 + 1)
+            .read_to_end(&mut pdf)?;
+        ensure!(
+            pdf.len() <= super::workflow::MAX_PDF && pdf.starts_with(b"%PDF-"),
+            "Retained research PDF is invalid"
+        );
+        Ok(Some(super::workflow::sha256(&pdf)))
     }
 
     pub fn read(&self) -> Result<Ledger> {

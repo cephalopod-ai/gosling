@@ -1067,8 +1067,16 @@ async fn process_workflows(
             continue;
         };
         if !paper.has_pdf() && paper.summary.is_none() {
-            if let Ok(Some(pdf)) = paper.fetch_arxiv_pdf().await {
+            let digest = if let Some(digest) = store.retained_pdf_digest(&paper.key)? {
+                Some(digest)
+            } else if let Ok(Some(pdf)) = paper.fetch_arxiv_pdf().await {
                 store.save_pdf(&paper.key, &pdf)?;
+                Some(workflow::sha256(&pdf))
+            } else {
+                None
+            };
+            if let Some(digest) = digest {
+                paper.record_pdf(digest);
                 state.activity_mut(&id)?.paper = Some(paper.clone());
                 store.write(state)?;
             }

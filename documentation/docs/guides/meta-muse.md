@@ -105,14 +105,14 @@ to 10 minutes for activity, and caps an execution at 30 minutes.
   no Muse session log and gosling keeps its own session history.
 - **Usage.** Muse 1.4.24 and later can report input, output, and cached input
   tokens for the entire run. Desktop's last-request figure represents the
-  whole Muse run, which can involve multiple model calls. Missing counts stay
-  unknown. Use `muse usage --json` for subscription allowance. Run totals carry
-  no API price estimate or current context measurement.
+  whole Muse run, which can involve multiple model calls. The active-context
+  figure is a local estimate of the replayed conversation and prompt overhead.
+  Missing counts stay unknown. Use `muse usage --json` for subscription allowance.
 - **Compatibility.** The wrapper accepts version 1 JSONL events, including
   terminal-only responses. Malformed events, unsupported schemas, failed or
   cancelled runs, missing or duplicate terminal results, conflicting final text,
-  and nonzero exits return errors. gosling does not automatically replay a failed
-  Muse turn.
+  and nonzero exits return errors. If a Muse run fails while steering input is
+  queued, gosling saves that input in the chat. Resend it to use it in a new turn.
 
 See [Meta's headless documentation](https://dev.meta.ai/docs/muse-code/extending)
 for the underlying CLI interface.

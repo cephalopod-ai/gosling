@@ -15,8 +15,9 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use uuid::Uuid;
 
 pub(super) const LARGE_MESSAGE: usize = 12 * 1024 * 1024;
-const MAX_PDF: usize = 8 * 1024 * 1024;
+pub(super) const MAX_PDF: usize = 8 * 1024 * 1024;
 const MAX_RESULT: u64 = 64 * 1024;
+const MAX_SETTINGS: u64 = 64 * 1024;
 const SIGNATURE: &str = "X-Gosling-Signature";
 const NONCE: &str = "X-Gosling-Nonce";
 const TIMESTAMP: &str = "X-Gosling-Timestamp";
@@ -99,10 +100,14 @@ pub(super) struct Signature {
 impl Workflows {
     pub(super) fn load() -> Result<Self> {
         let path = Paths::config_dir().join("email-workflows.json");
-        match std::fs::read(path) {
-            Ok(bytes) => {
+        use std::io::Read as _;
+
+        match std::fs::File::open(path) {
+            Ok(file) => {
+                let mut bytes = Vec::new();
+                file.take(MAX_SETTINGS + 1).read_to_end(&mut bytes)?;
                 ensure!(
-                    bytes.len() <= 64 * 1024,
+                    bytes.len() as u64 <= MAX_SETTINGS,
                     "Email workflow settings are too large"
                 );
                 serde_json::from_slice(&bytes).context("Invalid email workflow settings")
@@ -249,18 +254,18 @@ impl Connector {
                 stdin.write_all(request).await?;
                 // The adapters read to EOF, so close the pipe before waiting for their output.
                 drop(stdin);
-                Ok::<_, std::io::Error>(())
+                Ok::<_, anyhow::Error>(())
             },
             async {
                 let mut bytes = Vec::new();
                 stdout.take(MAX_RESULT + 1).read_to_end(&mut bytes).await?;
+                ensure!(
+                    bytes.len() as u64 <= MAX_RESULT,
+                    "Email workflow output is too large"
+                );
                 Ok(bytes)
             },
         )?;
-        ensure!(
-            bytes.len() as u64 <= MAX_RESULT,
-            "Research receipt is too large"
-        );
         ensure!(
             child.wait().await?.success(),
             "Research adapter exited unsuccessfully"
@@ -378,7 +383,7 @@ impl Paper {
         Ok(format!("Abstract only (Crossref DOI {doi})\n\n{summary}"))
     }
 
-    pub(super) async fn fetch_arxiv_pdf(&mut self) -> Result<Option<Vec<u8>>> {
+    pub(super) async fn fetch_arxiv_pdf(&self) -> Result<Option<Vec<u8>>> {
         let Some(arxiv) = &self.arxiv else {
             return Ok(None);
         };
@@ -397,9 +402,12 @@ impl Paper {
             pdf.extend_from_slice(&chunk);
         }
         ensure!(pdf.starts_with(b"%PDF-"), "arXiv did not return a PDF");
-        self.pdf = true;
-        self.pdf_sha256 = Some(sha256(&pdf));
         Ok(Some(pdf))
+    }
+
+    pub(super) fn record_pdf(&mut self, digest: String) {
+        self.pdf = true;
+        self.pdf_sha256 = Some(digest);
     }
 
     pub(super) fn wants_summary(&self) -> bool {
@@ -421,7 +429,7 @@ impl Paper {
     }
 }
 
-fn sha256(input: &[u8]) -> String {
+pub(super) fn sha256(input: &[u8]) -> String {
     use std::fmt::Write as _;
     let mut hex = String::with_capacity(64);
     for byte in Sha256::digest(input) {
@@ -488,7 +496,7 @@ fn pdf_text(path: &Path) -> Result<String> {
     ensure!(pdf.objects.len() <= 25_000, "PDF is too complex");
     let mut text = String::new();
     for page in pdf.get_pages().keys().take(40).copied() {
-        let Ok(page_text) = pdf.extract_text(&[page]) else {
+        let Ok(mut page_text) = pdf.extract_text(&[page]) else {
             continue;
         };
         if page_text.trim().is_empty() {
@@ -498,8 +506,8 @@ fn pdf_text(path: &Path) -> Result<String> {
         if remainder < 200 {
             break;
         }
-        let end = page_text.floor_char_boundary(remainder.saturating_sub(32).min(page_text.len()));
-        text.push_str(&format!("\nPage {page}\n{}", &page_text[..end]));
+        page_text.truncate(page_text.floor_char_boundary(remainder.saturating_sub(32)));
+        text.push_str(&format!("\nPage {page}\n{page_text}"));
     }
     ensure!(!text.trim().is_empty(), "PDF has no extractable text");
     Ok(text)
@@ -539,8 +547,9 @@ pub(super) async fn complete(settings: &Settings, prompt: &str, input: &str) -> 
 }
 
 fn bounded_result(text: &str) -> String {
-    let text = clean_text(text, 8_000);
-    text[..text.floor_char_boundary(text.len().min(8_000))].to_owned()
+    let mut text = clean_text(text, 8_000);
+    text.truncate(text.floor_char_boundary(8_000));
+    text
 }
 
 #[cfg(test)]
@@ -560,6 +569,28 @@ mod tests {
             .expect("the adapter must receive EOF")
             .unwrap();
         assert_eq!(output, request);
+    }
+
+    #[test]
+    fn bounded_result_preserves_complete_unicode_at_the_byte_limit() {
+        let text = format!("{}🪿trailing", "a".repeat(7_999));
+        assert_eq!(bounded_result(&text), "a".repeat(7_999));
+        assert_eq!(bounded_result("short 🪿"), "short 🪿");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn connector_rejects_oversized_output_while_stdin_is_blocked() {
+        let connector = Connector {
+            executable: PathBuf::from("/bin/sh"),
+            args: vec!["-c".into(), "head -c 1048576 /dev/zero; sleep 15".into()],
+        };
+        let input = vec![0; 2 * 1024 * 1024];
+        let error = tokio::time::timeout(Duration::from_secs(5), connector.run(&input))
+            .await
+            .expect("the output limit must end the operation while the writer is blocked")
+            .unwrap_err();
+        assert!(error.to_string().contains("output is too large"));
     }
 
     #[test]

@@ -1294,7 +1294,7 @@ impl SessionManager {
                 accumulated_delta,
                 cost_delta,
                 false,
-                current_usage.total_tokens,
+                Some(current_usage),
             )
             .await
     }
@@ -1318,15 +1318,21 @@ impl SessionManager {
             .await
     }
 
-    pub(crate) async fn record_run_usage(&self, session_id: &str, usage: Usage) -> Result<()> {
+    pub(crate) async fn record_run_usage(
+        &self,
+        session_id: &str,
+        usage: Usage,
+        estimated_context_tokens: usize,
+    ) -> Result<()> {
+        let tokens = i32::try_from(estimated_context_tokens).unwrap_or(i32::MAX);
         self.storage
             .record_usage(
                 session_id,
-                Usage::default(),
+                Usage::new(Some(tokens), None, Some(tokens)),
                 usage,
                 None,
-                false,
-                usage.total_tokens,
+                true,
+                Some(usage),
             )
             .await
     }
@@ -5821,7 +5827,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn run_usage_accumulates_without_setting_context_or_cost() {
+    async fn run_usage_accumulates_separately_from_estimated_context() {
         let temp_dir = TempDir::new().unwrap();
         let manager = SessionManager::new(temp_dir.path().to_path_buf());
         let session = manager
@@ -5835,13 +5841,27 @@ mod tests {
             .unwrap();
         let usage = Usage::new(Some(30), Some(10), Some(40)).with_cache_tokens(Some(8), None);
         for _ in 0..2 {
-            manager.record_run_usage(&session.id, usage).await.unwrap();
+            manager
+                .record_run_usage(&session.id, usage, 200)
+                .await
+                .unwrap();
         }
         let reloaded = manager.get_session(&session.id, false).await.unwrap();
-        assert_eq!(reloaded.usage, Usage::default());
+        assert_eq!(reloaded.usage, Usage::new(Some(200), None, Some(200)));
+        assert!(reloaded.context_usage_estimated);
         assert_eq!(reloaded.last_request_tokens, Some(40));
         assert_eq!(reloaded.accumulated_usage, usage + usage);
         assert_eq!(reloaded.accumulated_cost, None);
+
+        manager
+            .record_run_usage(&session.id, Usage::default(), 210)
+            .await
+            .unwrap();
+        let reloaded = manager.get_session(&session.id, false).await.unwrap();
+        assert_eq!(reloaded.usage.total_tokens, Some(210));
+        assert!(reloaded.context_usage_estimated);
+        assert_eq!(reloaded.last_request_tokens, None);
+        assert_eq!(reloaded.accumulated_usage, usage + usage);
     }
 
     // FSR-CROSS-001: compaction used to call `replace_conversation` and

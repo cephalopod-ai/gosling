@@ -142,7 +142,7 @@ impl Agent {
             session.agent_type = "gosling",
         );
         let inner = Box::pin(async_stream::try_stream! {
-            let _steer_window = (!planning_turn).then(|| self.begin_steer_window(&session_config.id));
+            let mut steer_window = (!planning_turn).then(|| self.begin_steer_window(&session_config.id));
             let mut turns_taken = 0u32;
             let max_turns = session_config.max_turns.unwrap_or_else(|| {
                 Config::global()
@@ -173,7 +173,7 @@ impl Agent {
             let mut pending_handoff_snapshot_id = pending_handoff_snapshot_id;
             let mut token_accumulator = crate::context_mgmt::ConversationTokenAccumulator::new();
 
-            loop {
+            'reply: loop {
                 if is_token_cancelled(&cancel_token) {
                     break;
                 }
@@ -368,6 +368,7 @@ impl Agent {
                     )
                 };
 
+                let muse_run = active_provider.get_name() == crate::providers::muse_code::MUSE_CODE_PROVIDER_NAME;
                 let (retry_notice_tx, mut retry_notices) = tokio::sync::mpsc::unbounded_channel();
                 let mut stream_setup = Box::pin(gosling_providers::retry::with_retry_notices(
                     Arc::new(move |notice| {
@@ -412,7 +413,7 @@ impl Agent {
                     .count()
                     .saturating_sub(pre_turn_tool_count);
 
-                let tool_pair_summarization_task = if planning_turn || tool_pair_summarization_done {
+                let tool_pair_summarization_task = if planning_turn || tool_pair_summarization_done || muse_run {
                     None
                 } else {
                     crate::context_mgmt::maybe_summarize_tool_pairs(
@@ -479,12 +480,25 @@ impl Agent {
                             compaction_attempts = 0;
 
                             if let Some(ref usage) = usage {
-                                self.update_session_metrics(&session_config.id, usage).await?;
+                                if muse_run {
+                                    let message_tokens = token_accumulator.update(&conversation).await?;
+                                    let overhead = crate::context_mgmt::request_overhead_tokens(&provider_system_prompt, &[]).await?;
+                                    session_manager.record_run_usage(
+                                        &session_config.id,
+                                        usage.usage,
+                                        message_tokens.saturating_add(overhead),
+                                    ).await?;
+                                    if let Some(snapshot_id) = pending_handoff_snapshot_id.take() {
+                                        session_manager.acknowledge_handoff_snapshot(&snapshot_id).await?;
+                                    }
+                                } else {
+                                    self.update_session_metrics(&session_config.id, usage, active_provider.get_name()).await?;
+                                }
                                 yield AgentEvent::Usage(usage.clone());
                             }
 
                             if let Some(response) = response {
-                                if let Some(snapshot_id) = pending_handoff_snapshot_id.take() {
+                                if let Some(snapshot_id) = pending_handoff_snapshot_id.take_if(|_| !muse_run) {
                                     session_manager
                                         .acknowledge_handoff_snapshot(&snapshot_id)
                                         .await?;
@@ -1038,6 +1052,45 @@ impl Agent {
                                 }
                             }
                         }
+                        Err(ref provider_err) if muse_run => {
+                            #[cfg(feature = "telemetry")]
+                            crate::posthog::emit_error(provider_err.telemetry_type(), &provider_err.to_string());
+                            error!("Error: {}", provider_err);
+                            // The external runner can have made changes without a host tool message.
+                            drop(steer_window.take());
+                            let pending_steers = self.drain_pending_steers(&session_config.id).await;
+                            for message in hide_interrupted_reply_from_agent(messages_to_add) {
+                                session_manager.upsert_message(&session_config.id, &message.with_incomplete()).await?;
+                            }
+                            for message in &pending_steers {
+                                session_manager.add_message(&session_config.id, &message.clone().user_only()).await?;
+                            }
+                            let advice = if matches!(provider_err, ProviderError::Authentication(_)) {
+                                provider_error_advice(provider_err)
+                            } else {
+                                "Check the workspace for partial changes before retrying."
+                            };
+                            let steer_notice = if pending_steers.is_empty() {
+                                ""
+                            } else {
+                                "\n\nQueued messages were saved in chat history. Resend them to include them in a new turn."
+                            };
+                            let failure_message = provider_failure_message(
+                                provider_err,
+                                &format!("Ran into this error: {provider_err}.\n\n{advice}{steer_notice}"),
+                                true,
+                            ).with_generated_id();
+                            if let Err(error) = self.persist_provider_failure_checkpoint(
+                                &session_config.id, &active_provider, &active_model_config, &failure_message,
+                            ).await {
+                                warn!("Failed to prepare provider recovery checkpoint: {error}");
+                            }
+                            for message in pending_steers {
+                                yield AgentEvent::Message(message.user_only());
+                            }
+                            yield AgentEvent::Message(failure_message);
+                            break 'reply;
+                        }
                         #[allow(unused_variables)]
                         Err(ref provider_err @ ProviderError::ContextLengthExceeded(_)) => {
                             #[cfg(feature = "telemetry")]
@@ -1351,11 +1404,6 @@ impl Agent {
                             break;
                         }
                         Err(ref provider_err) => {
-                            if active_provider.get_name() == crate::providers::muse_code::MUSE_CODE_PROVIDER_NAME {
-                                // Muse tools can have run without producing a
-                                // host tool message, so a nudge may repeat effects.
-                                exit_chat = true;
-                            }
                             #[cfg(feature = "telemetry")]
                             crate::posthog::emit_error(provider_err.telemetry_type(), &provider_err.to_string());
                             error!("Error: {}", provider_err);

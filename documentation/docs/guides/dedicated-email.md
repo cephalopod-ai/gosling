@@ -117,9 +117,10 @@ The adapter receives a versioned JSON request on stdin and reports a destination
 as `{"id":"…"}`. Create the config file and key files with restricted permissions and use
 disposable databases and a test Zotero collection for the first import.
 
-For PDFs, Gosling retains the original locally and summarizes the extracted pages.
+For PDFs, gosling retains the original locally and summarizes the extracted pages.
 **Discard text and summary** in Mail activity clears the email text and generated summary.
-The PDF stays in local research storage so research records can still refer to it.
+The PDF stays in local research storage so research records can still refer to it. If an inbox
+check stops after saving a PDF, the next check can recover the saved file and use its checksum.
 
 For DOI messages without full text, Gosling can summarize a Crossref abstract when available. It fetches
 arXiv PDFs from arXiv.org. Use **Summarize only**, **Zotero only**, **Math MCP only**, or
@@ -152,3 +153,6 @@ discard a draft or saved text. If the model cannot classify a message after thre
 keeps it in the inbox, records that under **Mail activity**, and moves on. If SMTP
 delivery is uncertain, check your mailbox before following up. gosling records the uncertainty
 and leaves retry to you.
+
+An oversized POP message remains on the server. gosling records it as skipped and checks
+the remaining messages on subsequent polls.

@@ -810,26 +810,13 @@ impl Agent {
         &self,
         session_id: &str,
         usage: &ProviderUsage,
+        provider_name: &str,
     ) -> Result<()> {
-        let manager = self.config.session_manager.clone();
-        let session = manager.get_session(session_id, false).await?;
-        if session.provider_name.as_deref()
-            == Some(crate::providers::muse_code::MUSE_CODE_PROVIDER_NAME)
-        {
-            // A run can include several model calls. Its aggregate is for
-            // accounting and does not measure the active model window.
-            return manager.record_run_usage(session_id, usage.usage).await;
-        }
-        let cost_delta = session
-            .provider_name
-            .as_deref()
-            .and_then(|pn| self.estimate_usage_cost(usage, pn));
-
-        manager
+        let cost_delta = self.estimate_usage_cost(usage, provider_name);
+        self.config
+            .session_manager
             .record_usage(session_id, usage.usage, usage.usage, cost_delta)
-            .await?;
-
-        Ok(())
+            .await
     }
 
     pub(crate) async fn commit_compaction(

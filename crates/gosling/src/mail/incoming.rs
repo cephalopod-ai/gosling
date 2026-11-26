@@ -288,7 +288,9 @@ impl Pop {
         self.command(&format!("RETR {number}")).await?;
         let mut contents = Vec::new();
         loop {
-            let line = read_line(&mut self.0, message_limit + 2).await?;
+            let Some(line) = read_bounded_line(&mut self.0, message_limit + 2).await? else {
+                return Ok(None);
+            };
             if line == b".\r\n" {
                 return Ok(Some(contents));
             }
@@ -306,21 +308,29 @@ impl Pop {
 }
 
 async fn read_line(stream: &mut (impl AsyncBufRead + Unpin), limit: usize) -> Result<Vec<u8>> {
+    read_bounded_line(stream, limit)
+        .await?
+        .context("Mail server line is too large")
+}
+
+async fn read_bounded_line(
+    stream: &mut (impl AsyncBufRead + Unpin),
+    limit: usize,
+) -> Result<Option<Vec<u8>>> {
     let mut line = Vec::new();
     loop {
         let buffer = stream.fill_buf().await?;
         ensure!(!buffer.is_empty(), "Mail server closed the connection");
         let end = buffer.iter().position(|byte| *byte == b'\n');
         let consumed = end.map_or(buffer.len(), |index| index + 1);
-        ensure!(
-            line.len() + consumed <= limit,
-            "Mail server line is too large"
-        );
+        if line.len() + consumed > limit {
+            return Ok(None);
+        }
         line.extend_from_slice(&buffer[..consumed]);
         stream.consume(consumed);
         if end.is_some() {
             ensure!(line.ends_with(b"\r\n"), "Invalid mail server line ending");
-            return Ok(line);
+            return Ok(Some(line));
         }
     }
 }
@@ -367,6 +377,32 @@ mod tests {
         .unwrap();
         assert_eq!((record.validity, record.uid), (77, 901));
         assert_eq!(record.folder, "Mail/Trash");
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn pop_skips_a_message_when_the_actual_line_exceeds_list_size() {
+        let (client, server) = tokio::io::duplex(4096);
+        let server = tokio::spawn(async move {
+            let mut server = BufReader::new(server);
+            let mut command = String::new();
+            server.read_line(&mut command).await.unwrap();
+            assert_eq!(command, "LIST 1\r\n");
+            server.get_mut().write_all(b"+OK 1 4\r\n").await.unwrap();
+            command.clear();
+            server.read_line(&mut command).await.unwrap();
+            assert_eq!(command, "RETR 1\r\n");
+            server
+                .get_mut()
+                .write_all(b"+OK\r\n123456789\r\n.\r\n")
+                .await
+                .unwrap();
+        });
+        let mut session = Pop(BufReader::new(Box::new(client)));
+        let result = tokio::time::timeout(std::time::Duration::from_secs(3), session.fetch(1, 4))
+            .await
+            .unwrap();
+        assert!(result.unwrap().is_none());
         server.await.unwrap();
     }
 

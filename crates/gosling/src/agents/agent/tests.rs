@@ -1910,6 +1910,110 @@ async fn stop_hook_block_cap_allows_configured_consecutive_blocks_then_overrides
 }
 
 #[tokio::test]
+async fn muse_failure_stops_replay_and_saves_undelivered_steering() -> Result<()> {
+    #[derive(Default)]
+    struct FailingMuse(AtomicUsize);
+
+    #[async_trait::async_trait]
+    impl crate::providers::base::Provider for FailingMuse {
+        async fn stream(
+            &self,
+            _model_config: &gosling_providers::model::ModelConfig,
+            _system_prompt: &str,
+            _messages: &[Message],
+            _tools: &[Tool],
+        ) -> Result<MessageStream, ProviderError> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(Box::pin(futures::stream::iter([
+                Ok((Some(Message::assistant().with_text("Partial reply")), None)),
+                Err(ProviderError::NetworkError("connection lost".into())),
+            ])))
+        }
+
+        fn get_name(&self) -> &str {
+            crate::providers::muse_code::MUSE_CODE_PROVIDER_NAME
+        }
+
+        fn executes_tools_outside_gosling(&self) -> bool {
+            true
+        }
+    }
+
+    for queue_steer in [false, true] {
+        let env = StopHookTestEnv::new(ALWAYS_BLOCK_SCRIPT)?;
+        let provider = Arc::new(FailingMuse::default());
+        let (agent, session_id) =
+            create_test_agent(env.data_dir(), env.hook_manager(), provider.clone()).await?;
+        agent.set_goal(Some("Keep working".into())).await;
+        let mut reply = agent
+            .reply(
+                Message::user().with_text("Start the job"),
+                SessionConfig {
+                    id: session_id.clone(),
+                    max_turns: Some(2),
+                    compacted_context: false,
+                    tail_limit: None,
+                },
+                None,
+            )
+            .await?;
+        let mut failed = false;
+        let mut steer_seen = false;
+        while let Some(event) = reply.next().await {
+            let AgentEvent::Message(message) = event? else {
+                continue;
+            };
+            if queue_steer && message.as_concat_text() == "Partial reply" {
+                assert!(
+                    agent
+                        .try_steer_active_reply(
+                            &session_id,
+                            Message::user()
+                                .with_text("Check status")
+                                .with_id("steer-fixture")
+                        )
+                        .await
+                );
+            }
+            if message.as_concat_text() == "Check status" {
+                steer_seen = true;
+                assert!(!message.is_agent_visible());
+            }
+            if message.metadata.terminal_error.is_some() {
+                assert_eq!(steer_seen, queue_steer);
+                failed = true;
+            }
+        }
+        assert!(failed);
+        assert_eq!(provider.0.load(Ordering::SeqCst), 1);
+        assert!(!agent.has_pending_steers(&session_id).await);
+        let stored = agent
+            .config
+            .session_manager
+            .get_session(&session_id, true)
+            .await?
+            .conversation
+            .unwrap();
+        let partial = stored
+            .messages()
+            .iter()
+            .find(|message| message.as_concat_text() == "Partial reply")
+            .unwrap();
+        assert!(!partial.is_agent_visible());
+        assert_eq!(
+            stored
+                .messages()
+                .iter()
+                .filter(|message| message.as_concat_text() == "Check status"
+                    && !message.is_agent_visible())
+                .count(),
+            usize::from(queue_steer)
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn stop_hook_block_cap_counts_only_consecutive_blocks() -> Result<()> {
     let env = StopHookTestEnv::new(ALTERNATE_BLOCK_ALLOW_SCRIPT)?;
     let (agent, session_id, provider) = create_stop_hook_test_agent(&env, 1).await?;
