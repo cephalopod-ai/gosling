@@ -1910,12 +1910,14 @@ async fn stop_hook_block_cap_allows_configured_consecutive_blocks_then_overrides
 }
 
 #[tokio::test]
-async fn muse_failure_stops_replay_and_saves_undelivered_steering() -> Result<()> {
-    #[derive(Default)]
-    struct FailingMuse(AtomicUsize);
+async fn external_runtime_failure_stops_replay_and_saves_undelivered_steering() -> Result<()> {
+    struct FailingExternalProvider {
+        name: &'static str,
+        calls: AtomicUsize,
+    }
 
     #[async_trait::async_trait]
-    impl crate::providers::base::Provider for FailingMuse {
+    impl crate::providers::base::Provider for FailingExternalProvider {
         async fn stream(
             &self,
             _model_config: &gosling_providers::model::ModelConfig,
@@ -1923,15 +1925,20 @@ async fn muse_failure_stops_replay_and_saves_undelivered_steering() -> Result<()
             _messages: &[Message],
             _tools: &[Tool],
         ) -> Result<MessageStream, ProviderError> {
-            self.0.fetch_add(1, Ordering::SeqCst);
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            let error = if self.name == crate::providers::muse_code::MUSE_CODE_PROVIDER_NAME {
+                ProviderError::NetworkError("connection lost".into())
+            } else {
+                ProviderError::ContextLengthExceeded("provider reported overflow".into())
+            };
             Ok(Box::pin(futures::stream::iter([
                 Ok((Some(Message::assistant().with_text("Partial reply")), None)),
-                Err(ProviderError::NetworkError("connection lost".into())),
+                Err(error),
             ])))
         }
 
         fn get_name(&self) -> &str {
-            crate::providers::muse_code::MUSE_CODE_PROVIDER_NAME
+            self.name
         }
 
         fn executes_tools_outside_gosling(&self) -> bool {
@@ -1939,9 +1946,13 @@ async fn muse_failure_stops_replay_and_saves_undelivered_steering() -> Result<()
         }
     }
 
-    for queue_steer in [false, true] {
+    let muse = crate::providers::muse_code::MUSE_CODE_PROVIDER_NAME;
+    for (name, queue_steer) in [(muse, false), (muse, true), ("external-overflow", true)] {
         let env = StopHookTestEnv::new(ALWAYS_BLOCK_SCRIPT)?;
-        let provider = Arc::new(FailingMuse::default());
+        let provider = Arc::new(FailingExternalProvider {
+            name,
+            calls: AtomicUsize::new(0),
+        });
         let (agent, session_id) =
             create_test_agent(env.data_dir(), env.hook_manager(), provider.clone()).await?;
         agent.set_goal(Some("Keep working".into())).await;
@@ -1981,11 +1992,14 @@ async fn muse_failure_stops_replay_and_saves_undelivered_steering() -> Result<()
             }
             if message.metadata.terminal_error.is_some() {
                 assert_eq!(steer_seen, queue_steer);
+                if name != muse {
+                    assert!(message.as_concat_text().contains("run /compact"));
+                }
                 failed = true;
             }
         }
         assert!(failed);
-        assert_eq!(provider.0.load(Ordering::SeqCst), 1);
+        assert_eq!(provider.calls.load(Ordering::SeqCst), 1);
         assert!(!agent.has_pending_steers(&session_id).await);
         let stored = agent
             .config

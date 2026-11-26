@@ -12,6 +12,7 @@ for the relationship to cephalopod-ai/gosling.
 - [../documentation/docs/guides/meta-muse.md](../documentation/docs/guides/meta-muse.md) — Meta Muse API and Muse Code subscription setup, permissions, billing and wrapper limits
 - [logs/session/2026-10-17-meta-muse-provider.md](logs/session/2026-10-17-meta-muse-provider.md) — provider implementation and validation evidence
 - [logs/session/2026-11-24-muse-code-modernization.md](logs/session/2026-11-24-muse-code-modernization.md) — headless modernization, native transport qualification, and validation
+- [logs/session/2026-11-26-muse-compaction-boundary.md](logs/session/2026-11-26-muse-compaction-boundary.md) — tool-free compaction guard, Muse context limits, and validation
 - [logs/session/2026-10-17-together-model-search.md](logs/session/2026-10-17-together-model-search.md) — Together catalog parsing, Muse discovery and shared model-search validation
 - [logs/session/2026-10-17-model-context-window.md](logs/session/2026-10-17-model-context-window.md) — context metadata discovery, editable Desktop token limits, warnings and validation
 

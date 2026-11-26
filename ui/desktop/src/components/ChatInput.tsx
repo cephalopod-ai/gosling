@@ -356,10 +356,15 @@ export default function ChatInput({
   const [tokenLimit, setTokenLimit] = useState<number>(TOKEN_LIMIT_DEFAULT);
   const [isTokenLimitLoaded, setIsTokenLimitLoaded] = useState(false);
   const effectiveTokenLimit = contextLimit ?? tokenLimit;
-  // Persistent-session CLI/ACP providers (e.g. Claude Code) keep their own
-  // conversation state and only ever receive the newest turn from Gosling, so
-  // Gosling's own compaction has nothing to trim here — see manages_own_context.
-  const [managesOwnContext, setManagesOwnContext] = useState(false);
+  const [providerContext, setProviderContext] = useState<{
+    provider: string;
+    managesOwnContext: boolean;
+    supportsCompaction: boolean;
+  } | null>(null);
+  const activeProviderContext =
+    !effectiveProvider || providerContext?.provider === effectiveProvider ? providerContext : null;
+  const managesOwnContext = activeProviderContext?.managesOwnContext ?? false;
+  const supportsCompaction = activeProviderContext?.supportsCompaction ?? false;
   const [workingDirOverride, setWorkingDirOverride] = useState<string | null>(null);
   const currentWorkingDir = workingDirOverride ?? workingDir ?? getInitialWorkingDir();
 
@@ -642,7 +647,7 @@ export default function ChatInput({
   }, [inactive, textAreaRef]);
 
   // Load providers and get current model's token limit
-  const loadProviderDetails = async () => {
+  const loadProviderDetails = async (isCurrent: () => boolean) => {
     try {
       // Reset token limit loaded state
       setIsTokenLimitLoaded(false);
@@ -657,33 +662,37 @@ export default function ChatInput({
         provider = configModelAndProvider.provider;
       }
       if (!model || !provider) {
+        if (!isCurrent()) return;
         setIsTokenLimitLoaded(true);
-        setManagesOwnContext(false);
+        setProviderContext(null);
         return;
       }
 
       const providerDetails = await acpListProviderDetails();
-      setManagesOwnContext(
-        providerDetails.find((candidate) => candidate.name === provider)?.manages_own_context ??
-          false
-      );
+      if (!isCurrent()) return;
+      const details = providerDetails.find((candidate) => candidate.name === provider);
+      setProviderContext({
+        provider,
+        managesOwnContext: details?.manages_own_context ?? false,
+        supportsCompaction:
+          details != null &&
+          !details.manages_own_context &&
+          !details.executes_tools_outside_gosling,
+      });
 
       const predefinedModels = getPredefinedModelsFromEnv();
       const resolvedLimit = await resolveContextLimit(
         model,
         predefinedModels,
-        async () => {
-          const providers = await acpListProviderDetails();
-          return (
-            providers.find((candidate) => candidate.name === provider)?.metadata?.known_models ?? []
-          );
-        },
+        async () => details?.metadata?.known_models ?? [],
         async () => (await fetchCanonicalModelInfo(provider, model))?.contextLimit,
         TOKEN_LIMIT_DEFAULT
       );
+      if (!isCurrent()) return;
       setTokenLimit(resolvedLimit);
       setIsTokenLimitLoaded(true);
     } catch (err) {
+      if (!isCurrent()) return;
       console.error('Error loading providers or token limit:', err);
       // Set default limit on error
       setTokenLimit(TOKEN_LIMIT_DEFAULT);
@@ -694,7 +703,11 @@ export default function ChatInput({
   // Initial load and refresh when model changes (effective model includes overrides,
   // config model is the fallback for Hub/no-session contexts)
   useEffect(() => {
-    loadProviderDetails();
+    let current = true;
+    void loadProviderDetails(() => current);
+    return () => {
+      current = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveModel, effectiveProvider, configModel, configProvider]);
 
@@ -702,18 +715,9 @@ export default function ChatInput({
   useEffect(() => {
     clearAlerts();
 
-    // For a provider that manages its own context (a persistent CLI/ACP session
-    // like Claude Code), Gosling only ever sends it the newest turn — Gosling's
-    // own /compact has nothing here to trim, and would just add another turn to
-    // that provider's own session instead of shrinking anything. AlertBox has no
-    // way to show that nuance (it always renders the auto-compact threshold/edit
-    // control whenever an alert carries progress, regardless of showCompactButton),
-    // and that threshold is meaningless here too — Gosling never checks it for a
-    // manages-own-context provider. Rather than surface a non-actionable "Auto
-    // compact at X%" control, skip the alert entirely; ContextWindowIndicator
-    // still shows the raw number unobtrusively.
+    // A progress alert also offers an auto-compaction threshold control.
     if (
-      !managesOwnContext &&
+      supportsCompaction &&
       ((totalTokens && totalTokens > 0) ||
         ((contextLimit !== undefined || isTokenLimitLoaded) && effectiveTokenLimit))
     ) {
@@ -741,7 +745,7 @@ export default function ChatInput({
     effectiveTokenLimit,
     isTokenLimitLoaded,
     isLoading,
-    managesOwnContext,
+    supportsCompaction,
     addAlert,
     clearAlerts,
   ]);

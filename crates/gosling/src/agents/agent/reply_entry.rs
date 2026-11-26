@@ -370,10 +370,10 @@ impl Agent {
                     )
                     .await?;
 
-                // Check if this was a command that modifies conversation history
-                let modifies_history = crate::agents::execute_commands::COMPACT_TRIGGERS
-                    .contains(&message_text.trim())
-                    || message_text.trim() == "/clear";
+                let modifies_history = response.metadata.terminal_error.is_none()
+                    && (crate::agents::execute_commands::COMPACT_TRIGGERS
+                        .contains(&message_text.trim())
+                        || message_text.trim() == "/clear");
 
                 return Ok(Box::pin(async_stream::try_stream! {
                     let _turn_lease = turn_lease;
@@ -518,7 +518,7 @@ impl Agent {
                                 check.usage.context_limit,
                             ) {
                                 yield AgentEvent::Message(
-                                    self.close_oversized_turn(&session_config.id, exceeded, true).await?
+                                        self.close_oversized_turn(&session_config.id, exceeded.to_string(), true).await?
                                 );
                                 return;
                             }
@@ -531,7 +531,7 @@ impl Agent {
                                 check.usage.context_limit,
                             ) {
                                 yield AgentEvent::Message(
-                                    self.close_oversized_turn(&session_config.id, exceeded, true).await?
+                                    self.close_oversized_turn(&session_config.id, exceeded.to_string(), true).await?
                                 );
                                 return;
                             }
@@ -649,36 +649,17 @@ impl Agent {
     pub(super) async fn close_oversized_turn(
         &self,
         session_id: &str,
-        exceeded: crate::context_mgmt::ContextWindowExceededError,
+        reason: String,
         withdraw_newest_prompt: bool,
     ) -> Result<Message> {
         let session_manager = &self.config.session_manager;
         if withdraw_newest_prompt {
-            let conversation = session_manager
-                .get_session(session_id, true)
-                .await?
-                .conversation
-                .unwrap_or_default();
-            if let Some(prompt) = conversation
-                .messages()
-                .iter()
-                .rev()
-                .find(|message| crate::context_mgmt::is_turn_start(message))
-            {
-                session_manager
-                    .upsert_message(
-                        session_id,
-                        &prompt
-                            .clone()
-                            .with_visibility(prompt.metadata.user_visible, false),
-                    )
-                    .await?;
-            }
+            self.withdraw_newest_prompt(session_id).await?;
         }
-        let (reason, notice) = if withdraw_newest_prompt {
-            (exceeded.to_string(), OVERSIZED_TURN_NOTICE)
+        let notice = if withdraw_newest_prompt {
+            OVERSIZED_TURN_NOTICE
         } else {
-            (exceeded.mid_turn_message(), OVERSIZED_MID_TURN_NOTICE)
+            OVERSIZED_MID_TURN_NOTICE
         };
         let failure_message = Message::assistant()
             .with_text(&reason)
@@ -696,6 +677,31 @@ impl Agent {
             )
             .await?;
         Ok(failure_message)
+    }
+
+    pub(super) async fn withdraw_newest_prompt(&self, session_id: &str) -> Result<()> {
+        let manager = &self.config.session_manager;
+        let conversation = manager
+            .get_session(session_id, true)
+            .await?
+            .conversation
+            .unwrap_or_default();
+        if let Some(prompt) = conversation
+            .messages()
+            .iter()
+            .rev()
+            .find(|message| crate::context_mgmt::is_turn_start(message))
+        {
+            manager
+                .upsert_message(
+                    session_id,
+                    &prompt
+                        .clone()
+                        .with_visibility(prompt.metadata.user_visible, false),
+                )
+                .await?;
+        }
+        Ok(())
     }
 
     pub(super) async fn perform_compact(

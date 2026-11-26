@@ -63,6 +63,9 @@ transport and a Gosling-hosted MCP bridge remain qualification work.
 - Keep native image and approval modes unavailable until a transport qualifies.
   A documented image flag or approval mode is insufficient to establish its
   behavior under inherited configuration.
+- Gosling's compaction and handoff summarization require a provider with
+  host-managed tools. Muse Code remains available for ordinary chat within its
+  estimated context budget. At the hard limit the host refuses to start Muse.
 
 ## Execution record and open decisions
 

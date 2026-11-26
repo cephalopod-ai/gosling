@@ -263,6 +263,25 @@ impl Agent {
             .unwrap_or_default()
     }
 
+    pub(super) async fn preserve_undelivered_steers(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<Message>> {
+        let messages: Vec<_> = self
+            .drain_pending_steers(session_id)
+            .await
+            .into_iter()
+            .map(Message::user_only)
+            .collect();
+        for message in &messages {
+            self.config
+                .session_manager
+                .add_message(session_id, message)
+                .await?;
+        }
+        Ok(messages)
+    }
+
     pub(super) async fn emit_pre_tool_extended_hooks(
         &self,
         tool_name: &str,

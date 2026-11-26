@@ -284,6 +284,16 @@ impl Provider for MuseCodeProvider {
         }
 
         let prompt = build_prompt(system, messages)?;
+        let counter = crate::token_counter::shared_token_counter()
+            .await
+            .map_err(|_| protocol_error("could not estimate the prompt size"))?;
+        let estimated_tokens = counter.count_tokens(&prompt);
+        let context_limit = self.get_context_limit(model).await?;
+        if context_limit > 0 && estimated_tokens >= context_limit {
+            return Err(ProviderError::ContextLengthExceeded(format!(
+                "Muse Code was not started. The formatted prompt is estimated at {estimated_tokens} tokens for a {context_limit}-token window."
+            )));
+        }
         let capabilities = self.cli.capabilities().await?;
         if model.thinking_effort().is_some() {
             capabilities.require_reasoning_effort()?;

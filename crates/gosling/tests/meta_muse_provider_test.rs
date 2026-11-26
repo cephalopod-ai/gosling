@@ -246,6 +246,173 @@ esac
     }
 
     #[tokio::test]
+    async fn compaction_never_launches_muse_code() -> anyhow::Result<()> {
+        use gosling::agents::{Agent, AgentConfig, AgentEvent, GoslingPlatform, SessionConfig};
+        use gosling::config::{Config, ConfigResolutionScope, PermissionManager};
+        use gosling::context_mgmt::{compact_messages, generate_handoff_summary};
+        use gosling::conversation::Conversation;
+        use gosling::session::{SessionManager, SessionType};
+        use gosling_providers::errors::ProviderError;
+        use std::sync::Arc;
+
+        let root = tempfile::tempdir()?;
+        let launches = root.path().join("launches");
+        std::fs::write(root.path().join("events.jsonl"), successful_events())?;
+        let command = script(
+            root.path(),
+            "printf 'exec\\n' >> launches\ncat events.jsonl",
+        );
+        let (provider, _env) = provider(root.path(), &command).await;
+        let model = ModelConfig::new("muse-spark-1.3").with_context_limit(Some(16_384));
+        let conversation =
+            Conversation::new_unvalidated([Message::user().with_text("Earlier request")]);
+        let manager = Arc::new(SessionManager::new(root.path().join("sessions")));
+        let agent = Agent::with_config(AgentConfig::new(
+            manager.clone(),
+            Arc::new(PermissionManager::new(root.path().join("permissions"))),
+            GoslingMode::Auto,
+            true,
+            GoslingPlatform::GoslingCli,
+        ));
+        let session = manager
+            .create_session(
+                root.path().into(),
+                "Muse compaction".into(),
+                SessionType::Hidden,
+                GoslingMode::Auto,
+            )
+            .await?;
+
+        for manual in [true, false] {
+            let error =
+                compact_messages(&provider, &model, &session.id, &conversation, manual, None)
+                    .await
+                    .unwrap_err();
+            assert!(error
+                .to_string()
+                .contains("cannot be used for tool-free summarization"));
+        }
+        assert!(
+            generate_handoff_summary(&provider, &model, &session.id, &conversation)
+                .await
+                .unwrap_err()
+                .to_string()
+                .contains("cannot be used for tool-free summarization")
+        );
+
+        let error = provider
+            .complete(
+                &model.clone().with_context_limit(Some(16)),
+                "System prompt",
+                &[Message::user().with_text("Hello")],
+                &[],
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error, ProviderError::ContextLengthExceeded(message) if message.contains("Muse Code was not started"))
+        );
+
+        manager
+            .replace_conversation(&session.id, &conversation)
+            .await?;
+        agent
+            .update_provider(Arc::new(provider), model, &session.id)
+            .await?;
+
+        for (prompt, threshold, expected_launches, expected_error) in [
+            ("/compact".to_string(), 0.8, 0, true),
+            (" normal".repeat(512), 0.01, 1, false),
+            (" oversized".repeat(18_000), 0.0, 1, true),
+        ] {
+            let settings = ConfigResolutionScope::unsaved(
+                [(
+                    "GOSLING_AUTO_COMPACT_THRESHOLD".to_string(),
+                    json!(threshold),
+                )]
+                .into(),
+                Default::default(),
+            );
+            let events = Config::with_resolution_scope(settings, async {
+                let stream = agent
+                    .reply(
+                        Message::user().with_text(&prompt),
+                        SessionConfig {
+                            id: session.id.clone(),
+                            max_turns: Some(2),
+                            compacted_context: false,
+                            tail_limit: None,
+                        },
+                        None,
+                    )
+                    .await?;
+                futures::TryStreamExt::try_collect::<Vec<_>>(stream).await
+            })
+            .await?;
+            let mut errors = Vec::new();
+            let mut notices = Vec::new();
+            for event in events {
+                match event {
+                    AgentEvent::HistoryReplaced(_) => panic!("unexpected history rewrite"),
+                    AgentEvent::Message(message) => {
+                        errors.extend(message.metadata.terminal_error);
+                        notices.extend(message.content.into_iter().filter_map(|item| match item {
+                            MessageContent::SystemNotification(notice) => Some(notice.msg),
+                            _ => None,
+                        }));
+                    }
+                    _ => {}
+                }
+            }
+            assert_eq!(errors.len(), usize::from(expected_error), "{errors:?}");
+            if expected_error {
+                let expected = if prompt == "/compact" {
+                    "tool-free summarization"
+                } else {
+                    "The request was not sent"
+                };
+                assert!(errors[0].contains(expected), "{errors:?}");
+            } else {
+                assert_eq!(
+                    notices
+                        .iter()
+                        .filter(|notice| notice.contains("Automatic compaction is unavailable"))
+                        .count(),
+                    1,
+                    "{notices:?}"
+                );
+            }
+            let count = if launches.exists() {
+                std::fs::read_to_string(&launches)?.lines().count()
+            } else {
+                0
+            };
+            assert_eq!(count, expected_launches);
+            assert!(manager
+                .list_compaction_revisions(&session.id, 10, None)
+                .await?
+                .is_empty());
+        }
+        let stored = manager
+            .get_session(&session.id, true)
+            .await?
+            .conversation
+            .unwrap();
+        assert!(stored
+            .messages()
+            .iter()
+            .any(|message| message.is_agent_visible()
+                && message.as_concat_text() == "Earlier request"));
+        assert!(stored
+            .messages()
+            .iter()
+            .any(|message| !message.is_agent_visible()
+                && message.is_user_visible()
+                && message.as_concat_text().starts_with(" oversized")));
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn wrapper_preserves_cwd_history_and_private_prompt_transport_while_draining_stderr() {
         let root = tempfile::tempdir().unwrap();
         std::fs::write(root.path().join("events.jsonl"), successful_events()).unwrap();

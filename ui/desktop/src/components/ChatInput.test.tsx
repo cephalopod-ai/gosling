@@ -1,7 +1,10 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { acpListProviderDetails } from '../acp/providers';
 import { IntlTestWrapper } from '../i18n/test-utils';
 import { ChatState } from '../types/chatState';
+import type { ProviderDetails } from '../types/providers';
+import type { Alert } from './alerts';
 import { TooltipProvider } from './ui/Tooltip';
 import ChatInput from './ChatInput';
 
@@ -17,7 +20,14 @@ vi.mock('./bottom_menu/BottomMenuExtensionSelection', () => ({
   BottomMenuExtensionSelection: () => null,
 }));
 vi.mock('./bottom_menu/CostTracker', () => ({ CostTracker: () => null }));
-vi.mock('./bottom_menu/ContextWindowIndicator', () => ({ ContextWindowIndicator: () => null }));
+vi.mock('./bottom_menu/ContextWindowIndicator', () => ({
+  ContextWindowIndicator: ({ alerts, totalTokens }: { alerts: Alert[]; totalTokens: number }) => (
+    <div>
+      <span data-testid="context-usage">{totalTokens}</span>
+      {alerts.some((alert) => alert.showCompactButton) && <button>Compact now</button>}
+    </div>
+  ),
+}));
 vi.mock('./MentionPopover', () => ({ default: () => null }));
 vi.mock('./ModelAndProviderContext', () => ({
   useModelAndProvider: () => ({
@@ -78,6 +88,47 @@ describe('ChatInput attach button', () => {
     );
 
     expect(screen.getByRole('button', { name: 'Attach file' })).toBeInTheDocument();
+  });
+
+  it('keeps context usage visible and offers compaction only for a host-managed provider', async () => {
+    const meta: ProviderDetails = {
+      name: 'meta',
+      provider_type: 'Builtin',
+      is_configured: true,
+      manages_own_context: false,
+      metadata: {
+        name: 'meta',
+        display_name: 'Meta',
+        default_model: 'spark',
+        known_models: [{ name: 'spark', context_limit: 10000 }],
+        config_keys: [],
+        description: '',
+        model_doc_link: '',
+      },
+    };
+    vi.mocked(acpListProviderDetails).mockResolvedValueOnce([meta]);
+    const inputFor = (provider: string) => (
+      <TooltipProvider>
+        <ChatInput
+          sessionId="session-1"
+          sessionModel="spark"
+          sessionProvider={provider}
+          totalTokens={9000}
+          contextLimit={10000}
+          handleSubmit={vi.fn()}
+          chatState={ChatState.Idle}
+          setView={vi.fn()}
+        />
+      </TooltipProvider>
+    );
+    const { rerender } = render(inputFor('meta'), { wrapper: IntlTestWrapper });
+    expect(await screen.findByRole('button', { name: 'Compact now' })).toBeInTheDocument();
+    vi.mocked(acpListProviderDetails).mockResolvedValueOnce([
+      { ...meta, name: 'muse-code', executes_tools_outside_gosling: true },
+    ]);
+    await act(async () => rerender(inputFor('muse-code')));
+    expect(screen.queryByRole('button', { name: 'Compact now' })).not.toBeInTheDocument();
+    expect(screen.getByTestId('context-usage')).toHaveTextContent('9000');
   });
 
   it('keeps mounted composers distinct and exposes the selector only for the active one', async () => {

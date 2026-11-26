@@ -172,6 +172,8 @@ impl Agent {
             let mut research_nudge_sent = false;
             let mut pending_handoff_snapshot_id = pending_handoff_snapshot_id;
             let mut token_accumulator = crate::context_mgmt::ConversationTokenAccumulator::new();
+            let mut provider_request_started = false;
+            let mut reported_compaction_unavailable = false;
 
             'reply: loop {
                 if is_token_cancelled(&cancel_token) {
@@ -284,7 +286,7 @@ impl Agent {
                                     auto_compaction.usage.context_limit,
                                 ) {
                                     yield AgentEvent::Message(
-                                        self.close_oversized_turn(&session_config.id, exceeded, false).await?
+                                        self.close_oversized_turn(&session_config.id, exceeded.mid_turn_message(), false).await?
                                     );
                                     break;
                                 }
@@ -296,7 +298,7 @@ impl Agent {
                                     auto_compaction.usage.context_limit,
                                 ) {
                                     yield AgentEvent::Message(
-                                        self.close_oversized_turn(&session_config.id, exceeded, false).await?
+                                        self.close_oversized_turn(&session_config.id, exceeded.mid_turn_message(), false).await?
                                     );
                                     break;
                                 }
@@ -369,6 +371,50 @@ impl Agent {
                 };
 
                 let muse_run = active_provider.get_name() == crate::providers::muse_code::MUSE_CODE_PROVIDER_NAME;
+                let external_tools = active_provider.executes_tools_outside_gosling();
+                let initial_request = !provider_request_started;
+                let external_context_tokens = if external_tools
+                    && active_provider.capabilities().context_ownership == crate::providers::base::ContextOwnership::Gosling
+                {
+                    let counter = crate::token_counter::shared_token_counter().await.map_err(|error| anyhow!(error))?;
+                    let estimated_tokens = counter.count_chat_tokens(&provider_system_prompt, &provider_messages, &[]);
+                    let context_limit = active_provider.get_context_limit(&active_model_config).await
+                        .unwrap_or_else(|_| active_model_config.context_limit());
+                    yield AgentEvent::ContextUsage(crate::context_mgmt::ContextUsageSnapshot {
+                        context_limit,
+                        current_tokens: estimated_tokens,
+                        last_request_tokens: current_session_for_compact.last_request_tokens.and_then(|tokens| usize::try_from(tokens).ok()),
+                        estimated_tokens,
+                    });
+                    if let Some(exceeded) = crate::context_mgmt::context_window_exceeded(
+                        &active_model_config.model_name, estimated_tokens, context_limit,
+                    ) {
+                        drop(steer_window.take());
+                        let pending_steers = self.preserve_undelivered_steers(&session_config.id).await?;
+                        let failure = self.close_oversized_turn(
+                            &session_config.id, exceeded.uncompacted_message(initial_request), initial_request,
+                        ).await?;
+                        for message in pending_steers {
+                            yield AgentEvent::Message(message);
+                        }
+                        yield AgentEvent::Message(failure);
+                        break;
+                    }
+                    if !reported_compaction_unavailable && crate::context_mgmt::enabled_auto_compact_threshold(auto_compact_threshold_override)
+                        .is_some_and(|threshold| context_limit > 0 && estimated_tokens as f64 / context_limit as f64 > threshold)
+                    {
+                        reported_compaction_unavailable = true;
+                        yield AgentEvent::Message(Message::assistant().with_system_notification(
+                            SystemNotificationType::InlineMessage,
+                            format!("This conversation is nearing the context limit. Automatic compaction is unavailable for this provider. {}", crate::context_mgmt::EXTERNAL_COMPACTION_RECOVERY),
+                        ));
+                    }
+                    Some(estimated_tokens)
+                } else {
+                    None
+                };
+
+                provider_request_started = true;
                 let (retry_notice_tx, mut retry_notices) = tokio::sync::mpsc::unbounded_channel();
                 let mut stream_setup = Box::pin(gosling_providers::retry::with_retry_notices(
                     Arc::new(move |notice| {
@@ -413,7 +459,7 @@ impl Agent {
                     .count()
                     .saturating_sub(pre_turn_tool_count);
 
-                let tool_pair_summarization_task = if planning_turn || tool_pair_summarization_done || muse_run {
+                let tool_pair_summarization_task = if planning_turn || tool_pair_summarization_done {
                     None
                 } else {
                     crate::context_mgmt::maybe_summarize_tool_pairs(
@@ -480,13 +526,11 @@ impl Agent {
                             compaction_attempts = 0;
 
                             if let Some(ref usage) = usage {
-                                if muse_run {
-                                    let message_tokens = token_accumulator.update(&conversation).await?;
-                                    let overhead = crate::context_mgmt::request_overhead_tokens(&provider_system_prompt, &[]).await?;
+                                if let Some(estimated_tokens) = external_context_tokens.filter(|_| muse_run) {
                                     session_manager.record_run_usage(
                                         &session_config.id,
                                         usage.usage,
-                                        message_tokens.saturating_add(overhead),
+                                        estimated_tokens,
                                     ).await?;
                                     if let Some(snapshot_id) = pending_handoff_snapshot_id.take() {
                                         session_manager.acknowledge_handoff_snapshot(&snapshot_id).await?;
@@ -1052,23 +1096,23 @@ impl Agent {
                                 }
                             }
                         }
-                        Err(ref provider_err) if muse_run => {
+                        Err(ref provider_err) if muse_run || (external_tools && matches!(provider_err, ProviderError::ContextLengthExceeded(_))) => {
                             #[cfg(feature = "telemetry")]
                             crate::posthog::emit_error(provider_err.telemetry_type(), &provider_err.to_string());
                             error!("Error: {}", provider_err);
                             // The external runner can have made changes without a host tool message.
                             drop(steer_window.take());
-                            let pending_steers = self.drain_pending_steers(&session_config.id).await;
+                            if muse_run && initial_request && stream_setup_failed && matches!(provider_err, ProviderError::ContextLengthExceeded(_)) {
+                                self.withdraw_newest_prompt(&session_config.id).await?;
+                            }
                             for message in hide_interrupted_reply_from_agent(messages_to_add) {
                                 session_manager.upsert_message(&session_config.id, &message.with_incomplete()).await?;
                             }
-                            for message in &pending_steers {
-                                session_manager.add_message(&session_config.id, &message.clone().user_only()).await?;
-                            }
-                            let advice = if matches!(provider_err, ProviderError::Authentication(_)) {
-                                provider_error_advice(provider_err)
-                            } else {
-                                "Check the workspace for partial changes before retrying."
+                            let pending_steers = self.preserve_undelivered_steers(&session_config.id).await?;
+                            let advice = match provider_err {
+                                ProviderError::Authentication(_) => provider_error_advice(provider_err),
+                                ProviderError::ContextLengthExceeded(_) => crate::context_mgmt::EXTERNAL_COMPACTION_RECOVERY,
+                                _ => "Check the workspace for partial changes before retrying.",
                             };
                             let steer_notice = if pending_steers.is_empty() {
                                 ""
@@ -1086,7 +1130,7 @@ impl Agent {
                                 warn!("Failed to prepare provider recovery checkpoint: {error}");
                             }
                             for message in pending_steers {
-                                yield AgentEvent::Message(message.user_only());
+                                yield AgentEvent::Message(message);
                             }
                             yield AgentEvent::Message(failure_message);
                             break 'reply;

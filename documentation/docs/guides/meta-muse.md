@@ -103,6 +103,11 @@ to 10 minutes for activity, and caps an execution at 30 minutes.
 - **History replay.** Each turn starts a new Muse process with gosling's text and
   tool history. Native Muse session resume is not provided. The wrapper requests
   no Muse session log and gosling keeps its own session history.
+- **Context compaction.** gosling skips automatic compaction for Muse Code and
+  allows ordinary chat requests that fit its estimated context budget. A request
+  beyond that budget stops before Muse starts. To compact a saved conversation,
+  switch to a provider with gosling-managed tools and run `/compact`, or start a
+  new session with the essential context.
 - **Usage.** Muse 1.4.24 and later can report input, output, and cached input
   tokens for the entire run. Desktop's last-request figure represents the
   whole Muse run, which can involve multiple model calls. The active-context

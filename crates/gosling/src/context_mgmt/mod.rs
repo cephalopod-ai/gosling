@@ -46,6 +46,9 @@ pub const DEFAULT_COMPACTION_THRESHOLD: f64 = 0.8;
 /// the check ran — see `auto_compact_reduction_budget`.
 pub const DEFAULT_AUTO_COMPACT_REDUCTION: f64 = 0.15;
 
+pub(crate) const EXTERNAL_COMPACTION_RECOVERY: &str =
+    "Switch to a provider with Gosling-managed tools and run /compact, or start a new session with the essential context.";
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ContextUsageSnapshot {
     pub context_limit: usize,
@@ -337,6 +340,18 @@ impl ContextWindowExceededError {
             self.model, self.estimated_tokens, self.context_limit
         )
     }
+
+    pub(crate) fn uncompacted_message(&self, initial_request: bool) -> String {
+        let status = if initial_request {
+            "The request was not sent."
+        } else {
+            "The turn stopped before sending another request. Earlier results are preserved."
+        };
+        format!(
+            "The conversation exceeds {}'s estimated context window (≈{} of {} tokens). {status} Automatic compaction is unavailable for this provider. {EXTERNAL_COMPACTION_RECOVERY}",
+            self.model, self.estimated_tokens, self.context_limit,
+        )
+    }
 }
 
 /// The local estimate omits the system prompt and tool schemas, so a request
@@ -364,6 +379,15 @@ pub(crate) fn auto_compaction_failure_message(error: &anyhow::Error) -> String {
 
 pub fn compaction_failure_message(error: &dyn std::fmt::Display) -> String {
     format!("Compaction did not complete: {error}\n\nYour original session is intact. You can switch providers and run /compact again, or start a new session with the essential context.")
+}
+
+fn ensure_tool_free_summarization(provider: &dyn Provider) -> Result<()> {
+    anyhow::ensure!(
+        !provider.executes_tools_outside_gosling(),
+        "Provider '{}' executes its own tools and cannot be used for tool-free summarization",
+        provider.get_name()
+    );
+    Ok(())
 }
 
 #[derive(Serialize)]
@@ -446,6 +470,7 @@ pub async fn compact_messages(
     manual_compact: bool,
     tokens_to_remove: Option<usize>,
 ) -> Result<CompactionResult> {
+    ensure_tool_free_summarization(provider)?;
     info!("Performing message compaction");
 
     let messages = conversation.messages();
@@ -779,6 +804,7 @@ pub async fn generate_handoff_summary(
     session_id: &str,
     conversation: &Conversation,
 ) -> Result<(String, ProviderUsage)> {
+    ensure_tool_free_summarization(provider)?;
     let messages = conversation.messages();
     let (summary_message, usage) = do_summarize(
         provider,
@@ -812,13 +838,7 @@ pub async fn check_if_compaction_needed(
     threshold_override: Option<f64>,
     session: &crate::session::Session,
 ) -> Result<bool> {
-    if provider.capabilities().context_ownership
-        != crate::providers::base::ContextOwnership::Gosling
-    {
-        return Ok(false);
-    }
-
-    let Some(threshold) = enabled_auto_compact_threshold(threshold_override) else {
+    let Some(threshold) = compaction_threshold_if_applicable(provider, threshold_override) else {
         return Ok(false);
     };
 
@@ -827,7 +847,7 @@ pub async fn check_if_compaction_needed(
     Ok(usage_ratio > threshold)
 }
 
-fn enabled_auto_compact_threshold(threshold_override: Option<f64>) -> Option<f64> {
+pub(crate) fn enabled_auto_compact_threshold(threshold_override: Option<f64>) -> Option<f64> {
     let threshold = threshold_override.unwrap_or_else(|| {
         Config::global()
             .get_param::<f64>("GOSLING_AUTO_COMPACT_THRESHOLD")
@@ -960,7 +980,7 @@ impl ConversationTokenAccumulator {
         *self = Self::default();
     }
 
-    pub(crate) async fn update(&mut self, conversation: &Conversation) -> Result<usize> {
+    async fn update(&mut self, conversation: &Conversation) -> Result<usize> {
         let counter = crate::token_counter::shared_token_counter()
             .await
             .map_err(|e| anyhow::anyhow!("Failed to create token counter: {}", e))?;
@@ -1023,15 +1043,13 @@ pub async fn auto_compaction_check_incremental(
     compaction_plan_from_usage(usage, threshold, reduction_override)
 }
 
-/// `None` covers both "this provider manages its own context" and "auto-compact
-/// is disabled" — every caller treats both the same way (skip compaction
-/// entirely), so this collapses them into one signal instead of a nested Option.
 fn compaction_threshold_if_applicable(
     provider: &dyn Provider,
     threshold_override: Option<f64>,
 ) -> Option<f64> {
-    if provider.capabilities().context_ownership
-        != crate::providers::base::ContextOwnership::Gosling
+    if provider.executes_tools_outside_gosling()
+        || provider.capabilities().context_ownership
+            != crate::providers::base::ContextOwnership::Gosling
     {
         return None;
     }
@@ -1641,6 +1659,7 @@ pub async fn summarize_tool_call(
     conversation: &Conversation,
     tool_id: &str,
 ) -> Result<Message> {
+    ensure_tool_free_summarization(provider)?;
     let messages = conversation.messages();
 
     let matching_messages: Vec<&Message> = messages
@@ -1708,7 +1727,8 @@ pub fn maybe_summarize_tool_pairs(
     cutoff: usize,
     protect_last_n: usize,
 ) -> Option<JoinHandle<Vec<(Message, String)>>> {
-    if !tool_pair_summarization_enabled()
+    if provider.executes_tools_outside_gosling()
+        || !tool_pair_summarization_enabled()
         || provider.capabilities().context_ownership
             != crate::providers::base::ContextOwnership::Gosling
     {
