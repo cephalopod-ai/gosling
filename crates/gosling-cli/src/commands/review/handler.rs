@@ -72,6 +72,11 @@ pub struct ReviewOptions {
 
 /// Entry point for the `gosling review` subcommand.
 pub async fn handle_review(opts: ReviewOptions) -> Result<()> {
+    // The range is passed to `git diff` before any `--`, so a leading dash
+    // would be read as an option such as `--output=<file>`. (SEC-GOS-014)
+    if let Some(range) = opts.range.as_deref().filter(|range| range.starts_with('-')) {
+        bail!("--range: expected a revision range, got option-like value '{range}'");
+    }
     let repo_root = find_repo_root().context("not inside a git repository")?;
     let review_workers = ReviewWorkerPool::new(repo_root.clone());
 
@@ -603,6 +608,18 @@ mod tests {
     use super::*;
     use gosling::checks::Check;
     use std::path::PathBuf;
+
+    #[tokio::test]
+    async fn option_like_range_is_rejected_before_reaching_git() {
+        let error = handle_review(ReviewOptions {
+            range: Some("--output=/tmp/gosling-review-range".to_string()),
+            ..Default::default()
+        })
+        .await
+        .unwrap_err();
+
+        assert!(error.to_string().starts_with("--range:"), "{error}");
+    }
 
     fn ck(name: &str) -> Check {
         Check {

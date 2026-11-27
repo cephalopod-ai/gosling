@@ -22,6 +22,8 @@ set -eu
 #   GOSLING_WINDOWS_VARIANT - Optional: Windows package variant to install (`standard` or `cuda`)
 #   CANARY         - Optional: if set to "true", downloads from canary release instead of stable
 #   CONFIGURE      - Optional: if set to "false", disables running gosling configure interactively
+#   GOSLING_REQUIRE_PROVENANCE - Optional: if set to "true", refuse to install unless the archive's
+#                    build provenance was verified (needs a signed-in GitHub CLI, `gh`)
 #   ** other provider specific environment variables (eg. DATABRICKS_HOST)
 ##############################################################################
 
@@ -239,6 +241,25 @@ if ! curl -sLf "$DOWNLOAD_URL" --output "$FILE"; then
     echo "Error: Failed to download $DOWNLOAD_URL"
     exit 1
   fi
+fi
+
+# --- 4b) Verify build provenance ---
+# Release workflows attest every archive with Sigstore. `gosling update` always
+# checks that attestation; this script can when a signed-in GitHub CLI exists.
+if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+  echo "Verifying build provenance of $FILE..."
+  if ! gh attestation verify "$FILE" --repo "$REPO" >/dev/null; then
+    echo "Error: build provenance verification failed for $FILE; refusing to install."
+    rm -f "$FILE"
+    exit 1
+  fi
+  echo "Build provenance verified."
+elif [ "${GOSLING_REQUIRE_PROVENANCE:-false}" = "true" ]; then
+  echo "Error: GOSLING_REQUIRE_PROVENANCE=true but no signed-in GitHub CLI (gh) is available to verify $FILE."
+  rm -f "$FILE"
+  exit 1
+else
+  echo "Note: build provenance not verified (install and sign in to the GitHub CLI, gh, to enable the check)."
 fi
 
 # Create a temporary directory for extraction

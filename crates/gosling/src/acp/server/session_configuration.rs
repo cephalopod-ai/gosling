@@ -283,6 +283,19 @@ impl GoslingAcpAgent {
         })?;
 
         let agent = self.get_session_agent(session_id).await?;
+        // Bounded client sessions are created in Approve mode so every tool call
+        // reaches the client; a later mode change must not undo that. (SEC-GOS-007)
+        let session = self
+            .session_manager
+            .get_session(session_id, false)
+            .await
+            .internal_err_ctx("Failed to load session")?;
+        if crate::session::client_tool_policy::is_bounded(&session)
+            && !matches!(mode, GoslingMode::Approve | GoslingMode::Chat)
+        {
+            return Err(agent_client_protocol::Error::invalid_params()
+                .data("Bounded client sessions require approval for every tool call"));
+        }
         agent
             .update_gosling_mode(mode, session_id)
             .await

@@ -6,6 +6,18 @@ use std::sync::{Mutex, PoisonError};
 /// precedence over config) can be told apart from our own earlier exports.
 static EXPORTED_BY_GOSLING: Mutex<Option<HashMap<String, String>>> = Mutex::new(None);
 
+/// Variables gosling exported from its own config or keyring secrets. Shell
+/// commands the model runs must not inherit them: the operator kept those
+/// credentials out of the environment on purpose. (SEC-GOS-006)
+pub(crate) fn exported_aws_env_keys() -> Vec<String> {
+    EXPORTED_BY_GOSLING
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .as_ref()
+        .map(|exported| exported.keys().cloned().collect())
+        .unwrap_or_default()
+}
+
 /// Export AWS_* keys from gosling config/secrets into the process environment so
 /// `aws_config`'s default chain can resolve them.
 ///

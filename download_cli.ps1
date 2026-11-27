@@ -19,6 +19,8 @@
 #   $env:GOSLING_WINDOWS_VARIANT - Optional: Windows package variant to install ("standard" or "cuda")
 #   $env:CANARY         - Optional: if set to "true", downloads from canary release instead of stable
 #   $env:CONFIGURE      - Optional: if set to "false", disables running gosling configure interactively
+#   $env:GOSLING_REQUIRE_PROVENANCE - Optional: if set to "true", refuse to install unless the archive's
+#                    build provenance was verified (needs a signed-in GitHub CLI, gh)
 ##############################################################################
 
 # Set error action preference to stop on errors
@@ -82,6 +84,31 @@ try {
 } catch {
     Write-Error "Failed to download $DOWNLOAD_URL. Error: $($_.Exception.Message)"
     exit 1
+}
+
+# --- 4b) Verify build provenance ---
+# Release workflows attest every archive with Sigstore. `gosling update` always
+# checks that attestation; this script can when a signed-in GitHub CLI exists.
+$ghAvailable = $false
+if (Get-Command gh -ErrorAction SilentlyContinue) {
+    gh auth status *> $null
+    $ghAvailable = ($LASTEXITCODE -eq 0)
+}
+if ($ghAvailable) {
+    Write-Host "Verifying build provenance of $FILE..." -ForegroundColor Green
+    gh attestation verify $FILE --repo $REPO *> $null
+    if ($LASTEXITCODE -ne 0) {
+        Remove-Item -Path $FILE -Force -ErrorAction SilentlyContinue
+        Write-Error "Build provenance verification failed for $FILE; refusing to install."
+        exit 1
+    }
+    Write-Host "Build provenance verified." -ForegroundColor Green
+} elseif ($env:GOSLING_REQUIRE_PROVENANCE -eq "true") {
+    Remove-Item -Path $FILE -Force -ErrorAction SilentlyContinue
+    Write-Error "GOSLING_REQUIRE_PROVENANCE=true but no signed-in GitHub CLI (gh) is available to verify $FILE."
+    exit 1
+} else {
+    Write-Host "Note: build provenance not verified (install and sign in to the GitHub CLI, gh, to enable the check)." -ForegroundColor Yellow
 }
 
 # --- 5) Create temporary directory for extraction ---

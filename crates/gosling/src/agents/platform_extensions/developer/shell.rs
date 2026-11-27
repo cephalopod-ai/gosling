@@ -614,6 +614,11 @@ fn build_shell_command(
         }
     };
 
+    #[cfg(feature = "aws-providers")]
+    for key in crate::providers::aws_env::exported_aws_env_keys() {
+        command.env_remove(key);
+    }
+
     // If the tool-call future is dropped before the command finishes (stream
     // cancellation racing ahead of the timeout branch), don't leave the shell
     // running orphaned.
@@ -957,6 +962,26 @@ mod tests {
         let observed = std::fs::canonicalize(extract_text(&result)).unwrap();
         let expected = std::fs::canonicalize(dir.path()).unwrap();
         assert_eq!(observed, expected);
+    }
+
+    /// SEC-GOS-006: AWS credentials gosling exported from its keyring for the
+    /// Bedrock SDK stay out of model-run shell commands.
+    #[cfg(all(not(windows), feature = "aws-providers"))]
+    #[tokio::test]
+    async fn shell_does_not_inherit_aws_values_gosling_exported() {
+        let key = "AWS_GOSLING_SEC_GOS_006_PROBE";
+        crate::providers::aws_env::export_aws_env([std::collections::HashMap::from([(
+            key.to_string(),
+            serde_json::Value::String("keyring-secret".to_string()),
+        )])]);
+        assert_eq!(std::env::var(key).as_deref(), Ok("keyring-secret"));
+
+        let output = build_shell_command(&format!("printenv {key} || echo absent"), None, None)
+            .output()
+            .await
+            .unwrap();
+
+        assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "absent");
     }
 
     #[cfg(not(windows))]

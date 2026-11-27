@@ -2,7 +2,9 @@ use gosling::config::GoslingMode;
 use gosling::conversation::message::ToolRequest;
 use gosling::permission::client_tool_inspector::ClientToolInspector;
 use gosling::session::{client_tool_policy, SessionManager, SessionType};
-use gosling::tool_inspection::{InspectionAction, ToolInspectionManager, ToolInspector};
+use gosling::tool_inspection::{
+    security_prompt_for_request, InspectionAction, ToolInspectionManager, ToolInspector,
+};
 use rmcp::model::CallToolRequestParams;
 use std::sync::Arc;
 
@@ -51,5 +53,11 @@ async fn bounded_policy_survives_reload_and_requires_approval_in_auto() {
         .inspect_tools(&session.id, &requests, &[], GoslingMode::Auto)
         .await
         .unwrap();
-    assert_eq!(results[0].action, InspectionAction::RequireApproval(None));
+    // Auto mode only auto-grants message-less approvals, so the client's
+    // mandatory prompt must carry one. (SEC-GOS-007)
+    assert!(matches!(
+        results[0].action,
+        InspectionAction::RequireApproval(Some(_))
+    ));
+    assert!(security_prompt_for_request("read", &results).is_some());
 }

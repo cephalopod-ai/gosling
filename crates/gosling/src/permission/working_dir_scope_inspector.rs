@@ -6,6 +6,7 @@ use crate::workspace::{WorkspaceFolderAccess, WorkspaceFolderPolicy};
 use anyhow::Result;
 use async_trait::async_trait;
 use rmcp::model::CallToolRequestParams;
+use std::collections::HashMap;
 use std::ffi::OsString;
 use std::io::ErrorKind;
 use std::path::Component;
@@ -117,6 +118,27 @@ impl ToolInspector for WorkingDirScopeInspector {
                     confidence: 1.0,
                     inspector_name: self.name().to_string(),
                     finding_id: Some("SEC-GSL-901".to_string()),
+                    metadata: None,
+                });
+                continue;
+            }
+            if session.restrict_tools_to_working_dirs
+                && is_shell_tool(tool_call)
+                && tool_call
+                    .arguments
+                    .as_ref()
+                    .and_then(|args| args.get("command"))
+                    .and_then(|value| value.as_str())
+                    .is_some_and(has_unresolved_shell_path)
+            {
+                let reason = "This shell command reaches paths through variables or substitutions that cannot be checked against this session's folders. Use literal paths or approve this call once.".to_string();
+                results.push(InspectionResult {
+                    tool_request_id: request.id.clone(),
+                    action: InspectionAction::RequireApproval(Some(reason.clone())),
+                    reason,
+                    confidence: 1.0,
+                    inspector_name: self.name().to_string(),
+                    finding_id: Some("SEC-GOS-003".to_string()),
                     metadata: None,
                 });
                 continue;
@@ -406,6 +428,7 @@ fn argument_key_is_text_payload(key: &str) -> bool {
 fn looks_like_explicit_path(value: &str) -> bool {
     let bytes = value.as_bytes();
     matches!(value, ".." | "~")
+        || value.split(['/', '\\']).any(|component| component == "..")
         || value.starts_with('/')
         || value.starts_with("./")
         || value.starts_with("../")
@@ -504,9 +527,217 @@ fn collect_referenced_paths(
 // Nested `sh -c` calls and shell-received heredocs share this analysis limit.
 const MAX_SHELL_ANALYSIS_DEPTH: usize = 16;
 
+// Bounds the word combinations one argument can expand to from tracked variables.
+const MAX_EXPANSION_VARIANTS: usize = 16;
+
 struct ShellSegment {
     words: Vec<String>,
     read_only: bool,
+    /// A word depends on an expansion the analysis could not resolve, so
+    /// the segment may reach paths its words do not show.
+    opaque: bool,
+}
+
+/// What a script's own variables can hold when they are expanded, as far as
+/// static analysis can follow. Every assignment adds possible values rather
+/// than replacing them, since branches and loops may skip any one of them.
+/// A name maps to `None` once a value could not be determined, and
+/// `untracked` is set once a builtin such as `read` or `eval` may have
+/// changed any variable.
+#[derive(Default)]
+struct ShellVariables {
+    values: HashMap<String, Option<Vec<String>>>,
+    untracked: bool,
+}
+
+impl ShellVariables {
+    fn assign(&mut self, name: &str, values: Option<Vec<String>>) {
+        let entry = self
+            .values
+            .entry(name.to_string())
+            .or_insert_with(|| Some(Vec::new()));
+        match (entry.as_mut(), values) {
+            (Some(known), Some(values)) => {
+                for value in values {
+                    if !known.contains(&value) {
+                        known.push(value);
+                    }
+                }
+            }
+            _ => *entry = None,
+        }
+    }
+
+    fn lookup(&self, name: &str) -> Option<Vec<String>> {
+        if matches!(name, "?" | "#" | "$" | "!" | "-") {
+            return Some(vec!["0".to_string()]);
+        }
+        if let Some(values) = self.values.get(name) {
+            return if self.untracked { None } else { values.clone() };
+        }
+        if self.untracked {
+            return None;
+        }
+        match name {
+            // `resolve` expands the home prefix itself.
+            "HOME" => Some(vec!["$HOME".to_string()]),
+            // Relative to wherever earlier `cd` segments left the script.
+            "PWD" => Some(vec![".".to_string()]),
+            _ => None,
+        }
+    }
+
+    fn record_assignment(&mut self, node: tree_sitter::Node<'_>, command: &str) {
+        let Some(name) = node
+            .child_by_field_name("name")
+            .filter(|name| name.kind() == "variable_name")
+        else {
+            return;
+        };
+        let name = name.utf8_text(command.as_bytes()).unwrap_or_default();
+        let appends = command
+            .get(node.start_byte()..node.end_byte())
+            .and_then(|raw| raw.strip_prefix(name))
+            .is_some_and(|rest| rest.starts_with("+="));
+        let values = if appends {
+            None
+        } else {
+            match node.child_by_field_name("value") {
+                Some(value) => expanded_words(value, command, self),
+                None => Some(vec![String::new()]),
+            }
+        };
+        self.assign(name, values);
+    }
+
+    fn record_loop_variable(&mut self, node: tree_sitter::Node<'_>, command: &str) {
+        let Some(variable) = node.child_by_field_name("variable") else {
+            return;
+        };
+        let name = variable.utf8_text(command.as_bytes()).unwrap_or_default();
+        let mut cursor = node.walk();
+        let values = node
+            .children_by_field_name("value", &mut cursor)
+            .map(|value| expanded_words(value, command, self))
+            .collect::<Option<Vec<_>>>()
+            .map(|values| values.concat())
+            // Without `in`, the loop walks the positional parameters.
+            .filter(|values| !values.is_empty());
+        self.assign(name, values);
+    }
+}
+
+/// The source text of `node` with every variable expansion replaced by each
+/// value it may hold, or `None` when any expansion cannot be resolved.
+fn expanded_sources(
+    node: tree_sitter::Node<'_>,
+    command: &str,
+    variables: &ShellVariables,
+) -> Option<Vec<String>> {
+    let mut expansions = Vec::new();
+    let mut pending_nodes = vec![node];
+    while let Some(current) = pending_nodes.pop() {
+        let text = current.utf8_text(command.as_bytes()).unwrap_or_default();
+        let values = match current.kind() {
+            "simple_expansion" => variables.lookup(text.strip_prefix('$')?)?,
+            "expansion" => {
+                let name = text.strip_prefix("${")?.strip_suffix('}')?;
+                let is_plain_name = name
+                    .chars()
+                    .next()
+                    .is_some_and(|first| first.is_ascii_alphabetic() || first == '_')
+                    && name
+                        .chars()
+                        .all(|character| character.is_ascii_alphanumeric() || character == '_');
+                if !is_plain_name {
+                    return None;
+                }
+                variables.lookup(name)?
+            }
+            "arithmetic_expansion" => vec!["0".to_string()],
+            "command_substitution" | "process_substitution" | "ansi_c_string" => return None,
+            _ => {
+                let mut cursor = current.walk();
+                pending_nodes.extend(current.named_children(&mut cursor));
+                continue;
+            }
+        };
+        // Values are spliced back into source that is split again, so quoting
+        // characters inside them would change where words end.
+        if values.iter().any(|value| {
+            value
+                .chars()
+                .any(|character| character.is_whitespace() || "'\"\\`".contains(character))
+        }) {
+            return None;
+        }
+        expansions.push((current.byte_range(), values));
+    }
+    expansions.sort_by_key(|(range, _)| range.start);
+
+    let mut variants = vec![String::new()];
+    let mut literal_start = node.start_byte();
+    for (range, values) in expansions {
+        let literal = command.get(literal_start..range.start)?;
+        if variants.len() * values.len() > MAX_EXPANSION_VARIANTS {
+            return None;
+        }
+        variants = variants
+            .iter()
+            .flat_map(|prefix| {
+                values
+                    .iter()
+                    .map(move |value| format!("{prefix}{literal}{value}"))
+            })
+            .collect();
+        literal_start = range.end;
+    }
+    let tail = command.get(literal_start..node.end_byte())?;
+    for variant in &mut variants {
+        variant.push_str(tail);
+    }
+    Some(variants)
+}
+
+/// Every word `node` may become after tracked variables are expanded.
+fn expanded_words(
+    node: tree_sitter::Node<'_>,
+    command: &str,
+    variables: &ShellVariables,
+) -> Option<Vec<String>> {
+    let mut words = Vec::new();
+    for source in expanded_sources(node, command, variables)? {
+        match shell_words::split(&source) {
+            Ok(split) if split.len() <= 1 => words.extend(split),
+            _ => words.push(source),
+        }
+    }
+    Some(words)
+}
+
+/// Builtins that can set variables in ways this analysis does not follow.
+fn changes_shell_variables(segment: &[String]) -> bool {
+    let words = unwrap_command_words(segment);
+    let Some(executable) = words.first() else {
+        return false;
+    };
+    matches!(
+        executable.as_str(),
+        "read"
+            | "mapfile"
+            | "readarray"
+            | "eval"
+            | "source"
+            | "."
+            | "getopts"
+            | "let"
+            | "export"
+            | "declare"
+            | "typeset"
+            | "local"
+            | "readonly"
+            | "unset"
+    ) || (executable == "printf" && words.iter().any(|word| word.starts_with("-v")))
 }
 
 struct ShellAnalysis {
@@ -544,12 +775,41 @@ fn analyze_shell_at_depth(command: &str, depth: usize) -> ShellAnalysis {
         tree
     };
     analysis.complete = !tree.root_node().has_error();
+    let mut variables = ShellVariables::default();
     let mut pending_nodes = vec![tree.root_node()];
     while let Some(node) = pending_nodes.pop() {
         match node.kind() {
+            // A prefix assignment only reaches that command's environment,
+            // never the expansions in its own words.
+            "variable_assignment"
+                if node
+                    .parent()
+                    .is_none_or(|parent| parent.kind() != "command") =>
+            {
+                variables.record_assignment(node, command);
+            }
+            "for_statement" => variables.record_loop_variable(node, command),
+            "unset_command" => variables.untracked = true,
+            "declaration_command" => {
+                let mut cursor = node.walk();
+                if node
+                    .named_children(&mut cursor)
+                    .any(|child| !matches!(child.kind(), "variable_assignment" | "variable_name"))
+                {
+                    variables.untracked = true;
+                }
+            }
             "command" => {
-                let words = parsed_command_words(node, command);
+                let (words, opaque) = parsed_command_words(node, command, &variables);
                 let executable_words = unwrap_command_words(&words);
+                // An unresolved executable may itself be `eval` or `read`.
+                let unresolved_executable = opaque
+                    && executable_words
+                        .first()
+                        .is_some_and(|word| word.contains(['$', '`']));
+                if unresolved_executable || changes_shell_variables(&words) {
+                    variables.untracked = true;
+                }
                 if let Some(executable) = executable_words.first() {
                     let executable = Path::new(executable)
                         .file_name()
@@ -579,21 +839,33 @@ fn analyze_shell_at_depth(command: &str, depth: usize) -> ShellAnalysis {
                         analysis.complete = false;
                     }
                 }
-                let read_only = shell_segment_is_read_only(&words);
-                analysis.segments.push(ShellSegment { words, read_only });
+                let read_only = shell_segment_is_read_only(&words, opaque);
+                analysis.segments.push(ShellSegment {
+                    words,
+                    read_only,
+                    opaque,
+                });
             }
             "file_redirect" => {
                 let raw = node.utf8_text(command.as_bytes()).unwrap_or_default();
-                match shell_words::split(raw) {
-                    Ok(mut words) => {
-                        let read_only = !(0..words.len())
-                            .any(|index| redirects_output_to_file(&words, index))
-                            && !raw.contains("<>");
-                        // Path collection skips the executable slot; redirects have none.
-                        words.insert(0, String::new());
-                        analysis.segments.push(ShellSegment { words, read_only });
+                let expanded = expanded_sources(node, command, &variables);
+                let opaque = expanded.is_none();
+                for source in expanded.unwrap_or_else(|| vec![raw.to_string()]) {
+                    match shell_words::split(&source) {
+                        Ok(mut words) => {
+                            let read_only = !(0..words.len())
+                                .any(|index| redirects_output_to_file(&words, index))
+                                && !source.contains("<>");
+                            // Path collection skips the executable slot; redirects have none.
+                            words.insert(0, String::new());
+                            analysis.segments.push(ShellSegment {
+                                words,
+                                read_only,
+                                opaque,
+                            });
+                        }
+                        Err(_) => analysis.complete = false,
                     }
-                    Err(_) => analysis.complete = false,
                 }
             }
             "heredoc_redirect" => {
@@ -676,16 +948,36 @@ fn splice_shell_continuations(command: &str, root: tree_sitter::Node<'_>) -> Opt
         .then(|| String::from_utf8(spliced_bytes).expect("Removing ASCII preserves UTF-8"))
 }
 
-fn parsed_command_words(node: tree_sitter::Node<'_>, command: &str) -> Vec<String> {
+/// The command's words with tracked variables expanded, and whether any word
+/// depends on an expansion that could not be resolved. Unresolved words keep
+/// their source spelling.
+fn parsed_command_words(
+    node: tree_sitter::Node<'_>,
+    command: &str,
+    variables: &ShellVariables,
+) -> (Vec<String>, bool) {
     let mut words = Vec::new();
+    let mut opaque = false;
     if let Some(name) = node.child_by_field_name("name") {
-        words.push(shell_word(name, command));
+        match expanded_words(name, command, variables).as_deref() {
+            Some([executable]) => words.push(executable.clone()),
+            _ => {
+                opaque = true;
+                words.push(shell_word(name, command));
+            }
+        }
     }
     let mut cursor = node.walk();
     for argument in node.children_by_field_name("argument", &mut cursor) {
-        words.push(shell_word(argument, command));
+        match expanded_words(argument, command, variables) {
+            Some(expanded) => words.extend(expanded),
+            None => {
+                opaque = true;
+                words.push(shell_word(argument, command));
+            }
+        }
     }
-    words
+    (words, opaque)
 }
 
 fn is_shell_receiver(mut node: tree_sitter::Node<'_>, command: &str) -> bool {
@@ -695,7 +987,7 @@ fn is_shell_receiver(mut node: tree_sitter::Node<'_>, command: &str) -> bool {
         };
         node = last;
     }
-    let words = parsed_command_words(node, command);
+    let (words, _) = parsed_command_words(node, command, &ShellVariables::default());
     unwrap_command_words(&words).first().is_some_and(|name| {
         matches!(
             Path::new(name).file_name().and_then(|name| name.to_str()),
@@ -998,21 +1290,63 @@ fn redirects_output_to_file(segment: &[String], index: usize) -> bool {
     !is_device_stream(Path::new(target))
 }
 
-fn shell_segment_is_read_only(segment: &[String]) -> bool {
-    let words = unwrap_command_words(segment);
-    let Some(executable) = words.first() else {
-        return true;
-    };
-    let executable = Path::new(executable)
-        .file_name()
+fn executable_name(words: &[String]) -> &str {
+    words
+        .first()
+        .and_then(|executable| Path::new(executable).file_name())
         .and_then(|name| name.to_str())
-        .unwrap_or_default();
-    match executable {
+        .unwrap_or_default()
+}
+
+/// Commands that never open their operands as files, so an unresolved
+/// argument cannot hide a path from a restricted session.
+fn never_opens_operands(segment: &[String]) -> bool {
+    matches!(
+        executable_name(unwrap_command_words(segment)),
+        "echo"
+            | "printf"
+            | "test"
+            | "["
+            | "true"
+            | "false"
+            | "pwd"
+            | "which"
+            | "type"
+            | "printenv"
+            | "date"
+            | "basename"
+            | "dirname"
+            | "whoami"
+            | "uname"
+            | "hostname"
+            | "id"
+    )
+}
+
+/// Whether a shell command reaches a path through an expansion the analysis
+/// could not resolve, so a restricted session cannot check it.
+fn has_unresolved_shell_path(command: &str) -> bool {
+    analyze_shell(command)
+        .segments
+        .iter()
+        .any(|segment| segment.opaque && !never_opens_operands(&segment.words))
+}
+
+/// Commands in the first arm cannot write through any argument. Those after
+/// it are read-only only for particular options, so an unresolved word, which
+/// could be any option, disqualifies them.
+fn shell_segment_is_read_only(segment: &[String], opaque: bool) -> bool {
+    let words = unwrap_command_words(segment);
+    if words.is_empty() {
+        return true;
+    }
+    match executable_name(words) {
         "cat" | "ls" | "pwd" | "rg" | "grep" | "head" | "tail" | "wc" | "stat" | "file"
         | "echo" | "printf" | "test" | "[" | "true" | "false" | "ps" | "lsof" | "which"
         | "type" | "printenv" | "date" | "diff" | "du" | "df" | "basename" | "dirname"
         | "realpath" | "readlink" | "jq" | "md5" | "md5sum" | "shasum" | "sha256sum" | "cut"
         | "tr" | "whoami" | "uname" | "hostname" | "id" => true,
+        _ if opaque => false,
         "cd" | "pushd" => cd_target(segment).is_some(),
         "sort" => !words
             .iter()
@@ -1029,12 +1363,23 @@ fn shell_segment_is_read_only(segment: &[String]) -> bool {
         "sed" => !words
             .iter()
             .any(|token| token == "-i" || token.starts_with("-i")),
-        "git" => words.get(1).is_some_and(|subcommand| {
+        "git" => {
+            let Some(subcommand) = words.get(1) else {
+                return false;
+            };
+            // `--output` writes the patch to a file, `--ext-diff` runs a
+            // configured program, and `grep -O` opens matches in a pager.
+            let writes_or_runs = words[2..].iter().any(|token| {
+                token.starts_with("--output")
+                    || token == "--ext-diff"
+                    || (subcommand == "grep"
+                        && (token.starts_with("-O") || token.starts_with("--open-files-in-pager")))
+            });
             matches!(
                 subcommand.as_str(),
                 "diff" | "grep" | "log" | "show" | "status" | "rev-parse"
-            )
-        }),
+            ) && !writes_or_runs
+        }
         _ => false,
     }
 }
@@ -2699,5 +3044,142 @@ mod tests {
             .map(|result| result.tool_request_id.as_str())
             .collect();
         assert_eq!(flagged, vec!["write-parent"]);
+    }
+
+    /// SEC-GOS-003: a restricted session must not read outside its folders
+    /// through a path the command only names indirectly.
+    #[tokio::test]
+    async fn restricted_session_flags_reads_through_indirect_paths() {
+        let (root, project) = restricted_scope_fixture();
+        let outside = root.path().join("outside");
+        let commands = [
+            format!("V={}/o.txt; cat $V", outside.display()),
+            format!("V={}; cat \"$V/o.txt\"", outside.display()),
+            format!("export V={}/o.txt && head -1 \"${{V}}\"", outside.display()),
+            format!("for f in {}/o.txt; do cat \"$f\"; done", outside.display()),
+            "cat $SEC_GOS_003_UNSET".to_string(),
+            "cat \"$(printf o.txt)\"".to_string(),
+            "cat `printf o.txt`".to_string(),
+            "cat $'\\x2f'etc/passwd".to_string(),
+            "V=sub/x.txt; printf -v V '%s' x; cat $V".to_string(),
+            "cat sub/../../outside/o.txt".to_string(),
+            "cat < $SEC_GOS_003_UNSET".to_string(),
+        ];
+        let command_refs: Vec<&str> = commands.iter().map(String::as_str).collect();
+
+        let results = restricted_session_results(&project, &command_refs).await;
+
+        let flagged: Vec<&str> = results
+            .iter()
+            .map(|result| result.tool_request_id.as_str())
+            .collect();
+        assert_eq!(flagged, command_refs);
+        for result in &results {
+            assert!(
+                matches!(result.action, InspectionAction::RequireApproval(Some(_))),
+                "{result:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn restricted_session_follows_script_variables_that_stay_in_scope() {
+        let (_root, project) = restricted_scope_fixture();
+        let commands = [
+            "D=sub; ls $D",
+            "D=sub; ls \"$D\"/",
+            "for f in a.txt b.txt; do wc -l \"$f\"; done",
+            "echo \"$PATH\"",
+            "printf '%s\\n' \"$?\"",
+            "cat \"$PWD/x.txt\"",
+            "cd sub && cat \"$PWD/notes.txt\"",
+            "if [ -n \"$SEC_GOS_003_UNSET\" ]; then echo set; fi",
+            "N=$((1 + 2)); echo $N",
+        ];
+
+        let results = restricted_session_results(&project, &commands).await;
+
+        assert!(results.is_empty(), "{results:?}");
+    }
+
+    #[test]
+    fn script_variables_expand_into_the_paths_they_name() {
+        let working_dir = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let target = outside.path().join("x.txt");
+        std::fs::create_dir(working_dir.path().join("sub")).unwrap();
+        for command in [
+            format!("OUT={}; cp ./a \"$OUT\"", target.display()),
+            format!("for f in {}; do touch ./a \"$f\"; done", target.display()),
+            format!(
+                "cp ./a sub/../{}",
+                relative_escape(working_dir.path(), &target)
+            ),
+        ] {
+            assert_eq!(
+                shell_mutation_out_of_scope(&command, working_dir.path()),
+                Some(canonicalize_potential_path(&target).unwrap()),
+                "{command}"
+            );
+        }
+    }
+
+    fn relative_escape(from: &Path, to: &Path) -> String {
+        let depth = canonicalize_potential_path(from)
+            .unwrap()
+            .components()
+            .count()
+            - 1;
+        format!(
+            "{}{}",
+            "../".repeat(depth),
+            canonicalize_potential_path(to)
+                .unwrap()
+                .strip_prefix("/")
+                .unwrap()
+                .display()
+        )
+    }
+
+    /// SEC-GOS-004: read-only git queries stop being read-only once an option
+    /// makes them write a file or run a program.
+    #[test]
+    fn git_queries_that_write_or_run_programs_are_not_read_only() {
+        let working_dir = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let patch = outside.path().join("p.patch");
+        for command in [
+            format!("git diff --output={}", patch.display()),
+            format!("git log -p --output {}", patch.display()),
+            format!("git show HEAD --output={}", patch.display()),
+        ] {
+            assert!(!is_confidently_read_only_shell(&command), "{command}");
+            assert_eq!(
+                shell_mutation_out_of_scope(&command, working_dir.path()),
+                Some(canonicalize_potential_path(&patch).unwrap()),
+                "{command}"
+            );
+        }
+        for command in [
+            "git diff --ext-diff",
+            "git grep -Ovim needle",
+            "git grep --open-files-in-pager=vim needle",
+            "git diff $SEC_GOS_004_OPTIONS",
+        ] {
+            assert!(!is_confidently_read_only_shell(command), "{command}");
+            assert!(
+                has_unscoped_shell_mutation(command, working_dir.path()),
+                "{command}"
+            );
+        }
+        for command in [
+            "git diff --stat HEAD",
+            "git log --oneline -5",
+            "git grep -n needle",
+            "git status --short",
+            "git diff -Oorder.txt",
+        ] {
+            assert!(is_confidently_read_only_shell(command), "{command}");
+        }
     }
 }

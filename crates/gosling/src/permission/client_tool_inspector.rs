@@ -34,7 +34,11 @@ impl ToolInspector for ClientToolInspector {
             .iter()
             .map(|request| InspectionResult {
                 tool_request_id: request.id.clone(),
-                action: InspectionAction::RequireApproval(None),
+                // A message makes the prompt mandatory: Auto mode only skips
+                // message-less approvals. (SEC-GOS-007)
+                action: InspectionAction::RequireApproval(Some(
+                    "This session's client requires approval for every tool call.".into(),
+                )),
                 reason: "The client requires approval for this tool invocation".into(),
                 confidence: 1.0,
                 inspector_name: self.name().into(),
